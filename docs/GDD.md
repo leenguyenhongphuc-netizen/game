@@ -1,0 +1,165 @@
+# Vườn Việt — Tài liệu thiết kế game
+
+> "Vườn Việt" là tên tạm. Bản này mô tả cả phần đã dựng (đánh dấu **Đã có**) và phần dự kiến (**Dự kiến**).
+
+## 1. Tầm nhìn
+
+Một game nông trại trực tuyến chạy trên web, nơi **vị trí thật của người chơi quyết định họ trồng được gì**. Ai ở vùng nào thì trồng đặc sản vùng đó, rồi giao thương với cả nước.
+
+Ba mục tiêu, phải đạt cùng lúc để game tồn tại được:
+
+1. **Vui**: vòng trồng – chăm – thu – bán đủ cuốn để người chơi quay lại mỗi ngày.
+2. **Hiểu nông sản Việt**: mỗi loại cây có quy trình canh tác từng bước, người chơi hiểu vì sao trái đó có giá đó.
+3. **Bảng giá tham chiếu**: giá trong game bám giá thật ngoài đời theo tỉ lệ 1:1, về lâu dài thành nơi tiểu thương và nhà vườn tham khảo và tự báo giá.
+
+## 2. Trụ cột thiết kế
+
+| Trụ cột | Ý nghĩa trong game |
+|---|---|
+| Đất gắn với nơi sống | Lô đất đầu tiên nằm ở vùng trồng gần vị trí thật nhất. |
+| Vùng nào trái nấy | Mỗi vùng trồng chỉ có đặc sản của vùng. Muốn có trái vùng khác phải mua, hoặc mua đất ở đó. |
+| Làm đúng thì được giá | Chăm sóc đúng hạn cho hàng Loại 1; trễ thì xuống Loại 2, Loại 3 và giá giảm. |
+| Giá thật | Tiền trong game tính bằng đồng, giá tham chiếu lấy từ thị trường thật. |
+
+## 3. Vòng chơi
+
+1. **Nhận đất** — tạo tài khoản, cho phép định vị, nhận lô đất 750 m² (30 ô, mỗi ô 25 m²). **Đã có**
+2. **Trồng** — chọn đặc sản của vùng, trả tiền giống, làm bước đầu của quy trình. **Đã có**
+3. **Chăm** — quay lại làm từng bước khi đến giờ (mỗi vụ từ 10 đến 48 giờ thật). **Đã có**
+4. **Thu hoạch** — nông sản vào kho, kèm hạng chất lượng. **Đã có**
+5. **Bán** — bán ngay cho thương lái, hoặc bày lên sạp trước nhà với giá tự đặt. **Đã có**
+6. **Mở rộng** — có tiền thì mua đất ở vùng khác để trồng loại khác, ghé thăm vườn người khác. **Đã có** (mua đất, ghé thăm)
+7. **Đơn hàng, chế biến, sưu tầm** — lý do để mua hàng của nhau (mục 8). **Dự kiến**
+
+## 4. Vị trí và quyền riêng tư
+
+- Trình duyệt xin quyền định vị một lần khi nhận đất.
+- Máy chủ **làm tròn toạ độ về ô lưới 0,02°** (khoảng 2 km) rồi mới lưu. Toạ độ gốc không được lưu.
+- Người chơi khác chỉ thấy tên vùng trồng, không thấy ô lưới.
+- Không cho định vị, hoặc đang ở nước ngoài: tự chọn vùng trồng từ danh sách.
+- Mỗi tài khoản chỉ nhận đất miễn phí một lần; mỗi vùng chỉ có một lô.
+
+**Còn thiếu:** tên xã/phường. Hiện vị trí được gắn vào vùng trồng gần nhất theo khoảng cách. Để hiện "vườn ở xã X" cần bộ dữ liệu ranh giới xã sau sáp nhập 2025.
+
+**Rủi ro:** giả mạo GPS để chọn vùng có đặc sản đắt. Vì đã cho tự chọn vùng nên giả mạo không đem lại lợi thế nào thêm; nếu sau này có phần thưởng theo vị trí thật thì cần xét lại.
+
+## 5. Vùng trồng và đặc sản
+
+Danh mục nằm ở `shared/catalog.ts`: **53 vùng trồng, 127 đặc sản, 47 loại cây**, phủ đủ **34 tỉnh, thành phố** (theo sắp xếp hành chính 2025) và bốn đảo: Cát Bà, Lý Sơn, Côn Đảo, Phú Quốc.
+
+Đặc sản gắn với **vùng trồng** chứ không gắn với tên tỉnh, vì tên tỉnh đã đổi sau sáp nhập còn vùng trồng thì không. Ví dụ:
+
+| Vùng trồng | Tỉnh hiện nay | Đặc sản |
+|---|---|---|
+| Hàm Thuận Nam | Lâm Đồng (Bình Thuận cũ) | Thanh long Bình Thuận |
+| Ninh Phước | Khánh Hòa (Ninh Thuận cũ) | Nho, táo xanh, tỏi Phan Rang, măng tây xanh |
+| Đảo Lý Sơn | Quảng Ngãi | Tỏi Lý Sơn, hành tím Lý Sơn |
+| Lục Ngạn | Bắc Ninh (Bắc Giang cũ) | Vải thiều, cam, na dai Lục Nam |
+| Cái Bè | Đồng Tháp (Tiền Giang cũ) | Xoài cát Hòa Lộc, vú sữa Lò Rèn, sầu riêng Ngũ Hiệp, khóm Tân Phước |
+| Phong Điền | Cần Thơ | Dâu Hạ Châu, khóm Cầu Đúc |
+
+**Cần rà lại trước khi phát hành:** danh mục do mình soạn từ hiểu biết chung, chưa đối chiếu với danh sách chỉ dẫn địa lý và OCOP chính thức. Một số vùng mới có một đặc sản (Trà Bồng, Hoài Nhơn, Cần Giờ, Côn Đảo…), nên bổ sung.
+
+**Người chơi thành phố:** ở Hà Nội được gắn về Phú Diễn (bưởi Diễn, cam Canh), ở TP.HCM về Lái Thiêu (măng cụt, bưởi Bạch Đằng). Vì phần đông người chơi sẽ dồn về hai vùng này, nên có thêm vai trò cho dân thành phố: thương lái, xưởng chế biến, chủ sạp (dự kiến).
+
+## 6. Quy trình canh tác
+
+Mỗi đặc sản đi qua 6–8 bước; bước đầu làm ngay khi xuống giống, bước cuối là thu hoạch. Thời gian chờ chia đều giữa các bước.
+
+- **Quy trình riêng** (7 loại): thanh long (chong đèn ra hoa trái vụ), nho (cắt cành tạo vụ), tỏi Lý Sơn (trải đất đỏ rồi phủ cát trắng), khóm (lên liếp trên đất phèn), vải thiều (khoanh vỏ hãm lộc đông), sầu riêng (xiết nước, thụ phấn ban đêm), lúa.
+- **Quy trình theo nhóm** cho các loại còn lại: cây ăn trái lâu năm, cây leo giàn, cây ngắn ngày, cây lấy củ, cây công nghiệp.
+
+**Chất lượng:** làm một bước trễ quá 12 giờ so với lúc đến hạn thì tính một lần trễ. Không trễ → Loại 1 (100% giá); trễ 1–2 lần → Loại 2 (85%); từ 3 lần → Loại 3 (70%).
+
+**Cần chuyên gia nông nghiệp rà lại** nội dung từng bước. **Dự kiến:** viết quy trình riêng cho từng loại cây, thêm thời tiết và mùa vụ thật theo vùng (hạn mặn, bão, sương muối), thêm chuẩn VietGAP làm hạng cao hơn Loại 1.
+
+## 7. Kinh tế
+
+Tiền trong game là **đồng**, giá mỗi kg bằng giá tham chiếu ngoài đời.
+
+| Thông số | Giá trị hiện tại |
+|---|---|
+| Vốn khởi đầu | 1.000.000đ |
+| Tiền giống mỗi ô | 15% doanh thu kỳ vọng của ô đó |
+| Thương lái mua tại vườn (đặc sản của vùng nhà) | 85% giá tham chiếu |
+| Thương lái mua hàng phương xa (đặc sản vùng khác) | 110% giá tham chiếu |
+| Khung giá rao trên sạp | 30% đến 300% giá tham chiếu |
+| Mua một lô đất vùng khác | 50.000.000đ |
+
+**Vì sao có hai mức giá thương lái:** chênh lệch 85% – 110% là lý do để giao thương. Người trồng rao bán trong khoảng đó thì lợi hơn bán tại vườn; người vùng khác mua về bán lại vẫn có lãi. Nó cũng phản ánh đúng thực tế: giá tại vườn thấp hơn giá ở chợ xa.
+
+**Vì sao có khung giá rao:** để chợ không thành kênh chuyển tiền giữa các tài khoản.
+
+**Sổ cái:** mọi thay đổi số dư đều ghi vào bảng `ledger` kèm lý do, để đối soát và phát hiện gian lận.
+
+**Chưa cân bằng:** các con số trên là điểm khởi đầu. Hiện chưa có thứ gì rút tiền ra khỏi nền kinh tế ngoài giống và đất, nên về lâu dài sẽ lạm phát; cần thêm chi phí (phân bón, nhân công, vận chuyển, trang trí sạp).
+
+## 8. Người mua dùng nông sản làm gì (dự kiến)
+
+Đây là phần quyết định chợ có sống hay không. Theo thứ tự nên làm:
+
+1. **Đơn hàng theo dịp** — mâm ngũ quả Tết, giỏ quà Trung thu, quà cưới. Mỗi đơn cần trái từ nhiều vùng nên buộc phải mua của nhau.
+2. **Chế biến** — mứt, trái sấy, nước ép, rượu nho. Người chơi thành phố có vai trò riêng.
+3. **Đơn xuất khẩu** — yêu cầu Loại 1, số lượng lớn; hợp với hợp tác xã nhiều người góp hàng.
+4. **Sổ sưu tầm bản đồ đặc sản** — mỗi đặc sản một con tem kèm câu chuyện vùng trồng.
+5. **Tặng quà** — gửi giỏ trái cây và hạt giống cho bạn bè.
+6. **Được mùa mất giá** — cả máy chủ cùng trồng một loại thì giá thương lái giảm.
+
+## 9. Bảng giá và tác tử thu thập giá
+
+**Đã có:**
+
+- Bảng `price_ticks` lưu mọi lần ghi giá: đặc sản, giá, nguồn, thời điểm.
+- `POST /api/admin/prices` nhận giá mới, yêu cầu mã quản trị (`ADMIN_TOKEN`) và bắt buộc ghi nguồn.
+- Màn hình Bảng giá hiện giá, mức thay đổi so với lần ghi trước và nguồn.
+- Khi khởi tạo, mỗi đặc sản có một dòng **"giá mẫu"** do mình ước lượng để chơi thử. Giao diện ghi rõ đây chưa phải giá thị trường.
+
+**Dự kiến — tác tử AI thu thập giá:**
+
+1. Chạy theo lịch (mỗi ngày một lần, mùa vụ chính có thể dày hơn).
+2. Với từng đặc sản, tìm giá thu mua tại vườn và giá bán buôn trên các nguồn công khai, lấy ít nhất hai nguồn.
+3. Loại giá lệch bất thường so với lần trước; khi các nguồn vênh nhau nhiều thì giữ giá cũ và báo người duyệt.
+4. Gửi kết quả qua `POST /api/admin/prices`, ghi rõ nguồn và thời điểm.
+
+Cần quyết: danh sách nguồn được tin, ai duyệt khi tác tử không chắc, và chi phí chạy mỗi ngày cho 127 đặc sản.
+
+**Dự kiến — tiểu thương và nhà vườn tự báo giá:** khu riêng, tách khỏi tiền trong game. Mỗi người báo giá mua/bán tại vùng của mình; hệ thống hiện trung vị bên cạnh giá tham chiếu. Cần xác minh người báo và chống báo giá ảo.
+
+## 10. Kiếm tiền và pháp lý
+
+- **Nạp tiền mua vật phẩm:** nên giới hạn ở trang trí (nhà, sạp, hàng rào), không bán lợi thế trồng trọt, để giá trong game còn ý nghĩa tham chiếu.
+- **Nối với nông sản thật** (về sau): người chơi đặt mua trái cây thật từ nhà vườn đối tác.
+- **Cần luật sư tư vấn trước khi mở nạp tiền:** giấy phép trò chơi điện tử trên mạng, quy định không quy đổi vật phẩm ảo ra tiền, bảo vệ dữ liệu cá nhân (vị trí là dữ liệu nhạy cảm), và điều kiện khi hiển thị giá như một bảng tham chiếu thị trường.
+- **Tên công ty, thương hiệu thật** chỉ dùng khi có thoả thuận. Thương lái trong game hiện không mang tên ai.
+
+## 11. Kiến trúc kỹ thuật
+
+| Phần | Công nghệ | Thư mục |
+|---|---|---|
+| Luật chơi và danh mục dùng chung | TypeScript thuần | `shared/` |
+| Máy chủ | Node.js 22, Fastify, PostgreSQL | `server/` |
+| Giao diện | React, Vite, canvas 2D góc nghiêng | `web/` |
+
+- Máy chủ quyết định mọi thứ liên quan tiền, thời gian và hàng hoá; giao diện chỉ hiển thị.
+- Tài khoản: tên + mật khẩu (băm scrypt), phiên lưu bằng cookie `httpOnly`.
+- Mọi thao tác tiền và hàng chạy trong giao dịch cơ sở dữ liệu có khoá dòng.
+- Giới hạn tần suất: 300 yêu cầu/phút mỗi địa chỉ, 10 lần/phút cho đăng ký và đăng nhập.
+- `TIME_SCALE` tăng tốc thời gian khi phát triển (ví dụ 3600 thì một giờ còn một giây).
+
+## 12. Lộ trình
+
+| Giai đoạn | Nội dung |
+|---|---|
+| **0 — nền tảng (bản này)** | Tài khoản, định vị, lô đất, trồng theo quy trình, kho, sạp, chợ, bảng giá, mua đất, ghé thăm. |
+| 1 — có lý do quay lại | Đơn hàng theo dịp, thông báo đến giờ chăm cây, trang trí sạp, lấy lại mật khẩu. |
+| 2 — giá thật | Tác tử thu thập giá chạy hằng ngày, biểu đồ lịch sử giá, được mùa mất giá. |
+| 3 — cộng đồng | Hợp tác xã, chế biến, chợ phiên, sổ sưu tầm, bảng xếp hạng. |
+| 4 — nối ra đời thật | Tiểu thương báo giá, đối tác nhà vườn, nạp tiền (sau khi xong pháp lý). |
+
+## 13. Câu hỏi còn mở
+
+1. Tên chính thức của game.
+2. Ai rà nội dung quy trình canh tác và danh mục đặc sản?
+3. Nguồn giá nào được coi là đáng tin cho tác tử?
+4. Người chơi thành phố có nên được chọn vai thương lái ngay từ đầu thay vì nhận vườn?
+5. Mỗi vùng có giới hạn số lô đất không (đất khan hiếm thì có giá trị, nhưng người đến sau thiệt)?
