@@ -207,9 +207,10 @@ function fuelStation(price: number): THREE.Group {
 function overpass(): THREE.Group { const g = new THREE.Group(); g.add(box(0xc9cdd3, 0, 10.6, 0, 110, 0.9, 6), box(0xe6e8ec, 0, 11.4, -2.9, 110, 0.7, 0.25), box(0xe6e8ec, 0, 11.4, 2.9, 110, 0.7, 0.25)); for (const x of [-HW - 1.2, HW + 1.6, -HW * 3 - 5]) g.add(box(0xb8bec6, x, 5.1, 0, 0.9, 10.2, 3.4)); return bake(g, true); }
 function tunnel(): THREE.Group {
   const g = new THREE.Group(), half = HW + 2.8, len = 56;
-  const hill = mesh(GEO.sphere, mat(0x7fbf7a, { rough: 1 }), 0, 0, 0, 75, 26, len / 2 + 0.5); hill.castShadow = false;
-  const tube = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 7.6, len), new THREE.MeshStandardMaterial({ color: 0x5b6470, roughness: 1, side: THREE.BackSide })); tube.position.y = 3.8;
-  g.add(hill, tube);
+  // Hầm hở giữa hai sườn núi: vách hai bên, các sườn bê tông bắc ngang, nhìn từ trên vẫn thấy xe
+  for (const sd of [-1, 1]) { const hill = mesh(GEO.sphere, mat(0x7fbf7a, { rough: 1 }), sd * (half + 31), 0, 0, 31.5, 22, len / 2 + 6); hill.castShadow = false; g.add(hill, mesh(GEO.sphere, mat(0x9fb1a6, { rough: 1 }), sd * (half + 20), 0, sd * 6, 18, 13, len / 2 - 4)); }
+  const tube = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 7.6, len), new THREE.MeshStandardMaterial({ color: 0x5b6470, roughness: 1, side: THREE.BackSide })); tube.position.y = 3.8; g.add(tube);
+  for (let z = -len / 2 + 7; z < len / 2 - 3; z += 7) g.add(box(0xc9cdd3, 0, 7.9, z, half * 2 + 1.2, 0.6, 0.9));
   for (const z of [-len / 2 - 0.2, len / 2 + 0.2]) { g.add(box(0xd9dde2, -half - 0.6, 4, z, 1.2, 8, 1), box(0xd9dde2, half + 0.6, 4, z, 1.2, 8, 1), box(0xd9dde2, 0, 8.2, z, half * 2 + 2.4, 1.2, 1)); }
   for (let i = 0; i < 7; i++) for (const x of [-half + 0.1, half - 0.1]) g.add(box(0xfff3b0, x, 4.6, -24 + i * 8, 0.1, 0.3, 2.4, { emissive: 0xffe08a }));
   return g;
@@ -234,7 +235,7 @@ export class DriveScene {
   private world = new THREE.Group();
   private camera = new THREE.PerspectiveCamera(46, 1, 0.5, 420);
   private clock = new THREE.Clock();
-  private sun: THREE.DirectionalLight;
+  private sun: THREE.DirectionalLight; private hemi!: THREE.HemisphereLight; private sky!: THREE.Texture; private dark = 0; private darkCol = new THREE.Color(0x232831); private fogCol = new THREE.Color(0xdff3fb);
   private truck: THREE.Group; private boat: THREE.Group; private wheels: THREE.Object3D[] = [];
   private ground: THREE.Mesh; private sea: THREE.Mesh; private mountains = new THREE.Group();
   private roadA: THREE.Mesh; private roadB: THREE.Mesh; private lineL: THREE.Mesh; private lineR: THREE.Mesh;
@@ -286,7 +287,8 @@ export class DriveScene {
     this.sun = new THREE.DirectionalLight(0xfff2d8, 2.1); this.sun.position.set(10, 22, 0); this.sun.castShadow = true; this.sun.shadow.mapSize.set(1024, 1024);
     Object.assign(this.sun.shadow.camera, { left: -20, right: 20, top: 34, bottom: -14, near: 1, far: 70 }); this.sun.shadow.bias = -0.0008; this.sun.shadow.normalBias = 0.05; this.sun.shadow.radius = 4;
     this.sun.target.position.set(0, 0, -8);
-    this.scene.add(new THREE.HemisphereLight(0xfafcff, 0xd6e6b0, 1.35), this.sun, this.sun.target, this.world);
+    this.hemi = new THREE.HemisphereLight(0xfafcff, 0xd6e6b0, 1.35); this.sky = this.scene.background as THREE.Texture;
+    this.scene.add(this.hemi, this.sun, this.sun.target, this.world);
 
     this.ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: THEMES[this.zf].ground, roughness: 1 }));
     this.ground.position.set(0, -0.06, -150); this.ground.receiveShadow = true;
@@ -324,7 +326,7 @@ export class DriveScene {
   // ---------------------------------------------------------------- dựng lộ trình
   private layout(roadSec: number) {
     const p = this.opts.plan, km = Math.max(1, this.roadKm);
-    const planned = Math.max(260, (roadSec - 17) * BASE);
+    const planned = Math.max(260, (roadSec - 20) * BASE);
     const want: { ev: Ev; f: number }[] = [];
     const mk = (type: Ev['type'], pre: number, post: number, extra: Partial<Ev> = {}): Ev => ({ type, s: 0, rs: 0, pre, post, dir: 1, name: '', exit: false, sigma: 0, done: false, retry: false, bend: 0, idx: 0, kind: '', objs: [], arms: [], lift: 0, mapAng: 0, ...extra });
     const js = [...(p.junctions ?? [])].filter((j) => j && isFinite(j.atKm)).sort((a, b) => a.atKm - b.atKm);
@@ -338,7 +340,7 @@ export class DriveScene {
     for (const w of want) { const e = w.ev, min: number = prev ? prev.s + prev.post + e.pre : this.exS + e.pre + 34; e.s = Math.max(min, w.f > 1 ? this.exS + planned : this.exS + w.f * planned); prev = e; this.events.push(e); }
     const exit = prev!;
     this.mul = clamp((exit.s - this.exS) / planned, 1, 1.25);
-    this.endS = this.road0 = exit.s + 78 + 100; this.kmU = km / this.road0;
+    this.endS = this.road0 = exit.s + 78 + 80; this.kmU = km / this.road0;
     for (const e of this.events) e.rs = e.s;
     this.reindex(); this.baseJ = [...this.juncs];
     // Cầu vượt ở những quãng trống
@@ -365,7 +367,7 @@ export class DriveScene {
       add(gantry(HW, [{ text: `Trạm thu phí · ${vnd(this.opts.plan.tollFee)}`, x: 0, w: 9, bg: BLUE }]), -96, 0);
       const t = tollPlaza(); e.arms = t.arms; add(t.root, 0, 0);
     } else if (e.kind === 'tunnel') { add(tunnel(), 0, 0); add(roadside('Hầm đường bộ', BLUE, 5), -70, HW + 2.2); }
-    else { const river = box(0x8fd8ea, 0, 0, 0, 700, 0.06, 64, { rough: 0.25 }); river.castShadow = false; river.position.y = -0.02; add(river, 0, 0); add(pylon(), -15, 0); add(pylon(), 15, 0); add(roadside('Cầu vượt sông', BLUE, 5), -70, HW + 2.2); }
+    else { const river = box(0x6cc5e0, 0, 0, 0, 700, 0.06, 64, { rough: 0.25 }); river.castShadow = false; river.position.y = -0.02; add(river, 0, 0); add(pylon(), -15, 0); add(pylon(), 15, 0); add(roadside('Cầu vượt sông', BLUE, 5), -70, HW + 2.2); }
     for (const o of e.objs) { o.o.visible = false; if (!o.o.parent) this.world.add(o.o); }
   }
 
@@ -406,7 +408,7 @@ export class DriveScene {
 
   // ---------------------------------------------------------------- hình học đường
   private curve(s: number) { return 4 * Math.sin(s * 0.008) + 2 * Math.sin(s * 0.021 + 1); }
-  private chan(s: number) { const e = sm(s / 50) * sm((this.seaL - s) / 50); return e * (24 * Math.sin(s * 0.02417) + 6 * Math.sin(s * 0.0648 + 1)); }
+  private chan(s: number) { const e = sm(s / 50) * sm((this.seaL - s) / 50); return e * (19 * Math.sin(s * 0.02417) + 4 * Math.sin(s * 0.0648 + 1)); }
   private g(u: number) { return G * sm(u / 60); }
   private shift(s: number, skip: Ev | null = null, sig = 0) { let x = 0; for (const j of this.juncs) { const u = s - j.s; if (u <= 0) continue; x += (j === skip ? sig : (j.sigma || -j.dir)) * this.g(u); } return x; }
   private center(s: number) { return this.mode === 'boat' ? this.chan(s) : this.curve(s) + this.shift(s); }
@@ -506,8 +508,8 @@ export class DriveScene {
     if (boat) want = SEA_V * (this.offChan && !assist ? 0.5 : 1);
     else {
       const V = BASE * this.mul; want = V;
-      if (this.s < this.rampS) want = 15; else if (this.s < this.exS) want = lerp(15, V, sm((this.s - this.rampS) / (this.exS - this.rampS)));
-      const ex = this.exitDone; if (ex && this.s > ex.s + 60) want = lerp(V, 17, sm((this.s - ex.s - 60) / 50));
+      if (this.s < this.rampS) want = 18; else if (this.s < this.exS) want = lerp(18, V, sm((this.s - this.rampS) / (this.exS - this.rampS)));
+      const ex = this.exitDone; if (ex && this.s > ex.s + 60) want = lerp(V, 20, sm((this.s - ex.s - 60) / 50));
       for (const e of this.tolls) { const u = this.s - e.s; if (u > -42 && u < 4) want = Math.min(want, V * 0.5); }
       if (this.inAux()) for (const e of this.stations) { const u = this.s - e.s; if (Math.abs(u) > 64) continue; want = Math.min(want, V * 0.45); if (!e.done && u > -26 && u < 0 && this.fuel < tk.tankL - 0.5) want = Math.min(want, Math.max(4, V * 0.45 * (-u / 26))); }
       if (this.fuel <= 0) want = Math.min(want, BASE * this.mul * (assist ? 0.6 : 0.3));
@@ -705,12 +707,15 @@ export class DriveScene {
       if (e.arms.length) { const u = s - e.s, open = u > -24 && !(e.kind === 'stop' && this.pause > 0.3); e.lift += ((open ? 1 : 0) - e.lift) * Math.min(1, dt * 6); for (const a of e.arms) a.rotation.z = -e.lift * 1.35; }
     }
     for (const p of this.props) { const q = p.s > 1e8 ? this.endS + 5 : p.s, vis = p.mode === this.mode && q > s - 60 && q < s + AHEAD + 70; p.o.visible = vis; if (vis) { this.near(p.o, q - s); this.put(p.o, q, this.center(q) + p.x, p.o.position.y); } }
+    // ---- trong hầm: tối dần, chỉ còn đèn vách
+    let inT = 0; if (!boat) for (const e of this.feats) if (e.kind === 'tunnel' && Math.abs(s - e.s) < 27) inT = 1;
+    if (inT !== this.dark || this.dark > 0) { this.dark += (inT - this.dark) * Math.min(1, dt * 5); if (Math.abs(inT - this.dark) < 0.01) this.dark = inT; const f = this.scene.fog as THREE.Fog; this.hemi.intensity = lerp(1.35, 0.5, this.dark); this.sun.intensity = lerp(2.1, 0.1, this.dark); f.color.copy(this.fogCol).lerp(this.darkCol, this.dark); f.near = lerp(80, 22, this.dark); f.far = lerp(AHEAD + 20, 110, this.dark); this.scene.background = this.dark > 0.5 ? this.darkCol : this.sky; }
     // ---- hạt bụi, máy quay
     for (const sp of this.sparks) { if (sp.life <= 0) continue; sp.life -= dt; sp.v.y -= 12 * dt; sp.m.position.addScaledVector(sp.v, dt); sp.m.position.z += this.speed * dt; sp.m.scale.setScalar(Math.max(0.01, 0.16 * sp.life)); if (sp.life <= 0) sp.m.visible = false; }
     this.shake = Math.max(0, this.shake - dt);
     const sh = this.shake * 0.5, portrait = this.camera.aspect < 0.9;
-    this.camera.position.set(this.px * 0.55 + (Math.random() - 0.5) * sh, (portrait ? 14 : 9) + (Math.random() - 0.5) * sh, portrait ? 16 : 15.5);
-    this.camera.lookAt(this.px * 0.7, 1.2, portrait ? -14 : -12);
+    this.camera.position.set(this.px * 0.55 + (Math.random() - 0.5) * sh, (boat ? (portrait ? 26 : 11.5) : portrait ? 14 : 9) + (Math.random() - 0.5) * sh, boat ? (portrait ? 27 : 19) : portrait ? 16 : 15.5);
+    this.camera.lookAt(this.px * 0.7, 1.2, boat ? -17 : portrait ? -14 : -12);
     this.renderer.render(this.scene, this.camera);
     this.tickAcc += dt;
     if (this.tickAcc > 0.12) { this.tickAcc = 0; this.opts.onTick?.(this.hud()); }
@@ -796,7 +801,7 @@ export class DriveScene {
     for (const fn of this.cleanup) fn();
     this.ro.disconnect();
     this.scene.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.geometry && !Object.values(GEO).includes(m.geometry as never)) m.geometry.dispose(); const sm2 = (o as THREE.Sprite).material as THREE.SpriteMaterial | undefined; if ((o as THREE.Sprite).isSprite && sm2) { sm2.map?.dispose(); sm2.dispose(); } });
-    (this.scene.background as THREE.Texture | null)?.dispose?.();
+    this.sky.dispose();
     this.renderer.dispose(); this.renderer.domElement.remove();
   }
 }

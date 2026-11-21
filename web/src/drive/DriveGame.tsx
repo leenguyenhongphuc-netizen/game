@@ -215,7 +215,7 @@ export function DriveGame(props: {
           </div>
         )}
       </div>
-      {count <= 0 && hud && hud.progress < 0.06 && !arrived && !hud.warn && <div className="dg-hint">Kéo ngang, bấm ◀ ▶ hoặc phím ← → để đổi làn · theo biển xanh và bản đồ</div>}
+      {count <= 0 && hud && hud.progress < 0.06 && !arrived && !hud.warn && <div className="dg-hint">{boat ? 'Kéo ngang, bấm ◀ ▶ hoặc phím ← → · giữ phà giữa phao đỏ và phao xanh' : 'Kéo ngang, bấm ◀ ▶ hoặc phím ← → để đổi làn · theo biển xanh và bản đồ'}</div>}
     </div>
   );
 }
