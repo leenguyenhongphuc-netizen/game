@@ -21,12 +21,12 @@ const CSS = `
 .dg-fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: linear-gradient(#6fd45c, #4caf3f); }
 .dg-icon { position: absolute; top: -19px; font-size: 1.25rem; transform: translateX(-50%) scaleX(-1); transition: left 0.15s linear; }
 .dg-cancel { pointer-events: auto; font: inherit; font-family: 'Baloo 2', sans-serif; font-weight: 700; background: #f6e7bd; border: 2px solid #7a4a22; border-radius: 12px; box-shadow: 0 3px 0 #7a4a22; padding: 4px 10px; min-height: 44px; min-width: 44px; cursor: pointer; color: inherit; align-self: stretch; }
-.dg-nav { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; background: #1f8a4c; color: #fff; border: 3px solid #fff; border-radius: 14px; box-shadow: 0 3px 0 #0f5a30; padding: 4px 10px 4px 6px; min-height: 44px; font-weight: 700; font-size: 0.9rem; }
+.dg-nav { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 8px; background: #1f8a4c; color: #fff; border: 3px solid #fff; border-radius: 14px; box-shadow: 0 3px 0 #0f5a30; padding: 4px 10px 4px 6px; min-height: 44px; font-weight: 700; font-size: 0.9rem; }
 .dg-nav.urgent { background: #e2622b; box-shadow: 0 3px 0 #9c3a12; animation: dg-pulse 0.7s ease-in-out infinite alternate; }
 .dg-nav b { flex: none; width: 34px; height: 34px; border-radius: 10px; background: #ffffff; color: #1f8a4c; display: grid; place-items: center; font-size: 1.5rem; line-height: 1; font-weight: 800; }
 .dg-nav.urgent b { color: #e2622b; }
 .dg-nav span { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.dg-side { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.dg-side { grid-column: 1 / -1; grid-row: 3; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .dg-stat { background: #fff6dcf2; border: 2px solid #7a4a22; border-radius: 14px; box-shadow: 0 3px 0 #56310f; padding: 6px 9px; display: grid; gap: 3px; font-weight: 700; font-size: 0.8rem; font-variant-numeric: tabular-nums; min-width: 132px; max-width: 46%; }
 .dg-stat div { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .dg-stat i { font-style: normal; flex: none; width: 1.2em; text-align: center; }
@@ -35,7 +35,7 @@ const CSS = `
 .dg-gauge.low u { background: #e0342b; }
 .dg-stat .low { color: #c0281e; }
 .dg-map { width: 116px; height: 116px; border-radius: 16px; border: 3px solid #7a4a22; box-shadow: 0 3px 0 #56310f; background: #e9f3d8f2; display: block; flex: none; }
-.dg-warn { position: absolute; left: 50%; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px); transform: translateX(-50%); max-width: calc(100% - 24px); background: #c0281e; color: #fff; border: 3px solid #fff; border-radius: 14px; padding: 5px 12px; font-weight: 800; font-size: 0.88rem; text-align: center; pointer-events: none; box-shadow: 0 3px 0 #7d150e; }
+.dg-warn { grid-column: 1 / -1; justify-self: center; max-width: 100%; background: #c0281e; color: #fff; border: 3px solid #fff; border-radius: 14px; padding: 4px 12px; font-weight: 800; font-size: 0.86rem; text-align: center; box-shadow: 0 3px 0 #7d150e; }
 .dg-bottom { position: absolute; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; pointer-events: none; }
 .dg-steer { pointer-events: auto; width: 82px; height: 82px; border-radius: 50%; border: 4px solid #7a4a22; background: #fff6dce6; box-shadow: 0 5px 0 #56310f; font-size: 2.1rem; line-height: 1; color: #7a4a22; cursor: pointer; touch-action: none; padding: 0; font-family: inherit; }
 .dg-steer.on { transform: translateY(4px); box-shadow: 0 1px 0 #56310f; background: #ffd98a; }
@@ -66,12 +66,12 @@ const CSS = `
 @keyframes dg-flash { 0% { opacity: 0; } 25%, 65% { opacity: 0.94; } 100% { opacity: 0; } }
 @media (max-height: 480px) {
   .dg-top { grid-template-columns: minmax(150px, 30%) minmax(0, 1fr) auto; gap: 5px; }
-  .dg-nav { grid-column: auto; grid-row: 1; order: 2; min-height: 40px; font-size: 0.84rem; }
-  .dg-bar { grid-row: 1; padding: 2px 9px 4px; } .dg-cancel { grid-row: 1; grid-column: 3; }
+  .dg-nav { grid-column: 2; grid-row: 1; min-height: 40px; font-size: 0.84rem; }
+  .dg-bar { grid-row: 1; grid-column: 1; padding: 2px 9px 4px; } .dg-side { grid-row: 2; } .dg-cancel { grid-row: 1; grid-column: 3; }
   .dg-track { margin-top: 11px; height: 8px; } .dg-icon { font-size: 1.05rem; top: -16px; }
   .dg-map { width: 94px; height: 94px; } .dg-stat { font-size: 0.76rem; padding: 4px 8px; }
   .dg-steer { width: 70px; height: 70px; } .dg-bump { top: 40%; font-size: 1.2rem; }
-  .dg-warn { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 4px); max-width: 46%; font-size: 0.8rem; } .dg-hint { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 64px); max-width: 52%; }
+  .dg-warn { font-size: 0.8rem; padding: 2px 10px; } .dg-hint { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 64px); max-width: 52%; }
   .dg-bottom { bottom: max(8px, env(safe-area-inset-bottom)); } .dg-speed { position: absolute; left: 92px; bottom: 0; margin: 0; } .dg-speed strong { font-size: 1.2rem; }
   .dg-card { padding: 10px 14px; gap: 5px; width: min(440px, 100%); } .dg-card h2 { font-size: 1.2rem; } .dg-sum { grid-template-columns: 1fr 1fr; column-gap: 14px; font-size: 0.84rem; }
 }
@@ -181,9 +181,9 @@ export function DriveGame(props: {
           </div>
           <canvas className="dg-map" ref={mapRef} aria-label="Bản đồ chỉ đường" />
         </div>
+        {hud?.warn && !arrived && <div className="dg-warn" role="alert">⚠ {hud.warn}</div>}
       </div>
       {bump && <div key={bump.id} className={`dg-bump ${bump.kind}`} role="status">{bump.text}</div>}
-      {hud?.warn && !arrived && <div className="dg-warn" role="alert">⚠ {hud.warn}</div>}
       {flash && <div key={flash.id} className="dg-flash">{flash.text}</div>}
       {!failed && (
         <div className="dg-bottom">

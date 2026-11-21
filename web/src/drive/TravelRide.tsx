@@ -31,7 +31,7 @@ const CSS = `
 .tr-fail { position: absolute; inset: 40% 24px auto; text-align: center; background: #fff6dc; border-radius: 14px; padding: 16px; }
 @keyframes tr-pop { from { transform: scale(0.5); opacity: 0; } }
 @keyframes tr-cap { from { transform: translateY(8px); opacity: 0; } }
-@media (max-height: 480px) { .tr-bar { max-width: 340px; padding: 4px 10px 6px; } .tr-track { margin-top: 16px; } .tr-cap { bottom: max(8px, env(safe-area-inset-bottom)); } }
+@media (max-height: 480px) { .tr-top { display: flex; align-items: center; gap: 8px; top: max(8px, env(safe-area-inset-top)); } .tr-bar { display: flex; align-items: center; gap: 6px; width: auto; max-width: 58%; padding: 3px 12px; border-radius: 14px; } .tr-title { flex: 0 1 auto; } .tr-track { flex: 0 0 96px; margin: 0 10px 0 12px; height: 10px; } .tr-icon { top: -7px; font-size: 1.1rem; } .tr-pill { flex-shrink: 0; font-size: 0.85rem; } .tr-cap { bottom: max(8px, env(safe-area-inset-bottom)); } }
 @media (prefers-reduced-motion: reduce) { .tr-arrive div, .tr-cap p { animation: none; } }
 `;
 

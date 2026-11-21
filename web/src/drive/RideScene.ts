@@ -53,6 +53,7 @@ export class RideScene {
   private time = 0;
   private arrived = false;
   private disposed = false;
+  private paused = false;
   private ro: ResizeObserver;
   private container: HTMLElement;
   private opts: RideOptions;
@@ -61,6 +62,9 @@ export class RideScene {
   private target = new THREE.Vector3();
   private dir = new THREE.Vector3();
   private tmp = new THREE.Vector3();
+  private right = new THREE.Vector3();
+  private up = new THREE.Vector3();
+  private corner = new THREE.Vector3();
 
   constructor(container: HTMLElement, opts: RideOptions) {
     this.container = container; this.opts = opts;
@@ -86,7 +90,7 @@ export class RideScene {
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.05; this.sun.shadow.radius = 5;
     this.scene.add(new THREE.HemisphereLight(0xfafcff, 0xd6e6b0, 1.35), this.sun, this.sun.target);
 
-    this.ctx = { camera: this.camera, portrait: false, time: 0, shoot: (pts, yaw, pitch) => this.shoot(pts, yaw, pitch) };
+    this.ctx = { camera: this.camera, portrait: false, time: 0, shoot: (pts, yaw, pitch, signs) => this.shoot(pts, yaw, pitch, signs) };
 
     // Kịch bản: mỗi mục dựng cảnh của mình khi tới lượt
     let village: Village | null = null;
@@ -104,6 +108,7 @@ export class RideScene {
 
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(container); this.resize();
     (window as unknown as { __ride?: unknown }).__ride = {
+      pause: (v: boolean) => { this.paused = v; }, // đứng hình để chụp ảnh tự kiểm
       debug: () => ({
         stage: this.act?.stage ?? 0, scene: this.act?.stage ?? 0, caption: this.act?.caption ?? '', t: this.actT, duration: this.act?.duration ?? 0,
         progress: this.journey?.progress ?? 0, dist: this.journey?.dist ?? 0, total: this.journey?.total ?? 0, alt: this.journey?.alt ?? 0,
@@ -132,28 +137,34 @@ export class RideScene {
     this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.fov = w / h < 0.9 ? 52 : 42; this.camera.updateProjectionMatrix();
   }
 
-  /** Lùi máy quay theo hướng (yaw, pitch) tới khi mọi điểm lọt vào vùng an toàn: chừa chỗ cho bảng tiến độ ở trên và phụ đề ở dưới. */
-  private shoot(pts: THREE.Vector3[], yaw: number, pitch: number) {
+  /** Lùi máy quay theo hướng (yaw, pitch) tới khi mọi điểm và mọi biển chữ lọt vào vùng an toàn: chừa chỗ cho bảng tiến độ ở trên và phụ đề ở dưới. */
+  private shoot(pts: THREE.Vector3[], yaw: number, pitch: number, signs: THREE.Sprite[] = []) {
     const cam = this.camera, h = this.container.clientHeight || 1, portrait = this.ctx.portrait;
-    const top = 1 - 2 * Math.min(0.3, (portrait ? 128 : 64) / h), bottom = -1 + 2 * Math.min(0.26, 74 / h), side = portrait ? 0.9 : 0.86;
-    this.box.setFromPoints(pts).getCenter(this.target);
+    const top = 1 - 2 * Math.min(0.3, (portrait ? 132 : 64) / h), bottom = -1 + 2 * Math.min(0.26, 78 / h), side = portrait ? 0.9 : 0.86;
+    // Màn dọc hẹp nên biển chữ thu nhỏ lại để không ép máy quay lùi quá xa
+    for (const s of signs) { const w = (s.userData.w ??= s.scale.x) * (portrait ? 0.66 : 1); s.scale.set(w, w / 4, 1); }
+    this.box.setFromPoints(pts); for (const s of signs) this.box.expandByPoint(s.position);
+    this.box.getCenter(this.target);
     this.dir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-    // Dịch tâm ngắm lên trên một chút để bù phần trên bị bảng che nhiều hơn phần dưới
+    const tmp = this.tmp, right = this.right, up = this.up;
+    let lo = 1, hi = -1, ok = true;
+    const see = (p: THREE.Vector3) => { tmp.copy(p).project(cam); if (Math.abs(tmp.x) > side || tmp.z > 1) ok = false; lo = Math.min(lo, tmp.y); hi = Math.max(hi, tmp.y); };
     const fits = (d: number, lift: number) => {
       cam.position.copy(this.target).addScaledVector(this.dir, d); cam.position.y += lift;
       cam.lookAt(this.target.x, this.target.y + lift, this.target.z); cam.updateMatrixWorld();
-      let lo = 1, hi = -1, ok = true;
-      for (const p of pts) { this.tmp.copy(p).project(cam); if (Math.abs(this.tmp.x) > side || this.tmp.z > 1) ok = false; lo = Math.min(lo, this.tmp.y); hi = Math.max(hi, this.tmp.y); }
-      return { ok, lo, hi };
+      right.setFromMatrixColumn(cam.matrixWorld, 0); up.setFromMatrixColumn(cam.matrixWorld, 1);
+      lo = 1; hi = -1; ok = true;
+      for (const p of pts) see(p);
+      // Biển chữ luôn quay mặt về máy quay nên bốn góc tính theo trục ngang và trục dọc của máy quay
+      for (const s of signs) for (const kx of [-0.5, 0.5]) for (const ky of [-0.5, 0.5]) see(this.corner.copy(s.position).addScaledVector(right, kx * s.scale.x).addScaledVector(up, ky * s.scale.y));
     };
     let a = 6, b = 420, lift = 0;
     for (let i = 0; i < 16; i++) {
-      const d = (a + b) / 2, f = fits(d, lift);
-      // căn giữa theo chiều dọc trong vùng an toàn rồi mới xét vừa khung
-      const mid = (f.hi + f.lo) / 2, want = (top + bottom) / 2;
-      lift += (mid - want) * d * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
-      const g = fits(d, lift);
-      if (g.ok && g.hi <= top && g.lo >= bottom) b = d; else a = d;
+      const d = (a + b) / 2, k = d * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+      fits(d, lift);
+      lift += ((hi + lo) / 2 - (top + bottom) / 2) * k; // căn giữa theo chiều dọc trong vùng an toàn rồi mới xét vừa khung
+      fits(d, lift);
+      if (ok && hi <= top && lo >= bottom) b = d; else a = d;
     }
     fits(b, lift);
   }
@@ -162,7 +173,7 @@ export class RideScene {
     if (this.disposed || !this.act) return;
     // __rideStep: chỉ dùng khi tự kiểm trên máy không có GPU, cho phép mỗi khung hình nhảy bước dài hơn
     const cap = (window as unknown as { __rideStep?: number }).__rideStep ?? 0.05;
-    const dt = Math.min(this.clock.getDelta(), cap), last = this.index === this.plan.length - 1;
+    const dt = this.paused ? (this.clock.getDelta(), 0) : Math.min(this.clock.getDelta(), cap), last = this.index === this.plan.length - 1;
     this.time += dt; this.actT += dt;
     if (!last && this.actT >= this.act.duration) this.next();
     const act = this.act;

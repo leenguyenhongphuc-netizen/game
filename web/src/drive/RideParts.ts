@@ -70,8 +70,8 @@ export function buildTrain(): THREE.Group {
   for (let z = -17; z <= 18; z += 2.6) g.add(wheel(-1.15, z, 0.52), wheel(1.15, z, 0.52));
   return g;
 }
-/** Vị trí cửa toa (toa thứ hai) trong hệ toạ độ đoàn tàu. */
-export const TRAIN_DOOR_Z = 3.0;
+/** Vị trí cửa toa (toa đầu, sát đầu máy) trong hệ toạ độ đoàn tàu. */
+export const TRAIN_DOOR_Z = -4.6;
 
 export function buildPlane(): THREE.Group {
   const g = new THREE.Group(), white = mat(0xfffdf6, { rough: 0.5 }), accent = mat(0x6fb7d9), dark = mat(0x4a5160);
@@ -118,7 +118,7 @@ export class Walker {
   private arm = new THREE.Group();
   private body = new THREE.Group();
   private size: number;
-  constructor(size = 1.2) {
+  constructor(size = 1.3) {
     this.size = size;
     const skin = mat(0xf6cfa8), shirt = mat(0x4f9fe0), pants = mat(0x6b5140);
     const b = this.body;
@@ -170,11 +170,6 @@ export class Walker {
 // ---------------------------------------------------------------- biển chữ
 export function sign(text: string, color: string, width: number, x: number, y: number, z: number): THREE.Sprite {
   const s = makeSign(text, color); s.scale.set(width, width / 4, 1); s.position.set(x, y, z); return s;
-}
-/** Các điểm bao quanh một biển chữ, dùng để căn khung hình. */
-export function signPts(s: THREE.Sprite): THREE.Vector3[] {
-  const p = s.position, w = s.scale.x / 2, h = s.scale.y / 2;
-  return [V3(p.x, p.y - h, p.z - w), V3(p.x, p.y + h, p.z - w), V3(p.x, p.y - h, p.z + w), V3(p.x, p.y + h, p.z + w), V3(p.x - w * 0.5, p.y + h, p.z), V3(p.x + w * 0.5, p.y + h, p.z)];
 }
 
 // ---------------------------------------------------------------- điểm nhấn từng miền

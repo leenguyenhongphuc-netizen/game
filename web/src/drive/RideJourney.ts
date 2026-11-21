@@ -266,7 +266,7 @@ export class Journey implements Act {
       a = p < 0.5 ? THREE.MathUtils.lerp(0.26, 0.42, p * 2) : THREE.MathUtils.lerp(-0.44, -0.26, (p - 0.5) * 2);
       R = Math.max(sp.half * 2.3 + 13, sp.wide / 0.21); H = R * 0.8;
     } else { a = THREE.MathUtils.lerp(0.62, 1.9, sm); R = sp.radius * (cam.aspect < 1.3 ? 1.25 : 1); }
-    if (mode === 'may_bay') H += 4 * Math.sin(sm * Math.PI);
+    if (mode === 'may_bay') { H += (cx.portrait ? 4 : 13) * Math.sin(sm * Math.PI); if (!cx.portrait) a = -a; } // máy quay bên -x để nhìn ra bờ biển chữ S ở +x
     const lookZ = cx.portrait ? -sp.half * 0.35 : 0;
     cam.position.set(Math.sin(a) * R, v.position.y + H, Math.cos(a) * R + lookZ);
     cam.lookAt(0, v.position.y + sp.look, lookZ);

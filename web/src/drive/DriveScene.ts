@@ -204,7 +204,7 @@ function fuelStation(price: number): THREE.Group {
   const s = sign(`⛽ ${vnd(price)}/lít`, '#f08a24', 6.4); s.position.set(4.2, 6.6, 0); out.add(s);
   return out;
 }
-function overpass(): THREE.Group { const g = new THREE.Group(); g.add(box(0xc9cdd3, 0, 8.6, 0, 110, 0.9, 6), box(0xe6e8ec, 0, 9.4, -2.9, 110, 0.7, 0.25), box(0xe6e8ec, 0, 9.4, 2.9, 110, 0.7, 0.25)); for (const x of [-HW - 1.2, HW + 1.6, -HW * 3 - 5]) g.add(box(0xb8bec6, x, 4.1, 0, 0.9, 8.2, 3.4)); return bake(g, true); }
+function overpass(): THREE.Group { const g = new THREE.Group(); g.add(box(0xc9cdd3, 0, 10.6, 0, 110, 0.9, 6), box(0xe6e8ec, 0, 11.4, -2.9, 110, 0.7, 0.25), box(0xe6e8ec, 0, 11.4, 2.9, 110, 0.7, 0.25)); for (const x of [-HW - 1.2, HW + 1.6, -HW * 3 - 5]) g.add(box(0xb8bec6, x, 5.1, 0, 0.9, 10.2, 3.4)); return bake(g, true); }
 function tunnel(): THREE.Group {
   const g = new THREE.Group(), half = HW + 2.8, len = 56;
   const hill = mesh(GEO.sphere, mat(0x7fbf7a, { rough: 1 }), 0, 0, 0, 75, 26, len / 2 + 0.5); hill.castShadow = false;
@@ -324,7 +324,7 @@ export class DriveScene {
   // ---------------------------------------------------------------- dựng lộ trình
   private layout(roadSec: number) {
     const p = this.opts.plan, km = Math.max(1, this.roadKm);
-    const planned = Math.max(260, (roadSec - 12) * BASE);
+    const planned = Math.max(260, (roadSec - 17) * BASE);
     const want: { ev: Ev; f: number }[] = [];
     const mk = (type: Ev['type'], pre: number, post: number, extra: Partial<Ev> = {}): Ev => ({ type, s: 0, rs: 0, pre, post, dir: 1, name: '', exit: false, sigma: 0, done: false, retry: false, bend: 0, idx: 0, kind: '', objs: [], arms: [], lift: 0, mapAng: 0, ...extra });
     const js = [...(p.junctions ?? [])].filter((j) => j && isFinite(j.atKm)).sort((a, b) => a.atKm - b.atKm);
@@ -472,6 +472,8 @@ export class DriveScene {
   /** Dùng cho kiểm thử: giữ xe ở vị trí ngang x (tính từ tim đường); null để trả lại tay lái. */
   setX(x: number | null) { this.auto = x; }
   start() { this.running = true; }
+  /** Dùng cho kiểm thử: nhảy tới vị trí s trên chặng hiện tại (không tính sự kiện đã bỏ qua). */
+  warp(s: number) { this.s = s; this.nextSc = s + 6; for (const it of this.scen) { it.active = false; it.obj.visible = false; } const plan = this.mode === 'boat' ? this.seaPlan : this.tplan; while (this.tIdx < plan.length && plan[this.tIdx].s < s + 30) this.tIdx++; }
   private resize() { const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.fov = w / h < 0.9 ? 58 : 46; this.camera.updateProjectionMatrix(); }
 
   private applyLeg(first = false) {
@@ -508,7 +510,7 @@ export class DriveScene {
       const ex = this.exitDone; if (ex && this.s > ex.s + 60) want = lerp(V, 17, sm((this.s - ex.s - 60) / 50));
       for (const e of this.tolls) { const u = this.s - e.s; if (u > -42 && u < 4) want = Math.min(want, V * 0.5); }
       if (this.inAux()) for (const e of this.stations) { const u = this.s - e.s; if (Math.abs(u) > 64) continue; want = Math.min(want, V * 0.45); if (!e.done && u > -26 && u < 0 && this.fuel < tk.tankL - 0.5) want = Math.min(want, Math.max(4, V * 0.45 * (-u / 26))); }
-      if (this.fuel <= 0) want *= assist ? 0.6 : 0.3;
+      if (this.fuel <= 0) want = Math.min(want, BASE * this.mul * (assist ? 0.6 : 0.3));
     }
     if (this.slow > 0 && !assist) want *= 0.4;
     if (remain < 30) want = Math.min(want, Math.max(4, want * remain / 30));
@@ -516,6 +518,7 @@ export class DriveScene {
     this.speed += (want - this.speed) * Math.min(1, dt * (want < this.speed ? 4.5 : 2.0));
     this.slow = Math.max(0, this.slow - dt);
     const prev = this.s; this.s = Math.min(end, this.s + this.speed * dt);
+    if (!boat) this.roadEvents(prev, assist); // xét nút giao trước khi mép đường mới ép xe
     // ---- lái ngang
     let steer = this.btn;
     if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) steer -= 1;
@@ -526,10 +529,9 @@ export class DriveScene {
     this.px += this.pv * grip * dt;
     let lo = -(CH + 8), hi = CH + 8;
     if (!boat) { const e = this.edges(this.s); lo = e[0] + 1.15; hi = e[1] - 1.15; for (const t of this.tolls) { const u = this.s - t.s; if (u > -16 && u < 6) { const lane = clamp(Math.round(this.px / LW), -1, 1) * LW; this.px += (lane - this.px) * Math.min(1, dt * 5); } } }
-    if (this.px < lo) { this.px = Math.min(lo, this.px + 14 * dt + (lo - this.px) * Math.min(1, dt * 6)); this.pv = Math.max(0, this.pv); }
-    if (this.px > hi) { this.px = Math.max(hi, this.px - 14 * dt - (this.px - hi) * Math.min(1, dt * 6)); this.pv = Math.min(0, this.pv); }
+    if (this.px < lo) { this.px = Math.min(lo, this.px + 16 * dt + (lo - this.px) * Math.min(1, dt * 8)); this.pv = Math.max(0, this.pv); }
+    if (this.px > hi) { this.px = Math.max(hi, this.px - 16 * dt - (this.px - hi) * Math.min(1, dt * 8)); this.pv = Math.min(0, this.pv); }
     if (boat) { const off = Math.abs(this.px) > CH - 0.6; if (off && !this.offChan) this.bump('Lệch luồng!', 'bad'); this.offChan = off; }
-    else this.roadEvents(prev, assist);
     if (this.s >= end) {
       this.speed = 0;
       if (this.legIdx < this.legs.length - 1) { this.switching = 1.3; this.opts.onFlash?.(boat ? '🚚 Cập bến, xe lên bờ chạy tiếp!' : '⛴ Tới bến phà, xe xuống tàu ra khơi!'); }
@@ -615,7 +617,7 @@ export class DriveScene {
     return { phase: this.phase(), mode: this.mode, s, total: boat ? this.seaL : this.endS, px: this.px, lane: boat ? 0 : clamp(Math.round(this.px / LW), -1, 2), bounds: e, speed: this.speed,
       km: this.kmDoneBefore + (boat ? s / this.seaL * this.seaKm : this.kmBetween(0, s)), kmLeft: this.kmLeft(), fuel: this.fuel, fuelUsed: this.fuelUsed, detourKm: this.detourKm, refuelL: Math.round(this.refuelL * 10) / 10,
       stationsPassed: this.stationsPassed, tollsPassed: this.tollCount, etcLeft: this.etcLeft, tollCash: this.tollCash, offChannel: this.offChan, arrived: this.arrived, elapsed: this.elapsed, laneW: LW,
-      next: nx ? { type: nx.type, ahead: nx.s - s, dir: nx.dir, name: nx.name, exit: nx.exit } : null, cars, events: this.events.map((x) => ({ type: x.type, s: Math.round(x.s), dir: x.dir, done: x.done })) };
+      next: nx ? { type: nx.type, ahead: nx.s - s, dir: nx.dir, name: nx.name, exit: nx.exit } : null, cars, events: this.events.map((x) => ({ type: x.type, s: x.s, dir: x.dir, done: x.done })) };
   }
 
   // ---------------------------------------------------------------- vẽ từng khung
@@ -626,6 +628,8 @@ export class DriveScene {
     if (j.sigma && j.sigma !== c.sig) X += c.sig * j.bend * 0.004 * Math.max(0, c.s - j.s - 70) ** 2;
     return X;
   }
+  /** Biển chữ treo cao: ẩn khi sắp lướt qua máy quay để khỏi che xe. */
+  private near(o: THREE.Object3D, ahead: number) { for (const c of o.children) if ((c as THREE.Sprite).isSprite) c.visible = ahead > 13; }
   private slope(s: number) { return (this.center(s + 1.5) - this.center(s - 1.5)) / 3; }
   private spawnCar(p: { s: number; kind: string; x: number; v: number }) {
     const c = this.cars.find((i) => !i.active && i.kind === p.kind); if (!c) return;
@@ -686,7 +690,7 @@ export class DriveScene {
       const def = VEH[c.kind], seaKind = /ghe|da|thung|song/.test(c.kind);
       if (live) { const before = c.s; c.s += c.v * dt; if (c.vx) { c.x += c.vx * dt; if (Math.abs(c.x) > CH - 1.2) { c.x = Math.sign(c.x) * (CH - 1.2); c.vx = -c.vx; } } if (!boat) for (const j of this.juncs) if (j.sigma === 0 && j !== c.j && before <= j.s && c.s > j.s) { c.j = j; c.sig = c.x * j.dir > LW / 2 ? j.dir : -j.dir; } }
       const other = !!c.j && c.j.sigma !== 0 && c.j.sigma !== c.sig;
-      if (c.s < s - 16 || seaKind !== boat || (other && c.s - c.j!.s > 230)) { c.active = false; c.obj.visible = false; continue; }
+      if (c.s < s - 16 || seaKind !== boat || (c.kind === 'xemay' && c.s > this.exS + 6 && c.s < this.exS + 40) || (other && c.s - c.j!.s > 230)) { c.active = false; c.obj.visible = false; continue; }
       const X = this.carX(c); this.put(c.obj, c.s, X, seaKind ? Math.sin(t * 2 + c.s) * 0.1 : 0);
       if (!seaKind) c.obj.rotation.y = -Math.atan(this.slope(c.s)) * (c.kind === 'nguoc' ? -1 : 1);
       if (live && !c.hit && !other && Math.abs(c.s - s) < def.hl + myHl && Math.abs(X - this.cx - this.px) < def.hw + myHw) {
@@ -697,16 +701,16 @@ export class DriveScene {
     // ---- mốc dọc đường
     if (!boat) for (const e of this.events) {
       if (e.type === 'junction' && e.sigma !== 0) e.bend = Math.min(1, e.bend + dt / 1.2);
-      for (const o of e.objs) { const q = e.s + o.ds, vis = q > s - 70 && q < s + AHEAD + 40; o.o.visible = vis; if (vis) this.put(o.o, q, (o.base ? this.curve(q) + this.shift(q, e, 0) : this.center(q)) + o.x, o.o.position.y); }
+      for (const o of e.objs) { const q = e.s + o.ds, vis = q > s - 70 && q < s + AHEAD + 40; o.o.visible = vis; if (vis) { this.near(o.o, q - s); } if (vis) this.put(o.o, q, (o.base ? this.curve(q) + this.shift(q, e, 0) : this.center(q)) + o.x, o.o.position.y); }
       if (e.arms.length) { const u = s - e.s, open = u > -24 && !(e.kind === 'stop' && this.pause > 0.3); e.lift += ((open ? 1 : 0) - e.lift) * Math.min(1, dt * 6); for (const a of e.arms) a.rotation.z = -e.lift * 1.35; }
     }
-    for (const p of this.props) { const q = p.s > 1e8 ? this.endS + 5 : p.s, vis = p.mode === this.mode && q > s - 60 && q < s + AHEAD + 70; p.o.visible = vis; if (vis) this.put(p.o, q, this.center(q) + p.x, p.o.position.y); }
+    for (const p of this.props) { const q = p.s > 1e8 ? this.endS + 5 : p.s, vis = p.mode === this.mode && q > s - 60 && q < s + AHEAD + 70; p.o.visible = vis; if (vis) { this.near(p.o, q - s); this.put(p.o, q, this.center(q) + p.x, p.o.position.y); } }
     // ---- hạt bụi, máy quay
     for (const sp of this.sparks) { if (sp.life <= 0) continue; sp.life -= dt; sp.v.y -= 12 * dt; sp.m.position.addScaledVector(sp.v, dt); sp.m.position.z += this.speed * dt; sp.m.scale.setScalar(Math.max(0.01, 0.16 * sp.life)); if (sp.life <= 0) sp.m.visible = false; }
     this.shake = Math.max(0, this.shake - dt);
     const sh = this.shake * 0.5, portrait = this.camera.aspect < 0.9;
-    this.camera.position.set(this.px * 0.55 + (Math.random() - 0.5) * sh, (portrait ? 14 : 6.2) + (Math.random() - 0.5) * sh, portrait ? 16 : 10.5);
-    this.camera.lookAt(this.px * 0.7, 1.2, portrait ? -14 : -10);
+    this.camera.position.set(this.px * 0.55 + (Math.random() - 0.5) * sh, (portrait ? 14 : 9) + (Math.random() - 0.5) * sh, portrait ? 16 : 15.5);
+    this.camera.lookAt(this.px * 0.7, 1.2, portrait ? -14 : -12);
     this.renderer.render(this.scene, this.camera);
     this.tickAcc += dt;
     if (this.tickAcc > 0.12) { this.tickAcc = 0; this.opts.onTick?.(this.hud()); }
@@ -754,7 +758,7 @@ export class DriveScene {
   // ---------------------------------------------------------------- bản đồ chỉ đường
   private buildMap() {
     let x = 0, y = 0, ang = -Math.PI / 2;
-    const road = () => { this.mapRoad = [{ x, y, km: 0 }]; let prev = 0; for (const j of this.baseJ) { const km = j.rs * this.kmU; x += Math.cos(ang) * (km - prev); y += Math.sin(ang) * (km - prev); this.mapRoad.push({ x, y, km }); j.mapAng = ang; ang += j.dir * 0.8; prev = km; } x += Math.cos(ang) * (this.roadKm - prev); y += Math.sin(ang) * (this.roadKm - prev); this.mapRoad.push({ x, y, km: this.roadKm }); };
+    const road = () => { this.mapRoad = [{ x, y, km: 0 }]; let prev = 0; for (const j of this.baseJ) { const km = j.rs * this.kmU; x += Math.cos(ang) * (km - prev); y += Math.sin(ang) * (km - prev); this.mapRoad.push({ x, y, km }); j.mapAng = ang; ang += j.dir * 1.0; prev = km; } x += Math.cos(ang) * (this.roadKm - prev); y += Math.sin(ang) * (this.roadKm - prev); this.mapRoad.push({ x, y, km: this.roadKm }); };
     const sea = () => { this.mapSea = []; const n = 30, ox = x, oy = y, nx = -Math.sin(ang), ny = Math.cos(ang), ku = this.seaKm / this.seaL; for (let i = 0; i <= n; i++) { const q = i / n, l = this.chan(q * this.seaL) * ku * 2.5; this.mapSea.push({ x: ox + Math.cos(ang) * this.seaKm * q + nx * l, y: oy + Math.sin(ang) * this.seaKm * q + ny * l, km: this.seaKm * q }); } x = ox + Math.cos(ang) * this.seaKm; y = oy + Math.sin(ang) * this.seaKm; };
     for (const l of this.legs) if (l.mode === 'truck') road(); else sea();
   }
@@ -776,14 +780,14 @@ export class DriveScene {
     line(roadPts, '#ffffff', 7 * u); line(roadPts, '#3f8fd6', 4 * u);
     for (const d of this.detours) { const lp: [number, number][] = []; for (let i = 0; i <= 20; i++) lp.push(this.loopAt(d, i / 20)); line(lp, '#e0342b', 2.5 * u, [4 * u, 3 * u]); }
     const at = (e: Ev) => this.along(this.mapRoad, e.rs * this.kmU);
-    for (const e of this.events) { if (e.retry) continue; if (e.type === 'toll') { const [x, y] = T(at(e)); ctx.fillStyle = e.done ? '#b9a6d9' : '#7a4fd0'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * u; ctx.beginPath(); ctx.rect(x - 4 * u, y - 4 * u, 8 * u, 8 * u); ctx.fill(); ctx.stroke(); } else if (e.type === 'station') { dot(at(e), 6.5 * u, '#fff3d6', '#f08a24'); text(at(e), '⛽', 8.5 * u); } else if (e.type === 'junction') dot(at(e), 4.2 * u, e.sigma === e.dir ? '#4caf3f' : '#ffd23f', '#7a4a22'); }
+    for (const e of this.events) { if (e.retry) continue; if (e.type === 'toll') { const [x, y] = T(at(e)); ctx.fillStyle = e.done ? '#b9a6d9' : '#7a4fd0'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * u; ctx.beginPath(); ctx.rect(x - 3.2 * u, y - 3.2 * u, 6.4 * u, 6.4 * u); ctx.fill(); ctx.stroke(); } else if (e.type === 'station') { dot(at(e), 5.5 * u, '#fff3d6', '#f08a24'); text(at(e), '⛽', 7 * u); } else if (e.type === 'junction') dot(at(e), 4.2 * u, e.sigma === e.dir ? '#4caf3f' : '#ffd23f', '#7a4a22'); }
     this.gates.forEach((g, i) => { if (!this.mapSea.length) return; const p = this.along(this.mapSea, g / this.seaL * this.seaKm); dot(p, 5 * u, '#ffffff', i % 2 ? '#2faa5a' : '#e0342b'); text(p, String(i + 1), 7 * u); });
     const first = this.legs[0].mode === 'truck' ? roadPts[0] : seaPts[0], lastL = this.legs[this.legs.length - 1].mode === 'truck' ? roadPts : seaPts, last = lastL[lastL.length - 1];
     dot(first, 4.5 * u, '#4caf3f'); dot(last, 6 * u, '#e0342b'); text(last, '★', 8 * u, '#ffffff');
     // vị trí xe
     const d = this.det(); let me: [number, number];
     if (this.mode === 'boat') me = this.along(this.mapSea, this.s / this.seaL * this.seaKm); else if (d) me = this.loopAt(d, (this.s - d.from) / d.len); else me = this.along(this.mapRoad, this.routeS() * this.kmU);
-    const [mx, my] = T(me); ctx.beginPath(); ctx.arc(mx, my, 7.5 * u, 0, 7); ctx.fillStyle = '#f08a24'; ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.4 * u; ctx.stroke(); ctx.beginPath(); ctx.arc(mx, my, 11 * u, 0, 7); ctx.strokeStyle = '#f08a2466'; ctx.lineWidth = 2 * u; ctx.stroke();
+    const [mx, my] = T(me); ctx.beginPath(); ctx.arc(mx, my, 6 * u, 0, 7); ctx.fillStyle = '#f08a24'; ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.4 * u; ctx.stroke(); ctx.beginPath(); ctx.arc(mx, my, 9.5 * u, 0, 7); ctx.strokeStyle = '#f08a2466'; ctx.lineWidth = 2 * u; ctx.stroke();
     if (this.mode === 'boat') { const cx = w - 15 * u, cy = 15 * u, a = -this.phi - Math.PI / 2; ctx.beginPath(); ctx.arc(cx, cy, 10 * u, 0, 7); ctx.fillStyle = '#ffffffdd'; ctx.fill(); ctx.strokeStyle = '#7a4a22'; ctx.lineWidth = 1.5 * u; ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * 8 * u, cy + Math.sin(a) * 8 * u); ctx.lineTo(cx + Math.cos(a + 2.5) * 5 * u, cy + Math.sin(a + 2.5) * 5 * u); ctx.lineTo(cx + Math.cos(a - 2.5) * 5 * u, cy + Math.sin(a - 2.5) * 5 * u); ctx.closePath(); ctx.fillStyle = '#e0342b'; ctx.fill(); ctx.font = `800 ${6 * u}px sans-serif`; ctx.fillStyle = '#3b2a17'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('B', cx + Math.cos(a) * 3 * u * 0, cy + 0.5 * u); }
   }
 

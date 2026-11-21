@@ -6,7 +6,7 @@ import { GEO, mat, mesh, rng } from '../scene/plants.ts';
 import { SCENERY, THEMES, bake } from './DriveScene.ts';
 import {
   FERRY_DECK, FERRY_PLANK_Z, PLANE_DOOR_Z, PLANE_Y, TRAIN_DOOR_Z, V3, Walker, buildBus, buildFerry, buildMinibus, buildPlane, buildTaxi, buildTrain,
-  chamTower, coffeeHill, ease, fishRaft, karst, lighthouse, nhaRong, seg, sign, signPts, terraces,
+  chamTower, coffeeHill, ease, fishRaft, karst, lighthouse, nhaRong, seg, sign, terraces,
 } from './RideParts.ts';
 
 export type RideMode = 'xe_khach' | 'tau_hoa' | 'may_bay' | 'tau_thuy';
@@ -17,7 +17,7 @@ export interface Ctx {
   /** Thời gian chạy từ đầu hoạt cảnh (giây). */
   time: number;
   /** Đặt máy quay theo hướng (yaw, pitch) sao cho mọi điểm nằm trong vùng an toàn của khung hình. */
-  shoot(points: THREE.Vector3[], yaw: number, pitch: number): void;
+  shoot(points: THREE.Vector3[], yaw: number, pitch: number, signs?: THREE.Sprite[]): void;
 }
 export interface Act {
   stage: 1 | 2 | 3 | 4 | 5;
@@ -76,7 +76,7 @@ export class Village {
   private w = new Walker();
   private car: THREE.Group;
   private door: number; private sideX: number; private half: number; private high: number;
-  private pts1: THREE.Vector3[]; private pts2: THREE.Vector3[];
+  private pts1: THREE.Vector3[]; private pts2: THREE.Vector3[]; private signs: THREE.Sprite[] = [];
   private path = [V3(10.2, 0, 6.5), V3(6.5, 0, 6.4), V3(5.0, 0, 1.4)];
   private mode: RideMode; private from: string;
 
@@ -93,7 +93,7 @@ export class Village {
     box(S, 0xc99a68, 7.0, 0.62, -5.0, 0.55, 0.12, 3.4); for (const z of [-6.4, -3.6]) box(S, 0x8a6a4a, 7.0, 0.3, z, 0.4, 0.6, 0.12);
     post(S, 0x8f97a3, 4.5, 0, -0.6, 2.6, 0.07);
     const disc = mesh(GEO.cyl, mat(0x2a7fd6), 4.5, 2.9, -0.6, 0.48, 0.1, 0.48); disc.rotation.z = Math.PI / 2; S.add(disc);
-    const label = sign(`Bến xe ${from}`, '#2a7fd6', 7.6, 6.4, 4.6, -5.0); this.root.add(label);
+    const label = sign(`Bến xe ${from}`, '#2a7fd6', 6.6, 7.3, 4.7, 3.7); this.root.add(label); post(S, 0x8f97a3, 7.3, 0, 3.7, 3.9, 0.08);
     // Vườn nhà: hàng rào, cổng, nhà, lối đi
     box(S, 0xb7e69a, 14.6, 0.03, 9.2, 12, 0.08, 13.6); box(S, 0xe9dfc8, 7.4, 0.05, 6.5, 3.4, 0.1, 1.5);
     for (let z = 2.6; z <= 16; z += 1.1) if (z < 5.4 || z > 7.6) post(S, 0xfff6e2, 8.6, 0, z, 1.05, 0.08);
@@ -113,9 +113,9 @@ export class Village {
     [this.door, this.sideX, this.half, this.high] = mode === 'xe_khach' ? [-4.1, 1.3, 5.1, 3.8] : mode === 'may_bay' ? [0.3, 0.9, 2.2, 2.0] : [-1.5, 1.07, 2.9, 2.9];
     this.car = bake(raw, true); this.car.position.set(1.9, 0, 120); this.root.add(this.car, this.w.g);
     this.w.g.position.copy(this.path[0]); this.w.g.rotation.y = -Math.PI / 2;
-    this.pts1 = [V3(10.4, 0, 8.4), V3(8.6, 3.2, 8.2), V3(4, 0, -8.2), V3(0, 0, 0), ...signPts(label)];
+    this.pts1 = [V3(10.4, 0, 8.4), V3(8.6, 3.2, 8.2), V3(4, 0, -8.2), V3(0, 0, 0)]; this.signs = [label];
     const z0 = 1.4 - this.door;
-    this.pts2 = [V3(0.4, 0, z0 - this.half), V3(3.4, this.high, z0 + this.half), V3(3.4, 0, z0 + this.half), V3(0.4, this.high, z0 - this.half), V3(5.6, 0, 1.4), ...signPts(label)];
+    this.pts2 = [V3(0.4, 0, z0 - this.half), V3(3.4, this.high, z0 + this.half), V3(3.4, 0, z0 + this.half), V3(0.4, this.high, z0 - this.half), V3(9, 0, 8.2), V3(4, 0, -8.2)]; this.signs = [label];
   }
 
   first(): Act {
@@ -126,7 +126,7 @@ export class Village {
         const u = seg(t, 0.25, D - 0.55);
         this.w.walk(this.path, u, c.time);
         if (u >= 1) this.w.face(-1, 0.25);
-        c.shoot(this.pts1, c.portrait ? 2.5 : 1.98, c.portrait ? 0.34 : 0.3);
+        c.shoot(this.pts1, c.portrait ? 2.86 : 1.98, c.portrait ? 0.52 : 0.3, this.signs);
       },
     };
   }
@@ -143,7 +143,7 @@ export class Village {
         const b = seg(t, 2.0, 3.0), end = this.path[2];
         this.w.g.position.set(THREE.MathUtils.lerp(end.x, 1.9 + this.sideX + 0.3, b), 0, end.z);
         this.w.face(-1, b > 0 ? 0 : 0.25); this.w.pose(c.time * 11, b > 0 && b < 1); this.w.hide(seg(b, 0.72, 1));
-        c.shoot(this.pts2, c.portrait ? 2.5 : 2.02, c.portrait ? 0.32 : 0.27);
+        c.shoot(this.pts2, c.portrait ? 2.86 : 2.2, c.portrait ? 0.5 : 0.27, this.signs);
       },
     };
   }
@@ -157,7 +157,7 @@ export class TrainStation {
   private door: THREE.Mesh;
   private puffs: THREE.Mesh[] = [];
   private toot: THREE.Sprite;
-  private pts: THREE.Vector3[];
+  private pts: THREE.Vector3[]; private signs: THREE.Sprite[] = [];
   private name: string;
 
   constructor(zone: Zone, name: string, arrival: boolean) {
@@ -188,7 +188,7 @@ export class TrainStation {
     this.train.position.y = 0.3; this.root.add(this.train, this.w.g);
     for (let i = 0; i < 7; i++) { const m = mesh(GEO.ball, mat(0xffffff, { transparent: 0.8 }), 0, -50, 0, 0.5); m.castShadow = false; this.puffs.push(m); this.root.add(m); }
     this.toot = sign('Tu tu… tu!', '#f08a6c', 4.4, 3, 8.4, -14); this.toot.visible = false; this.root.add(this.toot);
-    this.pts = [V3(-1.4, 0, -18.7), V3(1.4, 0, 18.7), V3(0, 4.9, -18.7), V3(0, 4.9, 18.7), V3(9.2, 0.9, 12), V3(9.2, 0.9, -8), ...signPts(label)];
+    this.pts = [V3(-1.4, 0, -18.7), V3(1.4, 0, 12), V3(0, 4.9, -18.7), V3(0, 4.9, 12), V3(9.2, 0.9, 6), V3(9.2, 0.9, -12)]; this.signs = [label];
   }
 
   private steam(time: number, power: number) {
@@ -197,10 +197,10 @@ export class TrainStation {
       m.position.set(Math.sin(k * 5 + i) * 0.5, 4.9 + k * (3 + power * 3), this.train.position.z - 16.8 + k * power * 4); m.scale.setScalar(0.35 + k * (0.7 + power));
     });
   }
-  private cam(c: Ctx) { c.shoot(this.pts, c.portrait ? 2.72 : 2.18, c.portrait ? 0.2 : 0.17); }
+  private cam(c: Ctx) { c.shoot(this.pts, c.portrait ? 2.84 : 2.3, c.portrait ? 0.46 : 0.17, this.signs); }
 
   depart(): Act {
-    const D = 6, P = [V3(5.4, 0.9, 12.5), V3(3.6, 0.9, TRAIN_DOOR_Z + 0.4), V3(1.9, 0.9, TRAIN_DOOR_Z)];
+    const D = 6, P = [V3(5.6, 0.9, 3.4), V3(3.6, 0.9, TRAIN_DOOR_Z + 0.4), V3(1.9, 0.9, TRAIN_DOOR_Z)];
     this.w.g.position.copy(P[0]); this.w.g.rotation.y = Math.PI;
     return {
       stage: 3, caption: `Lên tàu ở ga ${this.name}`, duration: D, root: this.root, fog: [110, 330],
@@ -218,7 +218,7 @@ export class TrainStation {
   }
 
   arrive(): Act {
-    const D = 5.2, P = [V3(1.9, 0.9, TRAIN_DOOR_Z), V3(4.2, 0.9, TRAIN_DOOR_Z - 0.4), V3(6.4, 0.9, -3.6)];
+    const D = 5.2, P = [V3(1.9, 0.9, TRAIN_DOOR_Z), V3(4.2, 0.9, TRAIN_DOOR_Z - 0.4), V3(6.4, 0.9, TRAIN_DOOR_Z - 4.4)];
     this.w.hide(1);
     return {
       stage: 5, caption: `Tàu vào ga ${this.name}`, duration: D, root: this.root, fog: [110, 330],
@@ -241,7 +241,7 @@ export class Airport {
   private plane = new THREE.Group();
   private stairs = new THREE.Group();
   private door: THREE.Mesh;
-  private pts: THREE.Vector3[];
+  private pts: THREE.Vector3[]; private signs: THREE.Sprite[] = [];
   private name: string;
   private static readonly STAIR_X = 6.3;
 
@@ -276,10 +276,10 @@ export class Airport {
     for (const z of [-0.68, 0.68]) { const rail = mesh(GEO.box, mat(0xf2c65c), -2.0, 2.0, z, 4.6, 0.1, 0.08); rail.rotation.z = -0.49; st.add(rail, mesh(GEO.box, mat(0xf2c65c), -4.5, 3.0, z, 1.0, 0.1, 0.08), mesh(GEO.cyl, mat(0xf2c65c), -4.05, 2.6, z, 0.04, 0.9, 0.04), mesh(GEO.cyl, mat(0xf2c65c), -0.1, 0.6, z, 0.04, 0.9, 0.04)); }
     this.stairs.add(bake(st, true)); this.stairs.position.set(Airport.STAIR_X, 0, PLANE_DOOR_Z);
     this.root.add(this.plane, this.stairs, this.w.g);
-    this.pts = [V3(-8.3, 0, -9.4), V3(8.3, 0, 10.6), V3(8.3, 0, -9.4), V3(-8.3, 0, 10.6), V3(0, 6, 9.8), V3(0, 3.6, -9.2), V3(11, 0, -2), ...signPts(label)];
+    this.pts = [V3(-8.3, 0, -9.4), V3(8.3, 0, 10.6), V3(8.3, 0, -9.4), V3(-8.3, 0, 10.6), V3(0, 6, 9.8), V3(0, 3.6, -9.2), V3(11, 0, -2)]; this.signs = [label];
   }
 
-  private cam(c: Ctx) { c.shoot(this.pts, c.portrait ? 2.5 : 2.05, c.portrait ? 0.26 : 0.2); }
+  private cam(c: Ctx) { c.shoot(this.pts, c.portrait ? 2.25 : 2.05, c.portrait ? 0.5 : 0.2, this.signs); }
 
   depart(): Act {
     const D = 6.2, X = Airport.STAIR_X, P = [V3(10.6, 0, -1.6), V3(X + 0.4, 0, PLANE_DOOR_Z), V3(X - 4.1, 2.16, PLANE_DOOR_Z), V3(1.5, 2.16, PLANE_DOOR_Z)];
@@ -324,7 +324,7 @@ export class Port {
   private ferry: THREE.Group;
   private plank: THREE.Mesh;
   private gulls: THREE.Group[] = [];
-  private pts: THREE.Vector3[];
+  private pts: THREE.Vector3[]; private signs: THREE.Sprite[] = [];
   private name: string; private s: number;
 
   /** s = +1: đất liền ở phía +z (tàu rời bến đi về -z); s = -1: đất liền ở phía -z (tàu cập bến). */
@@ -346,7 +346,7 @@ export class Port {
     for (let z = -13; z <= 13; z += 6.5) { post(S, 0xe0342b, 4.5, 1.3, z, 0.6, 0.2); post(S, 0x8a6a4a, 8.5, 1.3, z, 1.2, 0.07); }
     box(S, 0x8a6a4a, 8.5, 2.4, 0, 0.08, 0.08, 26);
     for (const z of [-9, 9]) { box(S, 0xf08a6c, 7.6, 1.7, z, 0.9, 0.7, 0.9); box(S, 0x6fb7d9, 7.6, 1.6, z + 1.2, 0.8, 0.5, 0.8); }
-    const label = sign(arrival ? `Chào mừng đến ${name}` : `Bến cảng ${name}`, arrival ? '#d9482b' : '#2a7fd6', arrival ? 14 : 12, 10, 8.4, s * 19); this.root.add(label);
+    const label = sign(arrival ? `Chào mừng đến ${name}` : `Bến cảng ${name}`, arrival ? '#d9482b' : '#2a7fd6', arrival ? 14 : 12, 10, 8.4, s * 16); this.root.add(label);
     // Biển phía sau: đảo nhỏ, ghe, bè cá, hải đăng
     for (let i = 0; i < 9; i++) prop(S, SCENERY[['islet', 'ghe', 'seastone', 'ghe'][i % 4]](), -22 - r() * 80, 0, -s * (r() * 110) + s * 6, 1.1 + r() * 0.7, r() * 6);
     prop(S, fishRaft(), -30, 0, -s * 14, 1, 0.4); prop(S, lighthouse(), -70, 0, -s * 52);
@@ -360,7 +360,7 @@ export class Port {
       for (const k of [-1, 1]) { const wing = mesh(GEO.box, mat(0xffffff), k * 0.55, 0, 0, 1.1, 0.05, 0.34); wing.castShadow = false; gull.add(wing); }
       gull.add(mesh(GEO.ball, mat(0xffffff), 0, 0, 0, 0.2, 0.16, 0.4)); this.gulls.push(gull); this.root.add(gull);
     }
-    this.pts = [V3(-2.7, 0, -9.6), V3(2.7, 0, 8), V3(0, 7, 3), V3(0, 4, -9), V3(9, 1.3, 14), V3(9, 1.3, -14), V3(9, 1.3, s * 16), ...signPts(label)];
+    this.pts = [V3(-2.7, 0, -9.6), V3(2.7, 0, 8), V3(0, 7, 3), V3(0, 4, -9), V3(9, 1.3, 11), V3(9, 1.3, -11)]; this.signs = [label];
   }
 
   private common(c: Ctx, moving: boolean) {
@@ -370,8 +370,8 @@ export class Port {
       const a = time * 0.5 + i * 1.6; g.position.set(Math.cos(a) * (8 + i * 2), 9 + Math.sin(time * 1.4 + i) * 0.8 + i * 0.5, f.position.z + Math.sin(a) * (7 + i)); g.rotation.y = -a;
       const flap = Math.sin(time * 9 + i) * 0.55; g.children[0].rotation.z = flap; g.children[1].rotation.z = -flap;
     });
-    const yaw = this.s > 0 ? (c.portrait ? 2.45 : 1.98) : (c.portrait ? 0.72 : 1.2);
-    c.shoot(this.pts, yaw, c.portrait ? 0.3 : 0.24);
+    const yaw = this.s > 0 ? (c.portrait ? 2.8 : 1.98) : (c.portrait ? 0.36 : 1.2);
+    c.shoot(this.pts, yaw, c.portrait ? 0.5 : 0.24, this.signs);
   }
   private deckPath(): THREE.Vector3[] {
     const d = FERRY_DECK + 0.25;
@@ -415,7 +415,7 @@ export class BusStation {
   readonly root = new THREE.Group();
   private w = new Walker();
   private bus: THREE.Group;
-  private pts: THREE.Vector3[];
+  private pts: THREE.Vector3[]; private signs: THREE.Sprite[] = [];
   private name: string;
 
   constructor(zone: Zone, name: string) {
@@ -436,7 +436,7 @@ export class BusStation {
     backdrop(S, this.root, zone, r, 26);
     this.root.add(bake(S, true));
     this.bus = bake(buildBus(), true); this.bus.position.set(1.9, 0, 90); this.root.add(this.bus, this.w.g);
-    this.pts = [V3(0.5, 0, -5.2), V3(3.3, 0, 5.2), V3(0.5, 3.8, 5.2), V3(3.3, 3.8, -5.2), V3(7.4, 0, -6.6), ...signPts(label)];
+    this.pts = [V3(0.5, 0, -5.2), V3(3.3, 0, 5.2), V3(0.5, 3.8, 5.2), V3(3.3, 3.8, -5.2), V3(7.4, 0, -6.6)]; this.signs = [label];
   }
 
   arrive(): Act {
@@ -449,7 +449,7 @@ export class BusStation {
         this.bus.position.z = 70 * (1 - k) ** 2; this.bus.position.y = bob(c.time, k < 1 ? 1 : 0);
         const u = seg(t, 3.0, 4.7);
         if (t >= 3.0) { this.w.walk(P, u, c.time); this.w.hide(1 - seg(u, 0, 0.1)); if (u >= 1) this.w.face(1, -0.5); }
-        c.shoot(this.pts, c.portrait ? 2.5 : 2.02, c.portrait ? 0.27 : 0.2);
+        c.shoot(this.pts, c.portrait ? 2.4 : 2.02, c.portrait ? 0.48 : 0.2, this.signs);
       },
     };
   }
