@@ -2,7 +2,7 @@
 // Giá tham chiếu (refPrice, đồng/kg) ở đây là GIÁ MẪU để khởi động hệ thống,
 // không phải giá thị trường đã kiểm chứng. Giá thật được nạp qua /api/admin/prices.
 
-export type Kind = 'trai' | 'leo' | 'ngan' | 'cu' | 'cn' | 'lua';
+export type Kind = 'trai' | 'leo' | 'ngan' | 'cu' | 'cn' | 'lua' | 'hoa';
 export type Zone = 'bac' | 'trung' | 'taynguyen' | 'nam' | 'dao';
 
 export interface Step { name: string; desc: string }
@@ -12,11 +12,14 @@ export interface Crop {
   yieldKg: number;    // kg mỗi ô 25 m² mỗi vụ
   growHours: number;  // tổng thời gian thật của một vụ khi TIME_SCALE = 1
   process?: string;   // quy trình riêng; mặc định dùng quy trình theo kind
+  season: number[];   // các tháng chính vụ (1–12); thu hoạch đúng vụ được thêm sản lượng
 }
 export interface Specialty { id: string; name: string; crop: string; regionId: string; refPrice: number }
 export interface Region {
   id: string; name: string; province: string; formerProvince?: string;
   zone: Zone; lat: number; lng: number; island?: boolean;
+  /** Vùng đặc biệt có rất nhiều loại cây, cả trái, rau và hoa (Đà Lạt). */
+  special?: boolean;
 }
 
 /** 34 tỉnh, thành phố sau sắp xếp đơn vị hành chính năm 2025. */
@@ -90,6 +93,15 @@ export const PROCESSES: Record<string, Step[]> = {
     s('Bón thúc đẻ nhánh, đón đòng', 'Bón đúng thời điểm lúa đẻ nhánh và làm đòng.'),
     s('Thăm đồng, phòng rầy', 'Theo dõi rầy nâu, đạo ôn; chỉ xử lý khi tới ngưỡng.'),
     s('Gặt, phơi thóc', 'Gặt khi lúa chín 85–90%, phơi thóc đến độ ẩm bảo quản.'),
+  ],
+  hoa: [
+    s('Ươm giống trong khay', 'Gieo hạt hoặc giâm cành trong khay ươm, giữ ẩm và che nắng nhẹ.'),
+    s('Trồng luống trong nhà kính', 'Lên luống cao trong nhà kính, trồng cây con đúng khoảng cách.'),
+    s('Tưới phun sương', 'Tưới phun sương sáng sớm để lá không úng và đất luôn ẩm.'),
+    s('Bấm ngọn, cắm lưới đỡ', 'Bấm ngọn cho cây đẻ nhánh, căng lưới đỡ để thân mọc thẳng.'),
+    s('Chong đèn điều khiển ra hoa', 'Thắp đèn ban đêm để kéo dài ngày, cho hoa nở đúng dịp cần bán.'),
+    s('Tỉa nụ phụ, phòng nấm', 'Ngắt nụ phụ để nụ chính to; giữ nhà kính thoáng để tránh nấm.'),
+    s('Cắt hoa lúc sáng sớm', 'Cắt hoa khi còn sương, ngâm nước ngay rồi bó theo cỡ.'),
   ],
   thanh_long: [
     s('Đúc trụ, làm đất', 'Chôn trụ xi măng, lên mô đất quanh trụ, bón lót phân chuồng.'),
@@ -198,11 +210,37 @@ const cropRows: [string, string, string, Kind, number, number, number, string?][
   ['dau_da', 'Dâu da', '🟡', 'trai', 35000, 40, 30],
   ['hat_bang', 'Hạt bàng', '🌰', 'trai', 200000, 5, 36],
   ['sim', 'Sim', '🫐', 'ngan', 60000, 15, 20],
+  ['hoa_hong', 'Hoa hồng', '🌹', 'hoa', 60000, 20, 12],
+  ['cam_tu_cau', 'Cẩm tú cầu', '💠', 'hoa', 50000, 20, 14],
+  ['hoa_cuc', 'Hoa cúc', '🌼', 'hoa', 40000, 25, 12],
+  ['hoa_ly', 'Hoa ly', '🌷', 'hoa', 120000, 12, 16],
+  ['dia_lan', 'Địa lan', '🌸', 'hoa', 180000, 6, 30],
+  ['oai_huong', 'Oải hương', '🪻', 'hoa', 90000, 10, 16],
+  ['khoai_tay', 'Khoai tây', '🥔', 'cu', 18000, 60, 12],
+  ['bap_su', 'Bắp sú', '🥬', 'ngan', 10000, 90, 10],
+  ['ca_chua', 'Cà chua', '🍅', 'ngan', 15000, 80, 12],
 ];
+
+const ALL_YEAR = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+/** Tháng chính vụ của từng loại cây (ước lượng theo lịch thu hoạch phổ biến; cần chuyên gia rà lại). */
+const SEASONS: Record<string, number[]> = {
+  thanh_long: [5, 6, 7, 8, 9, 10], nho: [12, 1, 2, 3, 4, 5], tao: [12, 1, 2, 3], toi: [2, 3, 4], hanh: [1, 2, 3, 4],
+  vai: [5, 6, 7], nhan: [7, 8, 9], buoi: [8, 9, 10, 11, 12, 1], cam: [10, 11, 12, 1, 2], quyt: [11, 12, 1, 2],
+  xoai: [3, 4, 5, 6], sau_rieng: [5, 6, 7, 8], mang_cut: [5, 6, 7, 8], chom_chom: [5, 6, 7, 8], vu_sua: [12, 1, 2, 3],
+  khom: [3, 4, 5, 6], dua: ALL_YEAR, chuoi: ALL_YEAR, na: [7, 8, 9], man: [5, 6, 7], dau_tay: [12, 1, 2, 3, 4],
+  hong: [9, 10, 11, 12], bo: [5, 6, 7, 8, 9], le: [7, 8, 9], ca_phe: [10, 11, 12, 1], ho_tieu: [2, 3, 4, 5],
+  che: [3, 4, 5, 6, 7, 8, 9, 10], dieu: [2, 3, 4, 5], mac_ca: [8, 9, 10], que: [3, 4, 8, 9], hoi: [7, 8, 9, 11, 12],
+  lua: [5, 6, 9, 10], hat_de: [8, 9, 10], mia: [11, 12, 1, 2, 3], sen: [5, 6, 7, 8], thot_not: [11, 12, 1, 2, 3, 4, 5],
+  lon_bon: [8, 9, 10], chanh: ALL_YEAR, chanh_day: [5, 6, 7, 8, 9, 10, 11], khoai_lang: [11, 12, 1, 2, 3, 4],
+  atiso: [10, 11, 12, 1, 2], mang_tay: ALL_YEAR, ca_rot: [12, 1, 2, 3, 4], oi: ALL_YEAR, dau_da: [5, 6, 7],
+  hat_bang: [7, 8, 9], sim: [6, 7, 8], hoa_hong: ALL_YEAR, cam_tu_cau: [3, 4, 5, 6, 7, 8, 9, 10], hoa_cuc: [10, 11, 12, 1, 2],
+  hoa_ly: [12, 1, 2], dia_lan: [12, 1, 2], oai_huong: [3, 4, 5, 6, 7], khoai_tay: [12, 1, 2, 3], bap_su: [11, 12, 1, 2, 3],
+  ca_chua: [11, 12, 1, 2, 3, 4],
+};
 
 export const CROPS: Record<string, Crop> = Object.fromEntries(
   cropRows.map(([id, name, emoji, kind, refPrice, yieldKg, growHours, process]) => [
-    id, { id, name, emoji, kind, refPrice, yieldKg, growHours, process },
+    id, { id, name, emoji, kind, refPrice, yieldKg, growHours, process, season: SEASONS[id] ?? ALL_YEAR },
   ]),
 );
 
@@ -268,11 +306,11 @@ const regionRows: [string, string, string, string | null, Zone, number, number, 
     ['dua_tam_quan', 'Dừa Tam Quan', 'dua']]],
   ['kh_camlam', 'Cam Lâm', 'Khánh Hòa', null, 'trung', 12.07, 109.1, false, [
     ['xoai_cam_lam', 'Xoài Cam Lâm', 'xoai'], ['sau_rieng_khanh_son', 'Sầu riêng Khánh Sơn', 'sau_rieng']]],
-  ['kh_ninhphuoc', 'Ninh Phước', 'Khánh Hòa', 'Ninh Thuận', 'trung', 11.52, 108.93, false, [
-    ['nho_ninh_thuan', 'Nho Ninh Thuận', 'nho'], ['tao_ninh_thuan', 'Táo xanh Ninh Thuận', 'tao'],
+  ['kh_ninhphuoc', 'Ninh Sơn', 'Khánh Hòa', 'Ninh Thuận', 'trung', 11.7, 108.78, false, [
+    ['nho_ninh_thuan', 'Nho Ninh Sơn', 'nho'], ['tao_ninh_thuan', 'Táo xanh Ninh Thuận', 'tao'],
     ['toi_phan_rang', 'Tỏi Phan Rang', 'toi', 0.8], ['mang_tay_ninh_thuan', 'Măng tây xanh Ninh Thuận', 'mang_tay']]],
   ['ld_hamthuannam', 'Hàm Thuận Nam', 'Lâm Đồng', 'Bình Thuận', 'trung', 10.85, 107.9, false, [
-    ['thanh_long_binh_thuan', 'Thanh long Bình Thuận', 'thanh_long']]],
+    ['thanh_long_binh_thuan', 'Thanh long Hàm Thuận', 'thanh_long']]],
   // ---- Tây Nguyên
   ['qng_dakha', 'Đăk Hà', 'Quảng Ngãi', 'Kon Tum', 'taynguyen', 14.52, 107.92, false, [
     ['ca_phe_dak_ha', 'Cà phê Đăk Hà', 'ca_phe']]],
@@ -282,7 +320,11 @@ const regionRows: [string, string, string, string | null, Zone, number, number, 
     ['ca_phe_bmt', 'Cà phê Buôn Ma Thuột', 'ca_phe'], ['sau_rieng_krong_pak', 'Sầu riêng Krông Pắc', 'sau_rieng'], ['bo_dak_lak', 'Bơ Đắk Lắk', 'bo']]],
   ['ld_dalat', 'Đà Lạt', 'Lâm Đồng', null, 'taynguyen', 11.94, 108.44, false, [
     ['dau_tay_da_lat', 'Dâu tây Đà Lạt', 'dau_tay'], ['hong_da_lat', 'Hồng Đà Lạt', 'hong'],
-    ['atiso_da_lat', 'Atiso Đà Lạt', 'atiso'], ['ca_phe_cau_dat', 'Cà phê Arabica Cầu Đất', 'ca_phe', 1.5]]],
+    ['atiso_da_lat', 'Atiso Đà Lạt', 'atiso'], ['ca_phe_cau_dat', 'Cà phê Arabica Cầu Đất', 'ca_phe', 1.5],
+    ['hoa_hong_da_lat', 'Hoa hồng Đà Lạt', 'hoa_hong'], ['cam_tu_cau_da_lat', 'Cẩm tú cầu Đà Lạt', 'cam_tu_cau'],
+    ['hoa_cuc_da_lat', 'Hoa cúc Đà Lạt', 'hoa_cuc'], ['hoa_ly_da_lat', 'Hoa ly Đà Lạt', 'hoa_ly'],
+    ['dia_lan_da_lat', 'Địa lan Đà Lạt', 'dia_lan'], ['oai_huong_da_lat', 'Oải hương Đà Lạt', 'oai_huong'],
+    ['khoai_tay_da_lat', 'Khoai tây Đà Lạt', 'khoai_tay'], ['bap_su_da_lat', 'Bắp sú Đà Lạt', 'bap_su'], ['ca_chua_da_lat', 'Cà chua Đà Lạt', 'ca_chua']]],
   ['ld_baoloc', 'Bảo Lộc', 'Lâm Đồng', null, 'taynguyen', 11.55, 107.81, false, [
     ['che_bao_loc', 'Chè Bảo Lộc', 'che'], ['sau_rieng_da_huoai', 'Sầu riêng Đạ Huoai', 'sau_rieng'], ['bo_bao_loc', 'Bơ Bảo Lộc', 'bo']]],
   ['ld_daksong', 'Đắk Song', 'Lâm Đồng', 'Đắk Nông', 'taynguyen', 12.25, 107.6, false, [
@@ -343,6 +385,41 @@ for (const [id, name, province, former, zone, lat, lng, island, sps] of regionRo
     if (SPECIALTIES[sid]) throw new Error(`Trùng mã đặc sản: ${sid}`);
     SPECIALTIES[sid] = { id: sid, name: sname, crop, regionId: id, refPrice: Math.round((base.refPrice * (mult ?? 1)) / 500) * 500 };
   }
+}
+
+REGIONS.ld_dalat.special = true;
+
+// ---------------------------------------------------------------------------
+// Doanh nghiệp thu mua trong game: tên hư cấu, không gắn với thương hiệu thật nào.
+// ---------------------------------------------------------------------------
+export interface Npc { id: string; name: string; logo: string; color: string; tagline: string; role: 'thuong_lai' | 'che_bien' | 'xuat_khau' | 'sieu_thi' }
+export const NPCS: Npc[] = [
+  { id: 'vua_chin_cay', name: 'Vựa Trái Cây Chín Cây', logo: '🧺', color: '#e8743b', tagline: 'Chín cây mới mua, xanh xanh xin kiếu', role: 'thuong_lai' },
+  { id: 'say_gion_tan', name: 'Sấy Giòn Tan', logo: '🍘', color: '#c98a2b', tagline: 'Cắn một miếng, giòn tới mai', role: 'che_bien' },
+  { id: 'mut_ngot_lim', name: 'Mứt Ngọt Lịm', logo: '🍯', color: '#d9486e', tagline: 'Ngọt lịm tim, Tết nào cũng thiếu', role: 'che_bien' },
+  { id: 'bay_xa', name: 'Xuất Khẩu Bay Xa', logo: '✈️', color: '#2f7fc4', tagline: 'Trái quê mình, bay khắp năm châu', role: 'xuat_khau' },
+  { id: 'tuoi_roi', name: 'Siêu Thị Tươi Rói', logo: '🛒', color: '#3fae4c', tagline: 'Sáng hái vườn, chiều lên kệ', role: 'sieu_thi' },
+  { id: 'qua_que', name: 'Tiệm Quà Quê Thơm Thảo', logo: '🎁', color: '#8a5bc4', tagline: 'Gói cả vườn quê vào một giỏ', role: 'sieu_thi' },
+];
+export function npcOf(role: Npc['role']): Npc {
+  return NPCS.find((n) => n.role === role)!;
+}
+
+// ---------------------------------------------------------------------------
+// Công thức chế biến: mỗi nhóm cây một cách. ratio × value > 1 nên chế biến lãi hơn bán tươi.
+// ---------------------------------------------------------------------------
+export interface Recipe { id: string; name: string; emoji: string; ratio: number; value: number; hours: number }
+const RECIPES: Record<Kind, Recipe> = {
+  trai: { id: 'say_deo', name: 'Sấy dẻo', emoji: '🍬', ratio: 0.35, value: 3.8, hours: 4 },
+  leo: { id: 'nuoc_ep', name: 'Nước ép', emoji: '🧃', ratio: 0.6, value: 2.2, hours: 2 },
+  ngan: { id: 'mut', name: 'Mứt', emoji: '🍯', ratio: 0.5, value: 2.6, hours: 3 },
+  cu: { id: 'say_kho', name: 'Sấy khô', emoji: '🧄', ratio: 0.4, value: 3.3, hours: 4 },
+  cn: { id: 'rang_sao', name: 'Rang sao', emoji: '🔥', ratio: 0.7, value: 1.85, hours: 3 },
+  lua: { id: 'xay_xat', name: 'Xay xát', emoji: '🍚', ratio: 0.65, value: 2, hours: 2 },
+  hoa: { id: 'hoa_kho', name: 'Hoa khô', emoji: '💐', ratio: 0.3, value: 4.4, hours: 6 },
+};
+export function recipeOf(crop: Crop): Recipe {
+  return RECIPES[crop.kind];
 }
 
 export function processOf(crop: Crop): Step[] {

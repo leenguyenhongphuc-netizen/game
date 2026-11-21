@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, processOf, specialtiesOfRegion } from '../../shared/catalog.ts';
+import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, npcOf, processOf, specialtiesOfRegion } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
-  CITY_BONUS, GIFT_MAX_KG, HELP_REWARD, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, ROOFTOP_TILES, TILE_M2, fmtMoney, marketDayAt, npcPrice, seedCost, stepWaitMs,
+  CITY_BONUS, GIFT_MAX_KG, HELP_REWARD, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, ROOFTOP_TILES, TILE_M2, fmtMoney, inSeason, npcPrice, seedCost, stepWaitMs,
 } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import { AlbumPanel, CoopPanel, GiftsPanel, TravelPanel } from './panels.tsx';
 import { fmtDuration, regionLabel, useAction } from './ui.ts';
+import { NpcBadge, OrdersPanel, ProfilePanel, WardPicker, WorkshopPanel } from './work.tsx';
 import type { Friends, GiftInbox, Listing, Me, Planting, Prices, Village } from './api.ts';
 import { WorldView } from './WorldView.tsx';
 import { SLOT_COUNT } from './scene/World.ts';
@@ -92,6 +93,7 @@ function Auth({ onDone }: { onDone: () => void }) {
 function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
   const [found, setFound] = useState<{ lat: number; lng: number; regionId: string; km: number; urban: { id: string; name: string } | null } | null>(null);
   const [manual, setManual] = useState('');
+  const [ward, setWard] = useState<{ province: string; name: string } | null>(null);
   const act = useAction();
   const claim = useAction(onDone);
 
@@ -108,6 +110,7 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
   }));
 
   const chosen = found?.regionId ?? (manual || null);
+  const wardBody = ward?.name ? { wardProvince: ward.province, wardName: ward.name } : {};
   return (
     <main className="auth">
       <div className="brand">
@@ -120,7 +123,7 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
         <small>Vị trí được làm tròn về ô lưới khoảng 2 km trước khi lưu. Người chơi khác chỉ thấy tên vùng trồng.</small>
         {act.error && <p className="error" role="alert">{act.error}</p>}
         <label>Hoặc tự chọn vùng trồng
-          <select value={manual} onChange={(e) => { setManual(e.target.value); setFound(null); }}>
+          <select value={manual} onChange={(e) => { setManual(e.target.value); setFound(null); setWard(null); }}>
             <option value="">— Chọn vùng —</option>
             {ZONES.map((z) => (
               <optgroup key={z} label={ZONE_NAMES[z]}>
@@ -134,15 +137,17 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
             <strong>{regionLabel(chosen)}</strong>
             {found && <span> · cách bạn khoảng {found.km} km</span>}
             <p>Đặc sản trồng được: {specialtiesOfRegion(chosen).map((s) => s.name).join(', ')}.</p>
+            <p className="muted">Chọn xã, phường để hiện trên vườn của bạn (không bắt buộc). Người khác chỉ thấy tên xã, phường này, không thấy vị trí thật.</p>
+            <WardPicker province={ward?.province ?? REGIONS[chosen].province} ward={ward?.name ?? ''} onChange={(province, name) => setWard({ province, name })} />
             {found?.urban && (
               <>
                 <p><strong>Bạn đang ở trung tâm {found.urban.name}.</strong> Bạn có thể làm vườn ngay trên sân thượng nhà mình: {ROOFTOP_TILES.length} thùng trồng, bán hàng phương xa được thêm {Math.round(CITY_BONUS * 100)}% vì dân phố chuộng đặc sản.</p>
-                <button className="primary" disabled={claim.busy} onClick={() => claim.run(() => api('POST', '/api/onboard', { lat: found.lat, lng: found.lng, rooftop: true }))}>🏙️ Nhận vườn sân thượng</button>
+                <button className="primary" disabled={claim.busy} onClick={() => claim.run(() => api('POST', '/api/onboard', { lat: found.lat, lng: found.lng, rooftop: true, ...wardBody }))}>🏙️ Nhận vườn sân thượng</button>
                 <p className="muted">Hoặc nhận mảnh vườn {PLOT_COLS * PLOT_ROWS} ô ở vùng trồng gần nhất:</p>
               </>
             )}
             <button className={found?.urban ? '' : 'primary'} disabled={claim.busy}
-              onClick={() => claim.run(() => api('POST', '/api/onboard', found ? { lat: found.lat, lng: found.lng } : { regionId: chosen }))}>
+              onClick={() => claim.run(() => api('POST', '/api/onboard', found ? { lat: found.lat, lng: found.lng, ...wardBody } : { regionId: chosen, ...wardBody }))}>
               {found?.urban ? `🌾 Nhận vườn ở ${REGIONS[chosen].name}` : 'Nhận vườn ở đây'}
             </button>
             {claim.error && <p className="error" role="alert">{claim.error}</p>}
@@ -154,9 +159,9 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
 }
 
 // ------------------------------------------------------------------ khung chính
-type Tab = 'vuon' | 'kho' | 'cho' | 'ban' | 'bando' | 'so' | 'sap';
+type Tab = 'vuon' | 'kho' | 'cho' | 'ban' | 'bando' | 'so' | 'sap' | 'toi';
 const TABS: [Tab, string, string][] = [['kho', '🧺', 'Kho'], ['cho', '🛒', 'Chợ'], ['ban', '🧑‍🤝‍🧑', 'Xóm'], ['bando', '🚌', 'Du lịch'], ['so', '📖', 'Sổ tem']];
-const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho & Sạp', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch các vùng trồng', so: 'Sổ sưu tập đặc sản', sap: 'Sạp hàng xóm' };
+const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho, đơn hàng, xưởng', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch các vùng trồng', so: 'Sổ sưu tập đặc sản', sap: 'Sạp hàng xóm', toi: 'Hồ sơ của tôi' };
 
 function burstKind(stepName: string): 'water' | 'soil' | 'leaf' | 'harvest' {
   const n = stepName.toLowerCase();
@@ -177,6 +182,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [toast, setToast] = useState<string | null>(null);
   const [marketTab, setMarketTab] = useState<'cho' | 'gia'>('cho');
   const [xomTab, setXomTab] = useState<'ban' | 'htx' | 'qua'>('ban');
+  const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong'>('kho');
   const [unseen, setUnseen] = useState(0);
   const [friendList, setFriendList] = useState<Friends['friends']>([]);
   const [, tick] = useState(0);
@@ -201,6 +207,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   }, [plotId]);
   useEffect(() => { void load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
   useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (me.walkin && me.walkin.kg > 0) setToast(`🛍️ Khách vãng lai mua ${me.walkin.kg} kg ở sạp: +${fmtMoney(me.walkin.total)}`); }, [me.walkin]);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); }, [toast]);
   const reload = useCallback(() => { void load(); void refresh(); }, [load, refresh]);
   const act = useAction(reload);
@@ -228,19 +235,20 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     const steps = processOf(CROPS[sp.crop]);
     const step = steps[planting.stepIndex];
     const isLast = planting.stepIndex === steps.length - 1;
-    if (!lot.plot.mine && (!lot.plot.friend || isLast)) return;
+    if (!lot.plot.mine && !lot.plot.friend && !isLast) return; // người lạ chỉ phụ thu hoạch
     busy.current.add(planting.id);
     try {
       const kind = burstKind(step.name);
       if (lot.plot.mine) {
         const r = await api('POST', `/api/plantings/${planting.id}/step`, {});
         worldRef.current?.burst(lotIndex, planting.tile, kind);
-        if (r.harvested) { worldRef.current?.floatText(lotIndex, planting.tile, `+${r.harvested.kg} kg ${CROPS[sp.crop].emoji}`); setToast(`Thu hoạch ${r.harvested.kg} kg ${sp.name} (${QUALITY_NAMES[r.harvested.quality as 'A']})`); }
+        if (r.harvested) { worldRef.current?.floatText(lotIndex, planting.tile, `+${r.harvested.kg} kg ${CROPS[sp.crop].emoji}`); setToast(`Thu hoạch ${r.harvested.kg} kg ${sp.name} (${QUALITY_NAMES[r.harvested.quality as 'A']})${r.harvested.inSeason ? ' · chính vụ +15%' : ''}`); }
         else worldRef.current?.floatText(lotIndex, planting.tile, `${STEP_ICON[kind]} ${step.name}`, '#fff6dc');
       } else {
         const r = await api('POST', `/api/plantings/${planting.id}/help`, {});
         worldRef.current?.burst(lotIndex, planting.tile, kind);
-        worldRef.current?.floatText(lotIndex, planting.tile, `+${fmtMoney(r.reward)} · chăm giúp`);
+        if (r.harvested) { worldRef.current?.floatText(lotIndex, planting.tile, `+${r.harvested.share} kg quà vườn`); setToast(`Phụ thu hoạch cho ${lot.plot.ownerName}: bạn được ${r.harvested.share} kg ${sp.name}`); }
+        else worldRef.current?.floatText(lotIndex, planting.tile, `+${fmtMoney(r.reward)} · chăm giúp`);
       }
       reload();
     } catch (e) {
@@ -267,17 +275,18 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       <WorldView state={worldState} worldRef={worldRef} paused={tab !== 'vuon'} onContext={setCtx} onReady={onReady} />
 
       <header className="hud-top">
-        <div className="chip">
+        <button className="chip" onClick={() => setTab('toi')} aria-label="Hồ sơ của tôi">
           <span className="chip-avatar" aria-hidden="true">🧑‍🌾</span>
-          <div className="chip-text"><strong>{me.user.displayName}</strong><small>{center ? regionLabel(center.plot.regionId) : ''}</small></div>
-        </div>
+          <div className="chip-text"><strong>{me.user.displayName}</strong><small>{center ? (center.plot.wardName ? `${center.plot.wardName} · ${REGIONS[center.plot.regionId].name}` : regionLabel(center.plot.regionId)) : ''}</small></div>
+        </button>
         <div className="coin" title="Tiền mặt"><span aria-hidden="true">🪙</span>{fmtMoney(me.user.cash)}</div>
         <button className="round" aria-label="Đăng xuất" title="Đăng xuất"
           onClick={async () => { if (confirm('Đăng xuất khỏi Vườn Việt?')) { await api('POST', '/api/auth/logout', {}); await refresh(); } }}>⏻</button>
       </header>
       <div className="chips">
         {village?.weather && <span className="wchip" title={village.weather.growth < 1 ? 'Cây lớn nhanh hơn' : village.weather.growth > 1 ? 'Cây lớn chậm hơn' : 'Thời tiết thuận'}>{village.weather.icon} {village.weather.label}{village.weather.growth !== 1 && <b> {village.weather.growth < 1 ? '▲ nhanh' : '▼ chậm'}</b>}</span>}
-        {(() => { const md = village?.marketDay ?? marketDayAt(now); return <span className={`wchip ${md.active ? 'hot' : ''}`}>🎪 {md.active ? `Chợ phiên: bán thương lái +10%` : `Chợ phiên sau ${fmtDuration(md.startsAt - now)}`}</span>; })()}
+        {village?.weather?.hazard && <span className="wchip warn" title={village.weather.hazard.note}>{village.weather.hazard.icon} {village.weather.hazard.label}</span>}
+        {(village?.events ?? []).map((ev) => <span key={ev.id} className={`wchip ${ev.active ? 'hot' : ''}`}>{ev.icon} {ev.active ? `${ev.name}: +${Math.round(ev.bonus * 100)}%` : `${ev.name} sau ${fmtDuration(ev.startsAt - now)}`}</span>)}
       </div>
       <div className="quest"><span aria-hidden="true">{quest[0]}</span><p>{quest[1]}</p>{!atHome && <button onClick={goHome}>🏠 Về nhà</button>}</div>
       {me.plots.length > 1 && tab === 'vuon' && (
@@ -302,6 +311,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                       <span className="emoji">{crop.emoji}</span>
                       <strong>{sp.name}</strong>
                       <small>{crop.yieldKg} kg · {fmtDuration(stepWaitMs(sp, me.config.timeScale) * (steps - 1))}</small>
+                      {inSeason(crop.id, now) && <span className="tag">Chính vụ +15%</span>}
+                      {(prices[sp.id]?.glut ?? 1) < 1 && <span className="tag warn">Nhiều người trồng −{Math.round((1 - prices[sp.id]!.glut!) * 100)}%</span>}
                       <span className="price">{fmtMoney(cost)}</span>
                     </button>
                   );
@@ -339,7 +350,19 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         <div className="modal" role="dialog" aria-label={TAB_TITLES[tab]}>
           <div className="modal-head"><h2>{TAB_TITLES[tab]}</h2><button className="round" aria-label="Đóng" onClick={() => setTab('vuon')}>✕</button></div>
           <div className="modal-body">
-            {tab === 'kho' && <Stock me={me} prices={prices} marketDay={(village?.marketDay ?? marketDayAt(now)).active} friends={friendList} refresh={reload} />}
+            {tab === 'kho' && (
+              <>
+                <div className="tabs">
+                  <button aria-selected={khoTab === 'kho'} onClick={() => setKhoTab('kho')}>Kho & Sạp</button>
+                  <button aria-selected={khoTab === 'don'} onClick={() => setKhoTab('don')}>Đơn hàng</button>
+                  <button aria-selected={khoTab === 'xuong'} onClick={() => setKhoTab('xuong')}>Xưởng</button>
+                </div>
+                {khoTab === 'kho' && <Stock me={me} prices={prices} marketDay={!!village?.events?.some((e) => e.id === 'cho_phien' && e.active)} floating={!!village?.events?.some((e) => e.id === 'cho_noi' && e.active) && atHome} friends={friendList} refresh={reload} />}
+                {khoTab === 'don' && <OrdersPanel me={me} onChanged={reload} />}
+                {khoTab === 'xuong' && <WorkshopPanel me={me} priceOf={priceOf} onChanged={reload} />}
+              </>
+            )}
+            {tab === 'toi' && <ProfilePanel me={me} homePlotId={homePlotId} wardProvince={(atHome ? center?.plot.wardProvince : null) ?? null} wardName={me.plots.find((p) => p.isHome)?.wardName ?? null} onChanged={reload} />}
             {tab === 'cho' && (
               <>
                 <div className="tabs"><button aria-selected={marketTab === 'cho'} onClick={() => setMarketTab('cho')}>Hàng đang bán</button><button aria-selected={marketTab === 'gia'} onClick={() => setMarketTab('gia')}>Bảng giá</button></div>
@@ -416,7 +439,7 @@ function FriendsPanel({ onChanged, visit }: { onChanged: () => void; visit: (plo
 }
 
 // ------------------------------------------------------------------ kho và sạp
-function Stock({ me, prices, marketDay, friends, refresh }: { me: Me; prices: Prices; marketDay: boolean; friends: Friends['friends']; refresh: () => void }) {
+function Stock({ me, prices, marketDay, floating, friends, refresh }: { me: Me; prices: Prices; marketDay: boolean; floating: boolean; friends: Friends['friends']; refresh: () => void }) {
   const [mine, setMine] = useState<Listing[]>([]);
   const load = useCallback(async () => {
     setMine((await api('GET', '/api/market?mine=1')).listings);
@@ -427,14 +450,14 @@ function Stock({ me, prices, marketDay, friends, refresh }: { me: Me; prices: Pr
     <div>
       <h3>Kho nông sản</h3>
       {me.inventory.length === 0 && <p className="hint">Kho đang trống. Thu hoạch xong, nông sản sẽ nằm ở đây.</p>}
-      {me.inventory.map((item) => <StockRow key={item.specialtyId + item.quality} item={item} me={me} prices={prices} marketDay={marketDay} friends={friends} onDone={done} />)}
+      {me.inventory.map((item) => <StockRow key={item.specialtyId + item.quality} item={item} me={me} prices={prices} marketDay={marketDay} floating={floating} friends={friends} onDone={done} />)}
       <h3>Sạp trước nhà</h3>
       {mine.length === 0 ? <p className="hint">Bạn chưa bày món nào. Bày hàng lên sạp để người chơi khác mua.</p> : <StallList listings={mine} canCancel onChanged={done} />}
     </div>
   );
 }
 
-function StockRow({ item, me, prices, marketDay, friends, onDone }: { item: Me['inventory'][number]; me: Me; prices: Prices; marketDay: boolean; friends: Friends['friends']; onDone: () => void }) {
+function StockRow({ item, me, prices, marketDay, floating, friends, onDone }: { item: Me['inventory'][number]; me: Me; prices: Prices; marketDay: boolean; floating: boolean; friends: Friends['friends']; onDone: () => void }) {
   const sp = SPECIALTIES[item.specialtyId];
   const refPrice = prices[sp.id]?.price ?? sp.refPrice;
   const glut = prices[sp.id]?.glut ?? 1;
@@ -444,10 +467,10 @@ function StockRow({ item, me, prices, marketDay, friends, onDone }: { item: Me['
   useEffect(() => { setKg(item.kg); }, [item.kg]);
   const act = useAction(onDone);
   const local = sp.regionId === me.user.homeRegionId;
-  const city = me.user.homeKind === 'rooftop', coop = !!me.user.coopId;
-  const npc = npcPrice(refPrice, item.quality, sp.regionId, me.user.homeRegionId!, { glut, marketDay, coop, city });
+  const city = me.user.role === 'thuong_lai', coop = !!me.user.coopId;
+  const npc = npcPrice(refPrice, item.quality, sp.regionId, me.user.homeRegionId!, { glut, marketDay, coop, city, floating });
   const amount = Math.min(Math.max(1, Math.floor(kg) || 1), item.kg);
-  const notes = [local ? 'giá tại vườn' : 'hàng phương xa', glut < 1 ? `được mùa −${Math.round((1 - glut) * 100)}%` : '', marketDay ? 'chợ phiên +10%' : '', coop ? 'hợp tác xã +5%' : '', city && !local ? 'dân phố +10%' : ''].filter(Boolean).join(' · ');
+  const notes = [local ? 'giá tại vườn' : 'hàng phương xa', glut < 1 ? `được mùa −${Math.round((1 - glut) * 100)}%` : '', marketDay ? 'chợ phiên +10%' : '', floating ? 'chợ nổi +15%' : '', coop ? 'hợp tác xã +5%' : '', city && !local ? 'thương lái phố +10%' : ''].filter(Boolean).join(' · ');
   return (
     <div className="row">
       <div className="row-head">
@@ -457,7 +480,7 @@ function StockRow({ item, me, prices, marketDay, friends, onDone }: { item: Me['
       <div className="row-actions">
         <label>Số kg<input type="number" min={1} max={item.kg} value={kg} onChange={(e) => setKg(Number(e.target.value))} /></label>
         <button disabled={act.busy} onClick={() => act.run(() => api('POST', '/api/sell/npc', { specialtyId: sp.id, quality: item.quality, kg: amount }))}>
-          Bán thương lái {fmtMoney(npc)}/kg
+          Bán {fmtMoney(npc)}/kg
         </button>
         <label>Giá rao (đ/kg)<input type="number" min={1} step={500} value={price} onChange={(e) => setPrice(Number(e.target.value))} /></label>
         <button disabled={act.busy} onClick={() => act.run(() => api('POST', '/api/market/listings', { specialtyId: sp.id, quality: item.quality, kg: amount, price: Math.round(price) }))}>
@@ -472,7 +495,7 @@ function StockRow({ item, me, prices, marketDay, friends, onDone }: { item: Me['
           </>
         )}
       </div>
-      <small className="muted">Thương lái: {notes}.</small>
+      <small className="muted">Người mua: <NpcBadge id={npcOf('thuong_lai').id} /> · {notes}.</small>
       {act.error && <p className="error" role="alert">{act.error}</p>}
     </div>
   );

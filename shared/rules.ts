@@ -73,12 +73,13 @@ export function qualityFromLate(lateCount: number): Quality {
 export function seedCost(sp: Specialty): number {
   return Math.round((sp.refPrice * CROPS[sp.crop].yieldKg * SEED_COST_RATIO) / 1000) * 1000;
 }
-export interface PriceMods { glut?: number; marketDay?: boolean; coop?: boolean; city?: boolean }
+export interface PriceMods { glut?: number; marketDay?: boolean; coop?: boolean; city?: boolean; floating?: boolean }
 /** Giá thương lái trả cho 1 kg tại vùng nhà của người bán, có tính các yếu tố thị trường. */
 export function npcPrice(refPrice: number, quality: Quality, specialtyRegionId: string, homeRegionId: string, mods: PriceMods = {}): number {
   const far = specialtyRegionId !== homeRegionId;
   let price = refPrice * (far ? FAR_MARKET_RATIO : FARM_GATE_RATIO) * QUALITY_MULT[quality] * (mods.glut ?? 1);
   if (mods.marketDay) price *= 1 + MARKET_DAY_BONUS;
+  if (mods.floating) price *= 1 + FLOATING_BONUS;
   if (mods.coop) price *= 1 + COOP_BONUS;
   if (mods.city && far) price *= 1 + CITY_BONUS;
   return Math.round(price / 100) * 100;
@@ -86,7 +87,7 @@ export function npcPrice(refPrice: number, quality: Quality, specialtyRegionId: 
 
 // ---------------------------------------------------------------- thời tiết
 export type WeatherKind = 'nang' | 'may' | 'mua' | 'nang_gat' | 'bao';
-export interface Weather { kind: WeatherKind; label: string; icon: string; growth: number; until: number }
+export interface Weather { kind: WeatherKind; label: string; icon: string; growth: number; until: number; hazard?: Hazard }
 const WEATHER_INFO: Record<WeatherKind, { label: string; icon: string; growth: number }> = {
   nang: { label: 'Nắng đẹp', icon: '☀️', growth: 1 },
   may: { label: 'Nhiều mây', icon: '⛅', growth: 1 },
@@ -107,6 +108,37 @@ export const WEATHER_SLOT_MS = 3 * 3600_000;
 export function weatherInfo(kind: WeatherKind): { label: string; icon: string; growth: number } {
   return WEATHER_INFO[kind];
 }
+const VN_TZ_MS = 7 * 3600_000;
+/** Tháng (1–12) theo giờ Việt Nam. */
+export function vnMonth(nowMs: number): number {
+  return new Date(nowMs + VN_TZ_MS).getUTCMonth() + 1;
+}
+
+// ---------------------------------------------------------------- mùa vụ thật theo miền
+export interface Hazard { id: 'han_man' | 'bao' | 'suong_muoi' | 'lu' | 'nang_nong'; label: string; icon: string; note: string; growth: number }
+const HAZARDS: Record<Hazard['id'], Hazard> = {
+  han_man: { id: 'han_man', label: 'Hạn mặn', icon: '🧂', note: 'Mùa khô, nước mặn lấn vào kênh rạch nên cây thiếu nước ngọt và lớn chậm.', growth: 1.15 },
+  bao: { id: 'bao', label: 'Mùa bão', icon: '🌀', note: 'Mùa bão ở miền Trung và biển đảo: gió to, mưa lớn, cây lớn chậm hơn.', growth: 1.1 },
+  suong_muoi: { id: 'suong_muoi', label: 'Sương muối', icon: '❄️', note: 'Rét đậm ở miền Bắc, sương muối làm táp lá nên cây lớn chậm.', growth: 1.2 },
+  lu: { id: 'lu', label: 'Mưa lũ', icon: '🌊', note: 'Mưa lũ miền Trung: vườn ngập úng, cây lớn chậm.', growth: 1.15 },
+  nang_nong: { id: 'nang_nong', label: 'Nắng nóng', icon: '🔥', note: 'Nắng nóng gay gắt, gió Lào khô: cây mất nước và lớn chậm.', growth: 1.1 },
+};
+/** Hiện tượng theo mùa của vùng trong tháng hiện tại (giờ Việt Nam); không có thì null. */
+export function seasonAt(regionId: string, nowMs: number): Hazard | null {
+  const zone = REGIONS[regionId]?.zone, m = vnMonth(nowMs);
+  if (zone === 'nam' && m >= 2 && m <= 4) return HAZARDS.han_man;
+  if (zone === 'trung' && (m === 10 || m === 11)) return HAZARDS.lu;
+  if ((zone === 'trung' || zone === 'dao') && m >= 9 && m <= 11) return HAZARDS.bao;
+  if (zone === 'bac' && (m === 12 || m === 1)) return HAZARDS.suong_muoi;
+  if ((zone === 'bac' || zone === 'trung') && (m === 6 || m === 7)) return HAZARDS.nang_nong;
+  return null;
+}
+/** Cây đang vào chính vụ thu hoạch hay không. */
+export function inSeason(cropId: string, nowMs: number): boolean {
+  return !!CROPS[cropId]?.season.includes(vnMonth(nowMs));
+}
+export const IN_SEASON_YIELD = 1.15;
+
 /** Thời tiết của một vùng: tất định theo (vùng, khung 3 giờ thật) nên máy chủ và giao diện luôn khớp nhau. */
 export function weatherAt(regionId: string, nowMs: number): Weather {
   const slot = Math.floor(nowMs / WEATHER_SLOT_MS);
@@ -114,10 +146,17 @@ export function weatherAt(regionId: string, nowMs: number): Weather {
   for (const ch of `${regionId}:${slot}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
   h ^= h >>> 15; h = Math.imul(h, 2246822507); h ^= h >>> 13; h = Math.imul(h, 3266489909); h ^= h >>> 16;
   const u = (h >>> 0) / 4294967296;
-  const odds = WEATHER_ODDS[REGIONS[regionId]?.zone ?? 'nam'];
+  const hazard = seasonAt(regionId, nowMs);
+  let odds = WEATHER_ODDS[REGIONS[regionId]?.zone ?? 'nam'];
+  // Theo mùa: mùa bão thì dễ có bão, hạn mặn và nắng nóng thì dễ nắng gắt, mưa lũ thì mưa nhiều.
+  if (hazard?.id === 'bao') odds = [0.25, 0.2, 0.32, 0.08, 0.15];
+  else if (hazard?.id === 'lu') odds = [0.15, 0.2, 0.5, 0.03, 0.12];
+  else if (hazard?.id === 'han_man' || hazard?.id === 'nang_nong') odds = [0.3, 0.15, 0.1, 0.45, 0];
   let kind: WeatherKind = 'nang', acc = 0;
   for (let i = 0; i < odds.length; i++) { acc += odds[i]; if (u < acc) { kind = WEATHER_ORDER[i]; break; } }
-  return { kind, ...WEATHER_INFO[kind], until: (slot + 1) * WEATHER_SLOT_MS };
+  const info = WEATHER_INFO[kind];
+  const growth = Math.round(info.growth * (hazard?.growth ?? 1) * 1000) / 1000;
+  return { kind, label: info.label, icon: info.icon, growth, until: (slot + 1) * WEATHER_SLOT_MS, ...(hazard ? { hazard } : {}) };
 }
 
 // ---------------------------------------------------------------- chợ phiên
@@ -132,6 +171,44 @@ export function marketDayAt(nowMs: number): MarketDay {
   const saturday = dow === 0 ? day - 1 : day + (6 - dow);
   const startsAt = saturday * DAY - TZ;
   return { active, startsAt, endsAt: startsAt + 2 * DAY };
+}
+
+/** Lịch chợ theo tuần (giờ Việt Nam): chợ phiên cuối tuần ở mọi miền, chợ nổi thứ Tư ở miền Nam. */
+export interface MarketEvent { id: 'cho_phien' | 'cho_noi'; name: string; icon: string; bonus: number; active: boolean; startsAt: number; endsAt: number }
+export const FLOATING_BONUS = 0.15;
+export function marketEventsAt(regionId: string, nowMs: number): MarketEvent[] {
+  const md = marketDayAt(nowMs);
+  const out: MarketEvent[] = [{ id: 'cho_phien', name: 'Chợ phiên', icon: '🎪', bonus: MARKET_DAY_BONUS, active: md.active, startsAt: md.startsAt, endsAt: md.endsAt }];
+  if (REGIONS[regionId]?.zone === 'nam') {
+    const DAY = 86400_000;
+    const day = Math.floor((nowMs + VN_TZ_MS) / DAY);
+    const dow = (((day + 4) % 7) + 7) % 7; // 0 = Chủ nhật, 3 = thứ Tư
+    const wednesday = day + ((3 - dow + 7) % 7);
+    const startsAt = wednesday * DAY - VN_TZ_MS;
+    out.push({ id: 'cho_noi', name: 'Chợ nổi', icon: '🛶', bonus: FLOATING_BONUS, active: dow === 3, startsAt, endsAt: startsAt + DAY });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- vai trò của người ở phố, xưởng, đơn hàng
+export type Role = 'nong_dan' | 'thuong_lai' | 'chu_sap' | 'xuong';
+export const ROLE_INFO: Record<Role, { name: string; icon: string; desc: string }> = {
+  nong_dan: { name: 'Nhà vườn', icon: '🧑‍🌾', desc: 'Trồng trọt là chính, không có ưu đãi riêng.' },
+  thuong_lai: { name: 'Thương lái', icon: '🚚', desc: 'Gom đặc sản các vùng về phố: bán hàng phương xa cho thương lái được thêm 10%.' },
+  chu_sap: { name: 'Chủ sạp', icon: '🏪', desc: 'Sạp ở phố đông khách: khách vãng lai tự mua dần hàng bày giá hợp lý, kể cả khi bạn vắng mặt.' },
+  xuong: { name: 'Chủ xưởng chế biến', icon: '🏭', desc: 'Xưởng có 4 dây chuyền thay vì 2 và chế biến nhanh gấp đôi.' },
+};
+export const ROLES = Object.keys(ROLE_INFO) as Role[];
+/** Khách vãng lai của chủ sạp: mua tối đa bấy nhiêu kg mỗi giờ cho mỗi tin rao có giá không quá mức này so với giá tham chiếu. */
+export const STALL_WALKIN_KG_PER_HOUR = 5, STALL_WALKIN_MAX_RATIO = 1.15;
+export const PROCESS_SLOTS = 2, PROCESS_SLOTS_XUONG = 4, PROCESS_SPEED_XUONG = 0.5;
+/** Người phụ thu hoạch được chia phần này trong sản lượng. */
+export const HARVEST_HELP_SHARE = 0.1;
+export const COOP_ORDER_BONUS = 0.25, COOP_ORDER_KG_PER_MEMBER = 100, COOP_ORDER_DAYS = 7;
+export const ORDERS_PER_DAY = 3, ORDER_PREMIUM = 1.3;
+/** Nguồn cung ước tính của một đặc sản: lượng đã bán 24 giờ qua cộng một nửa sản lượng đang nằm ngoài ruộng. */
+export function supplyKg(kg24h: number, plantedTiles: number, yieldKg: number): number {
+  return kg24h + plantedTiles * yieldKg * 0.5;
 }
 
 // ---------------------------------------------------------------- được mùa mất giá, hợp tác xã, du lịch, quà

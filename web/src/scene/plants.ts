@@ -45,6 +45,8 @@ const FRUIT: Record<string, number> = {
   dieu: 0xeaa53a, mac_ca: 0x8a6a3b, que: 0xa5622f, hoi: 0xb9853f, lua: 0xe6c34a, hat_de: 0x7a4a22, mia: 0x7b3f8c,
   sen: 0xf29bc0, thot_not: 0x3d2c3f, lon_bon: 0xe8d58a, chanh: 0xa6d93a, chanh_day: 0x6a2c70, khoai_lang: 0xa3497a,
   atiso: 0x8a6fb0, mang_tay: 0x7fbf5a, ca_rot: 0xf07c1f, oi: 0xa8d66a, dau_da: 0xe8d070, hat_bang: 0xb58a4a, sim: 0x5a2a7a,
+  hoa_hong: 0xe84a6a, cam_tu_cau: 0x8fb3f2, hoa_cuc: 0xffd23f, hoa_ly: 0xffb7d0, dia_lan: 0xd6a8f0, oai_huong: 0x9a7fe0,
+  khoai_tay: 0xd9b77a, bap_su: 0xb7e69a, ca_chua: 0xe8412f,
 };
 export function fruitColor(cropId: string): number { return FRUIT[cropId] ?? 0xf2b632; }
 const G1 = 0x5cb85f, G2 = 0x479c52, G3 = 0x8fd67c, TRUNK = 0x9a7150;
@@ -160,6 +162,19 @@ function lotus(g: THREE.Group, r: () => number, s: number, bloom: boolean) {
   }
 }
 
+/** Luống hoa: thân xanh, khi nở thì mỗi cây một bông đúng màu của loài. */
+function flowers(g: THREE.Group, r: () => number, s: number, bloom: number | null, id: string) {
+  const big = id === 'cam_tu_cau', spike = id === 'oai_huong', n = big ? 3 : 4;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const x = (i / (n - 1) - 0.5) * 1.25 + (r() - 0.5) * 0.08, z = (j / (n - 1) - 0.5) * 1.25 + (r() - 0.5) * 0.08, h = (big ? 0.42 : 0.55) * s;
+    g.add(mesh(geo.cyl, mat(G2), x, 0.2 + h / 2, z, 0.025, h, 0.025), mesh(geo.sphere, mat((i + j) % 2 ? G1 : G3), x, 0.24 + h * 0.4, z, 0.16 * s, 0.07, 0.16 * s));
+    if (bloom === null) { g.add(mesh(geo.ball, mat(G3), x, 0.22 + h, z, 0.06)); continue; }
+    if (spike) g.add(mesh(geo.cone, mat(bloom, { rough: 0.5 }), x, 0.3 + h, z, 0.07, 0.34, 0.07));
+    else if (big) g.add(mesh(geo.ball, mat(bloom, { rough: 0.5 }), x, 0.3 + h, z, 0.24, 0.2, 0.24));
+    else g.add(mesh(geo.ball, mat(bloom, { rough: 0.5 }), x, 0.25 + h, z, 0.13, 0.1, 0.13), mesh(geo.ball, mat(id === 'hoa_cuc' ? 0xb5651d : 0xfff3c4), x, 0.3 + h, z, 0.05));
+  }
+}
+
 function bed(g: THREE.Group, wet: boolean) {
   g.add(mesh(geo.box, mat(wet ? 0x6a4a36 : 0x7d553a), 0, 0.14, 0, 1.72, 0.1, 1.72));
   if (!wet) for (const z of [-0.5, 0, 0.5]) g.add(mesh(geo.box, mat(0x8f6444), 0, 0.2, z, 1.6, 0.05, 0.22));
@@ -176,6 +191,7 @@ export function buildPlant(crop: Crop, stage: Stage, seed: number): THREE.Group 
   if (id === 'lua') { rice(g, r, stage === 0 ? 0.3 : s, stage === 3); return g; }
   if (id === 'sen') { lotus(g, r, stage === 0 ? 0.4 : s, stage >= 2); return g; }
   if (stage === 0) { sprouts(g, r); return g; }
+  if (crop.kind === 'hoa') { flowers(g, r, s, fruit, id); return g; }
   if (id === 'thanh_long') dragonFruit(g, s, fruit);
   else if (id === 'ho_tieu') {
     g.add(mesh(geo.cyl, mat(0x8a7a60), 0, 0.1 + 0.8 * s, 0, 0.07, 1.6 * s, 0.07), mesh(geo.cyl, mat(G1), 0, 0.15 + 0.75 * s, 0, 0.26 * s, 1.4 * s, 0.26 * s));
@@ -189,7 +205,8 @@ export function buildPlant(crop: Crop, stage: Stage, seed: number): THREE.Group 
   else if (id === 'che') {
     for (const z of [-0.5, 0, 0.5]) g.add(mesh(geo.ball, mat(z ? G1 : G2), 0, 0.2 + 0.2 * s, z, 0.78, 0.3 * s, 0.22));
     if (fruit !== null) for (let i = 0; i < 10; i++) g.add(mesh(geo.ball, mat(fruit), (r() - 0.5) * 1.3, 0.24 + 0.42 * s, (Math.floor(r() * 3) - 1) * 0.5, 0.06));
-  } else if (crop.kind === 'cu') rows(g, r, s, fruit, 'tuft');
+  }
+  else if (crop.kind === 'cu') rows(g, r, s, fruit, 'tuft');
   else if (crop.kind === 'ngan') rows(g, r, s, fruit, 'bush');
   else if (id === 'ca_phe') {
     g.add(mesh(geo.cyl, mat(TRUNK), 0, 0.1 + 0.3 * s, 0, 0.05, 0.6 * s, 0.05));

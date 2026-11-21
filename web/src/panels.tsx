@@ -3,12 +3,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, specialtiesOfRegion } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
-  COOP_BONUS, COOP_CREATE_COST, COOP_MAX_MEMBERS, GIFT_DAILY_LIMIT, LAND_PRICE, QUALITY_NAMES, REGION_SET_REWARD,
+  COOP_BONUS, COOP_CREATE_COST, COOP_MAX_MEMBERS, COOP_ORDER_BONUS, GIFT_DAILY_LIMIT, LAND_PRICE, QUALITY_NAMES, REGION_SET_REWARD,
   SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_COST, fmtMoney,
 } from '../../shared/rules.ts';
 import { api } from './api.ts';
-import type { Collection, Coop, CoopSummary, GiftInbox, Me } from './api.ts';
-import { regionLabel, useAction } from './ui.ts';
+import type { Collection, Coop, CoopOrder, CoopSummary, GiftInbox, Me } from './api.ts';
+import { fmtDuration, regionLabel, useAction } from './ui.ts';
+import { NpcBadge } from './work.tsx';
 
 const ZONES = Object.keys(ZONE_NAMES) as Zone[];
 const pct = (n: number) => `${Math.round(n * 100)}%`;
@@ -33,6 +34,8 @@ export function CoopPanel({ me, onChanged }: { me: Me; onChanged: () => void }) 
         <>
           <h3>{mine.name}</h3>
           <p className="muted">{regionLabel(mine.regionId)} · 7 ngày qua cả hợp tác xã bán {mine.kgWeek.toLocaleString('vi-VN')} kg</p>
+          {mine.order && <CoopOrderCard order={mine.order} me={me} act={act} />}
+          <h3>Thành viên</h3>
           {mine.members.map((m, i) => (
             <div className="row row-line" key={m.userId}>
               <span className="rank">{i + 1}</span>
@@ -59,6 +62,22 @@ export function CoopPanel({ me, onChanged }: { me: Me; onChanged: () => void }) 
           </form>
         </>
       )}
+    </div>
+  );
+}
+
+function CoopOrderCard({ order, me, act }: { order: CoopOrder; me: Me; act: ReturnType<typeof useAction> }) {
+  const sp = SPECIALTIES[order.specialtyId];
+  const stock = me.inventory.filter((i) => i.specialtyId === order.specialtyId);
+  const left = order.kgTarget - order.kgFilled;
+  return (
+    <div className="row order-card">
+      <div className="row-line"><span className="emoji">{CROPS[sp.crop].emoji}</span><div className="grow"><strong>Đơn lớn: {order.kgTarget.toLocaleString('vi-VN')} kg {sp.name}</strong><br /><NpcBadge id={order.npcId} /></div></div>
+      <div className="progress"><i className="done" style={{ flex: Math.max(order.kgFilled, 0.001) }} /><i style={{ flex: Math.max(left, 0.001) }} /></div>
+      <small>Đã góp {order.kgFilled}/{order.kgTarget} kg · bạn góp {order.mine} kg · còn {fmtDuration(order.expiresAt - Date.now())}. Góp được trả ngay theo giá tham chiếu; đủ đơn, mỗi người được thưởng thêm {pct(COOP_ORDER_BONUS)} phần mình góp.</small>
+      {stock.length === 0 ? <small className="muted">Kho bạn chưa có {sp.name} để góp.</small> : stock.map((i) => (
+        <button key={i.quality} disabled={act.busy || left <= 0} onClick={() => act.run(() => api('POST', '/api/coops/order/contribute', { quality: i.quality, kg: Math.min(i.kg, left) }))}>Góp {Math.min(i.kg, left)} kg {QUALITY_NAMES[i.quality]}</button>
+      ))}
     </div>
   );
 }
@@ -92,7 +111,7 @@ export function GiftsPanel() {
 export function TravelPanel({ me, priceOf, refresh, visit }: { me: Me; priceOf: (id: string) => number; refresh: () => void; visit: (plotId: number) => void }) {
   const [visited, setVisited] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
-  const [farms, setFarms] = useState<{ total: number; farms: { plotId: number; ownerName: string; growing: number }[] } | null>(null);
+  const [farms, setFarms] = useState<{ total: number; farms: { plotId: number; ownerName: string; growing: number; wardName?: string | null }[] } | null>(null);
   const load = useCallback(async () => { setVisited(new Set((await api('GET', '/api/travel')).visited)); }, []);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -103,7 +122,7 @@ export function TravelPanel({ me, priceOf, refresh, visit }: { me: Me; priceOf: 
   const owned = new Set(me.plots.map((p) => p.regionId));
   return (
     <div>
-      <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Vé đi mỗi vùng mới {fmtMoney(TRAVEL_COST)}. Tới nơi, bạn mua được đặc sản làm quà (tối đa {SOUVENIR_MAX_KG} kg mỗi lần, giá bằng {pct(SOUVENIR_RATIO)} giá tham chiếu), ghé vườn người khác, hoặc mua đất {fmtMoney(LAND_PRICE)}.</p>
+      <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Vé đi mỗi vùng mới {fmtMoney(TRAVEL_COST)}. Tới nơi, bạn mua được đặc sản làm quà (tối đa {SOUVENIR_MAX_KG} kg mỗi lần, giá bằng {pct(SOUVENIR_RATIO)} giá tham chiếu), ghé vườn người khác để phụ thu hoạch và mua tại sạp, hoặc mua đất {fmtMoney(LAND_PRICE)}.</p>
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {ZONES.map((z) => (
         <div key={z}>
@@ -113,7 +132,7 @@ export function TravelPanel({ me, priceOf, refresh, visit }: { me: Me; priceOf: 
             return (
               <div className="row" key={r.id}>
                 <button className="row-toggle" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
-                  <span><strong>{r.name}</strong>, {r.province}{r.formerProvince ? ` (${r.formerProvince} cũ)` : ''} {owned.has(r.id) ? <span className="tag">Có đất</span> : been ? <span className="tag">Đã tới</span> : null}<br />
+                  <span><strong>{r.name}</strong>, {r.province}{r.formerProvince ? ` (${r.formerProvince} cũ)` : ''} {r.special && <span className="tag new">Vùng đặc biệt</span>} {owned.has(r.id) ? <span className="tag">Có đất</span> : been ? <span className="tag">Đã tới</span> : null}<br />
                     <small>{specialtiesOfRegion(r.id).map((s) => s.name).join(' · ')}</small></span>
                 </button>
                 {open === r.id && (
@@ -136,7 +155,7 @@ export function TravelPanel({ me, priceOf, refresh, visit }: { me: Me; priceOf: 
                           <>
                             <small className="muted">{farms.total} mảnh vườn</small>
                             {farms.farms.map((f) => (
-                              <div className="row-line" key={f.plotId}><div className="grow">{f.ownerName} <small className="muted">· đang trồng {f.growing} ô</small></div><button onClick={() => visit(f.plotId)}>Ghé thăm</button></div>
+                              <div className="row-line" key={f.plotId}><div className="grow">{f.ownerName} <small className="muted">· {f.wardName ? `${f.wardName} · ` : ''}đang trồng {f.growing} ô</small></div><button onClick={() => visit(f.plotId)}>Ghé thăm</button></div>
                             ))}
                           </>
                         )}

@@ -135,4 +135,49 @@ create table if not exists gifts (
 );
 create index if not exists gifts_to_idx on gifts (to_id, id desc);
 create index if not exists gifts_from_idx on gifts (from_id, created_at desc);
+alter table plots add column if not exists ward_name text;
+alter table plots add column if not exists ward_province text;
+alter table users add column if not exists role text not null default 'nong_dan';
+alter table listings add column if not exists walkin_at timestamptz;
+create table if not exists process_jobs (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  kg_in int not null check (kg_in > 0),
+  kg_out int not null check (kg_out > 0),
+  ready_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists process_jobs_user_idx on process_jobs (user_id, id);
+create table if not exists products (
+  user_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  kg int not null check (kg >= 0),
+  primary key (user_id, specialty_id)
+);
+create table if not exists coop_orders (
+  id bigserial primary key,
+  coop_id bigint not null references coops(id) on delete cascade,
+  specialty_id text not null,
+  npc_id text not null,
+  kg_target int not null check (kg_target > 0),
+  kg_filled int not null default 0,
+  status text not null default 'open' check (status in ('open','done','expired')),
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists coop_orders_coop_idx on coop_orders (coop_id, id desc);
+create table if not exists coop_contribs (
+  order_id bigint not null references coop_orders(id) on delete cascade,
+  user_id bigint not null references users(id) on delete cascade,
+  kg int not null,
+  value bigint not null,
+  primary key (order_id, user_id)
+);
+create table if not exists order_done (
+  user_id bigint not null references users(id) on delete cascade,
+  day date not null,
+  slot int not null,
+  primary key (user_id, day, slot)
+);
 `;

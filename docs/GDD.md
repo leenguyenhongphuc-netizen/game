@@ -12,6 +12,27 @@ Ba mục tiêu, phải đạt cùng lúc để game tồn tại được:
 2. **Hiểu nông sản Việt**: mỗi loại cây có quy trình canh tác từng bước, người chơi hiểu vì sao trái đó có giá đó.
 3. **Bảng giá tham chiếu**: giá trong game bám giá thật ngoài đời theo tỉ lệ 1:1, về lâu dài thành nơi tiểu thương và nhà vườn tham khảo và tự báo giá.
 
+## Các quyết định đã chốt và trạng thái
+
+| Quyết định | Cách làm trong game | Trạng thái |
+|---|---|---|
+| Vị trí hiện theo xã/phường, không lộ vị trí người chơi | Người chơi chọn xã, phường từ danh sách 3.321 đơn vị sau sáp nhập 2025; máy chủ chỉ lưu tên đó và ô lưới ~2 km. Đổi được trong Hồ sơ. | Đã có |
+| Người ở thành phố có vai trò riêng | Định vị trong trung tâm 7 thành phố lớn thì được làm vườn sân thượng và chọn vai: thương lái (hàng phương xa +10%), chủ sạp (có khách vãng lai mua hàng trên sạp), chủ xưởng (chế biến nhanh gấp đôi, 4 chỗ làm). | Đã có |
+| Đặc sản gắn theo vùng trồng; Đà Lạt là vùng đặc biệt | 53 vùng trồng. Đà Lạt có 13 đặc sản gồm trái cây, rau củ và 6 loại hoa, có quy trình trồng hoa riêng. | Đã có |
+| Thời gian nén | Mỗi vụ 10–48 giờ thật, chia đều cho các bước. | Đã có |
+| NPC có tên và logo | Sáu doanh nghiệp thu mua hư cấu, tên chơi chữ, logo là biểu tượng. Xem ghi chú bên dưới. | Đã có, tên cần bạn duyệt |
+| Thời tiết và mùa vụ thật theo vùng | Thời tiết đổi mỗi 3 giờ. Theo tháng thật: hạn mặn miền Nam (tháng 2–4), bão miền Trung và đảo (9–11), mưa lũ miền Trung (10–11), sương muối miền Bắc (12–1), nắng nóng (6–7). Mỗi loại cây có tháng chính vụ; thu đúng vụ được thêm 15% sản lượng. | Đã có, số liệu mùa vụ cần chuyên gia rà |
+| Được mùa mất giá khi cả máy chủ trồng cùng loại | Giá thương lái giảm theo số ô đang trồng và lượng đã bán của đặc sản đó trên toàn máy chủ, tối đa 30%. Thanh chọn giống cảnh báo trước khi trồng. | Đã có |
+| Hợp tác xã gom hàng nhận đơn lớn | Mỗi hợp tác xã có một đơn lớn 7 ngày từ doanh nghiệp xuất khẩu; thành viên góp hàng, đủ đơn thì mỗi người được thưởng 25% phần mình góp. | Đã có |
+| Chợ phiên, chợ nổi theo lịch tuần | Chợ phiên thứ Bảy và Chủ nhật (+10%, mọi miền). Chợ nổi thứ Tư (+15%, chỉ miền Nam). | Đã có |
+| Du lịch vườn | Mua vé tới vùng khác, ghé vườn, phụ thu hoạch (được chia 10% sản lượng làm quà vườn), mua tại sạp, mua đặc sản làm quà. | Đã có |
+
+**Về tên doanh nghiệp NPC:** quyết định ban đầu là biến tấu tên và logo thương hiệu thật. Mình đã dùng tên hư cấu hoàn toàn, không nhại thương hiệu nào, vì tên nhại vẫn có thể bị coi là gây nhầm lẫn nhãn hiệu. Danh sách nằm ở `NPCS` trong `shared/catalog.ts`; nếu bạn vẫn muốn hướng nhại, bạn đưa danh sách tên cụ thể và nên hỏi luật sư trước.
+
+Ngoài ra đã có: đơn hàng cá nhân theo ngày (đơn thu mua, giỏ quà biếu, mâm ngũ quả), xưởng chế biến cho mọi người chơi, sổ tem đặc sản, quà tặng bạn bè.
+
+**Chưa có:** tác tử AI lấy giá thật (giá vẫn là giá mẫu), thấy bạn bè theo thời gian thực và trò chuyện, chăn nuôi, trang trí nhà và sạp, âm thanh, nạp tiền, mô hình do hoạ sĩ làm.
+
 ## 2. Trụ cột thiết kế
 
 | Trụ cột | Ý nghĩa trong game |
