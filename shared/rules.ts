@@ -11,6 +11,12 @@ export const START_CASH = 1_000_000;
 export const LAND_PRICE = 50_000_000;
 export const SEED_COST_RATIO = 0.15;
 
+/** Xóm: mỗi người có tối đa bấy nhiêu bạn, cũng là số vườn hàng xóm quanh nhà. */
+export const MAX_FRIENDS = 9;
+/** Tiền công mỗi lần chăm giúp cây của bạn, và số lượt chăm giúp tối đa mỗi ngày. */
+export const HELP_REWARD = 3_000;
+export const HELP_DAILY_LIMIT = 20;
+
 /** Trễ một bước quá ngưỡng này thì tính một lần chăm sóc trễ. */
 export const LATE_GRACE_MS = 12 * 3600_000;
 
