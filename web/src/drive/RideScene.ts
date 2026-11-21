@@ -186,7 +186,7 @@ export class RideScene {
       put(bake((() => { const b = new THREE.Group(); b.add(mesh(GEO.box, mat(0xfff6e2), 0, 2.2, 0, 14, 4.4, 6), mesh(GEO.box, mat(0x6fb7d9), 0, 4.7, 1.5, 15, 0.4, 9)); for (const x of [-6, -2, 2, 6]) b.add(mesh(GEO.cyl, mat(0xf2c65c), x, 2.2, 5.2, 0.2, 4.4, 0.2)); return b; })(), true), -15, 0, -4).rotation.y = Math.PI / 2;
       depart(`Bến xe ${fromName}`, 8);
       scatter(24, L - 16, 9, 9, 40); mountains(0, L * 0.5, zA); mountains(L * 0.5, L + 80, zB);
-      put(arch(`Chào mừng đến ${toName}`, 11, 0xf08a6c), 0, 0, L + half + 9);
+      put(arch(`Chào mừng đến ${toName}`, 13, 0xf08a6c), 0, 0, L + half + 12);
       scatter(L + 14, L + 90, 10, 10, 36);
     } else if (mode === 'tau_hoa') {
       put(mesh(GEO.box, mat(0xc9bfae), 0, 0, 0, 5.2, 0.3, L + 300), 0, 0.02, L / 2);
@@ -221,7 +221,7 @@ export class RideScene {
       };
       const terminal = (s: number, side: number, label: string, col: number) => {
         put(bake((() => { const b = new THREE.Group(); b.add(mesh(GEO.box, mat(0xfffaf0), 0, 4, 0, 16, 8, 44), mesh(GEO.box, mat(0x7fb9d9, { rough: 0.25 }), -8.05, 4.4, 0, 0.1, 5, 40), mesh(GEO.box, mat(col), 0, 8.4, 0, 18, 0.8, 46), mesh(GEO.cyl, mat(0xfffaf0), 4, 12, -26, 2.2, 24, 2.2), mesh(GEO.cyl, mat(0x7fb9d9, { rough: 0.25 }), 4, 24.6, -26, 3.4, 2.4, 3.4), mesh(GEO.cyl, mat(col), 4, 26.2, -26, 3.7, 0.6, 3.7)); return b; })(), true), side * 34, 0, s).rotation.y = side > 0 ? 0 : Math.PI;
-        const sg = makeSign(label, '#2a7fd6'); sg.scale.set(17, 4.25, 1); put(sg, side * 25.4, 5.6, s);
+        const sg = makeSign(label, '#2a7fd6'); sg.scale.set(17, 4.25, 1); put(sg, side * 27, 11.4, s);
       };
       runway(L * 0.06, L * 0.2 + 120); terminal(30, 1, `Sân bay ${fromName}`, 0x6fb7d9);
       runway(L - L * 0.06, L * 0.2 + 120); terminal(L - 10, -1, `Chào mừng đến ${toName}`, 0xf08a6c);
@@ -258,7 +258,7 @@ export class RideScene {
       if (fromIsland) { island(-half, false); mainland(L + half, true, zB); }
       else { mainland(-half, false, zA); if (to?.island) island(L + half, true); else mainland(L + half, true, zB); }
       pier(-half + 6, false, `Bến tàu ${fromName}`); pier(L + half - 6, true, '');
-      put(arch(`Chào mừng đến ${toName}`, 12, 0x5aa9e6), -6.4, 1.0, L + half + 22);
+      put(arch(`Chào mừng đến ${toName}`, 4.4, 0x5aa9e6), -6.4, 1.2, L + half + 2);
       for (let s = 40; s < L - 30; s += 30 + r() * 26) { const kind = ['islet', 'ghe', 'seastone', 'ghe'][Math.floor(r() * 4)], o = bake(SCENERY[kind](), true); o.rotation.y = r() * 6.28; o.scale.setScalar(1 + r() * 0.8); put(o, (r() < 0.5 ? -1 : 1) * (20 + r() * 50), 0, s); }
       const caps = new THREE.InstancedMesh(GEO.ball, mat(0xffffff, { rough: 0.3 }), 260);
       for (let i = 0; i < 260; i++) { m4.compose(new THREE.Vector3((r() - 0.5) * 260, 0.0, -(r() * (L + 60) - 20)), new THREE.Quaternion(), new THREE.Vector3(1.4 + r() * 1.6, 0.16, 0.45)); caps.setMatrixAt(i, m4); }
@@ -300,7 +300,8 @@ export class RideScene {
       R = Math.max(sp.half * 2.3 + 13, sp.wide / 0.21); H = R * 0.8;
     } else { a = THREE.MathUtils.lerp(0.62, 1.95, sm); R = sp.radius * (this.camera.aspect < 1.3 ? 1.25 : 1); }
     if (mode === 'may_bay') H += 3 * Math.sin(sm * Math.PI);
-    const lookZ = portrait ? -sp.half * 0.35 : 0;
+    // Cuối hành trình, màn ngang lia về phía trước để thấy cổng chào
+    const lookZ = portrait ? -sp.half * 0.35 : -(sp.half * 0.5 + 5) * THREE.MathUtils.smoothstep(p, 0.76, 0.96);
     this.camera.position.set(Math.sin(a) * R, v.position.y + H, Math.cos(a) * R + lookZ);
     this.camera.lookAt(0, v.position.y + sp.look, lookZ);
     this.sun.target.position.set(0, 0, 0); this.sun.position.set(18, 30, 12);
