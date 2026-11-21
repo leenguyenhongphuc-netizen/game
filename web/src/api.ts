@@ -1,4 +1,6 @@
-import type { Quality } from '../../shared/rules.ts';
+import type { MarketDay, Quality, Weather } from '../../shared/rules.ts';
+
+export type PlotKind = 'ground' | 'rooftop';
 
 export class ApiError extends Error {
   status: number; code: string;
@@ -18,8 +20,8 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
 }
 
 export interface Me {
-  user: { id: number; username: string; displayName: string; cash: number; homeRegionId: string | null };
-  plots: { id: number; regionId: string; isHome: boolean }[];
+  user: { id: number; username: string; displayName: string; cash: number; homeRegionId: string | null; homeKind?: PlotKind; coopId?: number | null };
+  plots: { id: number; regionId: string; isHome: boolean; kind?: PlotKind }[];
   inventory: { specialtyId: string; quality: Quality; kg: number }[];
   config: { timeScale: number; now: number };
 }
@@ -29,12 +31,16 @@ export interface PlotView {
   plot: { id: number; regionId: string; isHome: boolean; ownerName: string; mine: boolean };
   plantings: Planting[]; stall: Listing[]; now: number;
 }
-export type Prices = Record<string, { price: number; prev: number | null; source: string; observedAt: number }>;
+export type Prices = Record<string, { price: number; prev: number | null; source: string; observedAt: number; glut?: number }>;
 
 export interface LotView {
-  plot: { id: number; regionId: string; isHome: boolean; ownerId: number; ownerName: string; mine: boolean; friend: boolean };
+  plot: { id: number; regionId: string; isHome: boolean; kind?: PlotKind; ownerId: number; ownerName: string; mine: boolean; friend: boolean };
   plantings: Planting[]; stall: Listing[];
 }
-export interface Village { center: LotView; neighbors: LotView[]; now: number }
+export interface Village { center: LotView; neighbors: LotView[]; now: number; weather?: Weather; marketDay?: MarketDay }
 export interface Person { userId: number; username: string; displayName: string; homeRegionId?: string | null; plotId?: number | null }
 export interface Friends { friends: Person[]; incoming: Person[]; outgoing: Person[] }
+export interface CoopSummary { id: number; name: string; regionId: string; ownerName: string; members: number }
+export interface Coop { id: number; name: string; regionId: string; ownerId: number; kgWeek: number; members: { userId: number; displayName: string; kgWeek: number }[] }
+export interface GiftInbox { inbox: { id: number; fromName: string; specialtyId: string; quality: Quality; kg: number; message: string | null; createdAt: number; seen: boolean }[]; unseen: number }
+export interface Collection { specialties: string[]; regionsRewarded: string[] }

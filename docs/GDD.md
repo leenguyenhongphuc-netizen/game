@@ -94,16 +94,23 @@ Tiền trong game là **đồng**, giá mỗi kg bằng giá tham chiếu ngoài
 
 **Chưa cân bằng:** các con số trên là điểm khởi đầu. Hiện chưa có thứ gì rút tiền ra khỏi nền kinh tế ngoài giống và đất, nên về lâu dài sẽ lạm phát; cần thêm chi phí (phân bón, nhân công, vận chuyển, trang trí sạp).
 
-## 8. Người mua dùng nông sản làm gì (dự kiến)
+## 8. Lý do để mua bán, đi lại và kết nối
 
-Đây là phần quyết định chợ có sống hay không. Theo thứ tự nên làm:
+| Tính năng | Cách hoạt động | Trạng thái |
+|---|---|---|
+| **Vườn sân thượng** | Định vị trong trung tâm Hà Nội, TP.HCM, Đà Nẵng, Hải Phòng, Cần Thơ, Huế, Nha Trang thì được chọn: làm vườn trên sân thượng nhà mình (12 thùng trồng, cảnh khu phố) hoặc nhận vườn 30 ô ở vùng trồng gần nhất. Dân phố bán hàng phương xa được thêm 10%, nên hợp vai thương lái. | Đã có |
+| **Thời tiết** | Mỗi vùng có thời tiết riêng, đổi mỗi 3 giờ: nắng đẹp, nhiều mây, mưa (cây lớn nhanh hơn 20%), nắng gắt (chậm 20%), bão (chậm 30%, chỉ miền Trung và đảo). Mưa và bão có hiệu ứng trong cảnh. | Đã có |
+| **Được mùa mất giá** | Một đặc sản bị bán cho thương lái càng nhiều trong 24 giờ thì giá thương lái càng giảm, tối đa 30%. Bảng giá hiện cột "Nguồn cung". | Đã có |
+| **Hợp tác xã** | Người cùng vùng lập hợp tác xã (tối đa 20 người). Thành viên bán thương lái được cộng 5%; có bảng xếp hạng sản lượng 7 ngày. | Đã có |
+| **Chợ phiên** | Thứ Bảy và Chủ nhật, thương lái trả thêm 10% cho mọi mặt hàng. | Đã có |
+| **Du lịch** | Mua vé tới vùng khác (20.000đ), mua đặc sản về làm quà, ghé vườn người ở đó, mua đất. | Đã có |
+| **Sổ sưu tập** | Mỗi đặc sản thu hoạch, mua hoặc được tặng thành một con tem. Đủ tem một vùng thưởng 50.000đ. | Đã có |
+| **Quà tặng** | Tặng nông sản cho bạn bè, tối đa 5 món mỗi ngày. | Đã có |
+| Đơn hàng theo dịp | Mâm ngũ quả Tết, giỏ quà Trung thu: mỗi đơn cần trái từ nhiều vùng. | Dự kiến |
+| Chế biến | Mứt, trái sấy, nước ép: bán giá cao hơn trái tươi. | Dự kiến |
+| Đơn xuất khẩu | Hợp tác xã góp hàng Loại 1 số lượng lớn. | Dự kiến |
 
-1. **Đơn hàng theo dịp** — mâm ngũ quả Tết, giỏ quà Trung thu, quà cưới. Mỗi đơn cần trái từ nhiều vùng nên buộc phải mua của nhau.
-2. **Chế biến** — mứt, trái sấy, nước ép, rượu nho. Người chơi thành phố có vai trò riêng.
-3. **Đơn xuất khẩu** — yêu cầu Loại 1, số lượng lớn; hợp với hợp tác xã nhiều người góp hàng.
-4. **Sổ sưu tầm bản đồ đặc sản** — mỗi đặc sản một con tem kèm câu chuyện vùng trồng.
-5. **Tặng quà** — gửi giỏ trái cây và hạt giống cho bạn bè.
-6. **Được mùa mất giá** — cả máy chủ cùng trồng một loại thì giá thương lái giảm.
+Các con số trên nằm trong `shared/rules.ts` và chưa được cân bằng với người chơi thật.
 
 ## 9. Bảng giá và tác tử thu thập giá
 

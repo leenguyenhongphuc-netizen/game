@@ -133,3 +133,19 @@ th { color: var(--muted); font-size: 0.78rem; background: var(--paper-2); positi
   .dock button { min-width: 84px; font-size: 0.82rem; }
 }
 @media (prefers-reduced-motion: reduce) { .toast, .modal { animation: none; } button { transition: none; } }
+
+/* thời tiết, chợ phiên, sổ tem, xếp hạng */
+.chips { position: absolute; top: calc(max(10px, env(safe-area-inset-top)) + 56px); right: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
+.wchip { background: #fffdf4ee; border: 2px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 0 #0002; }
+.wchip b { color: var(--green-dark); }
+.wchip.hot { background: var(--gold); border-color: var(--gold-dark); }
+.quest { max-width: min(440px, calc(100% - 200px)); }
+.stamps { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+.stamp { display: grid; justify-items: center; gap: 2px; text-align: center; padding: 8px 4px; border: 2px dashed var(--line); border-radius: 12px; background: #f6efd8; filter: grayscale(1); opacity: 0.55; line-height: 1.15; }
+.stamp.got { filter: none; opacity: 1; background: #fff; border: 2px solid var(--gold-dark); box-shadow: 0 2px 0 var(--gold-dark); }
+.album-total { display: grid; gap: 4px; margin: 8px 0; font-family: var(--display); }
+.rank { width: 28px; height: 28px; border-radius: 50%; background: var(--gold); display: grid; place-items: center; font-family: var(--display); font-weight: 800; flex-shrink: 0; }
+.tag.new { background: var(--danger); color: #fff; margin-left: 4px; }
+.gift-note { font-style: italic; color: var(--muted); font-size: 0.88rem; }
+.dock button { min-width: 58px; }
+@media (max-width: 520px) { .quest { max-width: calc(100% - 20px); top: calc(max(10px, env(safe-area-inset-top)) + 118px); } .plot-switch { top: calc(max(10px, env(safe-area-inset-top)) + 176px); } }

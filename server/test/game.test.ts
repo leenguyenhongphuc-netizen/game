@@ -5,11 +5,17 @@ import { buildApp } from '../src/app.ts';
 import { openDb } from '../src/db.ts';
 import type { Db } from '../src/db.ts';
 import { PROVINCES, REGIONS, SPECIALTIES, CROPS, processOf } from '../../shared/catalog.ts';
-import { HELP_REWARD, LAND_PRICE, MAX_FRIENDS, START_CASH, nearestRegion, npcPrice, qualityFromLate, seedCost, snapCell, stepCount } from '../../shared/rules.ts';
+import {
+  CITY_BONUS, COOP_BONUS, COOP_CREATE_COST, GIFT_DAILY_LIMIT, GLUT_KG, GLUT_MAX_DROP, HELP_REWARD, LAND_PRICE, MARKET_DAY_BONUS, MAX_FRIENDS,
+  REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_COST, glutFactor, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
+  seedCost, snapCell, stepCount, urbanCoreAt, weatherAt, weatherInfo,
+} from '../../shared/rules.ts';
+import type { Weather, WeatherKind } from '../../shared/rules.ts';
 
 const url = process.env.TEST_DATABASE_URL ?? 'postgres://vuon:vuon@localhost:5432/vuon_test';
 const ADMIN = 'test-admin-token-0123456789';
-let db: Db, app: FastifyInstance;
+let db: Db, app: FastifyInstance, fairApp: FastifyInstance;
+const fixedWeather = (kind: WeatherKind) => (_regionId: string, nowMs: number): Weather => ({ kind, ...weatherInfo(kind), until: nowMs + 3600_000 });
 
 before(async () => {
   const pg = (await import('pg')).default;
@@ -19,13 +25,17 @@ before(async () => {
   await c.end();
   db = await openDb(url);
   // TIME_SCALE rất lớn để mỗi bước chỉ chờ 1 giây (mức tối thiểu).
-  app = await buildApp({ db, timeScale: 1e9, lateGraceMs: 60_000, adminToken: ADMIN, rateLimit: false, staticDir: '/nonexistent' });
+  // Thời tiết và chợ phiên được cố định để kết quả không phụ thuộc ngày giờ chạy kiểm thử.
+  const base = { db, timeScale: 1e9, lateGraceMs: 60_000, adminToken: ADMIN, rateLimit: false, staticDir: '/nonexistent', weatherAt: fixedWeather('nang') };
+  app = await buildApp({ ...base, marketDayAt: () => ({ active: false, startsAt: 0, endsAt: 0 }) });
+  fairApp = await buildApp({ ...base, weatherAt: fixedWeather('nang_gat'), marketDayAt: () => ({ active: true, startsAt: 0, endsAt: 1 }) });
 });
-after(async () => { await app.close(); await db.close(); });
+after(async () => { await app.close(); await fairApp.close(); await db.close(); });
 
 type Res = { status: number; body: any; cookie?: string };
-async function call(method: string, path: string, body?: unknown, cookie?: string, headers: Record<string, string> = {}): Promise<Res> {
-  const r = await app.inject({
+const call = (method: string, path: string, body?: unknown, cookie?: string, headers: Record<string, string> = {}) => callOn(app, method, path, body, cookie, headers);
+async function callOn(target: FastifyInstance, method: string, path: string, body?: unknown, cookie?: string, headers: Record<string, string> = {}): Promise<Res> {
+  const r = await target.inject({
     method: method as any, url: path,
     payload: body === undefined ? undefined : JSON.stringify(body),
     headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(cookie ? { cookie } : {}), ...headers },
@@ -263,12 +273,12 @@ test('xóm và chăm giúp: hàng xóm là bạn bè, bạn giúp được bư�
 
   // Xóm của chủ vườn: lô nhà ở giữa, bạn bè là hàng xóm, người lạ thì không.
   const v = (await call('GET', '/api/village', undefined, owner)).body;
-  assert.deepEqual(v.center.plot, { id: ownerPlot, regionId: 'qng_lyson', isHome: true, ownerId, ownerName: 'chu_vuon', mine: true, friend: false });
+  assert.deepEqual(v.center.plot, { id: ownerPlot, regionId: 'qng_lyson', isHome: true, kind: 'ground', ownerId, ownerName: 'chu_vuon', mine: true, friend: false });
   assert.equal(v.center.plantings.length, 1);
   assert.deepEqual(Object.keys(v.center.plantings[0]).sort(), ['id', 'lateCount', 'specialtyId', 'stepIndex', 'stepReadyAt', 'tile']);
   assert.equal(typeof v.center.plantings[0].stepReadyAt, 'number');
   assert.equal(v.center.stall.length, 1); assert.equal(v.center.stall[0].kg, 4);
-  assert.deepEqual(v.neighbors.map((n: any) => n.plot), [{ id: friendPlot, regionId: 'hn_phudien', isHome: true, ownerId: friendId, ownerName: 'hang_xom', mine: false, friend: true }]);
+  assert.deepEqual(v.neighbors.map((n: any) => n.plot), [{ id: friendPlot, regionId: 'hn_phudien', isHome: true, kind: 'ground', ownerId: friendId, ownerName: 'hang_xom', mine: false, friend: true }]);
   assert.ok(typeof v.now === 'number');
   // Ghé lô của người khác: không kèm hàng xóm.
   const visit = (await call('GET', `/api/village?plotId=${ownerPlot}`, undefined, friend)).body;
@@ -313,4 +323,268 @@ test('xóm và chăm giúp: hàng xóm là bạn bè, bạn giúp được bư�
   await sleep(1050);
   const capped = await call('POST', `/api/plantings/${plant2.body.plantingId}/help`, {}, friend);
   assert.equal(capped.status, 409); assert.equal(capped.body.error, 'het_luot');
+});
+
+const meOf = async (cookie: string) => (await call('GET', '/api/me', undefined, cookie)).body;
+async function befriend(a: string, b: string) {
+  const bMe = await meOf(b), aMe = await meOf(a);
+  assert.equal((await call('POST', '/api/friends', { username: bMe.user.username }, a)).status, 200);
+  assert.equal((await call('POST', '/api/friends', { username: aMe.user.username }, b)).body.status, 'accepted');
+}
+
+test('hàm thuần: thời tiết, chợ phiên, được mùa mất giá, lõi đô thị, giá có hệ số', () => {
+  const t0 = Date.UTC(2026, 10, 18, 5, 0, 0);
+  assert.deepEqual(weatherAt('qng_lyson', t0), weatherAt('qng_lyson', t0 + 60_000), 'cùng khung 3 giờ thì giống nhau');
+  const growth: Record<string, number> = { nang: 1, may: 1, mua: 0.8, nang_gat: 1.2, bao: 1.3 };
+  const seen = new Set<string>();
+  for (const regionId of Object.keys(REGIONS)) for (let i = 0; i < 40; i++) {
+    const w = weatherAt(regionId, t0 + i * 3 * 3600_000);
+    assert.equal(w.growth, growth[w.kind]);
+    assert.ok(w.label && w.icon && w.until > t0 + i * 3 * 3600_000 && w.until <= t0 + (i + 1) * 3 * 3600_000);
+    if (w.kind === 'bao') assert.ok(['trung', 'dao'].includes(REGIONS[regionId].zone), 'bão chỉ có ở miền Trung và đảo');
+    seen.add(w.kind);
+  }
+  assert.deepEqual([...seen].sort(), ['bao', 'may', 'mua', 'nang', 'nang_gat']);
+
+  // 2026-11-21 là thứ Bảy, 2026-11-18 là thứ Tư (giờ Việt Nam = UTC+7).
+  const sat = marketDayAt(Date.UTC(2026, 10, 21, 3, 0, 0));
+  assert.equal(sat.active, true);
+  assert.equal(sat.startsAt, Date.UTC(2026, 10, 20, 17, 0, 0));
+  assert.equal(sat.endsAt, Date.UTC(2026, 10, 22, 17, 0, 0));
+  assert.equal(marketDayAt(Date.UTC(2026, 10, 20, 16, 59, 0)).active, false, 'thứ Sáu 23:59 giờ VN chưa họp chợ');
+  assert.equal(marketDayAt(Date.UTC(2026, 10, 22, 16, 59, 0)).active, true, 'Chủ nhật 23:59 giờ VN còn họp chợ');
+  const wed = marketDayAt(Date.UTC(2026, 10, 18, 3, 0, 0));
+  assert.deepEqual(wed, { active: false, startsAt: sat.startsAt, endsAt: sat.endsAt });
+
+  assert.equal(glutFactor(0), 1);
+  assert.equal(glutFactor(GLUT_KG / 2), 1 - GLUT_MAX_DROP / 2);
+  assert.equal(glutFactor(GLUT_KG * 10), 1 - GLUT_MAX_DROP);
+
+  assert.equal(urbanCoreAt(21.028, 105.854)?.id, 'ha_noi');
+  assert.equal(urbanCoreAt(10.78, 106.7)?.id, 'tp_hcm');
+  assert.equal(urbanCoreAt(15.38, 109.12), null, 'Lý Sơn không phải lõi đô thị');
+  assert.equal(ROOFTOP_TILES.length, 12);
+  assert.deepEqual([ROOFTOP_TILES[0], ROOFTOP_TILES[11]], [7, 22]);
+
+  const ref = 100_000;
+  assert.equal(npcPrice(ref, 'A', 'x', 'x'), 85_000);
+  assert.equal(npcPrice(ref, 'A', 'x', 'x', {}), 85_000);
+  assert.equal(npcPrice(ref, 'A', 'x', 'x', { glut: 0.7 }), 59_500);
+  assert.equal(npcPrice(ref, 'A', 'x', 'x', { marketDay: true }), Math.round((85_000 * (1 + MARKET_DAY_BONUS)) / 100) * 100);
+  assert.equal(npcPrice(ref, 'A', 'x', 'x', { coop: true }), Math.round((85_000 * (1 + COOP_BONUS)) / 100) * 100);
+  assert.equal(npcPrice(ref, 'A', 'x', 'x', { city: true }), 85_000, 'thưởng phố chỉ áp cho hàng phương xa');
+  assert.equal(npcPrice(ref, 'A', 'x', 'y', { city: true }), Math.round((110_000 * (1 + CITY_BONUS)) / 100) * 100);
+});
+
+test('sân thượng: chỉ ở lõi đô thị, chỉ 12 ô giữa, bán hàng phương xa được thưởng', async () => {
+  const island = await signup('dan_dao');
+  const near = await call('GET', '/api/geo/nearest?lat=15.38&lng=109.12', undefined, island);
+  assert.equal(near.body.urban, null);
+  const refused = await call('POST', '/api/onboard', { lat: 15.38, lng: 109.12, rooftop: true }, island);
+  assert.deepEqual([refused.status, refused.body.error], [409, 'khong_o_pho']);
+  assert.equal((await call('POST', '/api/onboard', { regionId: 'hcm_laithieu', rooftop: true }, island)).body.error, 'khong_o_pho');
+
+  const city = await signup('dan_pho');
+  assert.deepEqual((await call('GET', '/api/geo/nearest?lat=10.776&lng=106.7', undefined, city)).body.urban, { id: 'tp_hcm', name: 'TP. Hồ Chí Minh' });
+  const ob = await call('POST', '/api/onboard', { lat: 10.776, lng: 106.7, rooftop: true }, city);
+  assert.equal(ob.status, 200, JSON.stringify(ob.body));
+  assert.equal(ob.body.regionId, 'hcm_laithieu');
+  const me = await meOf(city);
+  assert.equal(me.user.homeKind, 'rooftop');
+  assert.equal(me.user.coopId, null);
+  assert.equal(me.plots[0].kind, 'rooftop');
+  assert.equal((await call('GET', '/api/village', undefined, city)).body.center.plot.kind, 'rooftop');
+  assert.equal((await call('GET', `/api/plots/${ob.body.plotId}`, undefined, city)).body.plot.kind, 'rooftop');
+
+  const locked = await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: 0, specialtyId: 'buoi_bach_dang' }, city);
+  assert.deepEqual([locked.status, locked.body.error], [409, 'o_bi_khoa']);
+  assert.equal((await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: ROOFTOP_TILES[0], specialtyId: 'buoi_bach_dang' }, city)).status, 200);
+
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'man_bac_ha','A',2), ($1,'buoi_bach_dang','A',2)`, [me.user.id]);
+  const far = await call('POST', '/api/sell/npc', { specialtyId: 'man_bac_ha', quality: 'A', kg: 1 }, city);
+  assert.equal(far.body.mods.city, true);
+  assert.equal(far.body.unitPrice, npcPrice(SPECIALTIES.man_bac_ha.refPrice, 'A', 'lc_bacha', 'hcm_laithieu', { city: true }));
+  assert.ok(far.body.unitPrice > npcPrice(SPECIALTIES.man_bac_ha.refPrice, 'A', 'lc_bacha', 'hcm_laithieu'));
+  const local = await call('POST', '/api/sell/npc', { specialtyId: 'buoi_bach_dang', quality: 'A', kg: 1 }, city);
+  assert.equal(local.body.unitPrice, npcPrice(SPECIALTIES.buoi_bach_dang.refPrice, 'A', 'hcm_laithieu', 'hcm_laithieu'));
+});
+
+test('thời tiết kéo dài bước chờ; xóm và bảng giá báo thời tiết, chợ phiên', async () => {
+  const cookie = await signup('troi_nang');
+  const ob = await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, cookie);
+  const v = await call('GET', '/api/village', undefined, cookie);
+  assert.equal(v.body.weather.kind, 'nang');
+  assert.equal(v.body.marketDay.active, false);
+  const hot = await callOn(fairApp, 'GET', '/api/village', undefined, cookie);
+  assert.deepEqual([hot.body.weather.kind, hot.body.weather.growth, hot.body.marketDay.active], ['nang_gat', 1.2, true]);
+  assert.equal((await callOn(fairApp, 'GET', '/api/prices')).body.marketDay.active, true);
+
+  // Nắng gắt: bước kế chờ 1.200 ms thay vì 1.000 ms.
+  const t0 = Date.now();
+  const plant = await callOn(fairApp, 'POST', `/api/plots/${ob.body.plotId}/plant`, { tile: 0, specialtyId: 'atiso_da_lat' }, cookie);
+  const view = await call('GET', `/api/plots/${ob.body.plotId}`, undefined, cookie);
+  const wait = view.body.plantings[0].stepReadyAt - t0;
+  assert.ok(wait >= 1200 && wait < 1400, `chờ ${wait} ms`);
+  await sleep(1050);
+  assert.equal((await call('POST', `/api/plantings/${plant.body.plantingId}/step`, {}, cookie)).body.error, 'chua_den_luc');
+  await sleep(250);
+  const step = await call('POST', `/api/plantings/${plant.body.plantingId}/step`, {}, cookie);
+  assert.equal(step.status, 200);
+  assert.ok(step.body.stepReadyAt - Date.now() <= 1000, 'trời nắng đẹp thì chờ đúng mức gốc');
+});
+
+test('được mùa mất giá, chợ phiên được giá', async () => {
+  const cookie = await signup('ban_nhieu');
+  await call('POST', '/api/onboard', { regionId: 'sl_mocchau' }, cookie);
+  const me = await meOf(cookie);
+  const sp = SPECIALTIES.man_moc_chau;
+  assert.equal((await call('GET', '/api/prices')).body.prices[sp.id].glut, 1);
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,$2,'A',100)`, [me.user.id, sp.id]);
+
+  const first = await call('POST', '/api/sell/npc', { specialtyId: sp.id, quality: 'A', kg: 10 }, cookie);
+  assert.deepEqual(first.body.mods, { glut: 1, marketDay: false, coop: false, city: false });
+  assert.equal(first.body.unitPrice, npcPrice(sp.refPrice, 'A', sp.regionId, 'sl_mocchau'));
+
+  // Cả máy chủ đổ ra bán: 1.490 kg nữa trong 24 giờ, cộng 10 kg vừa bán = nửa ngưỡng.
+  await db.query(`insert into npc_sales (user_id, specialty_id, kg) values ($1,$2,$3)`, [me.user.id, sp.id, GLUT_KG / 2 - 10]);
+  await db.query(`insert into npc_sales (user_id, specialty_id, kg, created_at) values ($1,$2,5000, now() - interval '25 hours')`, [me.user.id, sp.id]);
+  const prices = (await call('GET', '/api/prices')).body;
+  assert.equal(prices.prices[sp.id].glut, 1 - GLUT_MAX_DROP / 2);
+  assert.equal(prices.prices.dau_tay_moc_chau.glut, 1);
+  assert.equal(prices.marketDay.active, false);
+  const second = await call('POST', '/api/sell/npc', { specialtyId: sp.id, quality: 'A', kg: 10 }, cookie);
+  assert.equal(second.body.mods.glut, 1 - GLUT_MAX_DROP / 2);
+  assert.equal(second.body.unitPrice, npcPrice(sp.refPrice, 'A', sp.regionId, 'sl_mocchau', { glut: 1 - GLUT_MAX_DROP / 2 }));
+  assert.ok(second.body.unitPrice < first.body.unitPrice);
+
+  const fair = await callOn(fairApp, 'POST', '/api/sell/npc', { specialtyId: sp.id, quality: 'A', kg: 1 }, cookie);
+  assert.equal(fair.body.mods.marketDay, true);
+  assert.equal(fair.body.unitPrice, npcPrice(sp.refPrice, 'A', sp.regionId, 'sl_mocchau', fair.body.mods));
+  assert.ok(fair.body.unitPrice > npcPrice(sp.refPrice, 'A', sp.regionId, 'sl_mocchau', { glut: fair.body.mods.glut }));
+});
+
+test('hợp tác xã: lập, vào, khác vùng, thưởng giá, rời và chuyển chủ', async () => {
+  const chu = await signup('chu_nhiem'), xa = await signup('xa_vien'), la = await signup('vung_khac'), ngheo = await signup('het_tien');
+  await call('POST', '/api/onboard', { regionId: 'bn_lucngan' }, chu);
+  await call('POST', '/api/onboard', { regionId: 'bn_lucngan' }, xa);
+  await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, la);
+  await call('POST', '/api/onboard', { regionId: 'bn_lucngan' }, ngheo);
+  const chuMe = await meOf(chu), xaMe = await meOf(xa), ngheoMe = await meOf(ngheo);
+
+  assert.equal((await call('POST', '/api/coops', { name: 'ab' }, chu)).status, 400);
+  await db.query('update users set cash = 1000 where id = $1', [ngheoMe.user.id]);
+  assert.equal((await call('POST', '/api/coops', { name: 'HTX Nghèo' }, ngheo)).body.error, 'khong_du_tien');
+  const made = await call('POST', '/api/coops', { name: '  HTX Vải thiều Lục Ngạn ' }, chu);
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  const coopId = made.body.coopId;
+  assert.equal((await meOf(chu)).user.cash, chuMe.user.cash - COOP_CREATE_COST);
+  assert.equal((await meOf(chu)).user.coopId, coopId);
+  assert.equal((await call('POST', '/api/coops', { name: 'HTX thứ hai' }, chu)).body.error, 'da_co_htx');
+  assert.equal((await call('POST', '/api/coops', { name: 'HTX Vải thiều Lục Ngạn' }, xa)).body.error, 'ten_da_dung');
+
+  assert.equal((await call('POST', `/api/coops/${coopId}/join`, {}, la)).body.error, 'khac_vung');
+  assert.equal((await call('POST', `/api/coops/999999/join`, {}, xa)).status, 404);
+  assert.equal((await call('POST', `/api/coops/${coopId}/join`, {}, xa)).status, 200);
+  assert.equal((await call('POST', `/api/coops/${coopId}/join`, {}, xa)).body.error, 'da_co_htx');
+  assert.equal((await call('POST', '/api/coops/leave', {}, la)).body.error, 'chua_co_htx');
+
+  const list = (await call('GET', '/api/coops', undefined, xa)).body.coops;
+  assert.deepEqual(list, [{ id: coopId, name: 'HTX Vải thiều Lục Ngạn', regionId: 'bn_lucngan', ownerName: 'chu_nhiem', members: 2 }]);
+  assert.deepEqual((await call('GET', '/api/coops', undefined, la)).body.coops, []);
+  assert.equal((await call('GET', '/api/coops?regionId=bn_lucngan', undefined, la)).body.coops.length, 1);
+  assert.equal((await call('GET', '/api/coops/mine', undefined, la)).body.coop, null);
+
+  // Xã viên được thưởng giá khi bán thương lái; sản lượng tuần tính từ lượng đã bán.
+  const sp = SPECIALTIES.vai_luc_ngan;
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,$2,'A',30)`, [xaMe.user.id, sp.id]);
+  const sell = await call('POST', '/api/sell/npc', { specialtyId: sp.id, quality: 'A', kg: 30 }, xa);
+  assert.equal(sell.body.mods.coop, true);
+  assert.equal(sell.body.unitPrice, npcPrice(sp.refPrice, 'A', sp.regionId, 'bn_lucngan', { coop: true }));
+  const mine = (await call('GET', '/api/coops/mine', undefined, chu)).body.coop;
+  assert.deepEqual({ id: mine.id, ownerId: mine.ownerId, kgWeek: mine.kgWeek, regionId: mine.regionId }, { id: coopId, ownerId: chuMe.user.id, kgWeek: 30, regionId: 'bn_lucngan' });
+  assert.deepEqual(mine.members, [{ userId: xaMe.user.id, displayName: 'xa_vien', kgWeek: 30 }, { userId: chuMe.user.id, displayName: 'chu_nhiem', kgWeek: 0 }]);
+
+  // Chủ nhiệm rời: quyền chuyển cho xã viên vào sớm nhất; người cuối rời thì HTX giải thể.
+  assert.equal((await call('POST', '/api/coops/leave', {}, chu)).status, 200);
+  assert.equal((await meOf(chu)).user.coopId, null);
+  assert.equal((await call('GET', '/api/coops/mine', undefined, xa)).body.coop.ownerId, xaMe.user.id);
+  assert.equal((await call('POST', '/api/coops/leave', {}, xa)).status, 200);
+  assert.deepEqual((await call('GET', '/api/coops?regionId=bn_lucngan', undefined, xa)).body.coops, []);
+});
+
+test('du lịch, quà đặc sản và sổ sưu tập', async () => {
+  const cookie = await signup('du_khach');
+  await call('POST', '/api/onboard', { regionId: 'hn_phudien' }, cookie);
+  const start = (await meOf(cookie)).user.cash;
+  assert.deepEqual((await call('GET', '/api/travel', undefined, cookie)).body.visited, ['hn_phudien']);
+  assert.deepEqual((await call('GET', '/api/collection', undefined, cookie)).body, { specialties: [], regionsRewarded: [] });
+
+  const early = await call('POST', '/api/souvenir', { regionId: 'qng_trabong', specialtyId: 'que_tra_bong', kg: 1 }, cookie);
+  assert.deepEqual([early.status, early.body.error], [409, 'chua_toi']);
+  assert.deepEqual((await call('POST', '/api/travel', { regionId: 'qng_trabong' }, cookie)).body, { cost: TRAVEL_COST, isNew: true });
+  assert.deepEqual((await call('POST', '/api/travel', { regionId: 'qng_trabong' }, cookie)).body, { cost: 0, isNew: false });
+  assert.deepEqual((await call('POST', '/api/travel', { regionId: 'hn_phudien' }, cookie)).body, { cost: 0, isNew: false }, 'vùng mình có đất thì miễn phí');
+  assert.equal((await call('POST', '/api/travel', { regionId: 'khong_co' }, cookie)).status, 400);
+  assert.deepEqual((await call('GET', '/api/travel', undefined, cookie)).body.visited, ['hn_phudien', 'qng_trabong']);
+
+  assert.equal((await call('POST', '/api/souvenir', { regionId: 'qng_trabong', specialtyId: 'toi_ly_son', kg: 1 }, cookie)).status, 400, 'đặc sản không thuộc vùng');
+  assert.equal((await call('POST', '/api/souvenir', { regionId: 'qng_trabong', specialtyId: 'que_tra_bong', kg: 6 }, cookie)).status, 400, 'quá số kg');
+  const unit = Math.round(SPECIALTIES.que_tra_bong.refPrice * SOUVENIR_RATIO);
+  const buy = await call('POST', '/api/souvenir', { regionId: 'qng_trabong', specialtyId: 'que_tra_bong', kg: 2 }, cookie);
+  assert.deepEqual(buy.body, { unitPrice: unit, total: unit * 2 });
+  await call('POST', '/api/souvenir', { regionId: 'qng_trabong', specialtyId: 'que_tra_bong', kg: 1 }, cookie);
+
+  // Trà Bồng chỉ có một đặc sản nên mua xong là trọn bộ: thưởng đúng một lần.
+  const me = await meOf(cookie);
+  assert.equal(me.user.cash, start - TRAVEL_COST - unit * 3 + REGION_SET_REWARD);
+  assert.deepEqual(me.inventory, [{ specialtyId: 'que_tra_bong', quality: 'A', kg: 3 }]);
+  assert.deepEqual((await call('GET', '/api/collection', undefined, cookie)).body, { specialties: ['que_tra_bong'], regionsRewarded: ['qng_trabong'] });
+  const ledger = await db.query('select coalesce(sum(delta),0)::bigint as s from ledger where user_id = $1', [me.user.id]);
+  assert.equal(ledger.rows[0].s, me.user.cash, 'sổ cái khớp số dư');
+
+  // Thu hoạch ở vườn nhà cũng vào sổ; vùng nhà còn thiếu đặc sản thì chưa thưởng.
+  const plant = await call('POST', `/api/plots/${me.plots[0].id}/plant`, { tile: 0, specialtyId: 'buoi_dien' }, cookie);
+  for (let i = 1; i < stepCount(SPECIALTIES.buoi_dien); i++) { await sleep(1050); await call('POST', `/api/plantings/${plant.body.plantingId}/step`, {}, cookie); }
+  assert.deepEqual((await call('GET', '/api/collection', undefined, cookie)).body, { specialties: ['que_tra_bong', 'buoi_dien'], regionsRewarded: ['qng_trabong'] });
+});
+
+test('quà tặng: chỉ cho bạn bè, có giới hạn ngày, người nhận có hàng và có trong sổ', async () => {
+  const tang = await signup('nguoi_tang'), nhan = await signup('nguoi_nhan'), la = await signup('nguoi_dung');
+  await call('POST', '/api/onboard', { regionId: 'qng_lyson' }, tang);
+  await call('POST', '/api/onboard', { regionId: 'hn_phudien' }, nhan);
+  const tangMe = await meOf(tang), nhanMe = await meOf(nhan), laMe = await meOf(la);
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'toi_ly_son','A',30), ($1,'hanh_ly_son','B',3)`, [tangMe.user.id]);
+  const gift = { toUserId: nhanMe.user.id, specialtyId: 'toi_ly_son', quality: 'A', kg: 2, message: 'x'.repeat(200) };
+
+  const stranger = await call('POST', '/api/gifts', { ...gift, toUserId: laMe.user.id }, tang);
+  assert.deepEqual([stranger.status, stranger.body.error], [403, 'khong_phai_ban']);
+  assert.equal((await call('POST', '/api/gifts', gift, tang)).status, 403, 'chưa kết bạn');
+  await befriend(tang, nhan);
+  assert.equal((await call('POST', '/api/gifts', { ...gift, kg: 21 }, tang)).status, 400);
+  assert.equal((await call('POST', '/api/gifts', { ...gift, specialtyId: 'hanh_ly_son', quality: 'B', kg: 4 }, tang)).body.error, 'khong_du_hang');
+  const sent = await call('POST', '/api/gifts', gift, tang);
+  assert.equal(sent.status, 200, JSON.stringify(sent.body));
+  assert.ok(sent.body.giftId > 0);
+  assert.equal((await call('POST', '/api/gifts', { ...gift, specialtyId: 'hanh_ly_son', quality: 'B', kg: 3, message: 'Hành nhà trồng' }, tang)).status, 200);
+
+  const box = (await call('GET', '/api/gifts', undefined, nhan)).body;
+  assert.equal(box.unseen, 2);
+  assert.equal(box.inbox.length, 2);
+  assert.deepEqual({ ...box.inbox[0], id: 0, createdAt: 0 }, { id: 0, fromName: 'nguoi_tang', specialtyId: 'hanh_ly_son', quality: 'B', kg: 3, message: 'Hành nhà trồng', createdAt: 0, seen: false });
+  assert.equal(box.inbox[1].message.length, 120, 'lời nhắn bị cắt còn 120 ký tự');
+  assert.ok(Math.abs(box.inbox[0].createdAt - Date.now()) < 60_000);
+  assert.deepEqual((await meOf(nhan)).inventory, [{ specialtyId: 'hanh_ly_son', quality: 'B', kg: 3 }, { specialtyId: 'toi_ly_son', quality: 'A', kg: 2 }]);
+  assert.equal((await meOf(tang)).inventory.find((i: any) => i.specialtyId === 'toi_ly_son').kg, 28);
+  // Lý Sơn có đúng hai đặc sản: nhận đủ cả hai là trọn bộ, người nhận được thưởng.
+  assert.deepEqual((await call('GET', '/api/collection', undefined, nhan)).body, { specialties: ['toi_ly_son', 'hanh_ly_son'], regionsRewarded: ['qng_lyson'] });
+  assert.equal((await meOf(nhan)).user.cash, nhanMe.user.cash + REGION_SET_REWARD);
+  assert.deepEqual((await call('GET', '/api/gifts', undefined, tang)).body, { inbox: [], unseen: 0 });
+
+  assert.deepEqual((await call('POST', '/api/gifts/seen', {}, nhan)).body, { ok: true });
+  const after = (await call('GET', '/api/gifts', undefined, nhan)).body;
+  assert.deepEqual([after.unseen, after.inbox.every((g: any) => g.seen)], [0, true]);
+
+  for (let i = 2; i < GIFT_DAILY_LIMIT; i++) assert.equal((await call('POST', '/api/gifts', { ...gift, kg: 1 }, tang)).status, 200);
+  const over = await call('POST', '/api/gifts', { ...gift, kg: 1 }, tang);
+  assert.deepEqual([over.status, over.body.error], [409, 'het_luot']);
 });

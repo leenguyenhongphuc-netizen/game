@@ -7,7 +7,7 @@ export function mat(color: number, opts: { emissive?: number; rough?: number; tr
   const key = `${color}|${opts.emissive ?? ''}|${opts.rough ?? ''}|${opts.transparent ?? ''}`;
   let m = matCache.get(key);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: opts.rough ?? 0.9, metalness: 0 });
+    m = new THREE.MeshStandardMaterial({ color, roughness: opts.rough ?? 0.85, metalness: 0 });
     if (opts.emissive !== undefined) { m.emissive = new THREE.Color(opts.emissive); m.emissiveIntensity = 0.6; }
     if (opts.transparent !== undefined) { m.transparent = true; m.opacity = opts.transparent; }
     matCache.set(key, m);
@@ -15,12 +15,13 @@ export function mat(color: number, opts: { emissive?: number; rough?: number; tr
   return m;
 }
 
+// Hình khối bo tròn, đổ bóng mịn để cảnh mềm mại hơn.
 const geo = {
   box: new THREE.BoxGeometry(1, 1, 1),
-  sphere: new THREE.IcosahedronGeometry(1, 0),
-  ball: new THREE.IcosahedronGeometry(1, 1),
-  cone: new THREE.ConeGeometry(1, 1, 6),
-  cyl: new THREE.CylinderGeometry(1, 1, 1, 7),
+  sphere: new THREE.IcosahedronGeometry(1, 1),
+  ball: new THREE.IcosahedronGeometry(1, 2),
+  cone: new THREE.ConeGeometry(1, 1, 10),
+  cyl: new THREE.CylinderGeometry(1, 1, 1, 14),
 };
 export const GEO = geo;
 
@@ -46,7 +47,7 @@ const FRUIT: Record<string, number> = {
   atiso: 0x8a6fb0, mang_tay: 0x7fbf5a, ca_rot: 0xf07c1f, oi: 0xa8d66a, dau_da: 0xe8d070, hat_bang: 0xb58a4a, sim: 0x5a2a7a,
 };
 export function fruitColor(cropId: string): number { return FRUIT[cropId] ?? 0xf2b632; }
-const G1 = 0x3f9a4c, G2 = 0x2f7a3c, G3 = 0x6cc06a, TRUNK = 0x7a5233;
+const G1 = 0x5cb85f, G2 = 0x479c52, G3 = 0x8fd67c, TRUNK = 0x9a7150;
 
 /** 0 mầm · 1 cây con · 2 trưởng thành · 3 chín, sẵn sàng thu hoạch */
 export type Stage = 0 | 1 | 2 | 3;
@@ -160,8 +161,8 @@ function lotus(g: THREE.Group, r: () => number, s: number, bloom: boolean) {
 }
 
 function bed(g: THREE.Group, wet: boolean) {
-  g.add(mesh(geo.box, mat(wet ? 0x5a3d28 : 0x6f4a2f), 0, 0.14, 0, 1.72, 0.1, 1.72));
-  if (!wet) for (const z of [-0.5, 0, 0.5]) g.add(mesh(geo.box, mat(0x80573a), 0, 0.2, z, 1.6, 0.05, 0.22));
+  g.add(mesh(geo.box, mat(wet ? 0x6a4a36 : 0x7d553a), 0, 0.14, 0, 1.72, 0.1, 1.72));
+  if (!wet) for (const z of [-0.5, 0, 0.5]) g.add(mesh(geo.box, mat(0x8f6444), 0, 0.2, z, 1.6, 0.05, 0.22));
 }
 
 export function buildPlant(crop: Crop, stage: Stage, seed: number): THREE.Group {

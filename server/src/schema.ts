@@ -81,4 +81,58 @@ create table if not exists friendships (
   check (user_a < user_b)
 );
 create index if not exists friendships_b_idx on friendships (user_b);
+alter table plots add column if not exists kind text not null default 'ground';
+create table if not exists npc_sales (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  kg int not null check (kg > 0),
+  created_at timestamptz not null default now()
+);
+create index if not exists npc_sales_specialty_idx on npc_sales (specialty_id, created_at desc);
+create index if not exists npc_sales_user_idx on npc_sales (user_id, created_at desc);
+create table if not exists coops (
+  id bigserial primary key,
+  name text not null unique,
+  region_id text not null,
+  owner_id bigint not null references users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists coops_region_idx on coops (region_id);
+create table if not exists coop_members (
+  coop_id bigint not null references coops(id) on delete cascade,
+  user_id bigint not null unique references users(id) on delete cascade,
+  joined_at timestamptz not null default now()
+);
+create index if not exists coop_members_coop_idx on coop_members (coop_id, joined_at);
+create table if not exists visits (
+  user_id bigint not null references users(id) on delete cascade,
+  region_id text not null,
+  first_at timestamptz not null default now(),
+  primary key (user_id, region_id)
+);
+create table if not exists collection (
+  user_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  first_at timestamptz not null default now(),
+  primary key (user_id, specialty_id)
+);
+create table if not exists collection_rewards (
+  user_id bigint not null references users(id) on delete cascade,
+  region_id text not null,
+  primary key (user_id, region_id)
+);
+create table if not exists gifts (
+  id bigserial primary key,
+  from_id bigint not null references users(id) on delete cascade,
+  to_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  quality text not null check (quality in ('A','B','C')),
+  kg int not null check (kg > 0),
+  message text not null default '',
+  seen boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists gifts_to_idx on gifts (to_id, id desc);
+create index if not exists gifts_from_idx on gifts (from_id, created_at desc);
 `;
