@@ -1,6 +1,6 @@
 import pg from 'pg';
-import { readFileSync } from 'node:fs';
 import { SPECIALTIES } from '../../shared/catalog.ts';
+import { SCHEMA } from './schema.ts';
 
 pg.types.setTypeParser(20, (v) => Number(v)); // bigint → number (tiền và mã đều nằm trong giới hạn an toàn)
 
@@ -11,8 +11,15 @@ export interface Db extends Q {
   close(): Promise<void>;
 }
 
-export async function openDb(connectionString: string): Promise<Db> {
-  const pool = new pg.Pool({ connectionString, max: 10 });
+export interface DbOptions {
+  /** Số kết nối tối đa. Hàm serverless nên để 1–2 và dùng chuỗi kết nối qua pooler. */
+  max?: number;
+  /** 'no-verify': bật SSL nhưng không kiểm chứng chỉ (cần cho pooler của Supabase). */
+  ssl?: 'no-verify';
+}
+
+export async function openDb(connectionString: string, options: DbOptions = {}): Promise<Db> {
+  const pool = new pg.Pool({ connectionString, max: options.max ?? 10, ssl: options.ssl === 'no-verify' ? { rejectUnauthorized: false } : undefined });
   const db: Db = {
     query: (text, params) => pool.query(text, params as any[]),
     async tx(fn) {
@@ -31,7 +38,7 @@ export async function openDb(connectionString: string): Promise<Db> {
     },
     close: () => pool.end(),
   };
-  await db.query(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'));
+  await db.query(SCHEMA);
   // Nạp giá mẫu cho đặc sản chưa có giá nào.
   const ids = Object.keys(SPECIALTIES);
   await db.query(

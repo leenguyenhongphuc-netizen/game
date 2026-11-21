@@ -1,3 +1,5 @@
+// Lược đồ cơ sở dữ liệu; chạy lại nhiều lần vẫn an toàn.
+export const SCHEMA = `
 create table if not exists users (
   id bigserial primary key,
   username text not null unique,
@@ -68,3 +70,15 @@ create table if not exists ledger (
   created_at timestamptz not null default now()
 );
 create index if not exists ledger_user_idx on ledger (user_id, id desc);
+create table if not exists friendships (
+  user_a bigint not null references users(id) on delete cascade,
+  user_b bigint not null references users(id) on delete cascade,
+  requested_by bigint not null references users(id) on delete cascade,
+  status text not null check (status in ('pending','accepted')),
+  created_at timestamptz not null default now(),
+  accepted_at timestamptz,
+  primary key (user_a, user_b),
+  check (user_a < user_b)
+);
+create index if not exists friendships_b_idx on friendships (user_b);
+`;

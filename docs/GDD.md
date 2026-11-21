@@ -146,27 +146,29 @@ Cần quyết: danh sách nguồn được tin, ai duyệt khi tác tử không 
 - Giới hạn tần suất: 300 yêu cầu/phút mỗi địa chỉ, 10 lần/phút cho đăng ký và đăng nhập.
 - `TIME_SCALE` tăng tốc thời gian khi phát triển (ví dụ 3600 thì một giờ còn một giây).
 
-### Hình ảnh
+### Thế giới và điều khiển
 
-Vườn là một cảnh 3D phủ kín màn hình, giao diện kiểu game nổi lên trên. **Đã có:**
+Game là một thế giới 3D phủ kín màn hình; người chơi điều khiển một nhân vật chạy trong xóm. **Đã có:**
 
-- Địa hình đổi theo miền: đảo có biển và ghe, miền Nam có kênh và dừa, Tây Nguyên có thông và núi, miền Bắc và miền Trung có đồi núi.
-- Nhà mái ngói có khói bếp, sạp bày hàng đang rao bán, hàng rào, lối đi lát đá.
-- Mỗi loại cây có mô hình riêng theo nhóm (cây ăn trái, trụ thanh long, giàn nho, khóm, lúa nước, sen, cà phê, tiêu…) và lớn dần qua bốn giai đoạn; trái hiện ra khi tới lúc thu hoạch.
-- Nông dân đội nón lá đi tới ô được chọn và làm động tác khi chăm cây; gà đi lại mổ thóc, chim bay, mây trôi, cây đung đưa.
-- Trời sáng, hoàng hôn, đêm theo giờ thật của người chơi; ban đêm cửa sổ và hiên nhà sáng đèn.
-- Kéo để xoay, chụm hoặc lăn chuột để phóng to; chạm ô đất để chọn.
+- **Xóm:** một con đường làng, hai bên là các lô vườn. Lô nào cũng có hàng rào, cổng, nhà, sân, ruộng 30 ô và sạp hàng sát đường. Người chơi xuất hiện ngoài đường và chạy qua cổng vào vườn.
+- **Hàng xóm là bạn bè:** kết bạn bằng tên tài khoản; vườn của bạn bè (tối đa 9) hiện ngay cạnh và đối diện vườn mình. Lô chưa có ai cắm biển "Đất trống · mời bạn".
+- **Chăm giúp:** chạy sang vườn bạn, đứng lên ô có cây đã đến giờ là chăm giúp một bước và nhận 3.000đ tiền công, tối đa 20 lượt mỗi ngày. Thu hoạch thì chỉ chủ vườn làm.
+- **Điều khiển:** kéo để hiện cần điều khiển, chạm để chạy tới, hoặc dùng bàn phím. Máy quay bám theo nhân vật.
+- **Làm việc bằng cách chạy tới:** đứng lên ô trống thì hiện thanh chọn giống; chạy qua ô có dấu vàng thì nhân vật tự làm bước chăm sóc đó, tên bước và số ký thu hoạch nổi lên.
+- **Dẫn đường:** bảng nhiệm vụ ở góc trên và mũi tên vàng chỉ cổng vườn, rồi chỉ ô gần nhất đang chờ chăm.
+- **Cảnh theo vùng:** đảo có biển và ghe, miền Nam có dừa và kênh, Tây Nguyên có thông và đất đỏ, miền Bắc và miền Trung có núi. Xóm mang cảnh của vùng người chơi định vị.
+- **Sự sống:** cây lớn dần qua bốn giai đoạn và ra trái khi tới lúc thu hoạch; gà, bướm, mây, khói bếp; ngày đêm theo giờ thật.
 
-**Dự kiến:** mô hình và hoạ tiết do hoạ sĩ làm thay cho hình khối dựng bằng mã, âm thanh và nhạc nền, thời tiết (mưa, nắng gắt), đi bộ tự do trong làng và sang vườn hàng xóm, trang trí nhà và sạp.
+**Chưa có:** thấy bạn bè chạy trong xóm theo thời gian thực (hiện chủ vườn hàng xóm là nhân vật đứng vẫy tay), trò chuyện, chăn nuôi, trang trí nhà và sạp, âm thanh, thời tiết, mô hình do hoạ sĩ làm.
 
 ## 12. Lộ trình
 
 | Giai đoạn | Nội dung |
 |---|---|
-| **0 — nền tảng (bản này)** | Tài khoản, định vị, lô đất, trồng theo quy trình, kho, sạp, chợ, bảng giá, mua đất, ghé thăm. |
+| **0 — nền tảng (bản này)** | Tài khoản, định vị, thế giới xóm 3D, trồng theo quy trình, kho, sạp, chợ, bảng giá, mua đất, kết bạn, chăm giúp. |
 | 1 — có lý do quay lại | Đơn hàng theo dịp, thông báo đến giờ chăm cây, trang trí sạp, lấy lại mật khẩu. |
 | 2 — giá thật | Tác tử thu thập giá chạy hằng ngày, biểu đồ lịch sử giá, được mùa mất giá. |
-| 3 — cộng đồng | Hợp tác xã, chế biến, chợ phiên, sổ sưu tầm, bảng xếp hạng. |
+| 3 — cộng đồng | Thấy nhau theo thời gian thực, trò chuyện, hợp tác xã, chế biến, chợ phiên, sổ sưu tầm, bảng xếp hạng. |
 | 4 — nối ra đời thật | Tiểu thương báo giá, đối tác nhà vườn, nạp tiền (sau khi xong pháp lý). |
 
 ## 13. Câu hỏi còn mở

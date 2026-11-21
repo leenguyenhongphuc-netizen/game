@@ -2,26 +2,32 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, processOf, specialtiesOfRegion } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
-  LAND_PRICE, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, TILE_M2, fmtMoney, npcPrice, seedCost, stepWaitMs,
+  HELP_REWARD, LAND_PRICE, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, TILE_M2, fmtMoney, npcPrice, seedCost, stepWaitMs,
 } from '../../shared/rules.ts';
 import { api } from './api.ts';
-import type { Listing, Me, PlotView, Prices } from './api.ts';
-import { Scene3D } from './Scene3D.tsx';
-import type { FarmScene, SceneState } from './scene/FarmScene.ts';
+import type { Friends, Listing, Me, Planting, Prices, Village } from './api.ts';
+import { WorldView } from './WorldView.tsx';
+import { SLOT_COUNT } from './scene/World.ts';
+import type { Context, World, WorldState } from './scene/World.ts';
 
 const ZONES = Object.keys(ZONE_NAMES) as Zone[];
-/** Vườn mẫu làm nền cho màn đăng nhập. */
-const SHOWCASE: SceneState = {
-  regionId: 'dt_caibe', selected: null, clockOffset: 0, stall: [
-    { id: 1, specialtyId: 'xoai_hoa_loc', quality: 'A', kg: 1, price: 1 }, { id: 2, specialtyId: 'thanh_long_cho_gao', quality: 'A', kg: 1, price: 1 },
-    { id: 3, specialtyId: 'khom_tan_phuoc', quality: 'A', kg: 1, price: 1 },
+/** Xóm mẫu làm nền cho màn đăng nhập. */
+const sample = (rows: ([string, number] | null)[], base: number): Planting[] =>
+  rows.flatMap((p, tile) => (p ? [{ id: base + tile, tile, specialtyId: p[0], stepIndex: p[1], stepReadyAt: Number.MAX_SAFE_INTEGER, lateCount: 0 }] : []));
+const stallOf = (...ids: string[]): Listing[] => ids.map((specialtyId, i) => ({ id: i + 1, specialtyId, quality: 'A' as const, kg: 1, price: 1 }));
+const SHOWCASE: WorldState = {
+  regionId: 'dt_caibe', clockOffset: 0,
+  lots: [
+    { plotId: 1, ownerName: 'Bạn', mine: true, friend: false, stall: stallOf('xoai_hoa_loc', 'thanh_long_cho_gao', 'khom_tan_phuoc'), plantings: sample([
+      ['xoai_hoa_loc', 7], ['xoai_hoa_loc', 7], ['xoai_hoa_loc', 5], ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 4],
+      ['sau_rieng_ngu_hiep', 7], ['sau_rieng_ngu_hiep', 5], null, ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 2], null,
+      ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 3], ['vu_sua_lo_ren', 7], ['vu_sua_lo_ren', 4], ['vu_sua_lo_ren', 2],
+      ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 1], null, ['xoai_hoa_loc', 3], null, ['vu_sua_lo_ren', 7]], 1) },
+    { plotId: 2, ownerName: 'cô Ba', mine: false, friend: true, stall: stallOf('vu_sua_lo_ren'), plantings: sample([['vu_sua_lo_ren', 7], ['vu_sua_lo_ren', 7], ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 6], null, null, ['xoai_hoa_loc', 5], ['xoai_hoa_loc', 7]], 100) },
+    { plotId: 3, ownerName: 'anh Sáu', mine: false, friend: true, stall: stallOf('sau_rieng_ngu_hiep'), plantings: sample([['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 7], null, ['sau_rieng_ngu_hiep', 7], ['sau_rieng_ngu_hiep', 7]], 200) },
+    { plotId: 4, ownerName: 'chị Út', mine: false, friend: true, stall: [], plantings: sample([['khom_tan_phuoc', 6], ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 3], null, ['xoai_hoa_loc', 7]], 300) },
+    null, null, null, null, null, null,
   ],
-  plantings: ([
-    ['xoai_hoa_loc', 7], ['xoai_hoa_loc', 7], ['xoai_hoa_loc', 5], ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 4],
-    ['sau_rieng_ngu_hiep', 7], ['sau_rieng_ngu_hiep', 5], null, ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 2], null,
-    ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 3], ['vu_sua_lo_ren', 7], ['vu_sua_lo_ren', 4], ['vu_sua_lo_ren', 2],
-    ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 1], null, ['xoai_hoa_loc', 3], null, ['vu_sua_lo_ren', 7],
-  ] as ([string, number] | null)[]).flatMap((p, tile) => p ? [{ id: tile + 1, tile, specialtyId: p[0], stepIndex: p[1], stepReadyAt: Number.MAX_SAFE_INTEGER, lateCount: 0 }] : []),
 };
 const regionLabel = (id: string) => {
   const r = REGIONS[id];
@@ -57,7 +63,7 @@ export function App() {
   if (me && me.user.homeRegionId) return <Game me={me} refresh={refresh} />;
   return (
     <div className="game">
-      <Scene3D state={SHOWCASE} autoRotate />
+      <WorldView state={SHOWCASE} demo />
       <div className="veil" />
       {me === null ? <Auth onDone={refresh} /> : <Onboard me={me} onDone={refresh} />}
     </div>
@@ -162,9 +168,9 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
 }
 
 // ------------------------------------------------------------------ khung chính
-type Tab = 'vuon' | 'kho' | 'cho' | 'gia' | 'bando';
-const TABS: [Tab, string, string][] = [['vuon', '🌱', 'Vườn'], ['kho', '🧺', 'Kho & Sạp'], ['cho', '🛒', 'Chợ'], ['gia', '📈', 'Bảng giá'], ['bando', '🗺️', 'Bản đồ']];
-const TAB_TITLES: Record<Tab, string> = { vuon: 'Vườn', kho: 'Kho & Sạp', cho: 'Chợ đặc sản', gia: 'Bảng giá tham chiếu', bando: 'Bản đồ vùng trồng' };
+type Tab = 'vuon' | 'kho' | 'cho' | 'ban' | 'bando' | 'sap';
+const TABS: [Tab, string, string][] = [['kho', '🧺', 'Kho & Sạp'], ['cho', '🛒', 'Chợ'], ['ban', '🧑‍🤝‍🧑', 'Bạn bè'], ['bando', '🗺️', 'Bản đồ']];
+const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho & Sạp', cho: 'Chợ đặc sản', ban: 'Bạn bè trong xóm', bando: 'Bản đồ vùng trồng', sap: 'Sạp hàng xóm' };
 
 function burstKind(stepName: string): 'water' | 'soil' | 'leaf' | 'harvest' {
   const n = stepName.toLowerCase();
@@ -173,16 +179,21 @@ function burstKind(stepName: string): 'water' | 'soil' | 'leaf' | 'harvest' {
   if (/tỉa|cắt|bao|thụ phấn|che|chong|khoanh|phòng|chăm/.test(n)) return 'leaf';
   return 'soil';
 }
+const STEP_ICON = { water: '💧', soil: '⛏️', leaf: '✂️', harvest: '🧺' };
 
 function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
+  const homePlotId = me.plots.find((p) => p.isHome)!.id;
   const [tab, setTab] = useState<Tab>('vuon');
-  const [plotId, setPlotId] = useState(me.plots[0].id);
-  const [view, setView] = useState<PlotView | null>(null);
+  const [plotId, setPlotId] = useState(homePlotId);
+  const [village, setVillage] = useState<Village | null>(null);
   const [offset, setOffset] = useState(0);
-  const [selected, setSelected] = useState<number | null>(null);
+  const [ctx, setCtx] = useState<Context>({ kind: 'none' });
   const [toast, setToast] = useState<string | null>(null);
+  const [marketTab, setMarketTab] = useState<'cho' | 'gia'>('cho');
   const [, tick] = useState(0);
-  const sceneRef = useRef<FarmScene | null>(null);
+  const worldRef = useRef<World | null>(null);
+  const busy = useRef(new Set<number>());
+  const blocked = useRef(new Map<number, number>());
   const [prices, setPrices] = useState<Prices>({});
 
   const loadPrices = useCallback(async () => { setPrices((await api('GET', '/api/prices')).prices); }, []);
@@ -190,73 +201,108 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const priceOf = useCallback((id: string) => prices[id]?.price ?? SPECIALTIES[id].refPrice, [prices]);
 
   const load = useCallback(async () => {
-    const v = await api<PlotView>('GET', `/api/plots/${plotId}`);
-    setView(v); setOffset(v.now - Date.now());
+    const v = await api<Village>('GET', `/api/village?plotId=${plotId}`);
+    setVillage(v); setOffset(v.now - Date.now());
   }, [plotId]);
-  useEffect(() => { setSelected(null); void load(); const t = setInterval(load, 20000); return () => clearInterval(t); }, [load]);
+  useEffect(() => { void load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
   useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, []);
-  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 4500); return () => clearTimeout(t); }, [toast]);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); }, [toast]);
   const reload = useCallback(() => { void load(); void refresh(); }, [load, refresh]);
   const act = useAction(reload);
 
-  const visit = (id: number) => { setPlotId(id); setTab('vuon'); };
+  const lots = useMemo(() => (village ? [village.center, ...village.neighbors] : []), [village]);
+  const worldState = useMemo(() => ({
+    regionId: village?.center.plot.regionId ?? me.user.homeRegionId!, clockOffset: offset,
+    lots: Array.from({ length: SLOT_COUNT }, (_, i) => {
+      const l = lots[i];
+      return l ? { plotId: l.plot.id, ownerName: l.plot.ownerName, mine: l.plot.mine, friend: l.plot.friend, plantings: l.plantings, stall: l.stall } : null;
+    }),
+  }), [village, lots, offset, me.user.homeRegionId]);
+
   const now = Date.now() + offset;
-  const mine = view?.plot.mine ?? true;
-  const planting = view?.plantings.find((p) => p.tile === selected);
-  const readyCount = view && mine ? view.plantings.filter((p) => now >= p.stepReadyAt).length : 0;
-  const sceneState = useMemo(() => ({
-    regionId: view?.plot.regionId ?? me.plots[0].regionId, plantings: view?.plantings ?? [], stall: view?.stall ?? [], selected, clockOffset: offset,
-  }), [view, selected, offset, me.plots]);
+  const center = village?.center;
+  const atHome = plotId === homePlotId;
+  const goHome = () => { setPlotId(homePlotId); setTab('vuon'); worldRef.current?.goHome(); };
+  const visit = (id: number) => { setPlotId(id); setTab('vuon'); worldRef.current?.goHome(); };
+
+  // Nhân vật đứng lên ô có cây đã đến giờ: tự làm bước đó (vườn mình), hoặc chăm giúp (vườn bạn).
+  const onReady = useCallback(async (lotIndex: number, planting: Planting) => {
+    const lot = lots[lotIndex];
+    if (!lot || busy.current.has(planting.id) || (blocked.current.get(planting.id) ?? 0) > Date.now()) return;
+    const sp = SPECIALTIES[planting.specialtyId];
+    const steps = processOf(CROPS[sp.crop]);
+    const step = steps[planting.stepIndex];
+    const isLast = planting.stepIndex === steps.length - 1;
+    if (!lot.plot.mine && (!lot.plot.friend || isLast)) return;
+    busy.current.add(planting.id);
+    try {
+      const kind = burstKind(step.name);
+      if (lot.plot.mine) {
+        const r = await api('POST', `/api/plantings/${planting.id}/step`, {});
+        worldRef.current?.burst(lotIndex, planting.tile, kind);
+        if (r.harvested) { worldRef.current?.floatText(lotIndex, planting.tile, `+${r.harvested.kg} kg ${CROPS[sp.crop].emoji}`); setToast(`Thu hoạch ${r.harvested.kg} kg ${sp.name} (${QUALITY_NAMES[r.harvested.quality as 'A']})`); }
+        else worldRef.current?.floatText(lotIndex, planting.tile, `${STEP_ICON[kind]} ${step.name}`, '#fff6dc');
+      } else {
+        const r = await api('POST', `/api/plantings/${planting.id}/help`, {});
+        worldRef.current?.burst(lotIndex, planting.tile, kind);
+        worldRef.current?.floatText(lotIndex, planting.tile, `+${fmtMoney(r.reward)} · chăm giúp`);
+      }
+      reload();
+    } catch (e) {
+      blocked.current.set(planting.id, Date.now() + 15000);
+      setToast(e instanceof Error ? e.message : 'Có lỗi xảy ra.');
+    } finally { busy.current.delete(planting.id); }
+  }, [lots, reload]);
+
+  // Bảng nhiệm vụ ở trên cùng
+  const mine = center?.plot.mine ?? true;
+  const ready = center && mine ? center.plantings.filter((p) => now >= p.stepReadyAt) : [];
+  const nextAt = center && mine && center.plantings.length ? Math.min(...center.plantings.map((p) => p.stepReadyAt)) : null;
+  const quest: [string, string] = !center ? ['⏳', 'Đang mở xóm…']
+    : !mine ? ['👋', `Đang thăm vườn ${center.plot.ownerName}`]
+    : center.plantings.length === 0 ? ['🌱', 'Chạy vào vườn, đứng lên một ô đất và chọn giống để trồng']
+    : ready.length > 0 ? ['⭐', `Chạy tới ${ready.length} ô có dấu vàng để chăm cây`]
+    : ['⏰', `Bước kế tiếp sau ${fmtDuration((nextAt ?? now) - now)}`];
+
+  const ctxLot = ctx.kind === 'none' ? null : lots[ctx.lot] ?? null;
+  const ctxPlanting = ctx.kind === 'tile' && ctxLot ? ctxLot.plantings.find((p) => p.tile === ctx.tile) : undefined;
 
   return (
     <div className="game">
-      <Scene3D state={sceneState} interactive onSelect={(t) => { if (tab === 'vuon') { setSelected(t); act.setError(null); } }} sceneRef={sceneRef} />
+      <WorldView state={worldState} worldRef={worldRef} paused={tab !== 'vuon'} onContext={setCtx} onReady={onReady} />
 
       <header className="hud-top">
         <div className="chip">
           <span className="chip-avatar" aria-hidden="true">🧑‍🌾</span>
-          <div className="chip-text">
-            <strong>{mine ? me.user.displayName : `Thăm vườn ${view?.plot.ownerName ?? ''}`}</strong>
-            <small>{view ? regionLabel(view.plot.regionId) : 'Đang mở vườn…'}</small>
-          </div>
+          <div className="chip-text"><strong>{me.user.displayName}</strong><small>{center ? regionLabel(center.plot.regionId) : ''}</small></div>
         </div>
         <div className="coin" title="Tiền mặt"><span aria-hidden="true">🪙</span>{fmtMoney(me.user.cash)}</div>
         <button className="round" aria-label="Đăng xuất" title="Đăng xuất"
           onClick={async () => { if (confirm('Đăng xuất khỏi Vườn Việt?')) { await api('POST', '/api/auth/logout', {}); await refresh(); } }}>⏻</button>
       </header>
-
-      {(me.plots.length > 1 || !mine) && tab === 'vuon' && (
+      <div className="quest"><span aria-hidden="true">{quest[0]}</span><p>{quest[1]}</p>{!atHome && <button onClick={goHome}>🏠 Về nhà</button>}</div>
+      {me.plots.length > 1 && tab === 'vuon' && (
         <div className="plot-switch">
-          {me.plots.map((p) => (
-            <button key={p.id} aria-pressed={p.id === plotId} onClick={() => setPlotId(p.id)}>{p.isHome ? '🏠 ' : '🌾 '}{REGIONS[p.regionId].name}</button>
-          ))}
+          {me.plots.map((p) => <button key={p.id} aria-pressed={p.id === plotId} onClick={() => visit(p.id)}>{p.isHome ? '🏠 ' : '🌾 '}{REGIONS[p.regionId].name}</button>)}
         </div>
       )}
-
       {toast && <div className="toast" role="status">{toast}</div>}
 
-      {tab === 'vuon' && view && (
-        <div className="sheet">
+      {tab === 'vuon' && ctx.kind !== 'none' && (
+        <div className="context">
           {act.error && <p className="error" role="alert">{act.error}</p>}
-          {selected === null && (
-            <p className="sheet-hint">
-              {!mine ? 'Bạn đang ghé thăm. Chạm vào ô đất để xem cây.' : readyCount > 0 ? `Có ${readyCount} ô đang chờ bạn chăm sóc (dấu vàng).` : 'Chạm vào một ô đất để trồng hoặc chăm sóc. Kéo để xoay, chụm để phóng to.'}
-            </p>
-          )}
-          {selected !== null && !planting && mine && (
+          {ctx.kind === 'tile' && ctxLot && !ctxPlanting && ctxLot.plot.mine && (
             <>
-              <div className="sheet-head"><h3>Ô {selected + 1} · đất trống</h3><button className="round" aria-label="Đóng" onClick={() => setSelected(null)}>✕</button></div>
-              <div className="choices">
-                {specialtiesOfRegion(view.plot.regionId).map((sp) => {
-                  const crop = CROPS[sp.crop];
-                  const cost = seedCost(sp);
-                  const steps = processOf(crop).length;
+              <p className="context-title">Chọn giống để trồng</p>
+              <div className="seeds">
+                {specialtiesOfRegion(ctxLot.plot.regionId).map((sp) => {
+                  const crop = CROPS[sp.crop], cost = seedCost(sp), steps = processOf(crop).length;
                   return (
-                    <button key={sp.id} className="choice" disabled={act.busy || me.user.cash < cost}
-                      onClick={() => act.run(async () => { await api('POST', `/api/plots/${plotId}/plant`, { tile: selected, specialtyId: sp.id }); sceneRef.current?.burst(selected, 'soil'); })}>
+                    <button key={sp.id} className="seed" disabled={act.busy || me.user.cash < cost}
+                      onClick={() => act.run(async () => { await api('POST', `/api/plots/${ctxLot.plot.id}/plant`, { tile: ctx.tile, specialtyId: sp.id }); worldRef.current?.burst(ctx.lot, ctx.tile, 'soil'); worldRef.current?.floatText(ctx.lot, ctx.tile, `${crop.emoji} ${processOf(crop)[0].name}`, '#fff6dc'); })}>
                       <span className="emoji">{crop.emoji}</span>
-                      <span className="grow"><strong>{sp.name}</strong>
-                        <small>{crop.yieldKg} kg/vụ · {steps} bước · {fmtDuration(stepWaitMs(sp, me.config.timeScale) * (steps - 1))}</small></span>
+                      <strong>{sp.name}</strong>
+                      <small>{crop.yieldKg} kg · {fmtDuration(stepWaitMs(sp, me.config.timeScale) * (steps - 1))}</small>
                       <span className="price">{fmtMoney(cost)}</span>
                     </button>
                   );
@@ -264,40 +310,29 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
               </div>
             </>
           )}
-          {selected !== null && !planting && !mine && <p className="sheet-hint">Ô này đang để trống.</p>}
-          {planting && (() => {
-            const sp = SPECIALTIES[planting.specialtyId];
+          {ctx.kind === 'tile' && ctxLot && !ctxPlanting && !ctxLot.plot.mine && <p className="context-title">Ô này của {ctxLot.plot.ownerName} đang để trống</p>}
+          {ctx.kind === 'tile' && ctxLot && ctxPlanting && (() => {
+            const sp = SPECIALTIES[ctxPlanting.specialtyId];
             const steps = processOf(CROPS[sp.crop]);
-            const step = steps[planting.stepIndex];
-            const wait = planting.stepReadyAt - now;
-            const isLast = planting.stepIndex === steps.length - 1;
+            const step = steps[ctxPlanting.stepIndex];
+            const wait = ctxPlanting.stepReadyAt - now;
+            const isLast = ctxPlanting.stepIndex === steps.length - 1;
             return (
-              <>
-                <div className="sheet-head">
-                  <h3>{CROPS[sp.crop].emoji} {sp.name}</h3>
-                  <span className="tag">Bước {planting.stepIndex + 1}/{steps.length}</span>
-                  <button className="round" aria-label="Đóng" onClick={() => setSelected(null)}>✕</button>
+              <div className="plant-card">
+                <span className="emoji big">{CROPS[sp.crop].emoji}</span>
+                <div className="grow">
+                  <p className="context-title">{sp.name} <span className="tag">Bước {ctxPlanting.stepIndex + 1}/{steps.length}</span></p>
+                  <div className="progress" aria-hidden="true">{steps.map((_, i) => <i key={i} className={i < ctxPlanting.stepIndex ? 'done' : i === ctxPlanting.stepIndex ? 'now' : ''} />)}</div>
+                  <p className="step-name">{step.name}{wait > 0 ? ` · sau ${fmtDuration(wait)}` : !ctxLot.plot.mine && isLast ? ' · chờ chủ vườn' : ''}</p>
+                  <p className="step-desc">{step.desc}</p>
                 </div>
-                <div className="progress" aria-hidden="true">{steps.map((_, i) => <i key={i} className={i < planting.stepIndex ? 'done' : i === planting.stepIndex ? 'now' : ''} />)}</div>
-                <p className="step-name">{step.name}</p>
-                <p className="step-desc">{step.desc}</p>
-                {planting.lateCount > 0 && <p className="muted">Đã chăm sóc trễ {planting.lateCount} lần, chất lượng sẽ giảm.</p>}
-                {mine && (
-                  <button className="primary" disabled={act.busy || wait > 0}
-                    onClick={() => act.run(async () => {
-                      const r = await api('POST', `/api/plantings/${planting.id}/step`, {});
-                      sceneRef.current?.burst(planting.tile, burstKind(step.name));
-                      if (r.harvested) { setToast(`Thu hoạch ${r.harvested.kg} kg ${sp.name} (${QUALITY_NAMES[r.harvested.quality as 'A']}). Hàng đã vào kho.`); setSelected(null); }
-                    })}>
-                    {wait > 0 ? `Chờ ${fmtDuration(wait)}` : isLast ? 'Thu hoạch' : step.name}
-                  </button>
-                )}
-              </>
+              </div>
             );
           })()}
-          {!mine && view.stall.length > 0 && selected === null && (
-            <><h3>Sạp trước nhà</h3><StallList listings={view.stall} canBuy onChanged={reload} /></>
+          {ctx.kind === 'stall' && ctxLot && (
+            <button className="primary" onClick={() => setTab(ctxLot.plot.mine ? 'kho' : 'sap')}>{ctxLot.plot.mine ? '🧺 Mở kho & sạp của mình' : `🛒 Xem sạp của ${ctxLot.plot.ownerName}`}</button>
           )}
+          {ctx.kind === 'empty-lot' && <button className="primary" onClick={() => setTab('ban')}>🧑‍🤝‍🧑 Mời bạn về làm hàng xóm</button>}
         </div>
       )}
 
@@ -306,21 +341,65 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
           <div className="modal-head"><h2>{TAB_TITLES[tab]}</h2><button className="round" aria-label="Đóng" onClick={() => setTab('vuon')}>✕</button></div>
           <div className="modal-body">
             {tab === 'kho' && <Stock me={me} priceOf={priceOf} refresh={reload} />}
-            {tab === 'cho' && <Market priceOf={priceOf} refresh={reload} />}
-            {tab === 'gia' && <PriceBoard prices={prices} />}
+            {tab === 'cho' && (
+              <>
+                <div className="tabs"><button aria-selected={marketTab === 'cho'} onClick={() => setMarketTab('cho')}>Hàng đang bán</button><button aria-selected={marketTab === 'gia'} onClick={() => setMarketTab('gia')}>Bảng giá</button></div>
+                {marketTab === 'cho' ? <Market priceOf={priceOf} refresh={reload} /> : <PriceBoard prices={prices} />}
+              </>
+            )}
+            {tab === 'ban' && <FriendsPanel onChanged={reload} visit={visit} />}
             {tab === 'bando' && <RegionMap me={me} refresh={refresh} visit={visit} />}
+            {tab === 'sap' && ctxLot && (ctxLot.stall.length ? <StallList listings={ctxLot.stall} canBuy onChanged={reload} /> : <p className="hint">{ctxLot.plot.ownerName} chưa bày món nào.</p>)}
           </div>
         </div>
       )}
 
       <nav className="dock">
         {TABS.map(([id, icon, label]) => (
-          <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
-            <span>{icon}</span>{label}
-            {id === 'vuon' && readyCount > 0 && <b className="badge">{readyCount}</b>}
-          </button>
+          <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(tab === id ? 'vuon' : id)}><span>{icon}</span>{label}</button>
         ))}
       </nav>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ bạn bè
+function FriendsPanel({ onChanged, visit }: { onChanged: () => void; visit: (plotId: number) => void }) {
+  const [data, setData] = useState<Friends | null>(null);
+  const [username, setUsername] = useState('');
+  const load = useCallback(async () => { setData(await api<Friends>('GET', '/api/friends')); }, []);
+  useEffect(() => { void load(); }, [load]);
+  const act = useAction(() => { void load(); onChanged(); });
+  return (
+    <div>
+      <p className="muted">Bạn bè sẽ có vườn nằm ngay cạnh vườn bạn trong xóm. Chạy sang chăm giúp cây đã đến giờ để nhận {fmtMoney(HELP_REWARD)} tiền công mỗi lần. Tối đa {MAX_FRIENDS} người bạn.</p>
+      <form className="row-line" onSubmit={(e) => { e.preventDefault(); void act.run(async () => { const r = await api('POST', '/api/friends', { username: username.trim().toLowerCase() }); setUsername(''); alert(r.status === 'accepted' ? 'Hai bạn đã là hàng xóm!' : 'Đã gửi lời mời kết bạn.'); }); }}>
+        <input className="grow" placeholder="Tên tài khoản của bạn bè" value={username} onChange={(e) => setUsername(e.target.value)} aria-label="Tên tài khoản của bạn bè" maxLength={20} required />
+        <button disabled={act.busy}>Mời</button>
+      </form>
+      {act.error && <p className="error" role="alert">{act.error}</p>}
+      {data === null ? <p className="hint">Đang tải…</p> : (
+        <>
+          {data.incoming.length > 0 && <h3>Lời mời gửi tới bạn</h3>}
+          {data.incoming.map((p) => (
+            <div className="row row-line" key={p.userId}><div className="grow"><strong>{p.displayName}</strong><br /><small>@{p.username}</small></div>
+              <button disabled={act.busy} onClick={() => act.run(() => api('POST', `/api/friends/${p.userId}/accept`, {}))}>Đồng ý</button>
+              <button disabled={act.busy} onClick={() => act.run(() => api('DELETE', `/api/friends/${p.userId}`))}>Từ chối</button></div>
+          ))}
+          <h3>Hàng xóm ({data.friends.length}/{MAX_FRIENDS})</h3>
+          {data.friends.length === 0 && <p className="hint">Chưa có ai. Nhập tên tài khoản của bạn bè ở trên để mời.</p>}
+          {data.friends.map((p) => (
+            <div className="row row-line" key={p.userId}><div className="grow"><strong>{p.displayName}</strong><br /><small>@{p.username}{p.homeRegionId ? ` · ${regionLabel(p.homeRegionId)}` : ' · chưa nhận đất'}</small></div>
+              {p.plotId && <button onClick={() => visit(p.plotId!)}>Thăm vườn</button>}
+              <button disabled={act.busy} onClick={() => { if (confirm(`Thôi làm hàng xóm với ${p.displayName}?`)) void act.run(() => api('DELETE', `/api/friends/${p.userId}`)); }}>Xoá</button></div>
+          ))}
+          {data.outgoing.length > 0 && <h3>Đang chờ đồng ý</h3>}
+          {data.outgoing.map((p) => (
+            <div className="row row-line" key={p.userId}><div className="grow"><strong>{p.displayName}</strong><br /><small>@{p.username}</small></div>
+              <button disabled={act.busy} onClick={() => act.run(() => api('DELETE', `/api/friends/${p.userId}`))}>Rút lại</button></div>
+          ))}
+        </>
+      )}
     </div>
   );
 }

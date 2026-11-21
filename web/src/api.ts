@@ -30,3 +30,11 @@ export interface PlotView {
   plantings: Planting[]; stall: Listing[]; now: number;
 }
 export type Prices = Record<string, { price: number; prev: number | null; source: string; observedAt: number }>;
+
+export interface LotView {
+  plot: { id: number; regionId: string; isHome: boolean; ownerId: number; ownerName: string; mine: boolean; friend: boolean };
+  plantings: Planting[]; stall: Listing[];
+}
+export interface Village { center: LotView; neighbors: LotView[]; now: number }
+export interface Person { userId: number; username: string; displayName: string; homeRegionId?: string | null; plotId?: number | null }
+export interface Friends { friends: Person[]; incoming: Person[]; outgoing: Person[] }

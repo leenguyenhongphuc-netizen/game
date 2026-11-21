@@ -5,7 +5,7 @@ import { buildApp } from '../src/app.ts';
 import { openDb } from '../src/db.ts';
 import type { Db } from '../src/db.ts';
 import { PROVINCES, REGIONS, SPECIALTIES, CROPS, processOf } from '../../shared/catalog.ts';
-import { LAND_PRICE, START_CASH, nearestRegion, npcPrice, qualityFromLate, seedCost, snapCell, stepCount } from '../../shared/rules.ts';
+import { HELP_REWARD, LAND_PRICE, MAX_FRIENDS, START_CASH, nearestRegion, npcPrice, qualityFromLate, seedCost, snapCell, stepCount } from '../../shared/rules.ts';
 
 const url = process.env.TEST_DATABASE_URL ?? 'postgres://vuon:vuon@localhost:5432/vuon_test';
 const ADMIN = 'test-admin-token-0123456789';
@@ -189,4 +189,128 @@ test('bảng giá: nạp giá cần mã quản trị, giá mới thay giá tham 
   assert.equal(Object.keys(prices).length, Object.keys(SPECIALTIES).length);
   const hist = (await call('GET', '/api/prices/toi_ly_son/history')).body.history;
   assert.equal(hist.length, 2);
+});
+
+test('bạn bè: mời, chấp nhận, mời chéo, huỷ và các lỗi chính', async () => {
+  const a = await signup('ban_a'), b = await signup('ban_b'), c = await signup('ban_c');
+  const idOf = async (ck: string) => (await call('GET', '/api/me', undefined, ck)).body.user.id as number;
+  const [ida, idb, idc] = [await idOf(a), await idOf(b), await idOf(c)];
+
+  assert.equal((await call('GET', '/api/friends')).status, 401);
+  assert.equal((await call('POST', '/api/friends', { username: 'khong_co_ai' }, a)).status, 404);
+  const self = await call('POST', '/api/friends', { username: 'ban_a' }, a);
+  assert.equal(self.status, 409); assert.equal(self.body.error, 'tu_ket_ban');
+
+  assert.deepEqual((await call('POST', '/api/friends', { username: 'ban_b' }, a)).body, { status: 'requested' });
+  const again = await call('POST', '/api/friends', { username: 'ban_b' }, a);
+  assert.equal(again.status, 409); assert.equal(again.body.error, 'da_ket_ban');
+  assert.deepEqual((await call('GET', '/api/friends', undefined, a)).body.outgoing.map((u: any) => u.userId), [idb]);
+  assert.deepEqual((await call('GET', '/api/friends', undefined, b)).body.incoming, [{ userId: ida, username: 'ban_a', displayName: 'ban_a' }]);
+
+  assert.equal((await call('POST', `/api/friends/${idb}/accept`, {}, a)).status, 404, 'người mời không tự chấp nhận được');
+  assert.equal((await call('POST', `/api/friends/${ida}/accept`, {}, c)).status, 404, 'người ngoài không chấp nhận được');
+  assert.deepEqual((await call('POST', `/api/friends/${ida}/accept`, {}, b)).body, { ok: true });
+  assert.equal((await call('POST', `/api/friends/${ida}/accept`, {}, b)).status, 404);
+  const dup = await call('POST', '/api/friends', { username: 'ban_a' }, b);
+  assert.equal(dup.status, 409); assert.equal(dup.body.error, 'da_ket_ban');
+  const fa = (await call('GET', '/api/friends', undefined, a)).body;
+  assert.deepEqual(fa.friends, [{ userId: idb, username: 'ban_b', displayName: 'ban_b', homeRegionId: null, plotId: null }]);
+  assert.deepEqual([fa.incoming, fa.outgoing], [[], []]);
+
+  // Mời chéo: C mời A, rồi A mời C thì thành bạn ngay.
+  assert.deepEqual((await call('POST', '/api/friends', { username: 'ban_a' }, c)).body, { status: 'requested' });
+  assert.deepEqual((await call('POST', '/api/friends', { username: 'ban_c' }, a)).body, { status: 'accepted' });
+  assert.deepEqual((await call('GET', '/api/friends', undefined, a)).body.friends.map((u: any) => u.userId), [idb, idc], 'xếp theo lúc chấp nhận');
+
+  // Huỷ kết bạn và từ chối lời mời.
+  assert.equal((await call('DELETE', `/api/friends/${idc}`, undefined, b)).status, 404);
+  assert.equal((await call('DELETE', `/api/friends/${ida}`, undefined, c)).status, 200);
+  assert.deepEqual((await call('GET', '/api/friends', undefined, a)).body.friends.map((u: any) => u.userId), [idb]);
+  await call('POST', '/api/friends', { username: 'ban_b' }, c);
+  assert.equal((await call('DELETE', `/api/friends/${idc}`, undefined, b)).status, 200, 'từ chối lời mời');
+  assert.deepEqual((await call('GET', '/api/friends', undefined, c)).body.outgoing, []);
+
+  // Đủ số bạn thì không nhận thêm.
+  const { rows } = await db.query(
+    `insert into users (username, display_name, pass_hash, cash) select 'day_' || i, 'day', 'x', 0 from generate_series(1, $1::int) i returning id`, [MAX_FRIENDS]);
+  for (const r of rows) {
+    await db.query(`insert into friendships (user_a, user_b, requested_by, status, accepted_at) values ($1,$2,$1,'accepted', now())`, [Math.min(idc, r.id), Math.max(idc, r.id)]);
+  }
+  await call('POST', '/api/friends', { username: 'ban_c' }, b);
+  const full = await call('POST', `/api/friends/${idb}/accept`, {}, c);
+  assert.equal(full.status, 409); assert.equal(full.body.error, 'day_ban');
+  const fullCross = await call('POST', '/api/friends', { username: 'ban_b' }, c);
+  assert.equal(fullCross.status, 409); assert.equal(fullCross.body.error, 'day_ban');
+});
+
+test('xóm và chăm giúp: hàng xóm là bạn bè, bạn giúp được bước đến hạn, thu hoạch thuộc về chủ', async () => {
+  const owner = await signup('chu_vuon'), friend = await signup('hang_xom'), stranger = await signup('nguoi_la'), homeless = await signup('chua_dat');
+  assert.equal((await call('GET', '/api/village', undefined, homeless)).status, 409);
+  const plotOf = async (ck: string, regionId: string) => (await call('POST', '/api/onboard', { regionId }, ck)).body.plotId as number;
+  const ownerPlot = await plotOf(owner, 'qng_lyson');
+  const friendPlot = await plotOf(friend, 'hn_phudien');
+  const strangerPlot = await plotOf(stranger, 'qng_lyson');
+  const me = async (ck: string) => (await call('GET', '/api/me', undefined, ck)).body;
+  const ownerId = (await me(owner)).user.id, friendId = (await me(friend)).user.id;
+  await call('POST', '/api/friends', { username: 'hang_xom' }, owner);
+  await call('POST', `/api/friends/${ownerId}/accept`, {}, friend);
+
+  const sp = SPECIALTIES.hanh_ly_son;
+  const plant = await call('POST', `/api/plots/${ownerPlot}/plant`, { tile: 5, specialtyId: sp.id }, owner);
+  const pid = plant.body.plantingId;
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'hanh_ly_son','A',9)`, [ownerId]);
+  await call('POST', '/api/market/listings', { specialtyId: sp.id, quality: 'A', kg: 4, price: sp.refPrice }, owner);
+
+  // Xóm của chủ vườn: lô nhà ở giữa, bạn bè là hàng xóm, người lạ thì không.
+  const v = (await call('GET', '/api/village', undefined, owner)).body;
+  assert.deepEqual(v.center.plot, { id: ownerPlot, regionId: 'qng_lyson', isHome: true, ownerId, ownerName: 'chu_vuon', mine: true, friend: false });
+  assert.equal(v.center.plantings.length, 1);
+  assert.deepEqual(Object.keys(v.center.plantings[0]).sort(), ['id', 'lateCount', 'specialtyId', 'stepIndex', 'stepReadyAt', 'tile']);
+  assert.equal(typeof v.center.plantings[0].stepReadyAt, 'number');
+  assert.equal(v.center.stall.length, 1); assert.equal(v.center.stall[0].kg, 4);
+  assert.deepEqual(v.neighbors.map((n: any) => n.plot), [{ id: friendPlot, regionId: 'hn_phudien', isHome: true, ownerId: friendId, ownerName: 'hang_xom', mine: false, friend: true }]);
+  assert.ok(typeof v.now === 'number');
+  // Ghé lô của người khác: không kèm hàng xóm.
+  const visit = (await call('GET', `/api/village?plotId=${ownerPlot}`, undefined, friend)).body;
+  assert.equal(visit.center.plot.friend, true); assert.equal(visit.center.plot.mine, false);
+  assert.deepEqual(visit.neighbors, []);
+  assert.equal(visit.center.plantings[0].id, pid);
+  const lone = (await call('GET', `/api/village?plotId=${strangerPlot}`, undefined, owner)).body;
+  assert.equal(lone.center.plot.friend, false); assert.deepEqual(lone.neighbors, []);
+  assert.equal((await call('GET', '/api/village?plotId=999999', undefined, owner)).status, 404);
+  assert.deepEqual((await call('GET', '/api/village', undefined, stranger)).body.neighbors, []);
+
+  // Chăm giúp.
+  const early = await call('POST', `/api/plantings/${pid}/help`, {}, friend);
+  assert.equal(early.status, 409); assert.equal(early.body.error, 'chua_den_luc');
+  await sleep(1050);
+  const no = await call('POST', `/api/plantings/${pid}/help`, {}, stranger);
+  assert.equal(no.status, 403); assert.equal(no.body.error, 'khong_phai_ban');
+  const own = await call('POST', `/api/plantings/${pid}/help`, {}, owner);
+  assert.equal(own.status, 409); assert.equal(own.body.error, 'cay_cua_minh');
+  assert.equal((await call('POST', '/api/plantings/999999/help', {}, friend)).status, 404);
+  const before = (await me(friend)).user.cash;
+  const help = await call('POST', `/api/plantings/${pid}/help`, {}, friend);
+  assert.equal(help.status, 200, JSON.stringify(help.body));
+  assert.equal(help.body.stepIndex, 2); assert.equal(help.body.reward, HELP_REWARD); assert.equal(help.body.lateCount, 0);
+  assert.equal((await me(friend)).user.cash, before + HELP_REWARD);
+  assert.equal((await call('POST', `/api/plantings/${pid}/help`, {}, friend)).status, 409, 'bước kế chưa đến hạn');
+
+  // Chủ làm tiếp tới sát bước cuối; bạn không được thu hoạch thay.
+  for (let i = 2; i < stepCount(sp) - 1; i++) {
+    await sleep(1050);
+    assert.equal((await call('POST', `/api/plantings/${pid}/step`, {}, owner)).status, 200);
+  }
+  await sleep(1050);
+  const last = await call('POST', `/api/plantings/${pid}/help`, {}, friend);
+  assert.equal(last.status, 409); assert.equal(last.body.error, 'chu_vuon_thu_hoach');
+  const harvest = await call('POST', `/api/plantings/${pid}/step`, {}, owner);
+  assert.deepEqual(harvest.body.harvested, { specialtyId: sp.id, quality: 'A', kg: CROPS.hanh.yieldKg });
+
+  // Hết lượt trong ngày.
+  const plant2 = await call('POST', `/api/plots/${ownerPlot}/plant`, { tile: 6, specialtyId: sp.id }, owner);
+  await db.query(`insert into ledger (user_id, delta, reason) select $1, 0, 'cham_giup:0' from generate_series(1, 30)`, [friendId]);
+  await sleep(1050);
+  const capped = await call('POST', `/api/plantings/${plant2.body.plantingId}/help`, {}, friend);
+  assert.equal(capped.status, 409); assert.equal(capped.body.error, 'het_luot');
 });

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { CROPS, REGIONS, SPECIALTIES } from '../../shared/catalog.ts';
 import {
-  LAND_PRICE, LATE_GRACE_MS, QUALITIES, START_CASH, TILE_COUNT, inVietnam, nearestRegion, npcPrice,
+  HELP_DAILY_LIMIT, HELP_REWARD, LAND_PRICE, LATE_GRACE_MS, MAX_FRIENDS, QUALITIES, START_CASH, TILE_COUNT, inVietnam, nearestRegion, npcPrice,
   qualityFromLate, region as findRegion, seedCost, snapCell, specialty as findSpecialty, stepCount, stepWaitMs,
 } from '../../shared/rules.ts';
 import type { Quality } from '../../shared/rules.ts';
@@ -31,6 +31,8 @@ export interface AppOptions {
   secureCookies?: boolean;
   staticDir?: string;
   rateLimit?: boolean;
+  /** Bật khi chạy sau proxy (Cloudflare, Vercel, Caddy) để lấy đúng địa chỉ người dùng cho giới hạn tần suất. */
+  trustProxy?: boolean;
 }
 
 class HttpError extends Error {
@@ -69,7 +71,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const { db } = opts;
   const timeScale = opts.timeScale ?? 1;
   const lateGraceMs = opts.lateGraceMs ?? LATE_GRACE_MS / timeScale;
-  const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
+  const app = Fastify({ logger: false, bodyLimit: 64 * 1024, trustProxy: !!opts.trustProxy });
   await app.register(cookie);
   if (opts.rateLimit !== false) await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
   const authLimit = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
@@ -318,6 +320,168 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await q.query('update plantings set step_index = step_index + 1, step_ready_at = $2, late_count = $3 where id = $1', [plantingId, next, late]);
       return { stepIndex: g.step_index + 1, stepReadyAt: next.getTime(), lateCount: late };
     });
+  });
+
+  app.post('/api/plantings/:id/help', async (req) => {
+    const userId = await requireUser(req);
+    const plantingId = idParam((req.params as any).id);
+    return db.tx(async (q) => {
+      const { rows } = await q.query(
+        `select g.id, g.specialty_id, g.step_index, g.step_ready_at, g.late_count, p.user_id as owner_id
+         from plantings g join plots p on p.id = g.plot_id
+         where g.id = $1 for update of g`, [plantingId]);
+      const g = rows[0];
+      if (!g) throw bad('khong_tim_thay', 'Không tìm thấy cây trồng.', 404);
+      if (g.owner_id === userId) throw bad('cay_cua_minh', 'Đây là cây của bạn, hãy tự chăm sóc.', 409);
+      if (!(await areFriends(q, userId, g.owner_id))) throw bad('khong_phai_ban', 'Chỉ bạn bè mới chăm giúp được.', 403);
+      const sp = SPECIALTIES[g.specialty_id];
+      const now = Date.now();
+      const readyAt = new Date(g.step_ready_at).getTime();
+      if (now < readyAt) throw bad('chua_den_luc', 'Chưa đến lúc làm bước này.', 409);
+      if (g.step_index >= stepCount(sp) - 1) throw bad('chu_vuon_thu_hoach', 'Thu hoạch là việc của chủ vườn.', 409);
+      // Khoá tài khoản người giúp để hai lượt giúp cùng lúc không vượt giới hạn ngày.
+      await q.query('select id from users where id = $1 for update', [userId]);
+      const used = await q.query(
+        `select count(*)::int as n from ledger where user_id = $1 and reason like 'cham_giup:%' and created_at >= date_trunc('day', now())`, [userId]);
+      if (used.rows[0].n >= HELP_DAILY_LIMIT) throw bad('het_luot', `Hôm nay bạn đã chăm giúp đủ ${HELP_DAILY_LIMIT} lượt.`, 409);
+      const late = g.late_count + (now > readyAt + lateGraceMs ? 1 : 0);
+      const next = new Date(now + stepWaitMs(sp, timeScale));
+      await q.query('update plantings set step_index = step_index + 1, step_ready_at = $2, late_count = $3 where id = $1', [plantingId, next, late]);
+      await addCash(q, userId, HELP_REWARD, `cham_giup:${plantingId}`);
+      return { stepIndex: g.step_index + 1, stepReadyAt: next.getTime(), lateCount: late, reward: HELP_REWARD };
+    });
+  });
+
+  // ---------------------------------------------------------------- bạn bè và xóm
+  const pair = (x: number, y: number): [number, number] => (x < y ? [x, y] : [y, x]);
+  async function areFriends(q: Q, x: number, y: number): Promise<boolean> {
+    if (x === y) return false;
+    const { rows } = await q.query(`select 1 from friendships where user_a = $1 and user_b = $2 and status = 'accepted'`, pair(x, y));
+    return rows.length > 0;
+  }
+  /** Khoá hai tài khoản theo thứ tự mã rồi kiểm tra chưa bên nào đủ số bạn. */
+  async function ensureFriendRoom(q: Q, x: number, y: number) {
+    await q.query('select id from users where id in ($1,$2) order by id for update', [x, y]);
+    const { rows } = await q.query(
+      `select u.id, (select count(*)::int from friendships f where f.status = 'accepted' and (f.user_a = u.id or f.user_b = u.id)) as n
+       from users u where u.id in ($1,$2)`, [x, y]);
+    if (rows.some((r) => r.n >= MAX_FRIENDS)) throw bad('day_ban', `Mỗi người có tối đa ${MAX_FRIENDS} bạn.`, 409);
+  }
+
+  app.get('/api/friends', async (req) => {
+    const userId = await requireUser(req);
+    const { rows } = await db.query(
+      `select f.status, f.requested_by, u.id, u.username, u.display_name, u.home_region_id,
+              (select p.id from plots p where p.user_id = u.id and p.is_home limit 1) as plot_id
+       from friendships f
+       join users u on u.id = case when f.user_a = $1 then f.user_b else f.user_a end
+       where f.user_a = $1 or f.user_b = $1
+       order by f.accepted_at nulls last, f.created_at`, [userId]);
+    const brief = (r: any) => ({ userId: r.id, username: r.username, displayName: r.display_name });
+    return {
+      friends: rows.filter((r) => r.status === 'accepted').map((r) => ({ ...brief(r), homeRegionId: r.home_region_id, plotId: r.plot_id })),
+      incoming: rows.filter((r) => r.status === 'pending' && r.requested_by !== userId).map(brief),
+      outgoing: rows.filter((r) => r.status === 'pending' && r.requested_by === userId).map(brief),
+    };
+  });
+
+  app.post('/api/friends', async (req) => {
+    const userId = await requireUser(req);
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const username = typeof b.username === 'string' ? b.username.trim().toLowerCase() : '';
+    const target = await db.query('select id from users where username = $1', [username]);
+    if (!target.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy tài khoản này.', 404);
+    const otherId = target.rows[0].id as number;
+    if (otherId === userId) throw bad('tu_ket_ban', 'Bạn không thể kết bạn với chính mình.', 409);
+    const [a, c] = pair(userId, otherId);
+    return db.tx(async (q) => {
+      await q.query('select id from users where id in ($1,$2) order by id for update', [a, c]);
+      const { rows } = await q.query('select status, requested_by from friendships where user_a = $1 and user_b = $2 for update', [a, c]);
+      const f = rows[0];
+      if (!f) {
+        await q.query(`insert into friendships (user_a, user_b, requested_by, status) values ($1,$2,$3,'pending')`, [a, c, userId]);
+        return { status: 'requested' };
+      }
+      if (f.status === 'accepted') throw bad('da_ket_ban', 'Hai bạn đã là bạn bè.', 409);
+      if (f.requested_by === userId) throw bad('da_ket_ban', 'Bạn đã gửi lời mời rồi, hãy chờ người kia chấp nhận.', 409);
+      await ensureFriendRoom(q, a, c);
+      await q.query(`update friendships set status = 'accepted', accepted_at = now() where user_a = $1 and user_b = $2`, [a, c]);
+      return { status: 'accepted' };
+    });
+  });
+
+  app.post('/api/friends/:userId/accept', async (req) => {
+    const userId = await requireUser(req);
+    const otherId = idParam((req.params as any).userId);
+    if (otherId === userId) throw bad('khong_tim_thay', 'Không có lời mời nào đang chờ.', 404);
+    const [a, c] = pair(userId, otherId);
+    return db.tx(async (q) => {
+      await q.query('select id from users where id in ($1,$2) order by id for update', [a, c]);
+      const { rows } = await q.query(
+        `select 1 from friendships where user_a = $1 and user_b = $2 and status = 'pending' and requested_by = $3 for update`, [a, c, otherId]);
+      if (!rows[0]) throw bad('khong_tim_thay', 'Không có lời mời nào đang chờ.', 404);
+      await ensureFriendRoom(q, a, c);
+      await q.query(`update friendships set status = 'accepted', accepted_at = now() where user_a = $1 and user_b = $2`, [a, c]);
+      return { ok: true };
+    });
+  });
+
+  app.delete('/api/friends/:userId', async (req) => {
+    const userId = await requireUser(req);
+    const otherId = idParam((req.params as any).userId);
+    const { rowCount } = await db.query('delete from friendships where user_a = $1 and user_b = $2', pair(userId, otherId));
+    if (!rowCount || otherId === userId) throw bad('khong_tim_thay', 'Hai bạn chưa có quan hệ bạn bè.', 404);
+    return { ok: true };
+  });
+
+  app.get('/api/village', async (req) => {
+    const userId = await requireUser(req);
+    const raw = (req.query as Record<string, unknown>).plotId;
+    const cols = `p.id, p.user_id, p.region_id, p.is_home, u.display_name`;
+    let center: any;
+    if (raw === undefined || raw === '') {
+      const { rows } = await db.query(`select ${cols} from plots p join users u on u.id = p.user_id where p.user_id = $1 and p.is_home limit 1`, [userId]);
+      if (!rows[0]) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
+      center = rows[0];
+    } else {
+      const { rows } = await db.query(`select ${cols} from plots p join users u on u.id = p.user_id where p.id = $1`, [idParam(raw)]);
+      if (!rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy lô đất.', 404);
+      center = rows[0];
+    }
+    const friends = await db.query(
+      `select case when user_a = $1 then user_b else user_a end as id, accepted_at
+       from friendships where status = 'accepted' and (user_a = $1 or user_b = $1) order by accepted_at, created_at`, [userId]);
+    const friendIds: number[] = friends.rows.map((r) => r.id);
+    let neighbors: any[] = [];
+    if (center.user_id === userId && center.is_home && friendIds.length) {
+      const { rows } = await db.query(
+        `select ${cols} from plots p join users u on u.id = p.user_id where p.is_home and p.user_id = any($1::bigint[])`, [friendIds]);
+      const byOwner = new Map(rows.map((r) => [r.user_id, r]));
+      neighbors = friendIds.map((id) => byOwner.get(id)).filter(Boolean).slice(0, MAX_FRIENDS);
+    }
+    const all = [center, ...neighbors];
+    const [tiles, stalls] = await Promise.all([
+      db.query(
+        `select id, plot_id, tile, specialty_id, step_index, step_ready_at, late_count
+         from plantings where plot_id = any($1::bigint[]) order by plot_id, tile`, [all.map((p) => p.id)]),
+      db.query(
+        `select id, seller_id, specialty_id, quality, kg, price from (
+           select l.*, row_number() over (partition by seller_id order by id desc) as rn
+           from listings l where l.status = 'open' and l.seller_id = any($1::bigint[])
+         ) t where rn <= 50 order by id desc`, [[...new Set(all.map((p) => p.user_id))]]),
+    ]);
+    const lot = (p: any) => ({
+      plot: {
+        id: p.id, regionId: p.region_id, isHome: p.is_home, ownerId: p.user_id, ownerName: p.display_name,
+        mine: p.user_id === userId, friend: friendIds.includes(p.user_id),
+      },
+      plantings: tiles.rows.filter((t) => t.plot_id === p.id).map((t) => ({
+        id: t.id, tile: t.tile, specialtyId: t.specialty_id, stepIndex: t.step_index,
+        stepReadyAt: new Date(t.step_ready_at).getTime(), lateCount: t.late_count,
+      })),
+      stall: stalls.rows.filter((l) => l.seller_id === p.user_id).map((l) => ({ id: l.id, specialtyId: l.specialty_id, quality: l.quality, kg: l.kg, price: l.price })),
+    });
+    return { center: lot(center), neighbors: neighbors.map(lot), now: Date.now() };
   });
 
   // ---------------------------------------------------------------- bán hàng

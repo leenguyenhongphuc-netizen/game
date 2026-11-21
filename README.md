@@ -2,7 +2,7 @@
 
 Game nông trại trực tuyến trên web: nhận một mảnh vườn ở vùng trồng gần nơi bạn sống, trồng đặc sản của vùng theo đúng quy trình, bán cho thương lái hoặc bày sạp giao thương với cả nước.
 
-Tài liệu thiết kế: [docs/GDD.md](docs/GDD.md).
+Tài liệu thiết kế: [docs/GDD.md](docs/GDD.md). Triển khai lên Supabase + Vercel + Cloudflare: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Chạy trên máy
 
@@ -61,4 +61,9 @@ Kiểm thử xoá sạch cơ sở dữ liệu được trỏ tới, đừng tr�
 
 - `shared/` — danh mục vùng trồng, đặc sản, quy trình và luật chơi dùng chung.
 - `server/` — máy chủ Fastify và lược đồ PostgreSQL.
-- `web/` — giao diện React; vườn là cảnh 3D dựng bằng Three.js (`web/src/scene/`), toàn bộ mô hình tạo bằng mã, không dùng tệp hình ngoài.
+- `web/` — giao diện React; thế giới xóm vườn 3D dựng bằng Three.js (`web/src/scene/`), toàn bộ mô hình tạo bằng mã, không dùng tệp hình ngoài.
+- `api/`, `vercel.json` — điểm vào khi chạy trên Vercel.
+
+## Điều khiển
+
+Kéo trên màn hình để hiện cần điều khiển, hoặc chạm vào một điểm để nhân vật chạy tới. Trên máy tính dùng phím mũi tên hoặc WASD, lăn chuột để phóng to. Đứng lên ô đất trống để chọn giống; chạy qua ô có dấu vàng để chăm cây.

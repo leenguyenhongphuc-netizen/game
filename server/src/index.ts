@@ -12,12 +12,13 @@ if (!(timeScale > 0)) {
   process.exit(1);
 }
 
-const db = await openDb(databaseUrl);
+const db = await openDb(databaseUrl, { ssl: process.env.DATABASE_SSL === 'no-verify' ? 'no-verify' : undefined });
 const app = await buildApp({
   db,
   timeScale,
   adminToken: process.env.ADMIN_TOKEN,
   secureCookies: process.env.NODE_ENV === 'production',
+  trustProxy: process.env.TRUST_PROXY === '1',
 });
 const port = Number(process.env.PORT ?? 3000);
 await app.listen({ port, host: process.env.HOST ?? '0.0.0.0' });
