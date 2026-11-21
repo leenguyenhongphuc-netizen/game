@@ -138,13 +138,26 @@ Cần quyết: danh sách nguồn được tin, ai duyệt khi tác tử không 
 |---|---|---|
 | Luật chơi và danh mục dùng chung | TypeScript thuần | `shared/` |
 | Máy chủ | Node.js 22, Fastify, PostgreSQL | `server/` |
-| Giao diện | React, Vite, canvas 2D góc nghiêng | `web/` |
+| Giao diện | React, Vite, cảnh 3D bằng Three.js | `web/` |
 
 - Máy chủ quyết định mọi thứ liên quan tiền, thời gian và hàng hoá; giao diện chỉ hiển thị.
 - Tài khoản: tên + mật khẩu (băm scrypt), phiên lưu bằng cookie `httpOnly`.
 - Mọi thao tác tiền và hàng chạy trong giao dịch cơ sở dữ liệu có khoá dòng.
 - Giới hạn tần suất: 300 yêu cầu/phút mỗi địa chỉ, 10 lần/phút cho đăng ký và đăng nhập.
 - `TIME_SCALE` tăng tốc thời gian khi phát triển (ví dụ 3600 thì một giờ còn một giây).
+
+### Hình ảnh
+
+Vườn là một cảnh 3D phủ kín màn hình, giao diện kiểu game nổi lên trên. **Đã có:**
+
+- Địa hình đổi theo miền: đảo có biển và ghe, miền Nam có kênh và dừa, Tây Nguyên có thông và núi, miền Bắc và miền Trung có đồi núi.
+- Nhà mái ngói có khói bếp, sạp bày hàng đang rao bán, hàng rào, lối đi lát đá.
+- Mỗi loại cây có mô hình riêng theo nhóm (cây ăn trái, trụ thanh long, giàn nho, khóm, lúa nước, sen, cà phê, tiêu…) và lớn dần qua bốn giai đoạn; trái hiện ra khi tới lúc thu hoạch.
+- Nông dân đội nón lá đi tới ô được chọn và làm động tác khi chăm cây; gà đi lại mổ thóc, chim bay, mây trôi, cây đung đưa.
+- Trời sáng, hoàng hôn, đêm theo giờ thật của người chơi; ban đêm cửa sổ và hiên nhà sáng đèn.
+- Kéo để xoay, chụm hoặc lăn chuột để phóng to; chạm ô đất để chọn.
+
+**Dự kiến:** mô hình và hoạ tiết do hoạ sĩ làm thay cho hình khối dựng bằng mã, âm thanh và nhạc nền, thời tiết (mưa, nắng gắt), đi bộ tự do trong làng và sang vườn hàng xóm, trang trí nhà và sạp.
 
 ## 12. Lộ trình
 

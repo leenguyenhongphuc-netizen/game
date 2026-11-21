@@ -61,4 +61,4 @@ Kiểm thử xoá sạch cơ sở dữ liệu được trỏ tới, đừng tr�
 
 - `shared/` — danh mục vùng trồng, đặc sản, quy trình và luật chơi dùng chung.
 - `server/` — máy chủ Fastify và lược đồ PostgreSQL.
-- `web/` — giao diện React, vườn vẽ bằng canvas 2D góc nghiêng.
+- `web/` — giao diện React; vườn là cảnh 3D dựng bằng Three.js (`web/src/scene/`), toàn bộ mô hình tạo bằng mã, không dùng tệp hình ngoài.

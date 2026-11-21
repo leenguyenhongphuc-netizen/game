@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, processOf, specialtiesOfRegion } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
@@ -6,9 +6,23 @@ import {
 } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import type { Listing, Me, PlotView, Prices } from './api.ts';
-import { FarmCanvas } from './FarmCanvas.tsx';
+import { Scene3D } from './Scene3D.tsx';
+import type { FarmScene, SceneState } from './scene/FarmScene.ts';
 
 const ZONES = Object.keys(ZONE_NAMES) as Zone[];
+/** Vườn mẫu làm nền cho màn đăng nhập. */
+const SHOWCASE: SceneState = {
+  regionId: 'dt_caibe', selected: null, clockOffset: 0, stall: [
+    { id: 1, specialtyId: 'xoai_hoa_loc', quality: 'A', kg: 1, price: 1 }, { id: 2, specialtyId: 'thanh_long_cho_gao', quality: 'A', kg: 1, price: 1 },
+    { id: 3, specialtyId: 'khom_tan_phuoc', quality: 'A', kg: 1, price: 1 },
+  ],
+  plantings: ([
+    ['xoai_hoa_loc', 7], ['xoai_hoa_loc', 7], ['xoai_hoa_loc', 5], ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 4],
+    ['sau_rieng_ngu_hiep', 7], ['sau_rieng_ngu_hiep', 5], null, ['thanh_long_cho_gao', 7], ['thanh_long_cho_gao', 2], null,
+    ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 3], ['vu_sua_lo_ren', 7], ['vu_sua_lo_ren', 4], ['vu_sua_lo_ren', 2],
+    ['khom_tan_phuoc', 6], ['khom_tan_phuoc', 1], null, ['xoai_hoa_loc', 3], null, ['vu_sua_lo_ren', 7],
+  ] as ([string, number] | null)[]).flatMap((p, tile) => p ? [{ id: tile + 1, tile, specialtyId: p[0], stepIndex: p[1], stepReadyAt: Number.MAX_SAFE_INTEGER, lateCount: 0 }] : []),
+};
 const regionLabel = (id: string) => {
   const r = REGIONS[id];
   return `${r.name}, ${r.province}`;
@@ -40,9 +54,14 @@ export function App() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   if (me === undefined) return <div className="center">Đang tải…</div>;
-  if (me === null) return <Auth onDone={refresh} />;
-  if (!me.user.homeRegionId) return <Onboard me={me} onDone={refresh} />;
-  return <Game me={me} refresh={refresh} />;
+  if (me && me.user.homeRegionId) return <Game me={me} refresh={refresh} />;
+  return (
+    <div className="game">
+      <Scene3D state={SHOWCASE} autoRotate />
+      <div className="veil" />
+      {me === null ? <Auth onDone={refresh} /> : <Onboard me={me} onDone={refresh} />}
+    </div>
+  );
 }
 
 // ------------------------------------------------------------------ đăng nhập
@@ -145,143 +164,169 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
 // ------------------------------------------------------------------ khung chính
 type Tab = 'vuon' | 'kho' | 'cho' | 'gia' | 'bando';
 const TABS: [Tab, string, string][] = [['vuon', '🌱', 'Vườn'], ['kho', '🧺', 'Kho & Sạp'], ['cho', '🛒', 'Chợ'], ['gia', '📈', 'Bảng giá'], ['bando', '🗺️', 'Bản đồ']];
+const TAB_TITLES: Record<Tab, string> = { vuon: 'Vườn', kho: 'Kho & Sạp', cho: 'Chợ đặc sản', gia: 'Bảng giá tham chiếu', bando: 'Bản đồ vùng trồng' };
+
+function burstKind(stepName: string): 'water' | 'soil' | 'leaf' | 'harvest' {
+  const n = stepName.toLowerCase();
+  if (/thu hoạch|thu hái|nhổ|gặt|sơ chế/.test(n)) return 'harvest';
+  if (/tưới|nước/.test(n)) return 'water';
+  if (/tỉa|cắt|bao|thụ phấn|che|chong|khoanh|phòng|chăm/.test(n)) return 'leaf';
+  return 'soil';
+}
 
 function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [tab, setTab] = useState<Tab>('vuon');
   const [plotId, setPlotId] = useState(me.plots[0].id);
+  const [view, setView] = useState<PlotView | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [, tick] = useState(0);
+  const sceneRef = useRef<FarmScene | null>(null);
   const [prices, setPrices] = useState<Prices>({});
+
   const loadPrices = useCallback(async () => { setPrices((await api('GET', '/api/prices')).prices); }, []);
   useEffect(() => { void loadPrices(); const t = setInterval(loadPrices, 60000); return () => clearInterval(t); }, [loadPrices]);
   const priceOf = useCallback((id: string) => prices[id]?.price ?? SPECIALTIES[id].refPrice, [prices]);
+
+  const load = useCallback(async () => {
+    const v = await api<PlotView>('GET', `/api/plots/${plotId}`);
+    setView(v); setOffset(v.now - Date.now());
+  }, [plotId]);
+  useEffect(() => { setSelected(null); void load(); const t = setInterval(load, 20000); return () => clearInterval(t); }, [load]);
+  useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 4500); return () => clearTimeout(t); }, [toast]);
+  const reload = useCallback(() => { void load(); void refresh(); }, [load, refresh]);
+  const act = useAction(reload);
+
   const visit = (id: number) => { setPlotId(id); setTab('vuon'); };
+  const now = Date.now() + offset;
+  const mine = view?.plot.mine ?? true;
+  const planting = view?.plantings.find((p) => p.tile === selected);
+  const readyCount = view && mine ? view.plantings.filter((p) => now >= p.stepReadyAt).length : 0;
+  const sceneState = useMemo(() => ({
+    regionId: view?.plot.regionId ?? me.plots[0].regionId, plantings: view?.plantings ?? [], stall: view?.stall ?? [], selected, clockOffset: offset,
+  }), [view, selected, offset, me.plots]);
 
   return (
-    <div className="shell">
-      <header className="topbar">
-        <div><strong>🌱 Vườn Việt</strong><span className="muted"> · {me.user.displayName}</span></div>
-        <div className="cash" title="Tiền mặt">{fmtMoney(me.user.cash)}</div>
-        <button className="link" onClick={async () => { await api('POST', '/api/auth/logout', {}); await refresh(); }}>Đăng xuất</button>
+    <div className="game">
+      <Scene3D state={sceneState} interactive onSelect={(t) => { if (tab === 'vuon') { setSelected(t); act.setError(null); } }} sceneRef={sceneRef} />
+
+      <header className="hud-top">
+        <div className="chip">
+          <span className="chip-avatar" aria-hidden="true">🧑‍🌾</span>
+          <div className="chip-text">
+            <strong>{mine ? me.user.displayName : `Thăm vườn ${view?.plot.ownerName ?? ''}`}</strong>
+            <small>{view ? regionLabel(view.plot.regionId) : 'Đang mở vườn…'}</small>
+          </div>
+        </div>
+        <div className="coin" title="Tiền mặt"><span aria-hidden="true">🪙</span>{fmtMoney(me.user.cash)}</div>
+        <button className="round" aria-label="Đăng xuất" title="Đăng xuất"
+          onClick={async () => { if (confirm('Đăng xuất khỏi Vườn Việt?')) { await api('POST', '/api/auth/logout', {}); await refresh(); } }}>⏻</button>
       </header>
-      <section className="content">
-        {tab === 'vuon' && <Farm me={me} plotId={plotId} setPlotId={setPlotId} refresh={refresh} />}
-        {tab === 'kho' && <Stock me={me} priceOf={priceOf} refresh={refresh} />}
-        {tab === 'cho' && <Market priceOf={priceOf} refresh={refresh} />}
-        {tab === 'gia' && <PriceBoard prices={prices} />}
-        {tab === 'bando' && <RegionMap me={me} refresh={refresh} visit={visit} />}
-      </section>
-      <nav className="tabbar">
+
+      {(me.plots.length > 1 || !mine) && tab === 'vuon' && (
+        <div className="plot-switch">
+          {me.plots.map((p) => (
+            <button key={p.id} aria-pressed={p.id === plotId} onClick={() => setPlotId(p.id)}>{p.isHome ? '🏠 ' : '🌾 '}{REGIONS[p.regionId].name}</button>
+          ))}
+        </div>
+      )}
+
+      {toast && <div className="toast" role="status">{toast}</div>}
+
+      {tab === 'vuon' && view && (
+        <div className="sheet">
+          {act.error && <p className="error" role="alert">{act.error}</p>}
+          {selected === null && (
+            <p className="sheet-hint">
+              {!mine ? 'Bạn đang ghé thăm. Chạm vào ô đất để xem cây.' : readyCount > 0 ? `Có ${readyCount} ô đang chờ bạn chăm sóc (dấu vàng).` : 'Chạm vào một ô đất để trồng hoặc chăm sóc. Kéo để xoay, chụm để phóng to.'}
+            </p>
+          )}
+          {selected !== null && !planting && mine && (
+            <>
+              <div className="sheet-head"><h3>Ô {selected + 1} · đất trống</h3><button className="round" aria-label="Đóng" onClick={() => setSelected(null)}>✕</button></div>
+              <div className="choices">
+                {specialtiesOfRegion(view.plot.regionId).map((sp) => {
+                  const crop = CROPS[sp.crop];
+                  const cost = seedCost(sp);
+                  const steps = processOf(crop).length;
+                  return (
+                    <button key={sp.id} className="choice" disabled={act.busy || me.user.cash < cost}
+                      onClick={() => act.run(async () => { await api('POST', `/api/plots/${plotId}/plant`, { tile: selected, specialtyId: sp.id }); sceneRef.current?.burst(selected, 'soil'); })}>
+                      <span className="emoji">{crop.emoji}</span>
+                      <span className="grow"><strong>{sp.name}</strong>
+                        <small>{crop.yieldKg} kg/vụ · {steps} bước · {fmtDuration(stepWaitMs(sp, me.config.timeScale) * (steps - 1))}</small></span>
+                      <span className="price">{fmtMoney(cost)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {selected !== null && !planting && !mine && <p className="sheet-hint">Ô này đang để trống.</p>}
+          {planting && (() => {
+            const sp = SPECIALTIES[planting.specialtyId];
+            const steps = processOf(CROPS[sp.crop]);
+            const step = steps[planting.stepIndex];
+            const wait = planting.stepReadyAt - now;
+            const isLast = planting.stepIndex === steps.length - 1;
+            return (
+              <>
+                <div className="sheet-head">
+                  <h3>{CROPS[sp.crop].emoji} {sp.name}</h3>
+                  <span className="tag">Bước {planting.stepIndex + 1}/{steps.length}</span>
+                  <button className="round" aria-label="Đóng" onClick={() => setSelected(null)}>✕</button>
+                </div>
+                <div className="progress" aria-hidden="true">{steps.map((_, i) => <i key={i} className={i < planting.stepIndex ? 'done' : i === planting.stepIndex ? 'now' : ''} />)}</div>
+                <p className="step-name">{step.name}</p>
+                <p className="step-desc">{step.desc}</p>
+                {planting.lateCount > 0 && <p className="muted">Đã chăm sóc trễ {planting.lateCount} lần, chất lượng sẽ giảm.</p>}
+                {mine && (
+                  <button className="primary" disabled={act.busy || wait > 0}
+                    onClick={() => act.run(async () => {
+                      const r = await api('POST', `/api/plantings/${planting.id}/step`, {});
+                      sceneRef.current?.burst(planting.tile, burstKind(step.name));
+                      if (r.harvested) { setToast(`Thu hoạch ${r.harvested.kg} kg ${sp.name} (${QUALITY_NAMES[r.harvested.quality as 'A']}). Hàng đã vào kho.`); setSelected(null); }
+                    })}>
+                    {wait > 0 ? `Chờ ${fmtDuration(wait)}` : isLast ? 'Thu hoạch' : step.name}
+                  </button>
+                )}
+              </>
+            );
+          })()}
+          {!mine && view.stall.length > 0 && selected === null && (
+            <><h3>Sạp trước nhà</h3><StallList listings={view.stall} canBuy onChanged={reload} /></>
+          )}
+        </div>
+      )}
+
+      {tab !== 'vuon' && (
+        <div className="modal" role="dialog" aria-label={TAB_TITLES[tab]}>
+          <div className="modal-head"><h2>{TAB_TITLES[tab]}</h2><button className="round" aria-label="Đóng" onClick={() => setTab('vuon')}>✕</button></div>
+          <div className="modal-body">
+            {tab === 'kho' && <Stock me={me} priceOf={priceOf} refresh={reload} />}
+            {tab === 'cho' && <Market priceOf={priceOf} refresh={reload} />}
+            {tab === 'gia' && <PriceBoard prices={prices} />}
+            {tab === 'bando' && <RegionMap me={me} refresh={refresh} visit={visit} />}
+          </div>
+        </div>
+      )}
+
+      <nav className="dock">
         {TABS.map(([id, icon, label]) => (
-          <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}><span>{icon}</span>{label}</button>
+          <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
+            <span>{icon}</span>{label}
+            {id === 'vuon' && readyCount > 0 && <b className="badge">{readyCount}</b>}
+          </button>
         ))}
       </nav>
     </div>
   );
 }
 
-// ------------------------------------------------------------------ vườn
-function Farm({ me, plotId, setPlotId, refresh }: { me: Me; plotId: number; setPlotId: (id: number) => void; refresh: () => Promise<void> }) {
-  const [view, setView] = useState<PlotView | null>(null);
-  const [offset, setOffset] = useState(0);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [, tick] = useState(0);
-  const [toast, setToast] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    const v = await api<PlotView>('GET', `/api/plots/${plotId}`);
-    setView(v); setOffset(v.now - Date.now());
-  }, [plotId]);
-  useEffect(() => { setView(null); setSelected(null); void load(); const t = setInterval(load, 20000); return () => clearInterval(t); }, [load]);
-  useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, []);
-  const act = useAction(() => { void load(); void refresh(); });
-
-  if (!view) return <div className="center">Đang mở vườn…</div>;
-  const now = Date.now() + offset;
-  const planting = view.plantings.find((p) => p.tile === selected);
-  const mine = view.plot.mine;
-  const myPlots = me.plots;
-
-  return (
-    <div className="farm">
-      <div className="farm-head">
-        <div>
-          <h2>{mine ? (view.plot.isHome ? 'Vườn nhà' : 'Vườn phương xa') : `Vườn của ${view.plot.ownerName}`}</h2>
-          <p className="muted">{regionLabel(view.plot.regionId)}</p>
-        </div>
-        {(myPlots.length > 1 || !mine) && (
-          <select value={mine ? plotId : ''} onChange={(e) => setPlotId(Number(e.target.value))} aria-label="Chọn vườn">
-            {!mine && <option value="">Đang ghé thăm</option>}
-            {myPlots.map((p) => <option key={p.id} value={p.id}>{p.isHome ? '🏠 ' : ''}{REGIONS[p.regionId].name}</option>)}
-          </select>
-        )}
-      </div>
-      <FarmCanvas plantings={view.plantings} stall={view.stall} selected={selected} clockOffset={offset} onSelect={setSelected} />
-      {toast && <p className="notice" role="status">{toast}</p>}
-      {act.error && <p className="error" role="alert">{act.error}</p>}
-
-      {selected === null && <p className="hint">{mine ? 'Bấm vào một ô đất để trồng hoặc chăm sóc.' : 'Bạn đang ghé thăm. Bấm vào ô đất để xem cây đang trồng.'}</p>}
-
-      {selected !== null && !planting && mine && (
-        <div className="panel">
-          <h3>Ô {selected + 1} · đất trống</h3>
-          <div className="choices">
-            {specialtiesOfRegion(view.plot.regionId).map((sp) => {
-              const crop = CROPS[sp.crop];
-              const cost = seedCost(sp);
-              return (
-                <button key={sp.id} className="choice" disabled={act.busy || me.user.cash < cost}
-                  onClick={() => { setToast(null); void act.run(() => api('POST', `/api/plots/${plotId}/plant`, { tile: selected, specialtyId: sp.id })); }}>
-                  <span className="emoji">{crop.emoji}</span>
-                  <span><strong>{sp.name}</strong><br />
-                    <small>Giống {fmtMoney(cost)} · {crop.yieldKg} kg/vụ · {processOf(crop).length} bước · khoảng {fmtDuration(stepWaitMs(sp, me.config.timeScale) * (processOf(crop).length - 1))}</small></span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {selected !== null && !planting && !mine && <p className="hint">Ô này đang để trống.</p>}
-
-      {planting && (() => {
-        const sp = SPECIALTIES[planting.specialtyId];
-        const steps = processOf(CROPS[sp.crop]);
-        const step = steps[planting.stepIndex];
-        const wait = planting.stepReadyAt - now;
-        const isLast = planting.stepIndex === steps.length - 1;
-        return (
-          <div className="panel">
-            <h3>{CROPS[sp.crop].emoji} {sp.name}</h3>
-            <ol className="steps">
-              {steps.map((s, i) => (
-                <li key={i} className={i < planting.stepIndex ? 'done' : i === planting.stepIndex ? 'current' : ''}>
-                  <strong>{s.name}</strong>{i === planting.stepIndex && <p>{s.desc}</p>}
-                </li>
-              ))}
-            </ol>
-            {planting.lateCount > 0 && <p className="muted">Đã chăm sóc trễ {planting.lateCount} lần, chất lượng sẽ giảm.</p>}
-            {mine && (
-              <button className="primary" disabled={act.busy || wait > 0}
-                onClick={() => act.run(async () => {
-                  const r = await api('POST', `/api/plantings/${planting.id}/step`, {});
-                  setToast(r.harvested ? `Thu hoạch ${r.harvested.kg} kg ${sp.name} (${QUALITY_NAMES[r.harvested.quality as 'A']}). Hàng đã vào kho.` : null);
-                })}>
-                {wait > 0 ? `Bước "${step.name}" sau ${fmtDuration(wait)}` : isLast ? `Thu hoạch` : step.name}
-              </button>
-            )}
-          </div>
-        );
-      })()}
-
-      {!mine && view.stall.length > 0 && (
-        <div className="panel">
-          <h3>Sạp trước nhà</h3>
-          <StallList listings={view.stall} canBuy onChanged={() => { void load(); void refresh(); }} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ------------------------------------------------------------------ kho và sạp
-function Stock({ me, priceOf, refresh }: { me: Me; priceOf: (id: string) => number; refresh: () => Promise<void> }) {
+function Stock({ me, priceOf, refresh }: { me: Me; priceOf: (id: string) => number; refresh: () => void }) {
   const [mine, setMine] = useState<Listing[]>([]);
   const load = useCallback(async () => {
     setMine((await api('GET', '/api/market?mine=1')).listings);
@@ -290,10 +335,10 @@ function Stock({ me, priceOf, refresh }: { me: Me; priceOf: (id: string) => numb
   const done = useCallback(() => { void load(); void refresh(); }, [load, refresh]);
   return (
     <div>
-      <h2>Kho nông sản</h2>
+      <h3>Kho nông sản</h3>
       {me.inventory.length === 0 && <p className="hint">Kho đang trống. Thu hoạch xong, nông sản sẽ nằm ở đây.</p>}
       {me.inventory.map((item) => <StockRow key={item.specialtyId + item.quality} item={item} me={me} refPrice={priceOf(item.specialtyId)} onDone={done} />)}
-      <h2>Sạp trước nhà</h2>
+      <h3>Sạp trước nhà</h3>
       {mine.length === 0 ? <p className="hint">Bạn chưa bày món nào. Bày hàng lên sạp để người chơi khác mua.</p> : <StallList listings={mine} canCancel onChanged={done} />}
     </div>
   );
@@ -352,14 +397,13 @@ function StallList({ listings, canBuy, canCancel, onChanged }: { listings: Listi
 }
 
 // ------------------------------------------------------------------ chợ
-function Market({ priceOf, refresh }: { priceOf: (id: string) => number; refresh: () => Promise<void> }) {
+function Market({ priceOf, refresh }: { priceOf: (id: string) => number; refresh: () => void }) {
   const [listings, setListings] = useState<Listing[] | null>(null);
   const load = useCallback(async () => { setListings((await api('GET', '/api/market')).listings); }, []);
   useEffect(() => { void load(); }, [load]);
   const others = listings ?? [];
   return (
     <div>
-      <h2>Chợ đặc sản</h2>
       <p className="muted">Hàng người chơi cả nước đang bày bán. Mua đặc sản vùng khác về, thương lái vùng bạn sẽ trả giá hàng phương xa.</p>
       {listings === null ? <p className="hint">Đang tải…</p> : others.length === 0 ? <p className="hint">Chợ chưa có ai bày hàng. Hãy là người mở sạp đầu tiên ở mục Kho & Sạp.</p> : (
         <>
@@ -380,7 +424,6 @@ function PriceBoard({ prices }: { prices: Prices }) {
   const hasSample = Object.values(prices).some((p) => p.source === 'gia_mau');
   return (
     <div>
-      <h2>Bảng giá tham chiếu</h2>
       {hasSample && <p className="notice">Các dòng ghi “giá mẫu” là số khởi tạo để chơi thử, chưa phải giá thị trường.</p>}
       <input className="search" placeholder="Tìm đặc sản hoặc vùng trồng" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Tìm đặc sản" />
       <div className="table-wrap">
@@ -420,7 +463,6 @@ function RegionMap({ me, refresh, visit }: { me: Me; refresh: () => Promise<void
   const owned = new Set(me.plots.map((p) => p.regionId));
   return (
     <div>
-      <h2>Bản đồ vùng trồng</h2>
       <p className="muted">{Object.keys(REGIONS).length} vùng trồng trên 34 tỉnh thành và các đảo. Mua thêm đất ở vùng khác giá {fmtMoney(LAND_PRICE)} mỗi lô.</p>
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {ZONES.map((z) => (
