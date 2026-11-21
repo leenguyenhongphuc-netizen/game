@@ -15,6 +15,7 @@ const ONLY = arg('only', '').split(',').filter(Boolean);
 const DEVICES = [
   { id: 'iphone-se', w: 375, h: 667, touch: true },
   { id: 'iphone-15', w: 393, h: 852, touch: true },
+  { id: 'iphone-15-pro-max', w: 430, h: 932, touch: true },
   { id: 'iphone-15-ngang', w: 852, h: 393, touch: true },
   { id: 'ipad-mini', w: 768, h: 1024, touch: true },
   { id: 'ipad-pro-ngang', w: 1366, h: 1024, touch: true },
@@ -25,18 +26,19 @@ const DEVICES = [
 /** Chạy trong trang: trả về danh sách lỗi bố cục của màn hiện tại. */
 function audit(touch) {
   const issues = [];
-  const W = window.innerWidth, H = window.innerHeight;
   const vv = window.visualViewport;
-  if (vv && Math.abs(vv.scale - 1) > 0.01) issues.push({ level: 'error', rule: 'trang-bi-phong-to', detail: `visualViewport.scale = ${vv.scale}` });
-  if (document.documentElement.scrollWidth > W + 1) issues.push({ level: 'error', rule: 'tran-ngang', detail: `scrollWidth ${document.documentElement.scrollWidth} > ${W}` });
+  // Mọi phép đo quy về phần màn hình đang nhìn thấy: khi trang bị phóng to, phần này nhỏ hơn và lệch so với khung trang.
+  const X0 = vv ? vv.offsetLeft : 0, Y0 = vv ? vv.offsetTop : 0, W = vv ? vv.width : window.innerWidth, H = vv ? vv.height : window.innerHeight;
+  if (document.documentElement.scrollWidth > window.innerWidth + 1) issues.push({ level: 'error', rule: 'tran-ngang', detail: `scrollWidth ${document.documentElement.scrollWidth} > ${window.innerWidth}` });
+  const box = (el) => { const q = el.getBoundingClientRect(); return { left: q.left - X0, top: q.top - Y0, right: q.right - X0, bottom: q.bottom - Y0, width: q.width, height: q.height }; };
   const visible = (el) => { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.05 && r.width > 0 && r.height > 0; };
   const scrollParent = (el) => { for (let p = el.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p); if (/(auto|scroll)/.test(o.overflowY + o.overflowX)) return p; } return null; };
   const label = (el) => `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : ''} "${(el.innerText || el.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ').slice(0, 40)}"`;
   // 1. Phần tử thao tác được nằm ngoài màn hình hoặc quá nhỏ
   for (const el of document.querySelectorAll('button, a, input, select, [role="button"]')) {
     if (!visible(el)) continue;
-    const r = el.getBoundingClientRect(), sp = scrollParent(el);
-    if (!sp && (r.left < -1 || r.top < -1 || r.right > W + 1 || r.bottom > H + 1)) issues.push({ level: 'error', rule: 'nut-ngoai-man-hinh', detail: `${label(el)} tại [${Math.round(r.left)}, ${Math.round(r.top)}, ${Math.round(r.right)}, ${Math.round(r.bottom)}] ngoài ${W}×${H}` });
+    const r = box(el), sp = scrollParent(el);
+    if (!sp && (r.left < -1 || r.top < -1 || r.right > W + 1 || r.bottom > H + 1)) issues.push({ level: 'error', rule: 'nut-ngoai-man-hinh', detail: `${label(el)} tại [${Math.round(r.left)}, ${Math.round(r.top)}, ${Math.round(r.right)}, ${Math.round(r.bottom)}] ngoài ${Math.round(W)}×${Math.round(H)}` });
     if (touch && !el.classList.contains('link') && (r.width < 38 || r.height < 38)) issues.push({ level: 'warn', rule: 'nut-qua-nho', detail: `${label(el)} ${Math.round(r.width)}×${Math.round(r.height)}` });
   }
   // 2. Khối giao diện nổi tràn khỏi màn hình
@@ -44,8 +46,8 @@ function audit(touch) {
   const rects = {};
   for (const sel of blocks) for (const el of document.querySelectorAll(sel)) {
     if (!visible(el)) continue;
-    const r = el.getBoundingClientRect(); rects[sel] = r;
-    if (!scrollParent(el) && (r.left < -1 || r.right > W + 1 || r.top < -1 || r.bottom > H + 1)) issues.push({ level: 'error', rule: 'khoi-tran-man-hinh', detail: `${sel} tại [${Math.round(r.left)}, ${Math.round(r.top)}, ${Math.round(r.right)}, ${Math.round(r.bottom)}] ngoài ${W}×${H}` });
+    const r = box(el); rects[sel] = r;
+    if (!scrollParent(el) && (r.left < -1 || r.right > W + 1 || r.top < -1 || r.bottom > H + 1)) issues.push({ level: 'error', rule: 'khoi-tran-man-hinh', detail: `${sel} tại [${Math.round(r.left)}, ${Math.round(r.top)}, ${Math.round(r.right)}, ${Math.round(r.bottom)}] ngoài ${Math.round(W)}×${Math.round(H)}` });
   }
   // 3. Các khối nổi đè lên nhau
   const hit = (a, b) => a && b && a.left < b.right - 2 && b.left < a.right - 2 && a.top < b.bottom - 2 && b.top < a.bottom - 2;
@@ -113,6 +115,16 @@ for (const dev of DEVICES) {
     await step('xom-lang', async () => { await dock(/Xóm/); await shot('ban-be'); await page.getByRole('button', { name: 'Hợp tác xã' }).click(); await shot('hop-tac-xa'); await closeModal(); });
     await step('du-lich', async () => { await dock(/Du lịch/); await shot('du-lich'); await page.locator('.row-toggle').nth(3).click(); await shot('chon-phuong-tien'); await page.getByRole('button', { name: /Sổ tem/ }).click(); await shot('so-tem'); await closeModal(); });
     await step('trang-tri', async () => { await dock(/Trang trí/); await shot('trang-tri'); await page.getByRole('button', { name: 'Sân vườn' }).click(); await shot('trang-tri-san'); await closeModal(); });
+    await step('trang-bi-phong-to', async () => {
+      // Safari trên iPhone bỏ qua maximum-scale/user-scalable. Ép trang phóng 115% và kéo lệch đi rồi kiểm xem giao diện còn nằm trọn trong phần nhìn thấy không.
+      const cdp = await ctx.newCDPSession(page);
+      await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1.15 });
+      await cdp.send('Input.synthesizeScrollGesture', { x: Math.round(dev.w / 2), y: Math.round(dev.h / 2), xDistance: -50, yDistance: -60, gestureSourceType: dev.touch ? 'touch' : 'mouse', speed: 1200 }).catch(() => {});
+      await page.waitForTimeout(800);
+      await world('w.teleportToTile(0, 8)'); await shot('phong-to-xom');
+      await dock(/Kho/); await shot('phong-to-kho'); await closeModal();
+      await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 }); await page.waitForTimeout(500);
+    });
     await step('ho-so', async () => { await page.locator('button.chip').click(); await shot('ho-so'); await closeModal(); });
   } catch { /* đã ghi vào báo cáo */ }
   if (logs.length) report.push({ device: dev.id, size: `${dev.w}×${dev.h}`, screen: 'nhat-ky-trinh-duyet', file: null, issues: logs.map((l) => ({ level: 'error', rule: 'loi-console', detail: l })) });

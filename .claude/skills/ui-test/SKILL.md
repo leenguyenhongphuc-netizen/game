@@ -5,8 +5,8 @@ description: Kiểm thử và sửa giao diện game Vườn Việt trên nhiề
 
 # Kiểm thử giao diện đa thiết bị
 
-Mục tiêu: không màn nào bị tràn, bị cắt, bị phóng to, đè lên nhau hoặc khó bấm, trên 7 cỡ màn hình:
-iPhone SE (375×667), iPhone 15 dọc (393×852) và ngang (852×393), iPad mini (768×1024), iPad Pro ngang (1366×1024), máy tính (1280×720, 1920×1080).
+Mục tiêu: không màn nào bị tràn, bị cắt, bị phóng to, đè lên nhau hoặc khó bấm, trên 8 cỡ màn hình:
+iPhone SE (375×667), iPhone 15 dọc (393×852), iPhone 15 Pro Max (430×932), iPhone ngang (852×393), iPad mini (768×1024), iPad Pro ngang (1366×1024), máy tính (1280×720, 1920×1080).
 
 ## Quy trình
 
@@ -18,15 +18,16 @@ iPhone SE (375×667), iPhone 15 dọc (393×852) và ngang (852×393), iPad mini
 
 2. **Chạy bộ kiểm**:
    ```bash
-   node tools/ui-test/run.mjs                    # đủ 7 thiết bị, khoảng 10–15 phút khi không có GPU
+   node tools/ui-test/run.mjs                    # đủ 8 thiết bị, khoảng 10–15 phút khi không có GPU
    node tools/ui-test/run.mjs --only iphone-15   # một thiết bị khi đang sửa dở
    ```
-   Mỗi thiết bị tạo một tài khoản mới và đi qua: đăng nhập → chia sẻ vị trí → xác nhận địa điểm → vòng quay → xóm → đứng trên ô trống → chọn giống → cây đang lớn → Kho, Đơn hàng, Xưởng → Chợ, Bảng giá → Bạn bè, Hợp tác xã → Du lịch, chọn phương tiện, Sổ tem → Trang trí → Hồ sơ.
+   Mỗi thiết bị tạo một tài khoản mới và đi qua: đăng nhập → chia sẻ vị trí → xác nhận địa điểm → vòng quay → xóm → đứng trên ô trống → chọn giống → cây đang lớn → Kho, Đơn hàng, Xưởng → Chợ, Bảng giá → Bạn bè, Hợp tác xã → Du lịch, chọn phương tiện, Sổ tem → Trang trí → **trang bị phóng to 115%** (xóm và Kho) → Hồ sơ.
+
+   Mọi phép đo tính theo phần màn hình đang nhìn thấy (`visualViewport`). Bước phóng to giả lập Safari trên iPhone, vốn bỏ qua `user-scalable=no`: khung game phải bám theo phần nhìn thấy (xem `web/src/viewport.ts`), không được dùng `position: fixed; inset: 0` hay `100vw`/`100vh` cho khung ngoài cùng.
 
 3. **Đọc `tools/ui-test/out/report.md`**. Quy tắc tự động:
    | Quy tắc | Ý nghĩa |
    |---|---|
-   | `trang-bi-phong-to` | Trang bị phóng to (iPhone tự phóng khi ô nhập có chữ dưới 16px). |
    | `tran-ngang` | Trang cuộn ngang được. |
    | `nut-ngoai-man-hinh`, `khoi-tran-man-hinh` | Nút hoặc khối giao diện nằm ngoài khung nhìn. |
    | `khoi-de-nhau` | Hai khối nổi (thanh trên, nhiệm vụ, thời tiết, thanh nút, cửa sổ…) đè lên nhau. |
@@ -47,7 +48,7 @@ iPhone SE (375×667), iPhone 15 dọc (393×852) và ngang (852×393), iPad mini
 
 ## Giới hạn
 
-- Trình duyệt thử là Chromium không có GPU: không đo được độ mượt, và không tái hiện mọi hành vi riêng của Safari trên iPhone. Lỗi chỉ có trên máy thật thì cần ảnh chụp từ người dùng.
+- Trình duyệt thử là Chromium không có GPU, **không phải Safari**: không đo được độ mượt và không tái hiện hết hành vi riêng của iPhone. Bộ kiểm sạch lỗi KHÔNG có nghĩa là máy thật ổn; khi báo cho người dùng phải nói rõ là mới kiểm trên giả lập. Lỗi chỉ có trên máy thật thì cần ảnh chụp từ người dùng, rồi tìm cách giả lập lại hành vi đó trong bộ kiểm (như bước phóng to).
 - Vai trò do vòng quay giao ngẫu nhiên, nên màn có xe tải hay xưởng không phải lần nào cũng xuất hiện.
 - Không triển khai lên Vercel trong quy trình này trừ khi người dùng yêu cầu.
 

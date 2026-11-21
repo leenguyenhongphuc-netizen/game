@@ -6,7 +6,7 @@ import { DriveScene } from './DriveScene.ts';
 import type { Mode } from './DriveScene.ts';
 
 const CSS = `
-.dg { position: fixed; inset: 0; z-index: 1000; background: #dff3fb; overflow: hidden; font-family: 'Be Vietnam Pro', system-ui, sans-serif; color: #3b2a17; touch-action: none; user-select: none; -webkit-user-select: none; }
+.dg  position: fixed; left: var(--vx, 0px); top: var(--vy, 0px); width: var(--vw, 100%); height: var(--vh, 100%); z-index: 1000; background: #dff3fb; overflow: hidden; font-family: 'Be Vietnam Pro', system-ui, sans-serif; color: #3b2a17; touch-action: none; user-select: none; -webkit-user-select: none; }
 .dg-scene { position: absolute; inset: 0; }
 .dg-top { position: absolute; top: max(10px, env(safe-area-inset-top)); left: 10px; right: 10px; display: grid; gap: 6px; pointer-events: none; }
 .dg-bar { background: #fff6dc; border: 3px solid #7a4a22; border-radius: 18px; box-shadow: 0 4px 0 #56310f; padding: 6px 12px 8px; }
