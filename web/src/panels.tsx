@@ -3,8 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, specialtiesOfRegion } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
-  COOP_BONUS, COOP_CREATE_COST, COOP_MAX_MEMBERS, COOP_ORDER_BONUS, GIFT_DAILY_LIMIT, LAND_PRICE, QUALITY_NAMES, REGION_SET_REWARD,
-  SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_MODES, fmtMoney, travelOptions, tripInfo,
+  COOP_BONUS, COOP_CREATE_COST, COOP_MAX_MEMBERS, COOP_ORDER_BONUS, GIFT_DAILY_LIMIT, QUALITY_NAMES, TRUCK, landPrice, tripPlan, REGION_SET_REWARD,
+  SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_MODES, fmtMoney, travelOptions,
 } from '../../shared/rules.ts';
 import type { TravelMode } from '../../shared/rules.ts';
 import { api } from './api.ts';
@@ -145,8 +145,18 @@ export function TravelPanel({ me, startRide, startTrip, touring }: {
                       ))}
                     </div>
                     {startTrip && (me.user.truckRegionId ?? home) !== r.id && (() => {
-                      const info = tripInfo(me.user.truckRegionId ?? home, r.id);
-                      return <button disabled={act.busy || me.user.cash < info.fuel} onClick={() => act.run(() => startTrip(r.id))}>🚚 Tự lái xe tải đi buôn · {info.km} km{info.needsBoat ? ' · có chặng tàu' : ''} · xăng {fmtMoney(info.fuel)}</button>;
+                      const plan = tripPlan(me.user.truckRegionId ?? home, r.id), fuel = me.user.fuelL ?? TRUCK.startFuelL;
+                      return (
+                        <div className="trip-card">
+                          <strong>🚚 Tự lái xe tải đi buôn</strong>
+                          <div className="facts">
+                            <div><span aria-hidden="true">🛣️</span><b>{plan.km} km</b><small>{plan.needsBoat ? 'có chặng tàu' : `${plan.junctions.length} nút giao`}</small></div>
+                            <div><span aria-hidden="true">⛽</span><b>{plan.fuelNeededL} lít</b><small>{fuel >= plan.fuelNeededL ? `bình đang có ${fuel.toFixed(0)}` : `thiếu ${(plan.fuelNeededL - fuel).toFixed(0)}, ghé ${plan.stationsAtKm.length} trạm`}</small></div>
+                            <div><span aria-hidden="true">🎫</span><b>{fmtMoney(plan.tolls * plan.tollFee)}</b><small>{plan.tolls} trạm thu phí{(me.user.etc ?? 0) < plan.tolls * plan.tollFee ? ' · ETC thiếu' : ''}</small></div>
+                          </div>
+                          <button className="primary" disabled={act.busy || fuel <= 0} onClick={() => act.run(() => startTrip(r.id))}>{fuel <= 0 ? 'Hết xăng: lên xe đổ trước' : 'Lên đường'}</button>
+                        </div>
+                      );
                     })()}
                     {startTrip && (me.user.truckRegionId ?? home) === r.id && <span className="tag">🚚 Xe tải đang đỗ ở đây</span>}
                   </div>
@@ -191,7 +201,7 @@ export function ShowcasePanel({ me, regionId, priceOf, refresh, visit }: { me: M
         <div className="row-line" key={f.plotId}><div className="grow">{f.ownerName} <small className="muted">· {f.wardName ? `${f.wardName} · ` : ''}đang trồng {f.growing} ô</small></div><button onClick={() => visit(f.plotId)}>Ghé thăm</button></div>
       ))}
       <h3>Mua đất ở đây</h3>
-      {owned ? <p className="hint">Bạn đã có đất ở {r.name}.</p> : <button disabled={act.busy || me.user.cash < LAND_PRICE} onClick={() => act.run(() => api('POST', '/api/plots/buy', { regionId }))}>{me.user.cash < LAND_PRICE ? `Cần ${fmtMoney(LAND_PRICE)} để mua một lô` : `Mua một lô ${fmtMoney(LAND_PRICE)}`}</button>}
+      {owned ? <p className="hint">Bạn đã có đất ở {r.name}.</p> : <><p className="muted">Giá đất ở {r.name}: <b>{fmtMoney(landPrice(regionId))}</b> một lô. Vùng cho nông sản giá trị cao{r.island ? ', lại ở đảo,' : ''} thì đất đắt hơn.</p><button disabled={act.busy || me.user.cash < landPrice(regionId)} onClick={() => act.run(() => api('POST', '/api/plots/buy', { regionId }))}>{me.user.cash < landPrice(regionId) ? `Cần ${fmtMoney(landPrice(regionId))} để mua một lô` : `Mua một lô ${fmtMoney(landPrice(regionId))}`}</button></>}
     </div>
   );
 }

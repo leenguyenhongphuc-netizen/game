@@ -510,7 +510,8 @@ export class World {
     st.add(mesh(GEO.box, road, 0, 0.02, ROAD_Z, (WORLD.x + 6) * 2, 0.06, ROAD_HALF * 2));
     for (let x = -WORLD.x - 4; x <= WORLD.x + 4; x += 2.4) for (const s of [-1, 1]) st.add(mesh(GEO.cyl, edge, x + (s > 0 ? 1.1 : 0), 0.05, ROAD_Z + s * (ROAD_HALF + 0.1), 0.32, 0.08, 0.26));
     for (let i = 0; i < SLOT_COUNT; i++) { const a = flip(i, 0, (FENCE.front + ROAD_Z - ROAD_HALF) / 2); st.add(mesh(GEO.box, road, a.x, 0.025, a.z, 3.2, 0.06, ROAD_Z - ROAD_HALF - FENCE.front + 0.4)); }
-    for (let x = -54; x <= 54; x += 24) { // cột đèn
+    for (let k = -2; k <= 3; k++) { // cột đèn: đứng ở khe giữa hai lô để không chắn sạp, cổng hay xe tải
+      const x = k * PITCH - 24;
       st.add(mesh(GEO.cyl, mat(0x5a5f6b), x + 12, 1.7, ROAD_Z - ROAD_HALF - 0.6, 0.08, 3.4, 0.08), mesh(GEO.ball, this.sky.night ? mat(0xffe9a8, { emissive: 0xffd05a }) : mat(0xfff6dc), x + 12, 3.5, ROAD_Z - ROAD_HALF - 0.6, 0.28));
       if (this.sky.night) { const lamp = new THREE.PointLight(0xffd58a, 22, 14, 1.7); lamp.position.set(x + 12, 3.4, ROAD_Z - ROAD_HALF - 0.4); this.env.add(lamp); }
     }
@@ -571,6 +572,7 @@ export class World {
     if (state.regionId !== this.regionId || urban !== this.urban) { this.regionId = state.regionId; this.urban = urban; this.buildEnvironment(state.regionId); }
     this.setWeather(state.weather ?? 'nang');
     this.state = state;
+    for (const c of this.chickens) c.obj.visible = !urban; // sân thượng thành phố không nuôi gà thả
     const t = this.clock.elapsedTime;
     for (let i = 0; i < SLOT_COUNT; i++) this.lots[i].setData(state.lots[i] ?? null, t);
     this.colliders = this.lots.flatMap((l) => l.colliders());

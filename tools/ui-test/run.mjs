@@ -3,6 +3,7 @@
 import { createRequire } from 'node:module';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -11,6 +12,8 @@ const arg = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); r
 const BASE = arg('base', 'http://localhost:3100');
 const OUT = arg('out', 'tools/ui-test/out');
 const ONLY = arg('only', '').split(',').filter(Boolean);
+const DB = process.env.UI_TEST_DATABASE_URL ?? 'postgres://vuon:vuon@localhost:5432/vuon_ui';
+const QUICK = process.argv.includes('--nhanh'); // bỏ các hoạt cảnh dài (lái xe, du lịch)
 
 const DEVICES = [
   { id: 'iphone-se', w: 375, h: 667, touch: true },
@@ -42,7 +45,7 @@ function audit(touch) {
     if (touch && !el.classList.contains('link') && (r.width < 38 || r.height < 38)) issues.push({ level: 'warn', rule: 'nut-qua-nho', detail: `${label(el)} ${Math.round(r.width)}×${Math.round(r.height)}` });
   }
   // 2. Khối giao diện nổi tràn khỏi màn hình
-  const blocks = ['.hud-top', '.chips', '.quest', '.plot-switch', '.toast', '.ctx-bar', '.ctx-detail', '.dock', '.modal', '.card', '.wheel-wrap', '.wheel-head', '.brand'];
+  const blocks = ['.dg-top', '.dg-hud', '.tr-cap', '.tr-hud', '.context', '.hud-top', '.chips', '.quest', '.plot-switch', '.toast', '.ctx-bar', '.ctx-detail', '.dock', '.modal', '.card', '.wheel-wrap', '.wheel-head', '.brand'];
   const rects = {};
   for (const sel of blocks) for (const el of document.querySelectorAll(sel)) {
     if (!visible(el)) continue;
@@ -51,7 +54,7 @@ function audit(touch) {
   }
   // 3. Các khối nổi đè lên nhau
   const hit = (a, b) => a && b && a.left < b.right - 2 && b.left < a.right - 2 && a.top < b.bottom - 2 && b.top < a.bottom - 2;
-  for (const [a, b] of [['.hud-top', '.chips'], ['.hud-top', '.quest'], ['.chips', '.quest'], ['.quest', '.plot-switch'], ['.chips', '.plot-switch'], ['.ctx-bar', '.dock'], ['.ctx-detail', '.dock'], ['.modal', '.dock'], ['.modal', '.hud-top'], ['.toast', '.hud-top'], ['.wheel-wrap', '.wheel-head']]) {
+  for (const [a, b] of [['.hud-top', '.chips'], ['.hud-top', '.quest'], ['.chips', '.quest'], ['.quest', '.plot-switch'], ['.chips', '.plot-switch'], ['.ctx-bar', '.dock'], ['.ctx-detail', '.dock'], ['.modal', '.dock'], ['.modal', '.hud-top'], ['.toast', '.hud-top'], ['.toast', '.quest'], ['.toast', '.plot-switch'], ['.context', '.dock'], ['.wheel-wrap', '.wheel-head']]) {
     if (hit(rects[a], rects[b])) issues.push({ level: 'error', rule: 'khoi-de-nhau', detail: `${a} đè lên ${b}` });
   }
   // 4. Chữ bị cắt mà không có dấu ba chấm
@@ -126,6 +129,62 @@ for (const dev of DEVICES) {
       await cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 }); await page.waitForTimeout(500);
     });
     await step('ho-so', async () => { await page.locator('button.chip').click(); await shot('ho-so'); await closeModal(); });
+
+    // ---- Phần dành cho tài khoản thử nghiệm: thương lái, xe tải, chuyến buôn, tham quan, mua đất, du lịch
+    const post = (path, body = {}) => page.evaluate(async ([path, body]) => { const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json().catch(() => null) }; }, [path, body]);
+    const enter = async (query = '') => { await page.goto(`${BASE}/?gio=10${query}`); await page.waitForFunction(() => window.__vuon); await page.waitForTimeout(2500); };
+    /** Chụp đều đặn trong lúc một hoạt cảnh toàn màn hình (sel) đang chạy; fn trả về nhãn pha hiện tại. */
+    const during = async (sel, prefix, phaseOf, { every = 5000, max = 12, timeout = 420000 } = {}) => {
+      await page.locator(sel).waitFor({ timeout: 30000 });
+      const t0 = Date.now(); let last = null, k = 0, lastShot = 0;
+      while (await page.locator(sel).count() > 0) {
+        if (Date.now() - t0 > timeout) throw new Error(`${prefix}: hoạt cảnh không kết thúc sau ${timeout / 1000} giây`);
+        const phase = await page.evaluate(phaseOf).catch(() => null);
+        if (k < max && ((phase !== null && phase !== last) || Date.now() - lastShot > every)) { last = phase; lastShot = Date.now(); k++; await shot(`${prefix}-${String(k).padStart(2, '0')}${phase !== null ? `-${String(phase).replace(/[^\w-]/g, '')}` : ''}`); }
+        else await page.waitForTimeout(400);
+      }
+    };
+    await step('tai-khoan-thu', async () => {
+      execFileSync('psql', [DB, '-qc', "update users set is_tester = true where username like 'ui\\_%'"]);
+      const r = await post('/api/test/cash', { amount: 900_000_000 }); if (r.status !== 200) throw new Error(`không bật được tài khoản thử: ${r.status}`);
+      await post('/api/test/role', { role: 'thuong_lai' }); await post('/api/test/truck');
+      await enter(); await page.locator('button.chip').click(); await page.locator('.tester').scrollIntoViewIfNeeded(); await shot('cong-cu-thu-nghiem'); await closeModal();
+    });
+    await step('xe-tai', async () => {
+      await world('w.pos.copy(w.truckPos)'); await page.getByRole('button', { name: /Lên xe tải/ }).waitFor(); await shot('canh-xe-tai');
+      await page.getByRole('button', { name: /Lên xe tải/ }).click(); await page.locator('.truck-stats').waitFor(); await shot('tren-xe-tai');
+      await page.getByRole('button', { name: 'Đi vùng khác' }).click(); await page.locator('.row-toggle').nth(4).click(); await page.locator('.trip-card').scrollIntoViewIfNeeded(); await shot('ke-hoach-chuyen-xe');
+    });
+    if (!QUICK) await step('lai-xe', async () => {
+      await page.locator('.trip-card button.primary').click();
+      await during('.dg', 'lai-xe', () => window.__drive?.debug?.().phase ?? null, { every: 6000, max: 14 });
+      await page.waitForTimeout(2500); await shot('toi-noi-sau-chuyen-xe');
+    });
+    else await step('tham-quan-nhanh', async () => { await closeModal(); await post('/api/test/role', { role: 'nong_dan' }); });
+    if (!QUICK) await step('tham-quan', async () => {
+      await world('w.teleportToTile(0, 8)'); await page.locator('.ctx-btn').first().waitFor(); await shot('vuon-mau');
+      await page.locator('.ctx-btn').first().click(); await page.locator('.guide').waitFor(); await shot('cach-trong-buoc-1');
+      await page.locator('.track button').nth(4).click(); await shot('cach-trong-buoc-5');
+      await page.locator('.track button').last().click(); await shot('cach-trong-thu-hoach'); await page.locator('.guide .round').click();
+      await world('w.pos.set(6.2, 0, 12.2)'); await page.getByRole('button', { name: /Vào quầy trưng bày/ }).waitFor(); await shot('truoc-quay-trung-bay');
+      await page.getByRole('button', { name: /Vào quầy trưng bày/ }).click(); await shot('quay-trung-bay');
+      const buy = page.getByRole('button', { name: /Mua một lô/ }); await buy.scrollIntoViewIfNeeded(); await shot('gia-dat'); await buy.click(); await page.getByText(/Bạn đã có đất/).waitFor(); await closeModal();
+      await page.getByRole('button', { name: /Về nhà/ }).click(); await page.waitForTimeout(2500); await page.locator('.plot-switch').waitFor(); await shot('nhieu-vuon');
+      await world('w.teleportToTile(0, 8)'); await page.locator('.ctx-btn').first().waitFor(); await shot('nhieu-vuon-dung-tren-o');
+    });
+    if (!QUICK) for (const [i, mode] of [[0, 'xe-khach'], [1, 'phuong-tien-2'], [2, 'phuong-tien-3']]) await step(`du-lich-${mode}`, async () => {
+      await enter(); await dock(/Du lịch/);
+      // chọn một vùng xa (cuối danh sách) để có nhiều phương tiện; mỗi lượt thử một phương tiện khác
+      const rows = page.locator('.row-toggle'), nRows = await rows.count(); await rows.nth(nRows - 2 - i * 9).click();
+      const picks = page.locator('.region-body .pick:not([disabled])'), nPicks = await picks.count(); if (nPicks === 0) throw new Error('không có phương tiện nào bấm được');
+      const pick = picks.nth(Math.min(i, nPicks - 1)); await pick.scrollIntoViewIfNeeded(); if (i === 0) await shot('chon-ve');
+      await pick.click();
+      if (await page.locator('.tr button').filter({ hasText: /Bỏ qua/ }).count() > 0) throw new Error('hoạt cảnh du lịch vẫn còn nút Bỏ qua');
+      await during('.tr', `du-lich-${mode}`, () => { const d = window.__ride?.debug?.(); return d ? `canh-${d.stage}` : null; }, { every: 60000, max: 8 });
+      await page.waitForTimeout(2500); await shot(`du-lich-${mode}-toi-noi`);
+    });
+    await step('san-thuong', async () => { await post('/api/test/role', { role: 'nong_dan' }); await enter('&santhuong=1'); await shot('san-thuong'); await world('w.teleportToTile(0, 2)'); await page.waitForTimeout(600); await shot('san-thuong-gan'); });
+    await step('ban-dem', async () => { await page.goto(`${BASE}/?gio=21`); await page.waitForFunction(() => window.__vuon); await page.waitForTimeout(2500); await shot('ban-dem'); await world('w.pos.set(6.2, 0, 12.2)'); await page.waitForTimeout(600); await shot('ban-dem-truoc-sap'); });
   } catch { /* đã ghi vào báo cáo */ }
   if (logs.length) report.push({ device: dev.id, size: `${dev.w}×${dev.h}`, screen: 'nhat-ky-trinh-duyet', file: null, issues: logs.map((l) => ({ level: 'error', rule: 'loi-console', detail: l })) });
   await ctx.close();

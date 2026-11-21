@@ -158,6 +158,7 @@ function TesterTools({ me, act }: { me: Me; act: ReturnType<typeof useAction> })
       <p className="muted">Chỉ tài khoản thử nghiệm mới thấy mục này. Mọi thay đổi chỉ tác động lên tài khoản này.</p>
       <label>Đổi vai trò ngay</label>
       <div className="pick-row">{ROLES.map((r) => <button key={r} className="pick" aria-pressed={me.user.role === r} disabled={act.busy} onClick={() => post('/api/test/role', { role: r })}><span className="emoji">{ROLE_INFO[r].icon}</span><strong>{ROLE_INFO[r].name}</strong></button>)}</div>
+      <button disabled={act.busy} onClick={() => post('/api/test/truck')}>⛽ Đổ đầy bình và nạp ETC 2 triệu (cho Thương lái)</button>
       <button disabled={act.busy} onClick={() => post('/api/test/season')}>🎡 Xoá vai để quay lại vòng quay</button>
       <div className="row-actions ward">
         <label>Chuyển vườn nhà tới vùng<select value={region} onChange={(e) => setRegion(e.target.value)}>{Object.values(REGIONS).map((r) => <option key={r.id} value={r.id}>{r.name}, {r.province}</option>)}</select></label>

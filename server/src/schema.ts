@@ -203,4 +203,6 @@ create table if not exists trips (
 create index if not exists trips_user_idx on trips (user_id, id desc);
 alter table users add column if not exists harvests int not null default 0;
 alter table users add column if not exists is_tester boolean not null default false;
+alter table users add column if not exists fuel_l numeric not null default 30;
+alter table users add column if not exists etc bigint not null default 0;
 `;

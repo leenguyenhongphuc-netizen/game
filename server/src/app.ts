@@ -12,7 +12,7 @@ import wardData from '../../shared/wards.json' with { type: 'json' };
 import {
   COOP_ORDER_BONUS, COOP_ORDER_DAYS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, HARVEST_HELP_SHARE, IN_SEASON_YIELD, MARKET_DAY_BONUS,
   ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS_XUONG, QUALITY_MULT, ROLES, ROLE_TARGETS, SEASON_DAYS, STALL_WALKIN_KG_PER_HOUR,
-  STALL_WALKIN_MAX_RATIO, DUMP_RATIO, allowedTiles, inSeason, marketEventsAt, spinWeights, supplyKg, tripInfo,
+  STALL_WALKIN_MAX_RATIO, DUMP_RATIO, allowedTiles, inSeason, marketEventsAt, spinWeights, supplyKg, tripInfo, TRUCK, landPrice, roadKm, tripPlan,
   COOP_CREATE_COST, COOP_MAX_MEMBERS, GIFT_DAILY_LIMIT, GIFT_MAX_KG, HELP_DAILY_LIMIT, HELP_REWARD, LAND_PRICE, LATE_GRACE_MS, MAX_FRIENDS,
   QUALITIES, REGION_SET_REWARD, SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, START_CASH, TILE_COUNT, glutFactor, inVietnam, paceFactor, travelOptions,
   marketDayAt, nearestRegion, npcPrice, qualityFromLate, region as findRegion, seedCost, snapCell, specialty as findSpecialty, stepCount,
@@ -281,7 +281,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const userId = await requireUser(req);
     const walkin = await db.tx((q) => settleWalkIns(q, userId, Date.now()));
     const [u, plots, inv, coop] = await Promise.all([
-      db.query('select id, username, display_name, cash, home_region_id, role, role_assigned_at, truck_region, avatar, harvests, is_tester from users where id = $1', [userId]),
+      db.query('select id, username, display_name, cash, home_region_id, role, role_assigned_at, truck_region, avatar, harvests, is_tester, fuel_l, etc from users where id = $1', [userId]),
       db.query('select id, region_id, is_home, kind, ward_name from plots where user_id = $1 order by is_home desc, id', [userId]),
       db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]),
       db.query('select coop_id from coop_members where user_id = $1', [userId]),
@@ -292,7 +292,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         id: user.id, username: user.username, displayName: user.display_name, cash: user.cash, homeRegionId: user.home_region_id,
         homeKind: plots.rows.find((p) => p.is_home)?.kind ?? null, coopId: coop.rows[0]?.coop_id ?? null, role: user.role ?? null,
         roleNextSpinAt: user.role && user.role_assigned_at ? new Date(user.role_assigned_at).getTime() + SEASON_MS : null,
-        truckRegionId: user.truck_region ?? user.home_region_id ?? null, avatar: avatarOut(user.avatar),
+        truckRegionId: user.truck_region ?? user.home_region_id ?? null, fuelL: Number(user.fuel_l), etc: user.etc, avatar: avatarOut(user.avatar),
         harvests: user.harvests, tester: !!user.is_tester,
       },
       plots: plots.rows.map((p) => ({ id: p.id, regionId: p.region_id, isHome: p.is_home, kind: p.kind, wardName: p.ward_name })),
@@ -395,14 +395,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return db.tx(async (q) => {
       const { rows } = await q.query('select cash, home_region_id from users where id = $1 for update', [userId]);
       if (!rows[0].home_region_id) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
-      if (rows[0].cash < LAND_PRICE) throw bad('khong_du_tien', 'Bạn chưa đủ tiền mua đất.', 409);
+      const price = landPrice(r.id);
+      if (rows[0].cash < price) throw bad('khong_du_tien', 'Bạn chưa đủ tiền mua đất.', 409);
       const cell = snapCell(r.lat, r.lng);
       const plot = await q.query(
         `insert into plots (user_id, region_id, cell_lat, cell_lng) values ($1,$2,$3,$4)
          on conflict (user_id, region_id) do nothing returning id`, [userId, r.id, cell.lat, cell.lng]);
       if (!plot.rows[0]) throw bad('da_co_dat', 'Bạn đã có đất ở vùng này.', 409);
-      await addCash(q, userId, -LAND_PRICE, `mua_dat:${r.id}`);
-      return { plotId: plot.rows[0].id };
+      await addCash(q, userId, -price, `mua_dat:${r.id}`);
+      return { plotId: plot.rows[0].id, price };
     });
   });
 
@@ -1265,38 +1266,93 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   // ---------------------------------------------------------------- chuyến xe của thương lái
+  const round1 = (v: number) => Math.round(v * 10) / 10;
+  function num(v: unknown, min: number, max: number): number {
+    const n = Number(v ?? 0);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+  }
+
+  /** Nạp tiền vào tài khoản thu phí không dừng (ETC) của xe tải. */
+  app.post('/api/truck/etc', async (req) => {
+    const userId = await requireUser(req);
+    const amount = int((req.body as any)?.amount, 10_000, 5_000_000, 'amount');
+    return db.tx(async (q) => {
+      const u = await q.query('select cash, role, etc from users where id = $1 for update', [userId]);
+      if (u.rows[0].role !== 'thuong_lai') throw bad('chi_thuong_lai', 'Chỉ thương lái mới có xe tải để nạp ETC.', 403);
+      if (u.rows[0].cash < amount) throw bad('khong_du_tien', 'Bạn không đủ tiền để nạp ETC.', 409);
+      await addCash(q, userId, -amount, 'nap_etc');
+      await q.query('update users set etc = etc + $2 where id = $1', [userId, amount]);
+      return { etc: u.rows[0].etc + amount, cash: u.rows[0].cash - amount };
+    });
+  });
+
+  /** Đổ xăng tại chỗ (xe đang đỗ): tối đa tới đầy bình. */
+  app.post('/api/truck/refuel', async (req) => {
+    const userId = await requireUser(req);
+    const want = Number((req.body as any)?.liters);
+    if (!Number.isFinite(want) || want <= 0) throw bad('du_lieu_sai', 'Số lít xăng không hợp lệ.');
+    return db.tx(async (q) => {
+      const u = await q.query('select cash, role, fuel_l from users where id = $1 for update', [userId]);
+      if (u.rows[0].role !== 'thuong_lai') throw bad('chi_thuong_lai', 'Chỉ thương lái mới có xe tải để đổ xăng.', 403);
+      const have = Number(u.rows[0].fuel_l), room = round1(TRUCK.tankL - have);
+      if (room <= 0) throw bad('binh_day', 'Bình xăng đã đầy.', 409);
+      const liters = round1(Math.min(want, room)), cost = Math.round(liters * TRUCK.fuelPrice);
+      if (u.rows[0].cash < cost) throw bad('khong_du_tien', 'Bạn không đủ tiền đổ xăng.', 409);
+      if (cost > 0) await addCash(q, userId, -cost, 'do_xang');
+      const fuelL = round1(have + liters);
+      await q.query('update users set fuel_l = $2 where id = $1', [userId, fuelL]);
+      return { fuelL, cost, cash: u.rows[0].cash - cost };
+    });
+  });
+
   app.post('/api/trips/start', async (req) => {
     const userId = await requireUser(req);
     const to = findRegion(String((req.body as any)?.toRegionId ?? ''));
     if (!to) throw bad('du_lieu_sai', 'Vùng trồng không tồn tại.');
     return db.tx(async (q) => {
-      const u = await q.query('select cash, role, home_region_id, truck_region from users where id = $1 for update', [userId]);
+      const u = await q.query('select cash, role, home_region_id, truck_region, fuel_l, etc from users where id = $1 for update', [userId]);
       if (u.rows[0].role !== 'thuong_lai') throw bad('chi_thuong_lai', 'Chỉ thương lái mới có xe chở hàng đi vùng khác.', 403);
       const from: string | null = u.rows[0].truck_region ?? u.rows[0].home_region_id;
       if (!from || !findRegion(from)) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
       if (from === to.id) throw bad('du_lieu_sai', 'Xe của bạn đang ở vùng này rồi.');
-      const info = tripInfo(from, to.id);
-      if (u.rows[0].cash < info.fuel) throw bad('khong_du_tien', 'Bạn không đủ tiền xăng cho chuyến này.', 409);
-      await addCash(q, userId, -info.fuel, `xang:${to.id}`);
+      if (!(Number(u.rows[0].fuel_l) > 0)) throw bad('het_xang', 'Xe đã hết xăng, hãy đổ xăng trước khi đi.', 409);
+      const plan = tripPlan(from, to.id);
       const ins = await q.query(
-        'insert into trips (user_id, from_region, to_region, min_seconds) values ($1,$2,$3,$4) returning id', [userId, from, to.id, info.seconds]);
-      return { tripId: ins.rows[0].id, fromRegionId: from, toRegionId: to.id, ...info };
+        'insert into trips (user_id, from_region, to_region, min_seconds) values ($1,$2,$3,$4) returning id', [userId, from, to.id, plan.seconds]);
+      return { tripId: ins.rows[0].id, fromRegionId: from, toRegionId: to.id, plan, fuelL: Number(u.rows[0].fuel_l), etc: u.rows[0].etc, cash: u.rows[0].cash, truck: TRUCK };
     });
   });
 
   app.post('/api/trips/:id/finish', async (req) => {
     const userId = await requireUser(req);
     const tripId = idParam((req.params as any).id);
+    const body = (req.body ?? {}) as Record<string, unknown>;
     return db.tx(async (q) => {
+      const u = await q.query('select cash, fuel_l, etc from users where id = $1 for update', [userId]);
       const { rows } = await q.query(
-        'select to_region, min_seconds, started_at from trips where id = $1 and user_id = $2 and finished_at is null for update', [tripId, userId]);
+        'select from_region, to_region, min_seconds, started_at from trips where id = $1 and user_id = $2 and finished_at is null for update', [tripId, userId]);
       const t = rows[0];
       if (!t) throw bad('khong_tim_thay', 'Không tìm thấy chuyến xe đang chạy.', 404);
       if (Date.now() - new Date(t.started_at).getTime() < t.min_seconds * 1000 * tripMinFactor) throw bad('chua_toi_noi', 'Xe chưa tới nơi.', 409);
+      const plan = tripPlan(t.from_region, t.to_region), road = roadKm(plan.km, plan.needsBoat);
+      const refuelL = num(body.refuelL, 0, TRUCK.tankL * 4), detourKm = num(body.detourKm, 0, road);
+      const have = Number(u.rows[0].fuel_l);
+      const used = ((road + detourKm) * TRUCK.lPer100km) / 100;
+      // Thiếu xăng giữa đường: gọi cứu hộ, phần thiếu tính giá cao hơn.
+      const rescueL = Math.max(0, used - have - refuelL);
+      let cash: number = u.rows[0].cash, etc: number = u.rows[0].etc;
+      const fuelCost = Math.min(cash, Math.round(refuelL * TRUCK.fuelPrice + rescueL * TRUCK.fuelPrice * TRUCK.rescueMult));
+      if (fuelCost > 0) { await addCash(q, userId, -fuelCost, `xang:${t.to_region}`); cash -= fuelCost; }
+      // Phí đường: trừ ETC trước; thiếu thì trả tiền mặt có phụ thu.
+      const tollCost = plan.tolls * plan.tollFee, tollFromEtc = Math.min(etc, tollCost);
+      const tollCash = Math.min(cash, Math.round((tollCost - tollFromEtc) * (1 + TRUCK.etcCashSurcharge)));
+      if (tollCash > 0) { await addCash(q, userId, -tollCash, `phi_duong:${t.to_region}`); cash -= tollCash; }
+      etc -= tollFromEtc;
+      const fuelL = round1(Math.min(TRUCK.tankL, Math.max(0, have + refuelL + rescueL - used)));
       await q.query('update trips set finished_at = now() where id = $1', [tripId]);
-      await q.query('update users set truck_region = $2 where id = $1', [userId, t.to_region]);
+      await q.query('update users set truck_region = $2, fuel_l = $3, etc = $4 where id = $1', [userId, t.to_region, fuelL, etc]);
       await q.query('insert into visits (user_id, region_id) values ($1,$2) on conflict do nothing', [userId, t.to_region]);
-      return { regionId: t.to_region };
+      return { regionId: t.to_region, fuelUsedL: round1(used), fuelCost, rescueL: round1(rescueL), tollCost: tollFromEtc + tollCash, tollFromEtc, fuelL, etc, cash };
     });
   });
 
@@ -1366,6 +1422,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     if (typeof role !== 'string' || !ROLES.includes(role as Role)) throw bad('du_lieu_sai', 'Vai trò không hợp lệ.');
     await db.query('update users set role = $2, role_assigned_at = now(), truck_region = home_region_id where id = $1', [userId, role]);
     return { role };
+  });
+
+  app.post('/api/test/truck', async (req) => {
+    const userId = await requireTester(req);
+    const etc = 2_000_000;
+    await db.query('update users set fuel_l = $2, etc = $3 where id = $1', [userId, TRUCK.tankL, etc]);
+    return { fuelL: TRUCK.tankL, etc };
   });
 
   app.post('/api/test/cash', async (req) => {

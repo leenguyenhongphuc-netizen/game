@@ -1,4 +1,5 @@
-// Hoạt cảnh hành trình du lịch: xem phương tiện đã mua vé đi qua cảnh quan tới nơi đến. Tự chứa CSS, phủ kín màn hình.
+// Hoạt cảnh chuyến du lịch: ra bến xe trước xóm, xe đưa đón, lên tàu/máy bay, đi qua cảnh quan rồi tới nơi.
+// Là một trải nghiệm trọn vẹn nên không có nút bỏ qua. Tự chứa CSS, phủ kín màn hình.
 import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { REGIONS } from '../../../shared/catalog.ts';
@@ -12,26 +13,26 @@ const INFO: Record<RideMode, { icon: string; name: string }> = {
 };
 
 const CSS = `
-.tr  position: fixed; left: var(--vx, 0px); top: var(--vy, 0px); width: var(--vw, 100%); height: var(--vh, 100%); z-index: 1000; background: #dff3fb; overflow: hidden; font-family: 'Be Vietnam Pro', system-ui, sans-serif; color: #3b2a17; user-select: none; -webkit-user-select: none; }
+.tr { position: fixed; left: var(--vx, 0px); top: var(--vy, 0px); width: var(--vw, 100%); height: var(--vh, 100%); z-index: 1000; background: #dff3fb; overflow: hidden; font-family: 'Be Vietnam Pro', system-ui, sans-serif; color: #3b2a17; user-select: none; -webkit-user-select: none; touch-action: none; }
 .tr-scene { position: absolute; inset: 0; }
-.tr-top { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); display: grid; gap: 6px; pointer-events: none; }
-.tr-bar { background: #fff6dc; border: 3px solid #7a4a22; border-radius: 18px; box-shadow: 0 4px 0 #56310f; padding: 6px 12px 8px; min-width: 0; }
-.tr-title { display: flex; align-items: center; gap: 6px; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 800; font-size: clamp(0.85rem, 3.6vw, 1.05rem); min-width: 0; }
+.tr-top { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); display: grid; gap: 6px; justify-items: start; pointer-events: none; }
+.tr-bar { box-sizing: border-box; width: 100%; max-width: 430px; background: #fff6dc; border: 3px solid #7a4a22; border-radius: 18px; box-shadow: 0 4px 0 #56310f; padding: 6px 12px 8px; min-width: 0; }
+.tr-title { display: flex; align-items: center; gap: 6px; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 800; font-size: clamp(0.85rem, 3.6vw, 1.05rem); line-height: 1.25; min-width: 0; }
 .tr-title span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tr-title b { flex-shrink: 0; }
-.tr-track { position: relative; height: 12px; border-radius: 8px; background: #e8d6a6; border: 2px solid #cdb67c; margin: 16px 12px 2px; }
+.tr-track { position: relative; height: 12px; border-radius: 8px; background: #e8d6a6; border: 2px solid #cdb67c; margin: 18px 14px 2px; }
 .tr-fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: linear-gradient(#7fd0f5, #2a7fd6); }
-.tr-icon { position: absolute; top: -21px; font-size: 1.5rem; transform: translateX(-50%) scaleX(-1); }
-.tr-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.tr-pill { background: #7a4a22; color: #fff7d6; border: 3px solid #56310f; border-radius: 999px; padding: 2px 12px; font-family: 'Baloo 2', sans-serif; font-weight: 800; box-shadow: 0 3px 0 #2e1905; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tr-skip { pointer-events: auto; font: inherit; font-family: 'Baloo 2', sans-serif; font-weight: 700; color: inherit; background: #f6e7bd; border: 2px solid #7a4a22; border-radius: 12px; box-shadow: 0 3px 0 #7a4a22; padding: 4px 14px; min-height: 40px; cursor: pointer; white-space: nowrap; }
-.tr-skip:active { transform: translateY(2px); box-shadow: 0 1px 0 #7a4a22; }
-.tr-skip:focus-visible { outline: 3px solid #1f6feb; outline-offset: 2px; }
+.tr-icon { position: absolute; top: -22px; font-size: 1.4rem; line-height: 1; transform: translateX(-50%) scaleX(-1); }
+.tr-pill { max-width: 100%; box-sizing: border-box; background: #7a4a22; color: #fff7d6; border: 3px solid #56310f; border-radius: 999px; padding: 2px 12px; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 0.95rem; box-shadow: 0 3px 0 #2e1905; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-cap { position: absolute; left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); display: flex; justify-content: center; pointer-events: none; }
+.tr-cap p { margin: 0; max-width: min(100%, 640px); box-sizing: border-box; background: rgba(59, 42, 23, 0.82); color: #fff7d6; border-radius: 14px; padding: 7px 16px; font-weight: 700; font-size: clamp(0.9rem, 3.8vw, 1.1rem); line-height: 1.3; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: tr-cap 0.35s ease-out; }
 .tr-arrive { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; pointer-events: none; }
 .tr-arrive div { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: clamp(1.8rem, 8vw, 3.4rem); line-height: 1.1; text-align: center; color: #fff3b0; -webkit-text-stroke: 3px #56310f; paint-order: stroke fill; text-shadow: 0 4px 0 #0003; animation: tr-pop 0.4s cubic-bezier(0.2, 1.6, 0.4, 1); }
 .tr-fail { position: absolute; inset: 40% 24px auto; text-align: center; background: #fff6dc; border-radius: 14px; padding: 16px; }
 @keyframes tr-pop { from { transform: scale(0.5); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .tr-arrive div { animation: none; } }
+@keyframes tr-cap { from { transform: translateY(8px); opacity: 0; } }
+@media (max-height: 480px) { .tr-bar { max-width: 340px; padding: 4px 10px 6px; } .tr-track { margin-top: 16px; } .tr-cap { bottom: max(8px, env(safe-area-inset-bottom)); } }
+@media (prefers-reduced-motion: reduce) { .tr-arrive div, .tr-cap p { animation: none; } }
 `;
 
 export function TravelRide(props: {
@@ -45,6 +46,7 @@ export function TravelRide(props: {
   const cb = useRef(props); cb.current = props;
   const [progress, setProgress] = useState(0);
   const [arrived, setArrived] = useState(false);
+  const [stage, setStage] = useState<{ n: number; caption: string }>({ n: 0, caption: '' });
   const [failed, setFailed] = useState(false);
   const from = REGIONS[props.fromRegionId]?.name ?? 'Nơi đi', to = REGIONS[props.toRegionId]?.name ?? 'Nơi đến';
   const finish = () => { if (done.current) return; done.current = true; cb.current.onFinish(); };
@@ -55,18 +57,20 @@ export function TravelRide(props: {
       scene = new RideScene(host.current!, {
         mode: props.mode, fromRegionId: props.fromRegionId, toRegionId: props.toRegionId, seconds: props.seconds,
         onTick: (p) => { const r = Math.round(p * 200); if (r !== last) { last = r; setProgress(p); } },
-        onArrive: () => { setArrived(true); timer = window.setTimeout(finish, 1200); },
+        onStage: (n, caption) => { setStage({ n, caption }); if (n === 5) setProgress(1); },
+        onArrive: () => { setArrived(true); timer = window.setTimeout(finish, 1700); },
       });
     } catch {
-      setFailed(true); timer = window.setTimeout(finish, 1500); // không có đồ hoạ 3D thì vẫn cho tới nơi
+      setFailed(true); timer = window.setTimeout(finish, 1800); // không có đồ hoạ 3D thì báo rồi vẫn cho tới nơi
     }
     return () => { window.clearTimeout(timer); scene?.dispose(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const info = INFO[props.mode], left = Math.max(0, Math.round(props.km * (1 - progress)));
+  const status = stage.n < 4 ? `${info.name} · ${Math.round(props.km).toLocaleString('vi-VN')} km` : stage.n === 4 ? `${info.name} · còn ${left.toLocaleString('vi-VN')} km` : `${info.name} · đã tới nơi`;
   return (
-    <div className="tr" role="dialog" aria-label={`Hành trình ${info.name} từ ${from} tới ${to}`}>
+    <div className="tr" role="dialog" aria-label={`Hành trình ${info.name} từ ${from} tới ${to}`} data-stage={stage.n}>
       <style>{CSS}</style>
       <div ref={host} className="tr-scene" />
       <div className="tr-top">
@@ -77,13 +81,11 @@ export function TravelRide(props: {
             <div className="tr-icon" style={{ left: `${progress * 100}%` }} aria-hidden="true">{info.icon}</div>
           </div>
         </div>
-        <div className="tr-row">
-          <span className="tr-pill">{info.name} · còn {left.toLocaleString('vi-VN')} km</span>
-          <button className="tr-skip" onClick={finish}>Bỏ qua ⏭</button>
-        </div>
+        <span className="tr-pill">{status}</span>
       </div>
+      {!failed && !arrived && stage.caption && <div className="tr-cap" role="status"><p key={stage.n}>{stage.caption}</p></div>}
       {arrived && <div className="tr-arrive" role="status"><div>Đã tới {to}</div></div>}
-      {failed && <p className="tr-fail">Thiết bị chưa bật đồ hoạ 3D nên bỏ qua đoạn phim hành trình.</p>}
+      {failed && <p className="tr-fail">Thiết bị chưa bật đồ hoạ 3D nên không chiếu được đoạn phim hành trình.</p>}
     </div>
   );
 }

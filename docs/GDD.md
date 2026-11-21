@@ -63,9 +63,23 @@ Chọn nơi đến trong mục Du lịch rồi mua vé theo phương tiện. Gi�
 | ✈️ Máy bay | Từ 400 km (đảo: từ 300 km) | 300.000đ + 1.500đ/km |
 | ⛴️ Tàu thuỷ | Mọi chuyến ra hoặc vào đảo | 50.000đ + 600đ/km |
 
-Sau khi mua vé, người chơi xem hoạt cảnh phương tiện đó đi qua cảnh quan của vùng đi rồi vùng đến (bỏ qua được). Tới nơi là **vườn mẫu** của vùng: trồng đủ mọi đặc sản đang ra trái, đứng lên từng ô để xem trọn quy trình trồng. Trước cổng có **quầy trưng bày**: mua đặc sản làm quà (được tem trong sổ sưu tập), ghé vườn của người chơi ở vùng đó, mua đất. Bấm "Về nhà" để trở lại xóm.
+Sau khi mua vé, người chơi xem trọn hoạt cảnh năm chặng, **không bỏ qua được** vì đây là một phần trải nghiệm: (1) đi bộ ra bến xe trước xóm, (2) xe trung chuyển tới đón, (3) tới ga, sân bay hoặc bến cảng và bước lên phương tiện, (4) phương tiện đi qua cảnh quan của vùng đi rồi vùng đến, (5) tới nơi và bước xuống. Tới nơi là **vườn mẫu** của vùng: trồng đủ mọi đặc sản đang ra trái, đứng lên từng ô để xem trọn quy trình trồng. Trước cổng có **quầy trưng bày**: mua đặc sản làm quà (được tem trong sổ sưu tập), ghé vườn của người chơi ở vùng đó, mua đất. Bấm "Về nhà" để trở lại xóm.
 
 Thương lái tự lái xe tải tới nơi cũng vào vườn mẫu của vùng đó.
+
+### Chuyến xe tải của Thương lái
+
+Xe tải có **bình xăng 60 lít** (12 lít/100 km, 21.000đ/lít) và **tài khoản thu phí không dừng (ETC)**. Lên xe ở xóm để xem kim xăng, đổ đầy bình, nạp ETC.
+
+Mỗi chuyến có lộ trình cố định theo cặp vùng (`tripPlan`): quãng đường, các nút giao phải rẽ, trạm xăng mỗi 60 km, trạm thu phí mỗi 70 km (35.000đ/trạm). Trong màn lái:
+
+- Rời xóm trên đường làng, nhập làn lên cao tốc ba làn; né xe cùng chiều bằng cách đổi làn.
+- Biển báo và bản đồ dẫn đường chỉ hướng rẽ ở từng nút giao. **Đi lố** thì phải chạy tiếp và vòng lại, tốn thêm quãng đường và xăng.
+- Ghé trạm xăng để đổ. Cạn bình giữa đường thì trả phí cứu hộ, đắt gấp rưỡi.
+- Qua trạm thu phí: đủ số dư ETC thì chạy thẳng; thiếu thì dừng trả tiền mặt, phụ thu 20%.
+- Chuyến ra đảo có chặng tàu theo hải trình vẽ sẵn giữa hai hàng phao tiêu.
+
+Tiền xăng và phí đường tính khi tới nơi, theo quãng đường thật đã chạy (kể cả phần đi lố).
 
 ## Nhịp chơi cho người mới
 
@@ -151,11 +165,13 @@ Tiền trong game là **đồng**, giá mỗi kg bằng giá tham chiếu ngoài
 | Thông số | Giá trị hiện tại |
 |---|---|
 | Vốn khởi đầu | 1.000.000đ |
-| Tiền giống mỗi ô | 15% doanh thu kỳ vọng của ô đó |
+| Tiền giống mỗi ô | 8% doanh thu kỳ vọng của ô đó |
 | Thương lái mua tại vườn (đặc sản của vùng nhà) | 85% giá tham chiếu |
 | Thương lái mua hàng phương xa (đặc sản vùng khác) | 110% giá tham chiếu |
 | Khung giá rao trên sạp | 30% đến 300% giá tham chiếu |
-| Mua một lô đất vùng khác | 50.000.000đ |
+| Mua một lô đất vùng khác | 15–200 triệu tuỳ vùng (xem dưới) |
+
+**Giá đất theo vùng:** `landPrice(regionId)` lấy giá trị làm ra mỗi giờ của các đặc sản trong vùng (giá × sản lượng ÷ thời gian một vụ), so với vùng trung vị, rồi tính 50 triệu × chỉ số^0,7; đảo nhân thêm 1,3. Vùng cho nông sản giá trị cao thì đất đắt hơn. Hiện thấp nhất là Trà Bồng (24 triệu), cao nhất là Lý Sơn (131 triệu); Đà Lạt 71 triệu, Cái Bè 58 triệu. Đây là mức trong game suy ra từ giá nông sản, chưa đối chiếu giá đất nông nghiệp ngoài đời.
 
 **Vì sao có hai mức giá thương lái:** chênh lệch 85% – 110% là lý do để giao thương. Người trồng rao bán trong khoảng đó thì lợi hơn bán tại vườn; người vùng khác mua về bán lại vẫn có lãi. Nó cũng phản ánh đúng thực tế: giá tại vườn thấp hơn giá ở chợ xa.
 

@@ -18,10 +18,13 @@ iPhone SE (375×667), iPhone 15 dọc (393×852), iPhone 15 Pro Max (430×932), 
 
 2. **Chạy bộ kiểm**:
    ```bash
-   node tools/ui-test/run.mjs                    # đủ 8 thiết bị, khoảng 10–15 phút khi không có GPU
+   node tools/ui-test/run.mjs                    # đủ 8 thiết bị, khoảng 60–90 phút khi không có GPU (các hoạt cảnh chạy chậm)
    node tools/ui-test/run.mjs --only iphone-15   # một thiết bị khi đang sửa dở
    ```
    Mỗi thiết bị tạo một tài khoản mới và đi qua: đăng nhập → chia sẻ vị trí → xác nhận địa điểm → vòng quay → xóm → đứng trên ô trống → chọn giống → cây đang lớn → Kho, Đơn hàng, Xưởng → Chợ, Bảng giá → Bạn bè, Hợp tác xã → Du lịch, chọn phương tiện, Sổ tem → Trang trí → **trang bị phóng to 115%** (xóm và Kho) → Hồ sơ.
+
+   Sau đó tài khoản được bật quyền thử nghiệm (qua `psql` vào cơ sở dữ liệu thử) và đi tiếp: công cụ thử nghiệm → đứng cạnh xe tải → lên xe (xăng, ETC) → kế hoạch chuyến xe → **lái xe trọn chuyến** (chụp theo từng pha) → tới nơi, vườn mẫu → thẻ cách trồng từng bước → quầy trưng bày, giá đất, mua đất → về nhà với nhiều vườn → **ba chuyến du lịch bằng ba phương tiện** (chụp từng cảnh 1–5, kiểm không còn nút Bỏ qua) → sân thượng → ban đêm.
+   Thêm `--nhanh` để bỏ các hoạt cảnh dài (lái xe, du lịch) khi chỉ sửa bố cục.
 
    Mọi phép đo tính theo phần màn hình đang nhìn thấy (`visualViewport`). Bước phóng to giả lập Safari trên iPhone, vốn bỏ qua `user-scalable=no`: khung game phải bám theo phần nhìn thấy (xem `web/src/viewport.ts`), không được dùng `position: fixed; inset: 0` hay `100vw`/`100vh` cho khung ngoài cùng.
 
@@ -35,7 +38,7 @@ iPhone SE (375×667), iPhone 15 dọc (393×852), iPhone 15 Pro Max (430×932), 
    | `chu-bi-cat` | Chữ bị cắt mà không có dấu ba chấm (cảnh báo). |
    | `loi-console`, `khong-di-tiep-duoc` | Lỗi JavaScript, hoặc luồng bị kẹt ở một màn. |
 
-4. **Tự xem ảnh**, vì quy tắc tự động không thấy được cái xấu. Với mỗi thiết bị, mở bằng công cụ Read ít nhất các ảnh: `vong-quay`, `xom`, `dung-tren-o-trong`, `chon-giong`, `kho`, `chon-phuong-tien`, `trang-tri`. Tìm: chữ quá nhỏ hoặc quá to, khoảng trống vô lý, nhân vật bị che, màu khó đọc trên nền 3D, nút sát mép, bố cục màn ngang bị dồn.
+4. **Tự xem ảnh**, vì quy tắc tự động không thấy được cái xấu. Với mỗi thiết bị, mở bằng công cụ Read ít nhất các ảnh: `vong-quay`, `xom`, `dung-tren-o-trong`, `chon-giong`, `chi-tiet-cay`, `kho`, `chon-phuong-tien`, `trang-tri`, `tren-xe-tai`, mọi ảnh `lai-xe-*`, `nhieu-vuon`, mọi ảnh `du-lich-*`. Tìm: chữ quá nhỏ hoặc quá to, khoảng trống vô lý, nhân vật bị che, màu khó đọc trên nền 3D, nút sát mép, bố cục màn ngang bị dồn.
 
 5. **Sửa** trong `web/src/styles.css` và các tệp `web/src/*.tsx`. Nguyên tắc:
    - Ô nhập và ô chọn luôn có `font-size` từ 16px.
@@ -49,7 +52,7 @@ iPhone SE (375×667), iPhone 15 dọc (393×852), iPhone 15 Pro Max (430×932), 
 ## Giới hạn
 
 - Trình duyệt thử là Chromium không có GPU, **không phải Safari**: không đo được độ mượt và không tái hiện hết hành vi riêng của iPhone. Bộ kiểm sạch lỗi KHÔNG có nghĩa là máy thật ổn; khi báo cho người dùng phải nói rõ là mới kiểm trên giả lập. Lỗi chỉ có trên máy thật thì cần ảnh chụp từ người dùng, rồi tìm cách giả lập lại hành vi đó trong bộ kiểm (như bước phóng to).
-- Vai trò do vòng quay giao ngẫu nhiên, nên màn có xe tải hay xưởng không phải lần nào cũng xuất hiện.
+- Luôn chạy `tools/ui-test/serve.sh` trước mỗi lượt để có cơ sở dữ liệu trống và đúng bản vừa dựng.
 - Không triển khai lên Vercel trong quy trình này trừ khi người dùng yêu cầu.
 
 ## Thêm màn mới vào bộ kiểm

@@ -5,3 +5,4 @@ dist/
 .vercel
 tools/ui-test/out/
 tools/ui-test/server.log
+tools/ui-test/server.pid

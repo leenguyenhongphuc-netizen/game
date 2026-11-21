@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, npcOf, processOf, specialtiesOfRegion } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
-  CITY_BONUS, GIFT_MAX_KG, HELP_REWARD, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, ROOFTOP_TILES, TILE_M2, DUMP_RATIO, QUALITY_MULT, ROLE_INFO, TRAVEL_MODES, fmtMoney, inSeason, npcPrice, seedCost, stepWaitMs, weatherAt,
+  CITY_BONUS, GIFT_MAX_KG, HELP_REWARD, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, ROOFTOP_TILES, TILE_M2, DUMP_RATIO, QUALITY_MULT, ROLE_INFO, TRAVEL_MODES, TRUCK, fmtMoney, inSeason, npcPrice, seedCost, stepWaitMs, weatherAt,
 } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import { AlbumPanel, CoopPanel, GiftsPanel, ShowcasePanel, TravelPanel } from './panels.tsx';
@@ -11,6 +11,8 @@ import { NpcBadge, OrdersPanel, ProfilePanel, WardPicker, WorkshopPanel } from '
 import { RoleWheel } from './wheel.tsx';
 import { CustomizePanel } from './custom.tsx';
 import { DriveGame } from './drive/DriveGame.tsx';
+import type { DrivePlan, DriveResult } from './drive/DriveGame.tsx';
+import { CropGuide } from './guide.tsx';
 import type { Friends, GiftInbox, Listing, LotView, Me, Planting, Prices, Village } from './api.ts';
 import { DEFAULT_STYLE } from '../../shared/custom.ts';
 import { TravelRide } from './drive/TravelRide.tsx';
@@ -187,7 +189,8 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
 
 // ------------------------------------------------------------------ khung chính
 type Tab = 'vuon' | 'kho' | 'cho' | 'ban' | 'bando' | 'so' | 'sap' | 'toi' | 'trangtri' | 'trungbay';
-interface Trip { tripId: number; fromRegionId: string; toRegionId: string; km: number; fuel: number; needsBoat: boolean; seconds: number }
+interface Trip { tripId: number; fromRegionId: string; toRegionId: string; plan: DrivePlan; fuelL: number; etc: number; cash: number; truck: { tankL: number; lPer100km: number; fuelPrice: number } }
+interface TripDone { regionId: string; fuelUsedL: number; fuelCost: number; rescueL: number; tollCost: number; tollFromEtc: number; fuelL: number; etc: number; cash: number }
 const TABS: [Tab, string, string][] = [['kho', '🧺', 'Kho'], ['cho', '🛒', 'Chợ'], ['ban', '🧑‍🤝‍🧑', 'Xóm'], ['bando', '🚌', 'Du lịch'], ['trangtri', '🎨', 'Trang trí']];
 const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho, đơn hàng, xưởng', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch và sổ tem', so: '', sap: 'Sạp hàng xóm', toi: 'Hồ sơ của tôi', trungbay: 'Quầy trưng bày đặc sản', trangtri: 'Trang trí nhà, sạp, nhân vật' };
 
@@ -277,14 +280,17 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const pace = me.config.timeScale * (me.config.pace ?? 1);
   useEffect(() => { setSeedOpen(false); setInfoOpen(false); }, [ctx]);
   const isTrader = me.user.role === 'thuong_lai';
+  const fuelL = me.user.fuelL ?? TRUCK.startFuelL;
   // Trang phục của mình và xe tải của thương lái (chỉ hiện ở xóm nhà)
   useEffect(() => { worldRef.current?.setAvatar(me.user.avatar); }, [me.user.avatar, village]);
   useEffect(() => { worldRef.current?.setTruck(isTrader && atHome ? me.user.avatar?.truck ?? '#f08a6c' : null); if (!(isTrader && atHome)) setDriving(false); }, [isTrader, atHome, me.user.avatar?.truck, village]);
   const startTrip = async (toRegionId: string) => { const t = await api<Trip>('POST', '/api/trips/start', { toRegionId }); setTab('vuon'); setTrip(t); await refresh(); };
-  const finishTrip = async () => {
+  const finishTrip = async (res: DriveResult) => {
     if (!trip) return;
-    try { await api('POST', `/api/trips/${trip.tripId}/finish`, {}); setToast(`🚚 Đã tới ${REGIONS[trip.toRegionId].name}. Mở Kho để bán cho doanh nghiệp ở đây.`); if (trip.toRegionId !== me.user.homeRegionId) { setTour(trip.toRegionId); worldRef.current?.goHome(); } else setTour(null); }
-    catch (e) { setToast(e instanceof Error ? e.message : 'Có lỗi xảy ra.'); }
+    try {
+      const d = await api<TripDone>('POST', `/api/trips/${trip.tripId}/finish`, res);
+      setToast(`🚚 Đã tới ${REGIONS[trip.toRegionId].name} · xăng ${fmtMoney(d.fuelCost)}${d.rescueL > 0 ? ' (có phí cứu hộ)' : ''} · phí đường ${fmtMoney(d.tollCost)}. Mở Kho để bán hàng ở đây.`); if (trip.toRegionId !== me.user.homeRegionId) { setTour(trip.toRegionId); worldRef.current?.goHome(); } else setTour(null);
+    } catch (e) { setToast(e instanceof Error ? e.message : 'Có lỗi xảy ra.'); }
     setTrip(null); reload();
   };
   const visit = (id: number) => { setTour(null); setPlotId(id); setTab('vuon'); worldRef.current?.goHome(); };
@@ -313,6 +319,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         if (r.harvested) { worldRef.current?.floatText(lotIndex, planting.tile, `+${r.harvested.share} kg quà vườn`); setToast(`Phụ thu hoạch cho ${lot.plot.ownerName}: bạn được ${r.harvested.share} kg ${sp.name}`); }
         else worldRef.current?.floatText(lotIndex, planting.tile, `+${fmtMoney(r.reward)} · chăm giúp`);
       }
+      // dữ liệu xóm cần một nhịp để tải lại: tạm chặn để không gửi lặp bước vừa làm (cây vừa thu hoạch thì đã biến mất)
+      blocked.current.set(planting.id, Date.now() + 4000);
       reload();
     } catch (e) {
       blocked.current.set(planting.id, Date.now() + 15000);
@@ -338,6 +346,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     <div className={tab === 'vuon' ? 'game' : 'game has-modal'}>
       <WorldView state={worldState} worldRef={worldRef} paused={tab !== 'vuon'} onContext={setCtx} onReady={onReady} />
 
+      <div className="hud">
       <header className="hud-top">
         <button className="chip" onClick={() => setTab('toi')} aria-label="Hồ sơ của tôi">
           <span className="chip-avatar" aria-hidden="true">🧑‍🌾</span>
@@ -353,12 +362,13 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         {(village?.events ?? []).map((ev) => <span key={ev.id} className={`wchip ${ev.active ? 'hot' : ''}`}>{ev.icon} {ev.active ? `${ev.name}: +${Math.round(ev.bonus * 100)}%` : `${ev.name} sau ${fmtDuration(ev.startsAt - now)}`}</span>)}
       </div>
       <div className="quest"><span aria-hidden="true">{quest[0]}</span><p>{quest[1]}</p>{!atHome && <button onClick={goHome}>🏠 Về nhà</button>}</div>
-      {me.plots.length > 1 && tab === 'vuon' && (
+      {me.plots.length > 1 && tab === 'vuon' && !tour && (
         <div className="plot-switch">
           {me.plots.map((p) => <button key={p.id} aria-pressed={p.id === plotId} onClick={() => visit(p.id)}>{p.isHome ? '🏠 ' : '🌾 '}{REGIONS[p.regionId].name}</button>)}
         </div>
       )}
-      {toast && <div className="toast" role="status">{toast}</div>}
+        {toast && <div className="toast" role="status">{toast}</div>}
+      </div>
 
       {tab === 'vuon' && ctx.kind !== 'none' && !driving && (() => {
         const emptyMine = ctx.kind === 'tile' && ctxLot && !ctxPlanting && ctxLot.plot.mine;
@@ -370,10 +380,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         return (
           <>
             {plantInfo && infoOpen && (
-              <div className="ctx-detail" role="dialog" aria-label={plantInfo.sp.name}>
-                <div className="sheet-head"><h3>{CROPS[plantInfo.sp.crop].emoji} {plantInfo.sp.name}</h3><button className="round" aria-label="Đóng" onClick={() => setInfoOpen(false)}>✕</button></div>
-                <ol className="steps">{plantInfo.steps.map((st, i) => <li key={i} className={tour || i < ctxPlanting!.stepIndex ? 'done' : i === ctxPlanting!.stepIndex ? 'current' : ''}><strong>{st.name}</strong>{(tour || i === ctxPlanting!.stepIndex) && <p>{st.desc}</p>}</li>)}</ol>
-              </div>
+              <CropGuide sp={plantInfo.sp} pace={pace} price={priceOf(plantInfo.sp.id)} current={tour ? undefined : ctxPlanting!.stepIndex} onClose={() => setInfoOpen(false)} />
             )}
             {emptyMine && seedOpen && (
               <div className="ctx-detail" role="dialog" aria-label="Chọn giống để trồng">
@@ -387,7 +394,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                         onClick={() => act.run(async () => { await api('POST', `/api/plots/${ctxLot.plot.id}/plant`, { tile: ctx.tile, specialtyId: sp.id }); setSeedOpen(false); worldRef.current?.burst(ctx.lot, ctx.tile, 'soil'); worldRef.current?.floatText(ctx.lot, ctx.tile, `${crop.emoji} ${processOf(crop)[0].name}`, '#fff6dc'); })}>
                         <span className="emoji">{crop.emoji}</span>
                         <strong>{sp.name}</strong>
-                        <small>{crop.yieldKg} kg · {fmtDuration(stepWaitMs(sp, pace) * (steps - 1))}</small>
+                        <small>🧺 {crop.yieldKg} kg · ⏱️ {fmtDuration(stepWaitMs(sp, pace) * (steps - 1))}</small>
+                        <small>💰 bán ~{fmtMoney(priceOf(sp.id) * crop.yieldKg)}</small>
                         {inSeason(crop.id, now) && <span className="tag">Chính vụ +15%</span>}
                         {(prices[sp.id]?.glut ?? 1) < 1 && <span className="tag warn">Nhiều người trồng −{Math.round((1 - prices[sp.id]!.glut!) * 100)}%</span>}
                         <span className="price">{fmtMoney(cost)}</span>
@@ -403,7 +411,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
               {plantInfo && !infoOpen && (
                 <button className="ctx-btn" onClick={() => setInfoOpen(true)}>
                   {CROPS[plantInfo.sp.crop].emoji} <b>{plantInfo.sp.name}</b>
-                  {tour ? ' · xem quy trình trồng' : ` · ${ctxPlanting!.stepIndex + 1}/${plantInfo.steps.length} ${plantInfo.step.name}${plantInfo.wait > 0 ? ` · ${fmtDuration(plantInfo.wait)}` : !ctxLot!.plot.mine && plantInfo.isLast ? ' · chờ chủ vườn' : ''}`}
+                  {tour ? ' · xem cách trồng' : ` · ${ctxPlanting!.stepIndex + 1}/${plantInfo.steps.length} ${plantInfo.step.name}${plantInfo.wait > 0 ? ` · ${fmtDuration(plantInfo.wait)}` : !ctxLot!.plot.mine && plantInfo.isLast ? ' · chờ chủ vườn' : ''}`}
                 </button>
               )}
               {ctx.kind === 'stall' && ctxLot && (
@@ -418,8 +426,15 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
 
       {tab === 'vuon' && driving && (
         <div className="context drive-bar">
-          <p className="context-title">🚚 Đang lái xe · xe đỗ ở {REGIONS[me.user.truckRegionId ?? me.user.homeRegionId!].name}</p>
-          <div className="row-line">
+          <div className="truck-stats">
+            <span className="context-title">🚚 {REGIONS[me.user.truckRegionId ?? me.user.homeRegionId!].name}</span>
+            <div className="fuel" title="Xăng trong bình"><span aria-hidden="true">⛽</span><div className="fuel-bar"><i style={{ width: `${Math.min(100, (fuelL / TRUCK.tankL) * 100)}%` }} className={fuelL < TRUCK.tankL * 0.2 ? 'low' : ''} /></div><b>{fuelL.toFixed(0)}/{TRUCK.tankL} lít</b></div>
+            <div className="etc" title="Số dư thu phí không dừng"><span aria-hidden="true">🛣️</span><b>ETC {fmtMoney(me.user.etc ?? 0)}</b></div>
+          </div>
+          {act.error && <p className="error" role="alert">{act.error}</p>}
+          <div className="truck-actions">
+            <button className="grow" disabled={act.busy || fuelL >= TRUCK.tankL - 0.5} onClick={() => act.run(() => api('POST', '/api/truck/refuel', { liters: TRUCK.tankL }))}>⛽ Đổ đầy · {fmtMoney(Math.round(Math.max(0, TRUCK.tankL - fuelL) * TRUCK.fuelPrice))}</button>
+            <button className="grow" disabled={act.busy || me.user.cash < 200_000} onClick={() => act.run(() => api('POST', '/api/truck/etc', { amount: 200_000 }))}>🛣️ Nạp ETC 200k</button>
             <button className="grow" onClick={() => { worldRef.current?.exitTruck(); setDriving(false); }}>Xuống xe</button>
             <button className="primary grow" onClick={() => { setTravelTab('di'); setTab('bando'); }}>Đi vùng khác</button>
           </div>
@@ -427,7 +442,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       )}
       {respin && <div className="overlay"><RoleWheel regionName={REGIONS[me.user.homeRegionId!].name} onDone={() => { setRespin(false); reload(); }} /></div>}
       {ride && <TravelRide mode={ride.mode} fromRegionId={me.user.homeRegionId!} toRegionId={ride.to} km={ride.km} seconds={TRAVEL_MODES[ride.mode].seconds} onFinish={() => { setTour(ride.to); setRide(null); worldRef.current?.goHome(); }} />}
-      {trip && <DriveGame fromRegionId={trip.fromRegionId} toRegionId={trip.toRegionId} km={trip.km} seconds={trip.seconds} needsBoat={trip.needsBoat} truckColor={me.user.avatar?.truck ?? '#f08a6c'} onFinish={finishTrip} onCancel={() => { setTrip(null); setToast('Đã huỷ chuyến. Tiền xăng không được hoàn lại.'); }} />}
+      {trip && <DriveGame fromRegionId={trip.fromRegionId} toRegionId={trip.toRegionId} plan={trip.plan} fuelL={trip.fuelL} truck={trip.truck} etc={trip.etc} cash={trip.cash} truckColor={me.user.avatar?.truck ?? '#f08a6c'} onFinish={finishTrip} onCancel={() => { setTrip(null); setToast('Đã huỷ chuyến. Xe vẫn đỗ ở chỗ cũ.'); }} />}
 
       {tab !== 'vuon' && (
         <div className="modal" role="dialog" aria-label={TAB_TITLES[tab]}>

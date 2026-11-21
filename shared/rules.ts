@@ -232,16 +232,77 @@ export function allowedTiles(kind: 'ground' | 'rooftop', role: Role | null): num
 }
 /** Người không phải thương lái chỉ "bán tháo" được cho doanh nghiệp ở mức này so với giá tham chiếu. */
 export const DUMP_RATIO = 0.6;
-/** Tiền xăng mỗi km của một chuyến xe. */
+/** Tiền xăng mỗi km của một chuyến xe (cách tính cũ, giữ lại cho mã cũ còn tham chiếu). */
 export const FUEL_PER_KM = 300;
-/** Thông tin một chuyến xe giữa hai vùng: quãng đường, tiền xăng, có phải qua bến tàu không, và thời lượng màn lái (giây). */
-export function tripInfo(fromRegionId: string, toRegionId: string): { km: number; fuel: number; needsBoat: boolean; seconds: number } {
+
+/** Xe tải của thương lái: bình xăng, mức tiêu hao, giá xăng, trạm thu phí, trạm xăng, cứu hộ. */
+export const TRUCK = { tankL: 60, lPer100km: 12, fuelPrice: 21000, tollEveryKm: 70, tollFee: 35000, stationEveryKm: 60, rescueMult: 1.5, etcCashSurcharge: 0.2, startFuelL: 30 };
+export interface TripPlan {
+  km: number; needsBoat: boolean; seconds: number; tolls: number; tollFee: number; fuelNeededL: number;
+  junctions: { atKm: number; dir: 'L' | 'R'; name: string }[]; stationsAtKm: number[];
+}
+function hashStr(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+/** Phần đường bộ của một chuyến: chuyến có chặng tàu thì 60% quãng đường là đường bộ. */
+export function roadKm(km: number, needsBoat: boolean): number {
+  return needsBoat ? Math.round(km * 0.6) : km;
+}
+/** Lộ trình một chuyến xe tải, tất định theo cặp vùng: nút giao phải rẽ, trạm xăng, trạm thu phí, lượng xăng cần. */
+export function tripPlan(fromRegionId: string, toRegionId: string): TripPlan {
   const a = REGIONS[fromRegionId], b = REGIONS[toRegionId];
   const km = Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng));
+  const needsBoat = !!(a.island || b.island);
+  const road = roadKm(km, needsBoat);
+  const tolls = road >= 40 ? Math.max(1, Math.floor(road / TRUCK.tollEveryKm)) : 0;
+  // Các vùng trồng nằm gần tuyến (trừ hai đầu), xếp theo vị trí dọc tuyến, để đặt tên nút giao.
+  const near = Object.values(REGIONS)
+    .filter((r) => r.id !== a.id && r.id !== b.id)
+    .map((r) => ({ r, da: haversineKm(a.lat, a.lng, r.lat, r.lng), db: haversineKm(b.lat, b.lng, r.lat, r.lng) }))
+    .filter((x) => x.da + x.db <= km * 1.25 + 60)
+    .sort((x, y) => x.da - y.da || (x.r.id < y.r.id ? -1 : 1));
+  const count = Math.min(5, Math.max(2, 2 + Math.floor(road / 150)));
+  const junctions: TripPlan['junctions'] = [];
+  for (let i = 0; i < count; i++) {
+    const last = i === count - 1;
+    const atKm = Math.max(1, Math.round((road * (i + 1)) / (count + 0.25)));
+    const dir = hashStr(`${fromRegionId}>${toRegionId}#${i}`) % 2 === 0 ? 'L' : 'R';
+    const via = near.length ? near[Math.min(near.length - 1, Math.floor((i * near.length) / count))].r : b;
+    junctions.push({ atKm, dir, name: last ? `Lối ra ${b.name}` : `Nút giao ${via.name}` });
+  }
+  const stationsAtKm: number[] = [];
+  for (let k = TRUCK.stationEveryKm; k < road; k += TRUCK.stationEveryKm) stationsAtKm.push(k);
   return {
-    km, fuel: Math.max(5000, Math.round((km * FUEL_PER_KM) / 1000) * 1000), needsBoat: !!(a.island || b.island),
-    seconds: Math.min(75, Math.max(30, Math.round(25 + km / 12))),
+    km, needsBoat, seconds: Math.min(75, Math.max(30, Math.round(25 + km / 12))), tolls, tollFee: TRUCK.tollFee,
+    fuelNeededL: Math.round(((road * TRUCK.lPer100km) / 100) * 10) / 10, junctions, stationsAtKm,
   };
+}
+/** Thông tin tóm tắt một chuyến xe: quãng đường, ước tính tổng chi phí (xăng + phí đường), có chặng tàu không, thời lượng màn lái (giây). */
+export function tripInfo(fromRegionId: string, toRegionId: string): { km: number; fuel: number; needsBoat: boolean; seconds: number } {
+  const p = tripPlan(fromRegionId, toRegionId);
+  return { km: p.km, fuel: Math.round((p.fuelNeededL * TRUCK.fuelPrice + p.tolls * TRUCK.tollFee) / 1000) * 1000, needsBoat: p.needsBoat, seconds: p.seconds };
+}
+
+let landPrices: Record<string, number> | null = null;
+/** Giá một lô đất theo vùng: vùng cho nông sản giá trị cao (tiền thu mỗi giờ trồng) thì đất đắt hơn; đảo đắt hơn 30%. */
+export function landPrice(regionId: string): number {
+  if (!landPrices) {
+    const value: Record<string, number> = {};
+    for (const r of Object.values(REGIONS)) {
+      const sps = Object.values(SPECIALTIES).filter((sp) => sp.regionId === r.id);
+      value[r.id] = sps.reduce((sum, sp) => sum + (sp.refPrice * CROPS[sp.crop].yieldKg) / CROPS[sp.crop].growHours, 0) / Math.max(1, sps.length);
+    }
+    const sorted = Object.values(value).sort((x, y) => x - y), n = sorted.length;
+    const median = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
+    landPrices = {};
+    for (const r of Object.values(REGIONS)) {
+      const raw = LAND_PRICE * Math.pow(value[r.id] / median, 0.7) * (r.island ? 1.3 : 1);
+      landPrices[r.id] = Math.min(200_000_000, Math.max(15_000_000, Math.round(raw / 1_000_000) * 1_000_000));
+    }
+  }
+  return landPrices[regionId] ?? LAND_PRICE;
 }
 /** Khách vãng lai của thương lái ở phố: mua tối đa bấy nhiêu kg mỗi giờ cho mỗi tin rao có giá không quá mức này so với giá tham chiếu. */
 export const STALL_WALKIN_KG_PER_HOUR = 5, STALL_WALKIN_MAX_RATIO = 1.15;

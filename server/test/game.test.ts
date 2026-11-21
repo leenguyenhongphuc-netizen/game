@@ -9,7 +9,7 @@ import {
   CITY_BONUS, COOP_BONUS, COOP_CREATE_COST, GIFT_DAILY_LIMIT, GLUT_KG, GLUT_MAX_DROP, HELP_REWARD, LAND_PRICE, MARKET_DAY_BONUS, MAX_FRIENDS,
   COOP_ORDER_BONUS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, IN_SEASON_YIELD, ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS_XUONG,
   ROLE_INFO, inSeason, marketEventsAt, seasonAt, supplyKg,
-  DUMP_RATIO, FUEL_PER_KM, ROLES, ROLE_TARGETS, SEASON_DAYS, SMALL_TILES, allowedTiles, spinWeights, tripInfo,
+  DUMP_RATIO, FUEL_PER_KM, ROLES, ROLE_TARGETS, SEASON_DAYS, SMALL_TILES, allowedTiles, spinWeights, tripInfo, TRUCK, landPrice, roadKm, tripPlan,
   HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_MODES, glutFactor, paceFactor, stepWaitMs, travelOptions, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
   seedCost, snapCell, stepCount, urbanCoreAt, weatherAt, weatherInfo,
 } from '../../shared/rules.ts';
@@ -208,7 +208,7 @@ test('mua đất vùng khác cần đủ tiền và mỗi vùng một lô', asyn
   await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, cookie);
   assert.equal((await call('POST', '/api/plots/buy', { regionId: 'qng_lyson' }, cookie)).status, 409);
   const me = (await call('GET', '/api/me', undefined, cookie)).body;
-  await db.query('update users set cash = $2 where id = $1', [me.user.id, LAND_PRICE + 1000]);
+  await db.query('update users set cash = $2 where id = $1', [me.user.id, landPrice('qng_lyson') + 1000]);
   assert.equal((await call('POST', '/api/plots/buy', { regionId: 'qng_lyson' }, cookie)).status, 200);
   const after = (await call('GET', '/api/me', undefined, cookie)).body;
   assert.equal(after.user.cash, 1000);
@@ -974,8 +974,10 @@ test('hàm thuần: trọng số vòng quay, ô theo vai, chuyến xe, cá nhân
   assert.equal(tripInfo('qng_lyson', 'dt_caibe').needsBoat, true);
   const near = tripInfo('dt_caibe', 'dt_caolanh');
   assert.equal(near.needsBoat, false);
-  assert.equal(near.fuel, Math.max(5000, Math.round((near.km * FUEL_PER_KM) / 1000) * 1000));
-  assert.ok(near.fuel >= 5000 && sea.fuel > near.fuel);
+  const nearPlan = tripPlan('dt_caibe', 'dt_caolanh');
+  assert.equal(near.fuel, Math.round((nearPlan.fuelNeededL * TRUCK.fuelPrice + nearPlan.tolls * TRUCK.tollFee) / 1000) * 1000, 'fuel = ước tính xăng + phí đường');
+  assert.ok(near.fuel > 0 && sea.fuel > near.fuel);
+  assert.ok(FUEL_PER_KM > 0);
   for (const from of Object.keys(REGIONS)) {
     const t = tripInfo(from, 'hn_phudien');
     assert.ok(t.seconds >= 30 && t.seconds <= 75, `thời lượng màn lái ngoài khoảng: ${from}`);
@@ -1061,6 +1063,152 @@ test('ô trồng theo vai: thương lái và chủ xưởng chỉ có vườn nh
   assert.equal((await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: 29, specialtyId: 'hanh_ly_son' }, cookie)).status, 200);
 });
 
+test('giá đất theo vùng: trong khoảng 15–200 triệu, vùng giá trị cao đắt hơn, đảo đắt hơn', async () => {
+  const prices = Object.keys(REGIONS).map((id) => landPrice(id));
+  for (const id of Object.keys(REGIONS)) {
+    const p = landPrice(id);
+    assert.ok(p >= 15_000_000 && p <= 200_000_000 && p % 1_000_000 === 0, `giá đất ngoài khoảng: ${id} ${p}`);
+    assert.equal(landPrice(id), p, 'tính một lần, lần sau như cũ');
+  }
+  assert.ok(Math.max(...prices) >= Math.min(...prices) * 2, 'vùng giá trị cao phải đắt hơn hẳn vùng giá trị thấp');
+  // Chỉ số giá trị của vùng = trung bình (giá × sản lượng / giờ trồng) của các đặc sản; đất đắt theo đúng thứ tự đó.
+  const value = (id: string) => {
+    const sps = Object.values(SPECIALTIES).filter((sp) => sp.regionId === id);
+    return sps.reduce((sum, sp) => sum + (sp.refPrice * CROPS[sp.crop].yieldKg) / CROPS[sp.crop].growHours, 0) / sps.length;
+  };
+  const land = Object.values(REGIONS).filter((r) => !r.island).sort((x, y) => value(x.id) - value(y.id));
+  for (let i = 1; i < land.length; i++) assert.ok(landPrice(land[i].id) >= landPrice(land[i - 1].id), `sai thứ tự giá đất: ${land[i].id}`);
+  const vals = Object.keys(REGIONS).map(value).sort((x, y) => x - y), n = vals.length;
+  const median = n % 2 ? vals[(n - 1) / 2] : (vals[n / 2 - 1] + vals[n / 2]) / 2;
+  for (const r of Object.values(REGIONS)) {
+    const raw = 50_000_000 * Math.pow(value(r.id) / median, 0.7) * (r.island ? 1.3 : 1);
+    assert.equal(landPrice(r.id), Math.min(200_000_000, Math.max(15_000_000, Math.round(raw / 1_000_000) * 1_000_000)), `đảo nhân 1,3: ${r.id}`);
+  }
+  assert.ok(Object.values(REGIONS).some((r) => r.island));
+
+  // Mua đất trừ đúng giá của vùng.
+  const cookie = await signup('mua_dat_vung');
+  await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, cookie);
+  const me = await meOf(cookie);
+  const cheap = land[0].id === 'ld_dalat' ? land[1].id : land[0].id;
+  await db.query('update users set cash = $2 where id = $1', [me.user.id, landPrice(cheap) - 1]);
+  assert.equal((await call('POST', '/api/plots/buy', { regionId: cheap }, cookie)).body.error, 'khong_du_tien');
+  await db.query('update users set cash = $2 where id = $1', [me.user.id, landPrice(cheap) + 500]);
+  assert.equal((await call('POST', '/api/plots/buy', { regionId: cheap }, cookie)).status, 200);
+  assert.equal((await meOf(cookie)).user.cash, 500);
+  const led = await db.query('select delta from ledger where user_id = $1 and reason = $2', [me.user.id, `mua_dat:${cheap}`]);
+  assert.equal(led.rows[0].delta, -landPrice(cheap));
+});
+
+test('lộ trình xe tải: tất định, nút giao cuối là lối ra, trạm thu phí và trạm xăng chỉ ở đường bộ', () => {
+  const ids = Object.keys(REGIONS);
+  for (const from of ['dt_caibe', 'hn_phudien', 'qng_lyson', 'ld_dalat']) {
+    for (const to of ids) {
+      if (to === from) continue;
+      const p = tripPlan(from, to), info = tripInfo(from, to);
+      assert.deepEqual(tripPlan(from, to), p, 'cùng cặp vùng phải ra cùng lộ trình');
+      const road = roadKm(p.km, p.needsBoat);
+      assert.deepEqual([p.km, p.needsBoat, p.seconds], [info.km, info.needsBoat, info.seconds]);
+      assert.equal(p.needsBoat, !!(REGIONS[from].island || REGIONS[to].island));
+      assert.equal(road, p.needsBoat ? Math.round(p.km * 0.6) : p.km);
+      assert.equal(p.tolls, road >= 40 ? Math.max(1, Math.floor(road / TRUCK.tollEveryKm)) : 0, `${from}>${to}`);
+      assert.equal(p.tollFee, TRUCK.tollFee);
+      assert.equal(p.fuelNeededL, Math.round(road * TRUCK.lPer100km / 10) / 10);
+      assert.ok(p.junctions.length >= 2 && p.junctions.length <= 5);
+      assert.equal(p.junctions[p.junctions.length - 1].name, `Lối ra ${REGIONS[to].name}`);
+      p.junctions.forEach((j, i) => {
+        assert.ok(j.dir === 'L' || j.dir === 'R');
+        assert.ok(j.atKm >= 0 && j.atKm <= road && (i === 0 || j.atKm >= p.junctions[i - 1].atKm), `nút giao ngoài đường bộ: ${from}>${to}`);
+        if (i < p.junctions.length - 1) assert.match(j.name, /^Nút giao /);
+      });
+      assert.deepEqual(p.stationsAtKm, Array.from({ length: Math.max(0, Math.ceil(road / TRUCK.stationEveryKm) - 1) }, (_, i) => (i + 1) * TRUCK.stationEveryKm));
+      assert.ok(p.stationsAtKm.every((k) => k > 0 && k < road), `trạm xăng nằm ngoài biển: ${from}>${to}`);
+    }
+  }
+  const far = tripPlan('dt_caibe', 'hn_phudien'), near = tripPlan('dt_caibe', 'dt_caolanh');
+  assert.ok(far.junctions.length > near.junctions.length && far.tolls > near.tolls && far.stationsAtKm.length > near.stationsAtKm.length);
+  const dirs = new Set(ids.filter((id) => id !== 'dt_caibe').flatMap((id) => tripPlan('dt_caibe', id).junctions.map((j) => j.dir)));
+  assert.equal(dirs.size, 2, 'có cả rẽ trái lẫn rẽ phải');
+});
+
+test('xe tải: nạp ETC, đổ xăng, cứu hộ khi thiếu xăng, phí đường trừ ETC trước rồi tới tiền mặt có phụ thu', async () => {
+  const farmer = await signup('nd_khong_xe');
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, farmer);
+  assert.deepEqual([(await call('POST', '/api/truck/etc', { amount: 50_000 }, farmer)).status, (await call('POST', '/api/truck/refuel', { liters: 5 }, farmer)).body.error], [403, 'chi_thuong_lai']);
+
+  const cookie = await signup('tai_xe_etc', 'thuong_lai');
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, cookie);
+  const id = (await meOf(cookie)).user.id;
+  const setUser = (cash: number, fuel: number, etc: number) => db.query('update users set cash = $2, fuel_l = $3, etc = $4 where id = $1', [id, cash, fuel, etc]);
+
+  // Nạp ETC.
+  await setUser(100_000, 30, 0);
+  assert.equal((await call('POST', '/api/truck/etc', { amount: 9_999 }, cookie)).status, 400);
+  assert.equal((await call('POST', '/api/truck/etc', { amount: 5_000_001 }, cookie)).status, 400);
+  const poor = await call('POST', '/api/truck/etc', { amount: 100_001 }, cookie);
+  assert.deepEqual([poor.status, poor.body.error], [409, 'khong_du_tien']);
+  assert.deepEqual((await call('POST', '/api/truck/etc', { amount: 60_000 }, cookie)).body, { etc: 60_000, cash: 40_000 });
+  assert.equal((await db.query(`select delta from ledger where user_id = $1 and reason = 'nap_etc'`, [id])).rows[0].delta, -60_000);
+
+  // Đổ xăng: tối đa tới đầy bình.
+  assert.equal((await call('POST', '/api/truck/refuel', { liters: 0 }, cookie)).status, 400);
+  assert.equal((await call('POST', '/api/truck/refuel', { liters: 'abc' }, cookie)).status, 400);
+  const noCash = await call('POST', '/api/truck/refuel', { liters: 10 }, cookie);
+  assert.deepEqual([noCash.status, noCash.body.error], [409, 'khong_du_tien']);
+  await setUser(2_000_000, 30, 60_000);
+  assert.deepEqual((await call('POST', '/api/truck/refuel', { liters: 4.5 }, cookie)).body, { fuelL: 34.5, cost: Math.round(4.5 * TRUCK.fuelPrice), cash: 2_000_000 - Math.round(4.5 * TRUCK.fuelPrice) });
+  const fill = await call('POST', '/api/truck/refuel', { liters: 500 }, cookie);
+  assert.deepEqual([fill.body.fuelL, fill.body.cost], [TRUCK.tankL, Math.round(25.5 * TRUCK.fuelPrice)]);
+  const full = await call('POST', '/api/truck/refuel', { liters: 1 }, cookie);
+  assert.deepEqual([full.status, full.body.error], [409, 'binh_day']);
+  let me = await meOf(cookie);
+  assert.deepEqual([me.user.fuelL, me.user.etc, me.user.cash], [TRUCK.tankL, 60_000, 2_000_000 - 30 * TRUCK.fuelPrice]);
+  assert.equal((await db.query(`select sum(delta)::bigint as d from ledger where user_id = $1 and reason = 'do_xang'`, [id])).rows[0].d, -30 * TRUCK.fuelPrice);
+
+  // Chuyến xa: bình 60 lít + đổ dọc đường 20 lít vẫn thiếu → cứu hộ giá gấp rưỡi; ETC không đủ → phần thiếu trả tiền mặt +20%.
+  const plan = tripPlan('dt_caibe', 'hn_phudien'), road = roadKm(plan.km, plan.needsBoat);
+  const cash0 = 20_000_000;
+  await setUser(cash0, 60, 60_000);
+  const trip = await call('POST', '/api/trips/start', { toRegionId: 'hn_phudien' }, cookie);
+  assert.deepEqual([trip.body.fuelL, trip.body.etc, trip.body.cash], [60, 60_000, cash0]);
+  assert.deepEqual(trip.body.plan, plan);
+  const used = ((road + 25) * TRUCK.lPer100km) / 100, rescue = used - 80;
+  assert.ok(rescue > 0 && plan.tolls * TRUCK.tollFee > 60_000);
+  const fuelCost = Math.round(20 * TRUCK.fuelPrice + rescue * TRUCK.fuelPrice * TRUCK.rescueMult);
+  const tollCash = Math.round((plan.tolls * TRUCK.tollFee - 60_000) * (1 + TRUCK.etcCashSurcharge));
+  const done = await callOn(spinApp, 'POST', `/api/trips/${trip.body.tripId}/finish`, { refuelL: 20, detourKm: 25 }, cookie);
+  assert.deepEqual(done.body, {
+    regionId: 'hn_phudien', fuelUsedL: Math.round(used * 10) / 10, fuelCost, rescueL: Math.round(rescue * 10) / 10,
+    tollCost: 60_000 + tollCash, tollFromEtc: 60_000, fuelL: 0, etc: 0, cash: cash0 - fuelCost - tollCash,
+  });
+  me = await meOf(cookie);
+  assert.deepEqual([me.user.fuelL, me.user.etc, me.user.cash, me.user.truckRegionId], [0, 0, cash0 - fuelCost - tollCash, 'hn_phudien']);
+  const led = await db.query(`select reason, delta from ledger where user_id = $1 and reason in ('xang:hn_phudien','phi_duong:hn_phudien') order by reason`, [id]);
+  assert.deepEqual(led.rows, [{ reason: 'phi_duong:hn_phudien', delta: -tollCash }, { reason: 'xang:hn_phudien', delta: -fuelCost }]);
+  const stuck = await call('POST', '/api/trips/start', { toRegionId: 'dt_caibe' }, cookie);
+  assert.deepEqual([stuck.status, stuck.body.error], [409, 'het_xang']);
+
+  // ETC đủ thì không tốn tiền mặt; đổ dư xăng thì bình chỉ đầy tới 60 lít; vòng lạc bị chặn theo quãng đường bộ.
+  const back = tripPlan('hn_phudien', 'hp_thanhha'), backRoad = roadKm(back.km, back.needsBoat);
+  await setUser(9_000_000, 40, 1_000_000);
+  const t2 = await call('POST', '/api/trips/start', { toRegionId: 'hp_thanhha' }, cookie);
+  const d2 = await callOn(spinApp, 'POST', `/api/trips/${t2.body.tripId}/finish`, { refuelL: 9999, detourKm: 99999 }, cookie);
+  const used2 = (backRoad * 2 * TRUCK.lPer100km) / 100;
+  assert.deepEqual(d2.body, {
+    regionId: 'hp_thanhha', fuelUsedL: Math.round(used2 * 10) / 10, fuelCost: TRUCK.tankL * 4 * TRUCK.fuelPrice, rescueL: 0,
+    tollCost: back.tolls * TRUCK.tollFee, tollFromEtc: back.tolls * TRUCK.tollFee, fuelL: TRUCK.tankL,
+    etc: 1_000_000 - back.tolls * TRUCK.tollFee, cash: 9_000_000 - TRUCK.tankL * 4 * TRUCK.fuelPrice,
+  });
+
+  // Hết tiền vẫn tới nơi: trừ tới 0 chứ không chặn.
+  await setUser(10_000, 1, 0);
+  const t3 = await call('POST', '/api/trips/start', { toRegionId: 'hn_phudien' }, cookie);
+  const d3 = await callOn(spinApp, 'POST', `/api/trips/${t3.body.tripId}/finish`, { refuelL: -5, detourKm: 'x' }, cookie);
+  assert.equal(d3.status, 200, JSON.stringify(d3.body));
+  assert.deepEqual([d3.body.cash, d3.body.regionId, d3.body.fuelL], [0, 'hn_phudien', 0]);
+  assert.ok(d3.body.rescueL > 0 && d3.body.fuelCost + (d3.body.tollCost - d3.body.tollFromEtc) === 10_000);
+});
+
 test('chuyến xe: chỉ thương lái, tốn xăng, phải lái tới nơi; bán theo vùng xe đang đỗ', async () => {
   const farmer = await signup('khong_co_xe');
   await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, farmer);
@@ -1073,19 +1221,31 @@ test('chuyến xe: chỉ thương lái, tốn xăng, phải lái tới nơi; bá
   assert.equal(start0.user.truckRegionId, 'dt_caibe');
   assert.equal((await call('POST', '/api/trips/start', { toRegionId: 'dt_caibe' }, cookie)).status, 400, 'xe đang ở đó rồi');
   assert.equal((await call('POST', '/api/trips/start', { toRegionId: 'khong_co' }, cookie)).status, 400);
-  await db.query('update users set cash = 1000 where id = $1', [start0.user.id]);
-  assert.equal((await call('POST', '/api/trips/start', { toRegionId: 'dt_caolanh' }, cookie)).body.error, 'khong_du_tien');
-  await db.query('update users set cash = $2 where id = $1', [start0.user.id, START_CASH]);
+  assert.deepEqual([start0.user.fuelL, start0.user.etc], [TRUCK.startFuelL, 0]);
+  await db.query('update users set fuel_l = 0 where id = $1', [start0.user.id]);
+  const dry = await call('POST', '/api/trips/start', { toRegionId: 'dt_caolanh' }, cookie);
+  assert.deepEqual([dry.status, dry.body.error], [409, 'het_xang']);
+  await db.query('update users set fuel_l = 30 where id = $1', [start0.user.id]);
 
   const info = tripInfo('dt_caibe', 'dt_caolanh');
   const trip = await call('POST', '/api/trips/start', { toRegionId: 'dt_caolanh' }, cookie);
   assert.equal(trip.status, 200, JSON.stringify(trip.body));
-  assert.deepEqual({ ...trip.body, tripId: 0 }, { tripId: 0, fromRegionId: 'dt_caibe', toRegionId: 'dt_caolanh', ...info });
-  assert.equal((await meOf(cookie)).user.cash, START_CASH - info.fuel);
+  const plan = tripPlan('dt_caibe', 'dt_caolanh');
+  assert.deepEqual({ ...trip.body, tripId: 0 }, { tripId: 0, fromRegionId: 'dt_caibe', toRegionId: 'dt_caolanh', plan, fuelL: 30, etc: 0, cash: START_CASH, truck: TRUCK });
+  assert.equal((await meOf(cookie)).user.cash, START_CASH, 'xuất phát không trừ tiền trước');
+  assert.ok(info.fuel > 0);
   const early = await call('POST', `/api/trips/${trip.body.tripId}/finish`, {}, cookie);
   assert.deepEqual([early.status, early.body.error], [409, 'chua_toi_noi']);
   assert.equal((await callOn(spinApp, 'POST', `/api/trips/${trip.body.tripId}/finish`, {}, farmer)).status, 404, 'không phải chuyến của mình');
-  assert.deepEqual((await callOn(spinApp, 'POST', `/api/trips/${trip.body.tripId}/finish`, {}, cookie)).body, { regionId: 'dt_caolanh' });
+  // Tới nơi: xăng trừ theo quãng đường; chưa nạp ETC nên phí đường trả tiền mặt có phụ thu.
+  const usedL = (roadKm(plan.km, false) * TRUCK.lPer100km) / 100;
+  assert.ok(usedL < 30 && plan.tolls >= 1);
+  const tollCash = Math.round(plan.tolls * TRUCK.tollFee * (1 + TRUCK.etcCashSurcharge));
+  assert.deepEqual((await callOn(spinApp, 'POST', `/api/trips/${trip.body.tripId}/finish`, {}, cookie)).body, {
+    regionId: 'dt_caolanh', fuelUsedL: Math.round(usedL * 10) / 10, fuelCost: 0, rescueL: 0, tollCost: tollCash, tollFromEtc: 0,
+    fuelL: Math.round((30 - usedL) * 10) / 10, etc: 0, cash: START_CASH - tollCash,
+  });
+  assert.equal((await meOf(cookie)).user.cash, START_CASH - tollCash);
   assert.equal((await callOn(spinApp, 'POST', `/api/trips/${trip.body.tripId}/finish`, {}, cookie)).status, 404, 'chuyến đã xong');
   assert.equal((await meOf(cookie)).user.truckRegionId, 'dt_caolanh');
   assert.ok((await call('GET', '/api/travel', undefined, cookie)).body.visited.includes('dt_caolanh'), 'tới nơi thì được ghi là đã tới');
@@ -1273,6 +1433,7 @@ test('tài khoản thử nghiệm: đổi vai, tiền, vùng, làm chín cây, t
   // Chuyển vùng: lô nhà đổi vùng và kiểu, cây trên lô bị xoá, xe về vùng mới.
   assert.equal((await call('POST', '/api/test/region', { regionId: 'khong_co' }, t)).status, 400);
   assert.equal((await call('POST', '/api/test/region', { regionId: 'ld_dalat', kind: 'tang_ham' }, t)).status, 400);
+  assert.deepEqual((await call('POST', '/api/test/truck', {}, t)).body, { fuelL: TRUCK.tankL, etc: 2_000_000 });
   assert.equal((await call('POST', '/api/plots/buy', { regionId: 'qng_lyson' }, t)).status, 200);
   assert.equal((await call('POST', '/api/test/region', { regionId: 'qng_lyson' }, t)).body.error, 'da_co_dat');
   assert.equal((await call('POST', '/api/coops', { name: 'HTX Thử Nghiệm' }, t)).status, 200);
