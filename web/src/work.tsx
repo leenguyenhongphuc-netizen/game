@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CROPS, NPCS, PROVINCES, REGIONS, SPECIALTIES, recipeOf } from '../../shared/catalog.ts';
 import { ORDER_PREMIUM, QUALITY_NAMES, ROLE_INFO, fmtMoney } from '../../shared/rules.ts';
-import type { Role } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import type { Me, Order, Workshop } from './api.ts';
 import { fmtDuration, useAction } from './ui.ts';
@@ -121,27 +120,26 @@ export function WardPicker({ province, ward, onChange }: { province: string; war
 }
 
 // ------------------------------------------------------------------ hồ sơ
-export function ProfilePanel({ me, homePlotId, wardProvince, wardName, onChanged }: { me: Me; homePlotId: number; wardProvince: string | null; wardName: string | null; onChanged: () => void }) {
+export function ProfilePanel({ me, homePlotId, wardProvince, wardName, onChanged, onRespin }: { me: Me; homePlotId: number; wardProvince: string | null; wardName: string | null; onChanged: () => void; onRespin: () => void }) {
   const [prov, setProv] = useState(wardProvince ?? REGIONS[me.user.homeRegionId!].province);
   const [ward, setWard] = useState(wardName ?? '');
   const act = useAction(onChanged);
-  const city = me.user.homeKind === 'rooftop';
-  const roles = Object.keys(ROLE_INFO) as Role[];
   return (
     <div>
       <h3>Nơi ở hiển thị</h3>
       <p className="muted">Người khác chỉ thấy tên xã, phường bạn chọn ở đây và tên vùng trồng. Toạ độ của bạn không được lưu và không ai xem được.</p>
       <WardPicker province={prov} ward={ward} onChange={(p, w) => { setProv(p); setWard(w); }} />
       <button disabled={act.busy || !ward} onClick={() => act.run(() => api('POST', `/api/plots/${homePlotId}/ward`, { wardProvince: prov, wardName: ward }))}>Lưu xã, phường</button>
-      <h3>Vai trò</h3>
-      {!city && <p className="muted">Vai trò thương lái, chủ sạp và chủ xưởng dành cho người làm vườn sân thượng ở trung tâm thành phố. Bạn là nhà vườn.</p>}
-      {roles.map((r) => (
-        <div className={`row row-line ${me.user.role === r || (!me.user.role && r === 'nong_dan') ? 'picked' : ''}`} key={r}>
-          <span className="emoji">{ROLE_INFO[r].icon}</span>
-          <div className="grow"><strong>{ROLE_INFO[r].name}</strong><br /><small>{ROLE_INFO[r].desc}</small></div>
-          {(me.user.role ?? 'nong_dan') === r ? <span className="tag">Đang chọn</span> : <button disabled={act.busy || (!city && r !== 'nong_dan')} onClick={() => act.run(() => api('POST', '/api/role', { role: r }))}>Chọn</button>}
+      <h3>Vai trò mùa này</h3>
+      {me.user.role && (
+        <div className="row row-line picked">
+          <span className="emoji">{ROLE_INFO[me.user.role].icon}</span>
+          <div className="grow"><strong>{ROLE_INFO[me.user.role].name}</strong><br /><small>{ROLE_INFO[me.user.role].desc}</small></div>
         </div>
-      ))}
+      )}
+      {me.user.roleNextSpinAt && me.user.roleNextSpinAt > Date.now()
+        ? <p className="muted">Được quay lại vai trò sau {fmtDuration(me.user.roleNextSpinAt - Date.now())}.</p>
+        : <button className="primary" onClick={onRespin}>🎡 Quay lại vai trò cho mùa mới</button>}
       {act.error && <p className="error" role="alert">{act.error}</p>}
     </div>
   );

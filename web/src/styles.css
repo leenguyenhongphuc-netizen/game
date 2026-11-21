@@ -160,3 +160,26 @@ button.chip { text-align: left; font-weight: 400; min-height: 0; cursor: pointer
 button.chip:active { transform: translateY(2px); }
 .ward { grid-template-columns: 1fr 1fr; }
 .seed .tag { font-size: 0.68rem; }
+
+/* vòng quay vai trò */
+.wheel-wrap { position: relative; width: 280px; height: 280px; margin: 0 auto; }
+.wheel { width: 100%; height: 100%; border-radius: 50%; border: 8px solid var(--wood); box-shadow: 0 8px 0 var(--wood-dark), 0 16px 30px #0006; transition: transform 4.2s cubic-bezier(0.12, 0.7, 0.1, 1); position: relative; }
+.wheel-label { position: absolute; left: 50%; top: 50%; width: 110px; margin: -22px 0 0 -55px; text-align: center; display: grid; justify-items: center; font-family: var(--display); line-height: 1.1; color: var(--ink); }
+.wheel-label span { font-size: 1.8rem; }
+.wheel-pin { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 2.2rem; color: var(--danger); z-index: 2; text-shadow: 0 2px 0 #fff; }
+.spin-btn { width: min(280px, 100%); }
+.role-result { text-align: center; justify-items: center; animation: pop2 0.4s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes pop2 { from { transform: scale(0.6); opacity: 0; } }
+/* cá nhân hoá */
+.custom { display: grid; gap: 12px; }
+.swatch-row { display: grid; gap: 4px; font-weight: 600; font-size: 0.9rem; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { width: 44px; min-height: 44px; padding: 0; border-radius: 50%; box-shadow: 0 3px 0 var(--wood); }
+.swatch[aria-pressed='true'] { outline: 4px solid var(--gold-dark); outline-offset: 2px; }
+.pick-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.pick { display: grid; justify-items: center; gap: 2px; text-align: center; line-height: 1.15; background: #fffdf4; }
+.pick[aria-pressed='true'] { background: var(--gold); border-color: var(--gold-dark); box-shadow: 0 4px 0 var(--gold-dark); }
+.pick small { font-family: 'Be Vietnam Pro', sans-serif; font-weight: 400; }
+.drive-bar { border-color: var(--gold-dark); }
+
+.overlay { position: absolute; inset: 0; background: #0b2a1acc; z-index: 20; }

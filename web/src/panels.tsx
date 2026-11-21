@@ -4,7 +4,7 @@ import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, specialtiesOfRegion } from '..
 import type { Zone } from '../../shared/catalog.ts';
 import {
   COOP_BONUS, COOP_CREATE_COST, COOP_MAX_MEMBERS, COOP_ORDER_BONUS, GIFT_DAILY_LIMIT, LAND_PRICE, QUALITY_NAMES, REGION_SET_REWARD,
-  SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_COST, fmtMoney,
+  SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_COST, fmtMoney, tripInfo,
 } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import type { Collection, Coop, CoopOrder, CoopSummary, GiftInbox, Me } from './api.ts';
@@ -108,7 +108,7 @@ export function GiftsPanel() {
 }
 
 // ------------------------------------------------------------------ du lịch
-export function TravelPanel({ me, priceOf, refresh, visit }: { me: Me; priceOf: (id: string) => number; refresh: () => void; visit: (plotId: number) => void }) {
+export function TravelPanel({ me, priceOf, refresh, visit, startTrip }: { me: Me; priceOf: (id: string) => number; refresh: () => void; visit: (plotId: number) => void; startTrip?: (toRegionId: string) => Promise<void> }) {
   const [visited, setVisited] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
   const [farms, setFarms] = useState<{ total: number; farms: { plotId: number; ownerName: string; growing: number; wardName?: string | null }[] } | null>(null);
@@ -137,6 +137,11 @@ export function TravelPanel({ me, priceOf, refresh, visit }: { me: Me; priceOf: 
                 </button>
                 {open === r.id && (
                   <div className="region-body">
+                    {startTrip && (me.user.truckRegionId ?? me.user.homeRegionId) === r.id && <span className="tag">🚚 Xe đang đỗ ở đây</span>}
+                    {startTrip && (me.user.truckRegionId ?? me.user.homeRegionId) !== r.id && (() => {
+                      const info = tripInfo(me.user.truckRegionId ?? me.user.homeRegionId!, r.id);
+                      return <button className="primary" disabled={act.busy || me.user.cash < info.fuel} onClick={() => act.run(() => startTrip(r.id))}>🚚 Lái xe tới {r.name} · {info.km} km{info.needsBoat ? ' · có chặng tàu' : ''} · xăng {fmtMoney(info.fuel)}</button>;
+                    })()}
                     {!been && <button className="primary" disabled={act.busy || me.user.cash < TRAVEL_COST} onClick={() => act.run(() => api('POST', '/api/travel', { regionId: r.id }))}>🚌 Đi {r.name} · {fmtMoney(TRAVEL_COST)}</button>}
                     {been && (
                       <>

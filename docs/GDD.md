@@ -17,7 +17,7 @@ Ba mục tiêu, phải đạt cùng lúc để game tồn tại được:
 | Quyết định | Cách làm trong game | Trạng thái |
 |---|---|---|
 | Vị trí hiện theo xã/phường, không lộ vị trí người chơi | Người chơi chọn xã, phường từ danh sách 3.321 đơn vị sau sáp nhập 2025; máy chủ chỉ lưu tên đó và ô lưới ~2 km. Đổi được trong Hồ sơ. | Đã có |
-| Người ở thành phố có vai trò riêng | Định vị trong trung tâm 7 thành phố lớn thì được làm vườn sân thượng và chọn vai: thương lái (hàng phương xa +10%), chủ sạp (có khách vãng lai mua hàng trên sạp), chủ xưởng (chế biến nhanh gấp đôi, 4 chỗ làm). | Đã có |
+| Vai trò được giao bằng vòng quay, không tự chọn | Xem mục "Vai trò và chuỗi cung ứng" bên dưới. Áp dụng cho mọi nơi; thành phố vẫn có vườn sân thượng. | Đã có |
 | Đặc sản gắn theo vùng trồng; Đà Lạt là vùng đặc biệt | 53 vùng trồng. Đà Lạt có 13 đặc sản gồm trái cây, rau củ và 6 loại hoa, có quy trình trồng hoa riêng. | Đã có |
 | Thời gian nén | Mỗi vụ 10–48 giờ thật, chia đều cho các bước. | Đã có |
 | NPC có tên và logo | Sáu doanh nghiệp thu mua hư cấu, tên chơi chữ, logo là biểu tượng. Xem ghi chú bên dưới. | Đã có, tên cần bạn duyệt |
@@ -32,6 +32,29 @@ Ba mục tiêu, phải đạt cùng lúc để game tồn tại được:
 Ngoài ra đã có: đơn hàng cá nhân theo ngày (đơn thu mua, giỏ quà biếu, mâm ngũ quả), xưởng chế biến cho mọi người chơi, sổ tem đặc sản, quà tặng bạn bè.
 
 **Chưa có:** tác tử AI lấy giá thật (giá vẫn là giá mẫu), thấy bạn bè theo thời gian thực và trò chuyện, chăn nuôi, trang trí nhà và sạp, âm thanh, nạp tiền, mô hình do hoạ sĩ làm.
+
+## Vai trò và chuỗi cung ứng
+
+Sau khi chia sẻ vị trí, người chơi quay **vòng quay vai trò**. Không ai được chọn và không ai biết trước mình sẽ làm gì.
+
+| Vai | Vườn | Quyền riêng | Thu nhập chính |
+|---|---|---|---|
+| 🧑‍🌾 Nhà vườn | 30 ô (sân thượng: 12) | Thưởng chính vụ trên diện tích lớn | Bán nông sản qua sạp cho thương lái và chủ xưởng |
+| 🏭 Chủ xưởng | 8 ô, có xưởng trong sân | Chỉ mình chế biến được, 4 chỗ làm | Mua trái tươi, bán thành phẩm |
+| 🚚 Thương lái | 8 ô, có xe tải | Chỉ mình bán cho doanh nghiệp với giá đầy đủ; lái xe, lái tàu đi vùng khác | Chênh lệch giá giữa các vùng |
+
+**Cân bằng:**
+- Máy chủ chọn vai, nghiêng về vai mà vùng đó đang thiếu, tính trên người còn chơi trong 7 ngày gần nhất. Tỷ lệ mục tiêu: nông thôn 65% nhà vườn, 15% chủ xưởng, 20% thương lái; trung tâm thành phố 30 / 30 / 40.
+- Không ai bị kẹt hàng: vai nào cũng "bán tháo" được cho doanh nghiệp ở mức 60% giá tham chiếu. Đi qua người chơi khác luôn lợi hơn.
+- Mỗi mùa dài 30 ngày; hết mùa được quay lại. Tài khoản tạo trước khi có luật này sẽ quay ở lần đăng nhập kế tiếp.
+
+**Thương lái đi buôn:** xe tải đỗ trước cổng, lên xe lái dọc đường làng ghé các sạp. Đi vùng khác là một màn lái xe thật (né xe máy, trâu bò, ổ gà); ra đảo có thêm chặng lái tàu. Mỗi chuyến tốn tiền xăng theo quãng đường. Tới nơi, thương lái bán cho doanh nghiệp ở vùng đó, nên chở đặc sản đi xa mới được giá hàng phương xa.
+
+**Chưa có:** giá tự điều chỉnh theo mức thiếu vai trong vùng, sức chở của xe, hợp đồng thu mua đặt trước.
+
+## Cá nhân hoá
+
+Mục **Trang trí** cho đổi: kiểu nhà (mái ngói, nhà sàn, nhà ba gian), màu tường, màu mái, kiểu hàng rào, tên vườn trên cổng; màu mái che và biển hiệu gian hàng; màu áo, nón, màu xe tải; và mười món đồ sân vườn đặt tại chỗ nhân vật đang đứng. Khách ghé thăm và hàng xóm đều thấy.
 
 ## 2. Trụ cột thiết kế
 

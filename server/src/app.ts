@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
-import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -11,14 +11,16 @@ import { CROPS, PROVINCES, REGIONS, SPECIALTIES, npcOf, recipeOf, specialtiesOfR
 import wardData from '../../shared/wards.json' with { type: 'json' };
 import {
   COOP_ORDER_BONUS, COOP_ORDER_DAYS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, HARVEST_HELP_SHARE, IN_SEASON_YIELD, MARKET_DAY_BONUS,
-  ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS, PROCESS_SLOTS_XUONG, PROCESS_SPEED_XUONG, QUALITY_MULT, ROLES, STALL_WALKIN_KG_PER_HOUR,
-  STALL_WALKIN_MAX_RATIO, inSeason, marketEventsAt, supplyKg,
+  ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS_XUONG, QUALITY_MULT, ROLES, ROLE_TARGETS, SEASON_DAYS, STALL_WALKIN_KG_PER_HOUR,
+  STALL_WALKIN_MAX_RATIO, DUMP_RATIO, allowedTiles, inSeason, marketEventsAt, spinWeights, supplyKg, tripInfo,
   COOP_CREATE_COST, COOP_MAX_MEMBERS, GIFT_DAILY_LIMIT, GIFT_MAX_KG, HELP_DAILY_LIMIT, HELP_REWARD, LAND_PRICE, LATE_GRACE_MS, MAX_FRIENDS,
-  QUALITIES, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, START_CASH, TILE_COUNT, TRAVEL_COST, glutFactor, inVietnam,
+  QUALITIES, REGION_SET_REWARD, SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, START_CASH, TILE_COUNT, TRAVEL_COST, glutFactor, inVietnam,
   marketDayAt, nearestRegion, npcPrice, qualityFromLate, region as findRegion, seedCost, snapCell, specialty as findSpecialty, stepCount,
   stepWaitMs, urbanCoreAt, weatherAt,
 } from '../../shared/rules.ts';
 import type { MarketDay, MarketEvent, PriceMods, Quality, Role, Weather } from '../../shared/rules.ts';
+import { DECOR_ITEMS, HOUSE_TYPES, validAvatar, validDecor, validStyle } from '../../shared/custom.ts';
+import type { DecorPlacement, PlotStyle } from '../../shared/custom.ts';
 import type { Db, Q } from './db.ts';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
@@ -47,6 +49,10 @@ export interface AppOptions {
   /** Thay lịch chợ theo tuần và cách xét chính vụ (cũng cho kiểm thử). */
   marketEventsAt?: (regionId: string, nowMs: number) => MarketEvent[];
   inSeason?: (cropId: string, nowMs: number) => boolean;
+  /** Thay cách chọn vai từ trọng số vòng quay (kiểm thử). Mặc định chọn ngẫu nhiên theo trọng số. */
+  pickRole?: (weights: Record<Role, number>) => Role;
+  /** Phần thời lượng màn lái tối thiểu phải trôi qua trước khi chuyến xe được tính là tới nơi (mặc định 0.8). */
+  tripMinFactor?: number;
 }
 
 class HttpError extends Error {
@@ -91,6 +97,22 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const eventsOf = opts.marketEventsAt ?? ((regionId: string, now: number): MarketEvent[] =>
     marketEventsAt(regionId, now).map((e) => (e.id === 'cho_phien' ? { ...e, ...marketDayOf(now) } : e)));
   const inSeasonOf = opts.inSeason ?? inSeason;
+  const tripMinFactor = opts.tripMinFactor ?? 0.8;
+  const pickRole = opts.pickRole ?? ((weights: Record<Role, number>): Role => {
+    let x = randomInt(1_000_000) / 1_000_000;
+    for (const r of ROLES) { x -= weights[r]; if (x < 0) return r; }
+    return ROLES[ROLES.length - 1];
+  });
+  const SEASON_MS = SEASON_DAYS * DAY_MS;
+  /** Kiểu nhà, màu sắc và tên của lô, bỏ phần ghi chú nội bộ. */
+  const styleOut = (raw: any): PlotStyle | null => (raw ? validStyle(raw) : null);
+  const decorOut = (raw: any): DecorPlacement[] => (raw ? validDecor(raw) ?? [] : []);
+  const avatarOut = (raw: any) => (raw ? validAvatar(raw) : null);
+  /** Các kiểu nhà chủ lô đã có (kiểu miễn phí luôn có sẵn). */
+  const ownedOut = (raw: any): string[] => [...new Set([
+    ...HOUSE_TYPES.filter((h) => h.price === 0).map((h) => h.id as string),
+    ...(Array.isArray(raw?.owned) ? (raw.owned as unknown[]).filter((id): id is string => HOUSE_TYPES.some((h) => h.id === id)) : []),
+  ])];
   const floatingAt = (regionId: string | null, now: number) => !!regionId && eventsOf(regionId, now).some((e) => e.id === 'cho_noi' && e.active);
   /** Sản lượng một ô khi thu hoạch, có cộng thêm nếu đúng chính vụ. */
   const harvestKg = (cropId: string, now: number) => {
@@ -127,6 +149,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     if (!token) throw bad('chua_dang_nhap', 'Bạn chưa đăng nhập.', 401);
     const { rows } = await db.query('select user_id from sessions where token_hash = $1 and expires_at > now()', [sha256(token)]);
     if (!rows[0]) throw bad('chua_dang_nhap', 'Phiên đăng nhập đã hết hạn.', 401);
+    // Ghi nhận còn chơi, tối đa 5 phút một lần; dùng để cân bằng vòng quay vai trò.
+    await db.query(`update users set last_seen_at = now() where id = $1 and (last_seen_at is null or last_seen_at < now() - interval '5 minutes')`, [rows[0].user_id]);
     return rows[0].user_id;
   }
   async function addCash(q: Q, userId: number, delta: number, reason: string) {
@@ -171,23 +195,24 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     ]);
     return glutFactor(supplyKg(sold.rows[0].kg, planted.rows[0].n, CROPS[SPECIALTIES[specialtyId].crop].yieldKg));
   }
-  /** Các yếu tố thị trường áp vào giá thương lái cho một người bán một đặc sản. */
-  async function priceMods(q: Q, userId: number, specialtyId: string, now: number): Promise<PriceMods> {
-    const [glut, coop, home, u] = await Promise.all([
+  /** Các yếu tố thị trường áp vào giá doanh nghiệp trả cho thương lái bán một đặc sản tại vùng chợ (nơi xe đang đỗ). */
+  async function priceMods(q: Q, userId: number, specialtyId: string, now: number, marketRegionId: string, homeRegionId: string | null): Promise<PriceMods> {
+    const [glut, coop, home] = await Promise.all([
       glutOf(q, specialtyId),
       q.query('select 1 from coop_members where user_id = $1', [userId]),
       q.query(`select 1 from plots where user_id = $1 and is_home and kind = 'rooftop'`, [userId]),
-      q.query('select role, home_region_id from users where id = $1', [userId]),
     ]);
     return {
-      glut, marketDay: marketDayOf(now).active, coop: coop.rows.length > 0,
-      city: home.rows.length > 0 && u.rows[0].role === 'thuong_lai', floating: floatingAt(u.rows[0].home_region_id, now),
+      glut, marketDay: eventsOf(marketRegionId, now).some((e) => e.id === 'cho_phien' && e.active), coop: coop.rows.length > 0,
+      city: home.rows.length > 0 && marketRegionId === homeRegionId, floating: floatingAt(marketRegionId, now),
     };
   }
-  /** Khách vãng lai của chủ sạp mua dần hàng bày giá hợp lý; tính dồn theo thời gian đã trôi qua. */
+  /** Khách vãng lai của thương lái ở phố mua dần hàng bày giá hợp lý; tính dồn theo thời gian đã trôi qua. */
   async function settleWalkIns(q: Q, userId: number, now: number): Promise<{ kg: number; total: number } | null> {
     const u = await q.query('select role from users where id = $1 for update', [userId]);
-    if (u.rows[0]?.role !== 'chu_sap') return null;
+    if (u.rows[0]?.role !== 'thuong_lai') return null;
+    const home = await q.query(`select 1 from plots where user_id = $1 and is_home and kind = 'rooftop'`, [userId]);
+    if (!home.rows[0]) return null;
     const { rows } = await q.query(
       `select id, specialty_id, kg, price, coalesce(walkin_at, created_at) as since from listings
        where seller_id = $1 and status = 'open' and kg > 0 order by id for update`, [userId]);
@@ -248,7 +273,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const userId = await requireUser(req);
     const walkin = await db.tx((q) => settleWalkIns(q, userId, Date.now()));
     const [u, plots, inv, coop] = await Promise.all([
-      db.query('select id, username, display_name, cash, home_region_id, role from users where id = $1', [userId]),
+      db.query('select id, username, display_name, cash, home_region_id, role, role_assigned_at, truck_region, avatar from users where id = $1', [userId]),
       db.query('select id, region_id, is_home, kind, ward_name from plots where user_id = $1 order by is_home desc, id', [userId]),
       db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]),
       db.query('select coop_id from coop_members where user_id = $1', [userId]),
@@ -257,7 +282,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return {
       user: {
         id: user.id, username: user.username, displayName: user.display_name, cash: user.cash, homeRegionId: user.home_region_id,
-        homeKind: plots.rows.find((p) => p.is_home)?.kind ?? null, coopId: coop.rows[0]?.coop_id ?? null, role: user.role,
+        homeKind: plots.rows.find((p) => p.is_home)?.kind ?? null, coopId: coop.rows[0]?.coop_id ?? null, role: user.role ?? null,
+        roleNextSpinAt: user.role && user.role_assigned_at ? new Date(user.role_assigned_at).getTime() + SEASON_MS : null,
+        truckRegionId: user.truck_region ?? user.home_region_id ?? null, avatar: avatarOut(user.avatar),
       },
       plots: plots.rows.map((p) => ({ id: p.id, regionId: p.region_id, isHome: p.is_home, kind: p.kind, wardName: p.ward_name })),
       inventory: inv.rows.map((i) => ({ specialtyId: i.specialty_id, quality: i.quality, kg: i.kg })),
@@ -328,16 +355,28 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return { ok: true };
   });
 
-  app.post('/api/role', async (req) => {
+  /** Vòng quay giao vai trò: nghiêng về vai mà vùng nhà đang thiếu; mỗi mùa quay lại được một lần. */
+  app.post('/api/role/spin', async (req) => {
     const userId = await requireUser(req);
-    const role = (req.body as any)?.role as Role;
-    if (typeof role !== 'string' || !ROLES.includes(role)) throw bad('du_lieu_sai', 'Vai trò không hợp lệ.');
-    if (role !== 'nong_dan') {
-      const home = await db.query(`select 1 from plots where user_id = $1 and is_home and kind = 'rooftop'`, [userId]);
-      if (!home.rows[0]) throw bad('chi_dan_pho', 'Vai trò này chỉ dành cho người có vườn sân thượng trong phố.', 409);
-    }
-    await db.query('update users set role = $2 where id = $1', [userId, role]);
-    return { role };
+    return db.tx(async (q) => {
+      const u = await q.query('select home_region_id, role, role_assigned_at from users where id = $1 for update', [userId]);
+      const home = await q.query('select kind from plots where user_id = $1 and is_home limit 1', [userId]);
+      if (!u.rows[0].home_region_id || !home.rows[0]) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước khi quay vai trò.', 409);
+      const now = Date.now();
+      const assignedAt = u.rows[0].role && u.rows[0].role_assigned_at ? new Date(u.rows[0].role_assigned_at).getTime() : null;
+      if (assignedAt !== null && now < assignedAt + SEASON_MS) throw bad('chua_den_mua', 'Mùa này bạn đã có vai trò rồi, hết mùa mới quay lại được.', 409);
+      const active = await q.query(
+        `select role, count(*)::int as n from users
+         where home_region_id = $1 and id <> $2 and role is not null and last_seen_at > now() - interval '7 days' group by role`,
+        [u.rows[0].home_region_id, userId]);
+      const counts = Object.fromEntries(ROLES.map((r) => [r, 0])) as Record<Role, number>;
+      for (const r of active.rows) if (ROLES.includes(r.role)) counts[r.role as Role] = r.n;
+      const weights = spinWeights(home.rows[0].kind === 'rooftop' ? ROLE_TARGETS.urban : ROLE_TARGETS.rural, counts);
+      const role = pickRole(weights);
+      if (!ROLES.includes(role)) throw new Error('pickRole trả về vai trò không hợp lệ');
+      await q.query('update users set role = $2, role_assigned_at = $3, truck_region = home_region_id where id = $1', [userId, role, new Date(now)]);
+      return { role, weights, nextSpinAt: now + SEASON_MS };
+    });
   });
 
   app.post('/api/plots/buy', async (req) => {
@@ -362,7 +401,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const userId = await requireUser(req);
     const plotId = idParam((req.params as any).id);
     const { rows } = await db.query(
-      `select p.id, p.user_id, p.region_id, p.is_home, p.kind, p.ward_name, p.ward_province, u.display_name
+      `select p.id, p.user_id, p.region_id, p.is_home, p.kind, p.ward_name, p.ward_province, p.style, p.decor, u.display_name, u.role as owner_role, u.avatar as owner_avatar
        from plots p join users u on u.id = p.user_id where p.id = $1`, [plotId]);
     const p = rows[0];
     if (!p) throw bad('khong_tim_thay', 'Không tìm thấy lô đất.', 404);
@@ -371,7 +410,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       db.query(`select id, specialty_id, quality, kg, price from listings where seller_id = $1 and status = 'open' order by id desc limit 50`, [p.user_id]),
     ]);
     return {
-      plot: { id: p.id, regionId: p.region_id, isHome: p.is_home, kind: p.kind, wardName: p.ward_name, wardProvince: p.ward_province, ownerName: p.display_name, mine: p.user_id === userId },
+      plot: {
+        id: p.id, regionId: p.region_id, isHome: p.is_home, kind: p.kind, wardName: p.ward_name, wardProvince: p.ward_province, ownerName: p.display_name, mine: p.user_id === userId,
+        ownerRole: p.owner_role ?? null, style: styleOut(p.style), decor: decorOut(p.decor), ownerAvatar: avatarOut(p.owner_avatar),
+        ...(p.user_id === userId ? { ownedHouses: ownedOut(p.style) } : {}),
+      },
       plantings: tiles.rows.map((t) => ({
         id: t.id, tile: t.tile, specialtyId: t.specialty_id, stepIndex: t.step_index,
         stepReadyAt: new Date(t.step_ready_at).getTime(), lateCount: t.late_count,
@@ -402,10 +445,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const sp = findSpecialty(String(b.specialtyId ?? ''));
     if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
     return db.tx(async (q) => {
-      const u = await q.query('select cash from users where id = $1 for update', [userId]);
+      const u = await q.query('select cash, role from users where id = $1 for update', [userId]);
       const p = await q.query('select region_id, kind from plots where id = $1 and user_id = $2', [plotId, userId]);
       if (!p.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy lô đất của bạn.', 404);
-      if (p.rows[0].kind === 'rooftop' && !ROOFTOP_TILES.includes(tile)) throw bad('o_bi_khoa', 'Vườn sân thượng chỉ trồng được 12 ô ở giữa.', 409);
+      if (!u.rows[0].role) throw bad('chua_co_vai', 'Hãy quay vòng quay để nhận vai trò trước khi trồng.', 409);
+      if (!allowedTiles(p.rows[0].kind, u.rows[0].role).includes(tile)) {
+        throw bad('o_bi_khoa', u.rows[0].role === 'nong_dan' ? 'Vườn sân thượng chỉ trồng được 12 ô ở giữa.' : 'Vai trò của bạn chỉ có vườn nhỏ 8 ô ở giữa.', 409);
+      }
       if (p.rows[0].region_id !== sp.regionId) throw bad('sai_vung', `${sp.name} chỉ trồng được ở ${REGIONS[sp.regionId].name}.`, 409);
       const cost = seedCost(sp);
       if (u.rows[0].cash < cost) throw bad('khong_du_tien', 'Bạn không đủ tiền mua giống.', 409);
@@ -579,7 +625,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   app.get('/api/village', async (req) => {
     const userId = await requireUser(req);
     const raw = (req.query as Record<string, unknown>).plotId;
-    const cols = `p.id, p.user_id, p.region_id, p.is_home, p.kind, p.ward_name, p.ward_province, u.display_name`;
+    const cols = `p.id, p.user_id, p.region_id, p.is_home, p.kind, p.ward_name, p.ward_province, p.style, p.decor, u.display_name, u.role as owner_role, u.avatar as owner_avatar`;
     let center: any;
     if (raw === undefined || raw === '') {
       const { rows } = await db.query(`select ${cols} from plots p join users u on u.id = p.user_id where p.user_id = $1 and p.is_home limit 1`, [userId]);
@@ -616,6 +662,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       plot: {
         id: p.id, regionId: p.region_id, isHome: p.is_home, kind: p.kind, wardName: p.ward_name, wardProvince: p.ward_province, ownerId: p.user_id, ownerName: p.display_name,
         mine: p.user_id === userId, friend: friendIds.includes(p.user_id),
+        ownerRole: p.owner_role ?? null, style: styleOut(p.style), decor: decorOut(p.decor), ownerAvatar: avatarOut(p.owner_avatar),
+        ...(p.user_id === userId ? { ownedHouses: ownedOut(p.style) } : {}),
       },
       plantings: tiles.rows.filter((t) => t.plot_id === p.id).map((t) => ({
         id: t.id, tile: t.tile, specialtyId: t.specialty_id, stepIndex: t.step_index,
@@ -636,13 +684,24 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const ql = quality(b.quality);
     const kg = int(b.kg, 1, 1_000_000, 'kg');
     return db.tx(async (q) => {
-      const u = await q.query('select home_region_id from users where id = $1 for update', [userId]);
+      const u = await q.query('select home_region_id, role, truck_region from users where id = $1 for update', [userId]);
       await takeInventory(q, userId, sp.id, ql, kg);
-      const mods = await priceMods(q, userId, sp.id, Date.now());
-      const unit = npcPrice(await currentPrice(q, sp.id), ql, sp.regionId, u.rows[0].home_region_id, mods);
+      const now = Date.now();
+      const ref = await currentPrice(q, sp.id);
+      if (u.rows[0].role !== 'thuong_lai') {
+        // Không phải thương lái: chỉ bán tháo được, giá thấp và không có thưởng nào.
+        const unit = Math.round((ref * DUMP_RATIO * QUALITY_MULT[ql]) / 100) * 100;
+        await q.query('insert into npc_sales (user_id, specialty_id, kg) values ($1,$2,$3)', [userId, sp.id, kg]);
+        await addCash(q, userId, unit * kg, `ban_thao:${sp.id}`);
+        return { unitPrice: unit, total: unit * kg, mods: {}, npcId: npcOf('thuong_lai').id, dump: true };
+      }
+      // Thương lái bán tại nơi xe đang đỗ: hàng của vùng đó là giá tại vườn, hàng vùng khác là hàng phương xa.
+      const market: string = u.rows[0].truck_region ?? u.rows[0].home_region_id;
+      const mods = await priceMods(q, userId, sp.id, now, market, u.rows[0].home_region_id);
+      const unit = npcPrice(ref, ql, sp.regionId, market, mods);
       await q.query('insert into npc_sales (user_id, specialty_id, kg) values ($1,$2,$3)', [userId, sp.id, kg]);
       await addCash(q, userId, unit * kg, `ban_thuong_lai:${sp.id}`);
-      return { unitPrice: unit, total: unit * kg, mods, npcId: npcOf('thuong_lai').id };
+      return { unitPrice: unit, total: unit * kg, mods, npcId: npcOf('thuong_lai').id, dump: false, marketRegionId: market };
     });
   });
 
@@ -1030,7 +1089,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   // ---------------------------------------------------------------- xưởng chế biến
-  const slotsOf = (role: string) => (role === 'xuong' ? PROCESS_SLOTS_XUONG : PROCESS_SLOTS);
+  const slotsOf = (role: string | null) => (role === 'xuong' ? PROCESS_SLOTS_XUONG : 0);
 
   app.get('/api/workshop', async (req) => {
     const userId = await requireUser(req);
@@ -1055,6 +1114,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const kg = int(b.kg, 1, 1_000_000, 'kg');
     return db.tx(async (q) => {
       const u = await q.query('select role from users where id = $1 for update', [userId]);
+      if (u.rows[0].role !== 'xuong') throw bad('chi_chu_xuong', 'Chỉ chủ xưởng mới chế biến được. Hãy bán nông sản cho chủ xưởng qua sạp.', 403);
       const running = await q.query('select count(*)::int as n from process_jobs where user_id = $1', [userId]);
       if (running.rows[0].n >= slotsOf(u.rows[0].role)) throw bad('het_cho', 'Xưởng đã kín dây chuyền, hãy nhận hàng xong rồi làm mẻ mới.', 409);
       await takeInventory(q, userId, sp.id, ql, kg);
@@ -1062,7 +1122,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       // Làm tròn xuống để chia nhỏ mẻ không được lợi; mẻ quá ít thì từ chối.
       const kgOut = Math.floor(kg * recipe.ratio * QUALITY_MULT[ql] + 1e-9);
       if (kgOut < 1) throw bad('qua_it', `Cần ít nhất ${Math.ceil(1 / (recipe.ratio * QUALITY_MULT[ql]))} kg để chế biến một mẻ.`, 409);
-      const ms = ((recipe.hours * 3600_000) / timeScale) * (u.rows[0].role === 'xuong' ? PROCESS_SPEED_XUONG : 1);
+      const ms = (recipe.hours * 3600_000) / timeScale;
       const readyAt = new Date(Date.now() + Math.round(ms));
       const ins = await q.query(
         'insert into process_jobs (user_id, specialty_id, kg_in, kg_out, ready_at) values ($1,$2,$3,$4,$5) returning id', [userId, sp.id, kg, kgOut, readyAt]);
@@ -1179,6 +1239,93 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await addCash(q, userId, reward, `don_hang:${slot}`);
       return { reward };
     });
+  });
+
+  // ---------------------------------------------------------------- chuyến xe của thương lái
+  app.post('/api/trips/start', async (req) => {
+    const userId = await requireUser(req);
+    const to = findRegion(String((req.body as any)?.toRegionId ?? ''));
+    if (!to) throw bad('du_lieu_sai', 'Vùng trồng không tồn tại.');
+    return db.tx(async (q) => {
+      const u = await q.query('select cash, role, home_region_id, truck_region from users where id = $1 for update', [userId]);
+      if (u.rows[0].role !== 'thuong_lai') throw bad('chi_thuong_lai', 'Chỉ thương lái mới có xe chở hàng đi vùng khác.', 403);
+      const from: string | null = u.rows[0].truck_region ?? u.rows[0].home_region_id;
+      if (!from || !findRegion(from)) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
+      if (from === to.id) throw bad('du_lieu_sai', 'Xe của bạn đang ở vùng này rồi.');
+      const info = tripInfo(from, to.id);
+      if (u.rows[0].cash < info.fuel) throw bad('khong_du_tien', 'Bạn không đủ tiền xăng cho chuyến này.', 409);
+      await addCash(q, userId, -info.fuel, `xang:${to.id}`);
+      const ins = await q.query(
+        'insert into trips (user_id, from_region, to_region, min_seconds) values ($1,$2,$3,$4) returning id', [userId, from, to.id, info.seconds]);
+      return { tripId: ins.rows[0].id, fromRegionId: from, toRegionId: to.id, ...info };
+    });
+  });
+
+  app.post('/api/trips/:id/finish', async (req) => {
+    const userId = await requireUser(req);
+    const tripId = idParam((req.params as any).id);
+    return db.tx(async (q) => {
+      const { rows } = await q.query(
+        'select to_region, min_seconds, started_at from trips where id = $1 and user_id = $2 and finished_at is null for update', [tripId, userId]);
+      const t = rows[0];
+      if (!t) throw bad('khong_tim_thay', 'Không tìm thấy chuyến xe đang chạy.', 404);
+      if (Date.now() - new Date(t.started_at).getTime() < t.min_seconds * 1000 * tripMinFactor) throw bad('chua_toi_noi', 'Xe chưa tới nơi.', 409);
+      await q.query('update trips set finished_at = now() where id = $1', [tripId]);
+      await q.query('update users set truck_region = $2 where id = $1', [userId, t.to_region]);
+      await q.query('insert into visits (user_id, region_id) values ($1,$2) on conflict do nothing', [userId, t.to_region]);
+      return { regionId: t.to_region };
+    });
+  });
+
+  // ---------------------------------------------------------------- cá nhân hoá nhà, sạp, sân vườn, nhân vật
+  app.post('/api/plots/:id/style', async (req) => {
+    const userId = await requireUser(req);
+    const plotId = idParam((req.params as any).id);
+    const style = validStyle(req.body);
+    if (!style) throw bad('du_lieu_sai', 'Kiểu nhà, màu sắc hoặc tên không hợp lệ.');
+    return db.tx(async (q) => {
+      const u = await q.query('select cash from users where id = $1 for update', [userId]);
+      const p = await q.query('select style from plots where id = $1 and user_id = $2 for update', [plotId, userId]);
+      if (!p.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy lô đất của bạn.', 404);
+      const owned = ownedOut(p.rows[0].style);
+      let cost = 0;
+      if (!owned.includes(style.house)) {
+        cost = HOUSE_TYPES.find((h) => h.id === style.house)!.price;
+        if (u.rows[0].cash < cost) throw bad('khong_du_tien', 'Bạn không đủ tiền đổi kiểu nhà này.', 409);
+        await addCash(q, userId, -cost, `kieu_nha:${style.house}`);
+        owned.push(style.house);
+      }
+      await q.query('update plots set style = $2 where id = $1', [plotId, JSON.stringify({ ...style, owned })]);
+      return { style, ownedHouses: owned, cost };
+    });
+  });
+
+  app.post('/api/plots/:id/decor', async (req) => {
+    const userId = await requireUser(req);
+    const plotId = idParam((req.params as any).id);
+    const items = validDecor((req.body as any)?.items);
+    if (!items) throw bad('du_lieu_sai', 'Đồ trang trí hoặc vị trí đặt không hợp lệ.');
+    return db.tx(async (q) => {
+      const u = await q.query('select cash from users where id = $1 for update', [userId]);
+      const p = await q.query('select decor from plots where id = $1 and user_id = $2 for update', [plotId, userId]);
+      if (!p.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy lô đất của bạn.', 404);
+      const count = (list: DecorPlacement[], id: string) => list.filter((d) => d.item === id).length;
+      const before = decorOut(p.rows[0].decor);
+      let cost = 0;
+      for (const d of DECOR_ITEMS) cost += Math.max(0, count(items, d.id) - count(before, d.id)) * d.price;
+      if (u.rows[0].cash < cost) throw bad('khong_du_tien', 'Bạn không đủ tiền mua thêm đồ trang trí.', 409);
+      if (cost > 0) await addCash(q, userId, -cost, `trang_tri:${plotId}`);
+      await q.query('update plots set decor = $2 where id = $1', [plotId, JSON.stringify(items)]);
+      return { decor: items, cost };
+    });
+  });
+
+  app.post('/api/avatar', async (req) => {
+    const userId = await requireUser(req);
+    const avatar = validAvatar(req.body);
+    if (!avatar) throw bad('du_lieu_sai', 'Trang phục hoặc màu xe không hợp lệ.');
+    await db.query('update users set avatar = $2 where id = $1', [userId, JSON.stringify(avatar)]);
+    return { avatar };
   });
 
   app.get('/api/health', async () => ({ ok: true }));

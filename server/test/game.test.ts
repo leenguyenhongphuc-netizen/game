@@ -9,6 +9,7 @@ import {
   CITY_BONUS, COOP_BONUS, COOP_CREATE_COST, GIFT_DAILY_LIMIT, GLUT_KG, GLUT_MAX_DROP, HELP_REWARD, LAND_PRICE, MARKET_DAY_BONUS, MAX_FRIENDS,
   COOP_ORDER_BONUS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, IN_SEASON_YIELD, ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS, PROCESS_SLOTS_XUONG,
   PROCESS_SPEED_XUONG, ROLE_INFO, inSeason, marketEventsAt, seasonAt, supplyKg,
+  DUMP_RATIO, FUEL_PER_KM, ROLES, ROLE_TARGETS, SEASON_DAYS, SMALL_TILES, allowedTiles, spinWeights, tripInfo,
   HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_COST, glutFactor, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
   seedCost, snapCell, stepCount, urbanCoreAt, weatherAt, weatherInfo,
 } from '../../shared/rules.ts';
@@ -49,10 +50,22 @@ async function callOn(target: FastifyInstance, method: string, path: string, bod
   const first = Array.isArray(set) ? set[0] : set;
   return { status: r.statusCode, body: r.body ? JSON.parse(r.body) : null, cookie: first?.split(';')[0] };
 }
-async function signup(name: string): Promise<string> {
+/** Đăng ký mà chưa có vai trò (như người chơi thật trước khi quay vòng quay). */
+async function signupRaw(name: string): Promise<string> {
   const r = await call('POST', '/api/auth/register', { username: name, password: 'matkhau123', displayName: name });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   return r.cookie!;
+}
+/** Gán thẳng vai trò cho một tài khoản thử (bỏ qua vòng quay). */
+async function setRole(name: string, role: 'nong_dan' | 'xuong' | 'thuong_lai') {
+  const r = await db.query('update users set role = $2, role_assigned_at = now(), truck_region = home_region_id where username = $1', [name, role]);
+  assert.equal(r.rowCount, 1, `không thấy tài khoản ${name}`);
+}
+/** Đăng ký và gán sẵn vai nhà vườn, để các kiểm thử cũ trồng được ở mọi ô. */
+async function signup(name: string, role: 'nong_dan' | 'xuong' | 'thuong_lai' = 'nong_dan'): Promise<string> {
+  const cookie = await signupRaw(name);
+  await setRole(name, role);
+  return cookie;
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -123,11 +136,16 @@ test('trọn vòng: nhận đất theo GPS, trồng đủ quy trình, thu hoạc
   }
   assert.deepEqual(harvested, { specialtyId: sp.id, quality: 'A', kg: CROPS.toi.yieldKg, inSeason: false });
 
-  const sell = await call('POST', '/api/sell/npc', { specialtyId: sp.id, quality: 'A', kg: 10 }, cookie);
-  assert.equal(sell.body.unitPrice, npcPrice(sp.refPrice, 'A', sp.regionId, 'qng_lyson'));
+  // Nhà vườn chỉ bán tháo được; đổi sang thương lái thì bán đủ giá tại vườn.
+  const dump = await call('POST', '/api/sell/npc', { specialtyId: sp.id, quality: 'A', kg: 1 }, cookie);
+  assert.deepEqual([dump.body.dump, dump.body.unitPrice], [true, Math.round((sp.refPrice * DUMP_RATIO) / 100) * 100]);
+  await setRole('ly_son', 'thuong_lai');
+  const sell = await call('POST', '/api/sell/npc', { specialtyId: sp.id, quality: 'A', kg: 9 }, cookie);
+  assert.deepEqual([sell.body.dump, sell.body.marketRegionId], [false, 'qng_lyson']);
+  assert.equal(sell.body.unitPrice, npcPrice(sp.refPrice, 'A', sp.regionId, 'qng_lyson', { glut: sell.body.mods.glut }));
   assert.equal((await call('POST', '/api/sell/npc', { specialtyId: sp.id, quality: 'A', kg: 999 }, cookie)).status, 409);
   const me = await call('GET', '/api/me', undefined, cookie);
-  assert.equal(me.body.user.cash, START_CASH - seedCost(sp) + sell.body.total);
+  assert.equal(me.body.user.cash, START_CASH - seedCost(sp) + dump.body.total + sell.body.total);
   assert.deepEqual(me.body.inventory, [{ specialtyId: sp.id, quality: 'A', kg: CROPS.toi.yieldKg - 10 }]);
   const ledger = await db.query('select coalesce(sum(delta),0)::bigint as s from ledger where user_id = $1', [me.body.user.id]);
   assert.equal(ledger.rows[0].s, me.body.user.cash, 'sổ cái khớp số dư');
@@ -170,6 +188,7 @@ test('chợ: rao bán, khung giá, mua, huỷ; người khác không đụng đ�
   assert.deepEqual(b2.inventory, [{ specialtyId: 'toi_ly_son', quality: 'A', kg: 2 }]);
   assert.equal(s2.inventory.find((i: any) => i.specialtyId === 'toi_ly_son').kg, 18);
   // Hàng phương xa: người mua ở Hà Nội bán tỏi Lý Sơn cho thương lái được giá cao hơn giá tại vườn.
+  await setRole('nguoi_mua', 'thuong_lai'); await setRole('nguoi_ban', 'thuong_lai');
   const far = await call('POST', '/api/sell/npc', { specialtyId: 'toi_ly_son', quality: 'A', kg: 1 }, buyer);
   const local = await call('POST', '/api/sell/npc', { specialtyId: 'toi_ly_son', quality: 'A', kg: 1 }, seller);
   assert.ok(far.body.unitPrice > ref && local.body.unitPrice < ref);

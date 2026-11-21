@@ -190,16 +190,55 @@ export function marketEventsAt(regionId: string, nowMs: number): MarketEvent[] {
   return out;
 }
 
-// ---------------------------------------------------------------- vai trò của người ở phố, xưởng, đơn hàng
-export type Role = 'nong_dan' | 'thuong_lai' | 'chu_sap' | 'xuong';
+// ---------------------------------------------------------------- vai trò (được giao bằng vòng quay), xưởng, đơn hàng
+export type Role = 'nong_dan' | 'xuong' | 'thuong_lai';
 export const ROLE_INFO: Record<Role, { name: string; icon: string; desc: string }> = {
-  nong_dan: { name: 'Nhà vườn', icon: '🧑‍🌾', desc: 'Trồng trọt là chính, không có ưu đãi riêng.' },
-  thuong_lai: { name: 'Thương lái', icon: '🚚', desc: 'Gom đặc sản các vùng về phố: bán hàng phương xa cho thương lái được thêm 10%.' },
-  chu_sap: { name: 'Chủ sạp', icon: '🏪', desc: 'Sạp ở phố đông khách: khách vãng lai tự mua dần hàng bày giá hợp lý, kể cả khi bạn vắng mặt.' },
-  xuong: { name: 'Chủ xưởng chế biến', icon: '🏭', desc: 'Xưởng có 4 dây chuyền thay vì 2 và chế biến nhanh gấp đôi.' },
+  nong_dan: { name: 'Nhà vườn', icon: '🧑‍🌾', desc: 'Vườn lớn 30 ô và được thưởng sản lượng khi thu đúng chính vụ. Bán hàng qua sạp cho thương lái và chủ xưởng.' },
+  xuong: { name: 'Chủ xưởng', icon: '🏭', desc: 'Chỉ chủ xưởng mới chế biến được nông sản, xưởng có 4 chỗ làm. Vườn nhỏ 8 ô.' },
+  thuong_lai: { name: 'Thương lái', icon: '🚚', desc: 'Chỉ thương lái mới bán cho doanh nghiệp được giá đầy đủ, và lái xe chở hàng sang vùng khác. Vườn nhỏ 8 ô.' },
 };
 export const ROLES = Object.keys(ROLE_INFO) as Role[];
-/** Khách vãng lai của chủ sạp: mua tối đa bấy nhiêu kg mỗi giờ cho mỗi tin rao có giá không quá mức này so với giá tham chiếu. */
+/** Mỗi mùa dài bấy nhiêu ngày; hết mùa người chơi được quay lại vai trò. */
+export const SEASON_DAYS = 30;
+/** Tỉ lệ vai trò mong muốn trong một vùng: nông thôn nhiều nhà vườn, phố nhiều thương lái và chủ xưởng. */
+export const ROLE_TARGETS: { rural: Record<Role, number>; urban: Record<Role, number> } = {
+  rural: { nong_dan: 0.65, xuong: 0.15, thuong_lai: 0.2 },
+  urban: { nong_dan: 0.3, xuong: 0.3, thuong_lai: 0.4 },
+};
+/** Trọng số vòng quay: nghiêng về vai đang thiếu so với tỉ lệ mong muốn, tổng bằng 1. */
+export function spinWeights(targets: Record<Role, number>, counts: Record<Role, number>): Record<Role, number> {
+  const total = ROLES.reduce((sum, r) => sum + Math.max(0, counts[r] ?? 0), 0);
+  const raw = {} as Record<Role, number>;
+  for (const r of ROLES) {
+    const actual = total > 0 ? Math.max(0, counts[r] ?? 0) / total : targets[r];
+    raw[r] = targets[r] * Math.min(3, Math.max(0.5, targets[r] / Math.max(actual, 0.01)));
+  }
+  const sum = ROLES.reduce((acc, r) => acc + raw[r], 0);
+  for (const r of ROLES) raw[r] /= sum;
+  return raw;
+}
+/** Vườn nhỏ của chủ xưởng và thương lái: 8 ô, hàng 1..2 × cột 1..4. */
+export const SMALL_TILES: number[] = [1, 2].flatMap((row) => [1, 2, 3, 4].map((col) => row * PLOT_COLS + col));
+/** Các ô được trồng của một lô, theo kiểu lô và vai trò của chủ lô. */
+export function allowedTiles(kind: 'ground' | 'rooftop', role: Role | null): number[] {
+  if (!role) return [];
+  if (role !== 'nong_dan') return SMALL_TILES;
+  return kind === 'rooftop' ? ROOFTOP_TILES : Array.from({ length: TILE_COUNT }, (_, i) => i);
+}
+/** Người không phải thương lái chỉ "bán tháo" được cho doanh nghiệp ở mức này so với giá tham chiếu. */
+export const DUMP_RATIO = 0.6;
+/** Tiền xăng mỗi km của một chuyến xe. */
+export const FUEL_PER_KM = 300;
+/** Thông tin một chuyến xe giữa hai vùng: quãng đường, tiền xăng, có phải qua bến tàu không, và thời lượng màn lái (giây). */
+export function tripInfo(fromRegionId: string, toRegionId: string): { km: number; fuel: number; needsBoat: boolean; seconds: number } {
+  const a = REGIONS[fromRegionId], b = REGIONS[toRegionId];
+  const km = Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng));
+  return {
+    km, fuel: Math.max(5000, Math.round((km * FUEL_PER_KM) / 1000) * 1000), needsBoat: !!(a.island || b.island),
+    seconds: Math.min(75, Math.max(30, Math.round(25 + km / 12))),
+  };
+}
+/** Khách vãng lai của thương lái ở phố: mua tối đa bấy nhiêu kg mỗi giờ cho mỗi tin rao có giá không quá mức này so với giá tham chiếu. */
 export const STALL_WALKIN_KG_PER_HOUR = 5, STALL_WALKIN_MAX_RATIO = 1.15;
 export const PROCESS_SLOTS = 2, PROCESS_SLOTS_XUONG = 4, PROCESS_SPEED_XUONG = 0.5;
 /** Người phụ thu hoạch được chia phần này trong sản lượng. */

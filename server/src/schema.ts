@@ -180,4 +180,25 @@ create table if not exists order_done (
   slot int not null,
   primary key (user_id, day, slot)
 );
+alter table users alter column role drop not null;
+alter table users alter column role drop default;
+alter table users add column if not exists role_assigned_at timestamptz;
+alter table users add column if not exists last_seen_at timestamptz;
+alter table users add column if not exists truck_region text;
+alter table users add column if not exists avatar jsonb;
+alter table plots add column if not exists style jsonb;
+alter table plots add column if not exists decor jsonb;
+update users set role = 'thuong_lai' where role = 'chu_sap';
+update users set role = null where role_assigned_at is null and role is not null;
+create index if not exists users_region_seen_idx on users (home_region_id, last_seen_at);
+create table if not exists trips (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  from_region text not null,
+  to_region text not null,
+  min_seconds int not null,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+create index if not exists trips_user_idx on trips (user_id, id desc);
 `;

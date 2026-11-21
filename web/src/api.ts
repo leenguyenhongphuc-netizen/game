@@ -1,4 +1,5 @@
 import type { MarketDay, MarketEvent, Quality, Role, Weather } from '../../shared/rules.ts';
+import type { Avatar, DecorPlacement, PlotStyle } from '../../shared/custom.ts';
 
 export type PlotKind = 'ground' | 'rooftop';
 
@@ -20,7 +21,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
 }
 
 export interface Me {
-  user: { id: number; username: string; displayName: string; cash: number; homeRegionId: string | null; homeKind?: PlotKind; coopId?: number | null; role?: Role };
+  user: { id: number; username: string; displayName: string; cash: number; homeRegionId: string | null; homeKind?: PlotKind; coopId?: number | null; role?: Role | null; roleNextSpinAt?: number | null; truckRegionId?: string | null; avatar?: Avatar | null };
   plots: { id: number; regionId: string; isHome: boolean; kind?: PlotKind; wardName?: string | null }[];
   walkin?: { kg: number; total: number } | null;
   inventory: { specialtyId: string; quality: Quality; kg: number }[];
@@ -35,7 +36,7 @@ export interface PlotView {
 export type Prices = Record<string, { price: number; prev: number | null; source: string; observedAt: number; glut?: number; planted?: number }>;
 
 export interface LotView {
-  plot: { id: number; regionId: string; isHome: boolean; kind?: PlotKind; wardName?: string | null; wardProvince?: string | null; ownerId: number; ownerName: string; mine: boolean; friend: boolean };
+  plot: { id: number; regionId: string; isHome: boolean; kind?: PlotKind; wardName?: string | null; wardProvince?: string | null; ownerRole?: Role | null; style?: PlotStyle | null; decor?: DecorPlacement[] | null; ownerAvatar?: Avatar | null; ownedHouses?: string[]; ownerId: number; ownerName: string; mine: boolean; friend: boolean };
   plantings: Planting[]; stall: Listing[];
 }
 export interface Village { center: LotView; neighbors: LotView[]; now: number; weather?: Weather; marketDay?: MarketDay; events?: MarketEvent[] }

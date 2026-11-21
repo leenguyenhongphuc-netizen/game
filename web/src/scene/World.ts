@@ -3,7 +3,10 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CROPS, REGIONS, SPECIALTIES, processOf } from '../../../shared/catalog.ts';
 import type { Zone } from '../../../shared/catalog.ts';
-import { PLOT_COLS, PLOT_ROWS, ROOFTOP_TILES, TILE_COUNT } from '../../../shared/rules.ts';
+import { PLOT_COLS, PLOT_ROWS, allowedTiles } from '../../../shared/rules.ts';
+import type { Role } from '../../../shared/rules.ts';
+import type { Avatar, DecorPlacement, PlotStyle } from '../../../shared/custom.ts';
+import { addHat, buildDecor, buildFence, buildHouse, buildRoleProp, hex, makeTruck } from './custom3d.ts';
 import type { Listing, Planting } from '../api.ts';
 import { GEO, buildPlant, fruitColor, mat, mesh, rng } from './plants.ts';
 import type { Stage } from './plants.ts';
@@ -84,13 +87,13 @@ function makeLabel(text: string, bg: string, fg = '#3b2a17'): THREE.Sprite {
 }
 
 interface Body { root: THREE.Group; legL: THREE.Mesh; legR: THREE.Mesh; armL: THREE.Group; armR: THREE.Group }
-function makeFarmer(shirt: number, hat = 0xf2dc9a): Body {
+function makeFarmer(shirt: number, hat = 'non_la'): Body {
   const root = new THREE.Group();
   const skin = mat(0xf6cfa8), cloth = mat(shirt), pants = mat(0x5a6a8f);
   const legL = mesh(GEO.box, pants, -0.15, 0.24, 0, 0.2, 0.48, 0.24), legR = mesh(GEO.box, pants, 0.15, 0.24, 0, 0.2, 0.48, 0.24);
   root.add(legL, legR, mesh(GEO.cyl, cloth, 0, 0.82, 0, 0.36, 0.72, 0.3), mesh(GEO.ball, skin, 0, 1.52, 0, 0.42));
   root.add(mesh(GEO.ball, mat(0x2b2118), -0.15, 1.56, 0.36, 0.055), mesh(GEO.ball, mat(0x2b2118), 0.15, 1.56, 0.36, 0.055));
-  root.add(mesh(new THREE.ConeGeometry(0.62, 0.36, 12), mat(hat), 0, 1.98, 0), mesh(GEO.cyl, mat(0xf08a6c), 0, 1.86, 0, 0.44, 0.07, 0.44));
+  addHat(root, hat);
   const arm = (x: number) => { const g = new THREE.Group(); g.position.set(x, 1.08, 0); g.add(mesh(GEO.box, cloth, 0, -0.22, 0, 0.17, 0.5, 0.18), mesh(GEO.ball, skin, 0, -0.5, 0, 0.11)); root.add(g); return g; };
   const armL = arm(-0.46), armR = arm(0.46);
   root.scale.setScalar(1.15);
@@ -98,13 +101,19 @@ function makeFarmer(shirt: number, hat = 0xf2dc9a): Body {
 }
 
 // ---------------------------------------------------------------- dữ liệu vào
-export interface LotData { plotId: number; ownerName: string; mine: boolean; friend: boolean; kind?: 'ground' | 'rooftop'; plantings: Planting[]; stall: Listing[] }
+export interface LotData {
+  plotId: number; ownerName: string; mine: boolean; friend: boolean; kind?: 'ground' | 'rooftop'; plantings: Planting[]; stall: Listing[];
+  /** undefined = chưa rõ (vườn mẫu) thì coi như nhà vườn; null = chủ vườn chưa quay vai. */
+  ownerRole?: Role | null; style?: PlotStyle | null; decor?: DecorPlacement[] | null; avatar?: Avatar | null;
+}
+function lotTiles(d: LotData): number[] { return allowedTiles(d.kind ?? 'ground', d.ownerRole === undefined ? 'nong_dan' : d.ownerRole); }
 export type WeatherKind = 'nang' | 'may' | 'mua' | 'nang_gat' | 'bao';
 export interface WorldState { regionId: string; lots: (LotData | null)[]; clockOffset: number; weather?: WeatherKind }
 export type Context =
   | { kind: 'none' }
   | { kind: 'tile'; lot: number; tile: number }
   | { kind: 'stall'; lot: number }
+  | { kind: 'truck' }
   | { kind: 'empty-lot'; lot: number };
 export interface WorldOptions {
   hour?: number; demo?: boolean;
@@ -147,6 +156,8 @@ class Lot {
   private goods = new THREE.Group();
   private label: THREE.Sprite | null = null;
   private labelText = '';
+  private look = '';
+  private signs: THREE.Sprite[] = [];
   markers = new Map<number, THREE.Mesh>();
   npc: Body | null = null;
   private slot: number;
@@ -161,7 +172,8 @@ class Lot {
 
   colliders(): [number, number, number, number][] {
     if (this.built !== 'farm' && this.built !== 'roof') return [];
-    const local: [number, number, number, number][] = [
+    const prop: [number, number, number, number][] = this.data?.ownerRole === 'xuong' ? [[-2.3, 2.3, 2.4, 5.0]] : [];
+    const local: [number, number, number, number][] = [...prop,
       [-FENCE.x, FENCE.x, FENCE.back - 0.15, FENCE.back + 0.15], [-FENCE.x - 0.15, -FENCE.x + 0.15, FENCE.back, FENCE.front],
       [FENCE.x - 0.15, FENCE.x + 0.15, FENCE.back, FENCE.front], [-FENCE.x, -FENCE.gate, FENCE.front - 0.15, FENCE.front + 0.15],
       [FENCE.gate, FENCE.x, FENCE.front - 0.15, FENCE.front + 0.15], [-3.0, 3.0, -12.4, -8.4], [STALL.x - 1.9, STALL.x + 1.9, STALL.z - 0.8, STALL.z + 0.8],
@@ -170,10 +182,12 @@ class Lot {
   }
 
   private rebuild(kind: 'empty' | 'farm' | 'roof') {
-    this.group.clear(); this.plants.clear(); this.markers.clear(); this.label = null; this.labelText = ''; this.npc = null;
+    this.group.clear(); this.plants.clear(); this.markers.clear(); this.label = null; this.labelText = ''; this.npc = null; this.signs = [];
+    const data = this.data, style = data?.style ?? null, tiles = data ? lotTiles(data) : [];
+    const roofColor = hex(style?.roof, ROOFS[this.slot % 5]), wallColor = hex(style?.wall, [0xfff6e2, 0xffeceb, 0xeef6ff, 0xf1f9e4, 0xfff8d6][this.slot % 5]), awning = hex(style?.awning, ROOFS[this.slot % 5]);
     this.plantLayer = new THREE.Group(); this.goods = new THREE.Group();
     const st = new THREE.Group();
-    const wood = mat(0xfdf6e6), woodDark = mat(0xb9855a);
+    const woodDark = mat(0xb9855a);
     if (kind === 'empty') {
       for (const [x, z] of [[-FENCE.x, FENCE.front], [FENCE.x, FENCE.front], [-FENCE.x, FENCE.back], [FENCE.x, FENCE.back]]) st.add(mesh(GEO.box, woodDark, x, 0.4, z, 0.2, 0.8, 0.2));
       st.add(mesh(GEO.box, woodDark, 0, 0.8, FENCE.front + 1.2, 0.14, 1.6, 0.14), mesh(GEO.box, mat(0xf6e7c1), 0, 1.5, FENCE.front + 1.28, 2.6, 0.9, 0.1));
@@ -183,16 +197,16 @@ class Lot {
     }
     if (kind === 'roof') {
     // Sân thượng nhà phố: nền gạch, lan can, bồn nước, pin mặt trời, thùng trồng cây
-    const depthR = FENCE.front - FENCE.back, midR = (FENCE.front + FENCE.back) / 2, wall = mat(0xfbf7ee), trim = mat(ROOFS[this.slot % 5]);
+    const depthR = FENCE.front - FENCE.back, midR = (FENCE.front + FENCE.back) / 2, wall = mat(0xfbf7ee), trim = mat(roofColor);
     st.add(mesh(GEO.box, mat(0xe9e4da), 0, 0.04, midR, FENCE.x * 2, 0.08, depthR));
     for (let i = -4; i <= 4; i++) st.add(mesh(GEO.box, mat(0xdcd6ca), i * 2.1, 0.085, midR, 0.05, 0.01, depthR));
     const parapet = (x: number, z: number, sx: number, sz: number) => st.add(mesh(GEO.box, wall, x, 0.5, z, sx, 1, sz), mesh(GEO.box, trim, x, 1.03, z, sx + 0.12, 0.1, sz + 0.12));
     const segR = FENCE.x - FENCE.gate;
     parapet(0, FENCE.back, FENCE.x * 2, 0.3); parapet(-FENCE.x, midR, 0.3, depthR); parapet(FENCE.x, midR, 0.3, depthR);
     parapet(-(FENCE.x + FENCE.gate) / 2, FENCE.front, segR, 0.3); parapet((FENCE.x + FENCE.gate) / 2, FENCE.front, segR, 0.3);
-    for (const t of ROOFTOP_TILES) { const p = tileLocal(t); st.add(mesh(GEO.box, mat(0xc99a68), p.x, 0.2, p.z, TILE - 0.12, 0.3, TILE - 0.12), mesh(GEO.box, mat(0x8a6044), p.x, 0.33, p.z, TILE - 0.36, 0.08, TILE - 0.36)); }
+    for (const t of tiles) { const p = tileLocal(t); st.add(mesh(GEO.box, mat(0xc99a68), p.x, 0.2, p.z, TILE - 0.12, 0.3, TILE - 0.12), mesh(GEO.box, mat(0x8a6044), p.x, 0.33, p.z, TILE - 0.36, 0.08, TILE - 0.36)); }
     // Tum cầu thang
-    st.add(mesh(GEO.box, mat(0xfff6e2), 0, 1.4, -10.6, 5, 2.8, 3.6), mesh(GEO.box, trim, 0, 2.9, -10.6, 5.5, 0.22, 4.1), mesh(GEO.box, mat(0x9a7150), 0, 1.1, -8.76, 1.0, 1.7, 0.1));
+    st.add(mesh(GEO.box, mat(wallColor), 0, 1.4, -10.6, 5, 2.8, 3.6), mesh(GEO.box, trim, 0, 2.9, -10.6, 5.5, 0.22, 4.1), mesh(GEO.box, mat(0x9a7150), 0, 1.1, -8.76, 1.0, 1.7, 0.1));
     st.add(mesh(GEO.box, this.night ? mat(0xffe08a, { emissive: 0xffc24a }) : mat(0xa9dcf2, { rough: 0.3 }), 1.6, 1.7, -8.76, 0.9, 0.8, 0.08));
     // Bồn nước inox, pin mặt trời, dây phơi, cục nóng máy lạnh
     st.add(mesh(GEO.box, mat(0x8f97a3), 6.6, 0.7, -10.6, 1.5, 1.4, 1.5), mesh(GEO.cyl, mat(0xdfe6ee, { rough: 0.25 }), 6.6, 2.2, -10.6, 0.85, 1.7, 0.85), mesh(GEO.ball, mat(0xdfe6ee, { rough: 0.25 }), 6.6, 3.05, -10.6, 0.85, 0.3, 0.85));
@@ -203,51 +217,37 @@ class Lot {
     st.add(mesh(GEO.box, mat(0xf3f4f6), 8.4, 0.5, 6.4, 1.0, 0.9, 1.4));
     for (const [x, z] of [[8.5, -2], [8.5, 1.5], [-3.2, 7.6], [3.2, 7.6]]) st.add(mesh(GEO.cyl, mat(0xe0a070), x, 0.3, z, 0.36, 0.5, 0.36), mesh(GEO.ball, mat(0x5cb85f), x, 0.9, z, 0.5), mesh(GEO.ball, mat(0xf7a8c4), x + 0.2, 1.25, z + 0.1, 0.14));
     } else {
-    // Sân đất và ô ruộng
+    // Sân đất và các ô được trồng theo vai trò
     st.add(mesh(GEO.box, mat(0xefdcb4), 0, 0.03, 0.2, PLOT_COLS * TILE + 1.6, 0.06, PLOT_ROWS * TILE + 1.6));
-    for (let t = 0; t < TILE_COUNT; t++) { const p = tileLocal(t); st.add(mesh(GEO.box, mat((t + Math.floor(t / PLOT_COLS)) % 2 ? 0xa57650 : 0xb08259), p.x, 0.08, p.z, TILE - 0.14, 0.08, TILE - 0.14)); }
-    // Hàng rào và cổng
-    const post = (x: number, z: number, h = 1) => st.add(mesh(GEO.box, wood, x, h / 2, z, 0.18, h, 0.18), mesh(GEO.ball, woodDark, x, h + 0.05, z, 0.14));
-    const rail = (x: number, z: number, sx: number, sz: number) => st.add(mesh(GEO.box, wood, x, 0.72, z, sx, 0.1, sz), mesh(GEO.box, wood, x, 0.38, z, sx, 0.1, sz));
-    const depth = FENCE.front - FENCE.back, midZ = (FENCE.front + FENCE.back) / 2;
-    for (let i = 0; i <= 8; i++) { const x = -FENCE.x + (i * FENCE.x * 2) / 8; post(x, FENCE.back); if (Math.abs(x) > FENCE.gate + 0.3) post(x, FENCE.front); }
-    for (let i = 1; i < 9; i++) { const z = FENCE.back + (i * depth) / 9; post(-FENCE.x, z); post(FENCE.x, z); }
-    rail(0, FENCE.back, FENCE.x * 2, 0.08); rail(-FENCE.x, midZ, 0.08, depth); rail(FENCE.x, midZ, 0.08, depth);
-    const seg = FENCE.x - FENCE.gate; rail(-(FENCE.x + FENCE.gate) / 2, FENCE.front, seg, 0.08); rail((FENCE.x + FENCE.gate) / 2, FENCE.front, seg, 0.08);
-    for (const x of [-FENCE.gate, FENCE.gate]) st.add(mesh(GEO.box, woodDark, x, 1.5, FENCE.front, 0.28, 3, 0.28));
-    st.add(mesh(GEO.box, woodDark, 0, 3.05, FENCE.front, FENCE.gate * 2 + 0.9, 0.26, 0.4), mesh(GEO.box, mat(ROOFS[this.slot % 5]), 0, 3.3, FENCE.front, FENCE.gate * 2 + 1.3, 0.14, 0.7));
+    for (const t of tiles) { const p = tileLocal(t); st.add(mesh(GEO.box, mat((t + Math.floor(t / PLOT_COLS)) % 2 ? 0xa57650 : 0xb08259), p.x, 0.08, p.z, TILE - 0.14, 0.08, TILE - 0.14)); }
+    buildFence(st, style?.fence ?? 'trang', FENCE, roofColor);
     // Lối đá từ cổng vào ruộng, vòng ra nhà
     const stone = mat(0xfaf3e3);
     for (let i = 0; i < 4; i++) st.add(mesh(GEO.cyl, stone, i % 2 ? 0.2 : -0.2, 0.05, FENCE.front - 0.6 - i * 0.75, 0.42, 0.06, 0.36));
     for (let i = 0; i < 9; i++) st.add(mesh(GEO.cyl, stone, -7.6 + (i % 2 ? 0.15 : -0.1), 0.05, 5.2 - i * 1.5, 0.4, 0.06, 0.34));
-    // Nhà mái ngói có hiên
-    const h = new THREE.Group(); h.position.set(0, 0, -10.4);
-    const glow = this.night ? mat(0xffe08a, { emissive: 0xffc24a }) : mat(0x8fd3f2, { rough: 0.3 });
-    const wallColor = [0xfff6e2, 0xffeceb, 0xeef6ff, 0xf1f9e4, 0xfff8d6][this.slot % 5], roofColor = ROOFS[this.slot % 5];
-    h.add(mesh(GEO.box, mat(0xcdbb99), 0, 0.15, 0, 6.6, 0.3, 4.6), mesh(GEO.box, mat(wallColor), 0, 1.5, 0, 5.6, 2.4, 3.6));
-    const roof = mesh(new THREE.CylinderGeometry(0.01, 3.1, 1.8, 4, 1), mat(roofColor), 0, 3.6, 0, 1.38, 1, 0.98); roof.rotation.y = Math.PI / 4; h.add(roof);
-    h.add(mesh(GEO.box, woodDark, 0, 1.1, 1.82, 1.0, 1.6, 0.1));
-    for (const x of [-1.8, 1.8]) h.add(mesh(GEO.box, glow, x, 1.7, 1.82, 0.95, 0.85, 0.08), mesh(GEO.box, mat(0xffffff), x, 1.7, 1.86, 1.1, 0.1, 0.05), mesh(GEO.box, mat(0xffffff), x, 1.7, 1.86, 0.1, 1.0, 0.05));
-    h.add(mesh(GEO.box, mat(roofColor), 0, 2.6, 2.5, 6.3, 0.14, 1.5));
-    for (const x of [-2.9, 2.9]) h.add(mesh(GEO.cyl, woodDark, x, 1.4, 3.1, 0.09, 2.4, 0.09));
-    h.add(mesh(GEO.box, mat(0xb0a08a), 1.9, 4.2, -0.3, 0.5, 0.9, 0.5));
-    h.add(mesh(GEO.cyl, mat(0xb5613c), -3.6, 0.55, 3.1, 0.45, 0.8, 0.45), mesh(GEO.cyl, mat(0x4fb3e0, { rough: 0.2 }), -3.6, 0.96, 3.1, 0.38, 0.03, 0.38));
-    for (const x of [3.7, 4.6]) h.add(mesh(GEO.cyl, mat(0xc46a3f), x, 0.3, 3.2, 0.28, 0.4, 0.28), mesh(GEO.ball, mat(0x3fae4c), x, 0.75, 3.2, 0.36), mesh(GEO.ball, mat(x > 4 ? 0xff7fb0 : 0xffd23f), x + 0.1, 1.0, 3.3, 0.12));
+    const h = buildHouse(style?.house ?? 'mai_ngoi', wallColor, roofColor, this.night); h.position.set(0, 0, -10.4);
+    h.add(mesh(GEO.cyl, mat(0xb5613c), -3.6, 0.55, 3.1, 0.45, 0.8, 0.45), mesh(GEO.cyl, mat(0x7fd3e8, { rough: 0.2 }), -3.6, 0.96, 3.1, 0.38, 0.03, 0.38));
     st.add(h);
     // Cây bóng mát, đống rơm, giếng trong sân
     st.add(mesh(GEO.cyl, mat(0x7a5233), 7.3, 1.0, -9.5, 0.2, 2, 0.2), mesh(GEO.ball, mat(0x5cb85f), 6.7, 2.6, -9.3, 1.2), mesh(GEO.ball, mat(0x79c96d), 7.9, 2.8, -9.7, 1.25), mesh(GEO.ball, mat(0x9bdc84), 7.3, 3.6, -9.4, 1.2));
     st.add(mesh(GEO.cone, mat(0xf6d77a), -7.4, 0.8, -10.6, 1.1, 1.6, 1.1), mesh(GEO.cyl, mat(0xbdb5a6), -7.3, 0.4, 6.9, 0.7, 0.8, 0.7), mesh(GEO.cyl, mat(0x4fb3e0, { rough: 0.2 }), -7.3, 0.81, 6.9, 0.56, 0.03, 0.56));
     }
+    // Công trình theo vai trò (xưởng, bãi cân hàng) và đồ trang trí do chủ vườn đặt
+    const prop = buildRoleProp(data?.ownerRole); if (prop) { prop.position.set(0, 0, 3.7); st.add(prop); }
+    for (const d of data?.decor ?? []) { const o = buildDecor(d.item); o.position.set(d.x, 0, d.z); o.rotation.y = d.rot; st.add(o); }
+    {
     // Sạp bán hàng sát đường
-    const s = new THREE.Group(); s.position.set(STALL.x, 0, STALL.z); const roofColor = ROOFS[this.slot % 5];
+    const s = new THREE.Group(); s.position.set(STALL.x, 0, STALL.z);
     s.add(mesh(GEO.box, mat(0xd9a877), 0, 0.55, 0, 3.4, 1.1, 1.3), mesh(GEO.box, mat(0xf2d2a2), 0, 1.13, 0.05, 3.6, 0.08, 1.5));
     for (const x of [-1.65, 1.65]) for (const z of [-0.6, 0.6]) s.add(mesh(GEO.cyl, woodDark, x, 1.5, z, 0.07, 3, 0.07));
-    for (let i = 0; i < 8; i++) { const strip = mesh(GEO.box, mat(i % 2 ? 0xffffff : roofColor), -1.58 + i * 0.45, 3.05, 0.1, 0.45, 0.1, 2.1); strip.rotation.x = 0.22; s.add(strip); }
+    for (let i = 0; i < 8; i++) { const strip = mesh(GEO.box, mat(i % 2 ? 0xffffff : awning), -1.58 + i * 0.45, 3.05, 0.1, 0.45, 0.1, 2.1); strip.rotation.x = 0.22; s.add(strip); }
     st.add(s);
+    }
+    if (style?.stallName) { const sign = makeLabel(style.stallName, '#fff6dc'); sign.scale.set(3.4, 0.85, 1); sign.position.set(STALL.x, 3.9, STALL.z); this.group.add(sign); this.signs.push(sign); }
     this.group.add(bake(st), this.plantLayer);
     this.goods.position.set(STALL.x, 0, STALL.z); this.group.add(this.goods);
     if (this.slot !== 0) { // chủ nhà hàng xóm đứng trước hiên
-      this.npc = makeFarmer(ROOFS[(this.slot + 2) % 5]);
+      this.npc = makeFarmer(hex(data?.avatar?.shirt, ROOFS[(this.slot + 2) % 5]), data?.avatar?.hat ?? 'non_la');
       this.npc.root.position.set(-1.6, 0, -6.4); this.group.add(this.npc.root);
     }
     this.built = kind;
@@ -257,9 +257,10 @@ class Lot {
     this.data = data;
     const want = data ? (data.kind === 'rooftop' ? 'roof' : 'farm') : this.slot === 0 ? 'none' : 'empty';
     if (want === 'none') { this.group.clear(); this.built = 'none'; return; }
-    if (this.built !== want) this.rebuild(want);
+    const look = !data ? want : [want, data.ownerRole, JSON.stringify(data.style ?? null), JSON.stringify(data.decor ?? null), JSON.stringify(data.avatar ?? null)].join('|');
+    if (this.built !== want || this.look !== look) { this.rebuild(want); this.look = look; }
     if (!data) return;
-    const text = data.mine ? (data.kind === 'rooftop' ? 'Sân thượng nhà' : 'Vườn nhà') : `Vườn ${data.ownerName}`;
+    const text = data.style?.gateName || (data.mine ? (data.kind === 'rooftop' ? 'Sân thượng nhà' : 'Vườn nhà') : `Vườn ${data.ownerName}`);
     if (text !== this.labelText) {
       if (this.label) this.group.remove(this.label);
       this.label = makeLabel(text, data.mine ? '#ffcf3a' : '#fff6dc'); this.label.position.set(0, 4.5, FENCE.front); this.group.add(this.label); this.labelText = text;
@@ -327,6 +328,11 @@ export class World {
   private state: WorldState | null = null;
   private regionId = '';
   private player: Body;
+  private avatarKey = '';
+  private truck: { root: THREE.Group; wheels: THREE.Mesh[] } | null = null;
+  private truckPos = new THREE.Vector3(-5.5, 0, ROAD_Z - 1.7);
+  private truckYaw = Math.PI / 2;
+  driving = false;
   private pos = new THREE.Vector3(-7, 0, ROAD_Z + 0.5);
   private vel = new THREE.Vector3();
   private camPos = new THREE.Vector3();
@@ -396,6 +402,25 @@ export class World {
     this.camPos.copy(this.pos);
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(container); this.resize();
     this.renderer.setAnimationLoop(() => this.frame());
+  }
+
+  /** Đổi áo, nón của nhân vật mình điều khiển. */
+  setAvatar(avatar: Avatar | null | undefined) {
+    const key = JSON.stringify(avatar ?? null); if (key === this.avatarKey) return; this.avatarKey = key;
+    this.scene.remove(this.player.root);
+    this.player = makeFarmer(hex(avatar?.shirt, 0x5aa9e6), avatar?.hat ?? 'non_la'); this.player.root.visible = !this.driving; this.scene.add(this.player.root);
+  }
+  /** Thương lái có xe tải đỗ trước cổng; truyền null để cất xe. */
+  setTruck(color: string | null) {
+    if (this.truck) { this.scene.remove(this.truck.root); this.truck = null; }
+    if (color === null) { if (this.driving) this.exitTruck(); return; }
+    this.truck = makeTruck(hex(color, 0xf08a6c)); this.scene.add(this.truck.root);
+    this.truck.root.position.copy(this.driving ? this.pos : this.truckPos); this.truck.root.rotation.y = this.truckYaw;
+  }
+  enterTruck() { if (!this.truck || this.driving) return; this.driving = true; this.pos.copy(this.truckPos); this.walkTo = null; this.vel.set(0, 0, 0); this.player.root.visible = false; }
+  exitTruck() {
+    if (!this.driving) return; this.driving = false; this.truckPos.copy(this.pos); this.truckYaw = this.truck?.root.rotation.y ?? this.truckYaw;
+    this.pos.set(this.pos.x, 0, ROAD_Z - ROAD_HALF - 0.6); this.walkTo = null; this.vel.set(0, 0, 0); this.player.root.visible = true;
   }
 
   makeMarker(): THREE.Mesh { const m = new THREE.Mesh(this.markerGeo, mat(0xffd23f, { emissive: 0xffa800, rough: 0.4 })); return m; }
@@ -602,7 +627,7 @@ export class World {
   /** Cho nhân vật tự chạy tới một ô (dùng cho nút dẫn đường và kiểm thử). */
   goToTile(lot: number, tile: number) { this.walkTo = this.worldOfTile(lot, tile); }
   teleportToTile(lot: number, tile: number) { this.pos.copy(this.worldOfTile(lot, tile)); this.walkTo = null; this.vel.set(0, 0, 0); }
-  goHome() { this.pos.set(0, 0, FENCE.front + 2.5); this.walkTo = null; this.camPos.copy(this.pos); }
+  goHome() { if (this.driving) this.exitTruck(); this.pos.set(0, 0, FENCE.front + 2.5); this.walkTo = null; this.camPos.copy(this.pos); }
   position() { return { x: this.pos.x, z: this.pos.z }; }
 
   private resize() {
@@ -619,7 +644,7 @@ export class World {
     for (const lot of this.lots) lot.animate(t, now, this);
     // Máy quay bám theo nhân vật
     this.camPos.lerp(this.pos, 1 - Math.pow(0.002, dt));
-    const portrait = this.camera.aspect < 0.9, k = (portrait ? 1.35 : 1) * this.zoom;
+    const portrait = this.camera.aspect < 0.9, k = (portrait ? 1.35 : 1) * this.zoom * (this.driving ? 1.15 : 1);
     if (this.opts.demo) { const a = t * 0.12; this.camera.position.set(this.camPos.x + Math.sin(a) * 27, 25, this.camPos.z + Math.cos(a) * 27); }
     else this.camera.position.set(this.camPos.x, 24 * k, this.camPos.z + 23 * k);
     this.camera.lookAt(this.camPos.x, 0.8, this.camPos.z - (this.opts.demo ? 0 : 1.2));
@@ -646,9 +671,18 @@ export class World {
         if (d < 0.25) { this.walkTo = null; dir.set(0, 0, 0); } else dir.normalize().multiplyScalar(Math.min(1, d / 1.2 + 0.35));
       }
     }
-    this.vel.lerp(dir.multiplyScalar(7.5), 1 - Math.pow(0.0005, dt));
+    this.vel.lerp(dir.multiplyScalar(this.driving ? 13 : 7.5), 1 - Math.pow(this.driving ? 0.02 : 0.0005, dt));
     const before = this.pos.clone();
     this.pos.addScaledVector(this.vel, dt);
+    if (this.driving && this.truck) { // xe chỉ chạy trên đường làng
+      this.pos.z = THREE.MathUtils.clamp(this.pos.z, ROAD_Z - 1.9, ROAD_Z + 1.9); this.pos.x = THREE.MathUtils.clamp(this.pos.x, -WORLD.x, WORLD.x);
+      const sp = this.vel.length(), tr = this.truck.root;
+      if (sp > 0.5) { const want = Math.atan2(this.vel.x, this.vel.z); let diff = want - tr.rotation.y; diff = Math.atan2(Math.sin(diff), Math.cos(diff)); tr.rotation.y += diff * Math.min(1, dt * 6); }
+      tr.position.set(this.pos.x, Math.abs(Math.sin(t * 20)) * 0.03 * Math.min(1, sp / 6), this.pos.z);
+      for (const w of this.truck.wheels) w.rotation.x += sp * dt * 2.2;
+      this.player.root.position.copy(this.pos);
+      return;
+    }
     const R = 0.42;
     for (const [x0, x1, z0, z1] of this.colliders) {
       const cx = THREE.MathUtils.clamp(this.pos.x, x0, x1), cz = THREE.MathUtils.clamp(this.pos.z, z0, z1), dx = this.pos.x - cx, dz = this.pos.z - cz, d2 = dx * dx + dz * dz;
@@ -680,12 +714,13 @@ export class World {
       if (i === 0 && inside) this.enteredYard = true;
       if (Math.abs(l.x) < PLOT_COLS && Math.abs(l.z) < PLOT_ROWS) {
         const tile = Math.floor((l.z + PLOT_ROWS) / TILE) * PLOT_COLS + Math.floor((l.x + PLOT_COLS) / TILE);
-        if (lot.data.kind === 'rooftop' && !ROOFTOP_TILES.includes(tile)) continue;
+        if (!lotTiles(lot.data).includes(tile) && !lot.data.plantings.some((p) => p.tile === tile)) continue;
         ctx = { kind: 'tile', lot: i, tile };
         const planting = lot.data.plantings.find((p) => p.tile === tile);
         if (planting && now >= planting.stepReadyAt && !this.opts.demo && (this.readyAt.get(planting.id) ?? 0) < t) { this.readyAt.set(planting.id, t + 1.5); this.opts.onReady?.(i, planting); }
       } else if (Math.hypot(l.x - STALL.x, l.z - (STALL.z + 1.6)) < 2.4) ctx = { kind: 'stall', lot: i };
     }
+    if (ctx.kind === 'none' && this.truck && !this.driving && this.pos.distanceTo(this.truckPos) < 3) ctx = { kind: 'truck' };
     if (ctx.kind === 'tile') { const p = this.worldOfTile(ctx.lot, ctx.tile); this.ring.visible = true; this.ring.position.set(p.x, 0.17, p.z); this.ring.scale.setScalar(1 + Math.sin(t * 6) * 0.04); } else this.ring.visible = false;
     const key = JSON.stringify(ctx);
     if (key !== this.ctxKey) { this.ctxKey = key; this.opts.onContext?.(ctx); }
