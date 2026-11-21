@@ -2,16 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, npcOf, processOf, specialtiesOfRegion } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
-  CITY_BONUS, GIFT_MAX_KG, HELP_REWARD, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, ROOFTOP_TILES, TILE_M2, DUMP_RATIO, QUALITY_MULT, ROLE_INFO, fmtMoney, inSeason, npcPrice, seedCost, stepWaitMs,
+  CITY_BONUS, GIFT_MAX_KG, HELP_REWARD, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, ROOFTOP_TILES, TILE_M2, DUMP_RATIO, QUALITY_MULT, ROLE_INFO, TRAVEL_MODES, fmtMoney, inSeason, npcPrice, seedCost, stepWaitMs, weatherAt,
 } from '../../shared/rules.ts';
 import { api } from './api.ts';
-import { AlbumPanel, CoopPanel, GiftsPanel, TravelPanel } from './panels.tsx';
+import { AlbumPanel, CoopPanel, GiftsPanel, ShowcasePanel, TravelPanel } from './panels.tsx';
 import { fmtDuration, regionLabel, useAction } from './ui.ts';
 import { NpcBadge, OrdersPanel, ProfilePanel, WardPicker, WorkshopPanel } from './work.tsx';
 import { RoleWheel } from './wheel.tsx';
 import { CustomizePanel } from './custom.tsx';
 import { DriveGame } from './drive/DriveGame.tsx';
-import type { Friends, GiftInbox, Listing, Me, Planting, Prices, Village } from './api.ts';
+import type { Friends, GiftInbox, Listing, LotView, Me, Planting, Prices, Village } from './api.ts';
+import { DEFAULT_STYLE } from '../../shared/custom.ts';
+import { TravelRide } from './drive/TravelRide.tsx';
+import type { RideMode } from './drive/TravelRide.tsx';
 import { WorldView } from './WorldView.tsx';
 import { SLOT_COUNT } from './scene/World.ts';
 import type { Context, World, WorldState } from './scene/World.ts';
@@ -103,12 +106,13 @@ function Auth({ onDone }: { onDone: () => void }) {
 function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
   const [found, setFound] = useState<{ lat: number; lng: number; regionId: string; km: number; urban: { id: string; name: string } | null } | null>(null);
   const [manual, setManual] = useState('');
+  const [pickManual, setPickManual] = useState(false);
   const [ward, setWard] = useState<{ province: string; name: string } | null>(null);
   const act = useAction();
   const claim = useAction(onDone);
 
   const locate = () => act.run(() => new Promise<void>((resolve, reject) => {
-    if (!navigator.geolocation) return reject(new Error('Trình duyệt không hỗ trợ định vị. Hãy tự chọn vùng trồng bên dưới.'));
+    if (!navigator.geolocation) return reject(new Error('Trình duyệt không hỗ trợ định vị. Hãy tự chọn vùng trồng.'));
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
         const { latitude: lat, longitude: lng } = pos.coords;
@@ -116,63 +120,89 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
         setFound({ lat, lng, regionId: r.regionId, km: r.km, urban: r.urban ?? null });
         resolve();
       } catch (e) { reject(e); }
-    }, () => reject(new Error('Không lấy được vị trí. Hãy cho phép định vị hoặc tự chọn vùng trồng bên dưới.')), { timeout: 15000, maximumAge: 600000 });
+    }, () => reject(new Error('Không lấy được vị trí. Hãy cho phép định vị trong cài đặt trình duyệt, hoặc tự chọn vùng trồng.')), { timeout: 15000, maximumAge: 600000 });
   }));
 
   const chosen = found?.regionId ?? (manual || null);
   const wardBody = ward?.name ? { wardProvince: ward.province, wardName: ward.name } : {};
-  return (
+  const reset = () => { setFound(null); setManual(''); setWard(null); setPickManual(false); };
+
+  // Bước 1: hỏi vị trí
+  if (!chosen) return (
     <main className="auth">
       <div className="brand">
         <span className="brand-mark">📍</span>
         <h1>Chào {me.user.displayName}</h1>
-        <p>Mảnh vườn đầu tiên rộng {PLOT_COLS * PLOT_ROWS * TILE_M2} m², nằm ở vùng trồng gần nơi bạn sống. Vùng nào thì trồng đặc sản của vùng đó.</p>
+        <p>Bạn đang ở đâu? Vườn của bạn sẽ nằm ở vùng trồng gần nơi bạn sống, và vùng nào thì trồng đặc sản của vùng đó.</p>
       </div>
       <div className="card">
-        <button className="primary" onClick={locate} disabled={act.busy}>{act.busy ? 'Đang định vị…' : 'Dùng vị trí của tôi'}</button>
-        <small>Vị trí được làm tròn về ô lưới khoảng 2 km trước khi lưu. Người chơi khác chỉ thấy tên vùng trồng.</small>
+        <p className="step-tag">Bước 1 / 2 · Chia sẻ vị trí</p>
+        <button className="primary" onClick={locate} disabled={act.busy}>{act.busy ? 'Đang định vị…' : '📍 Chia sẻ vị trí của tôi'}</button>
+        <small>Vị trí chỉ dùng để tìm vùng trồng gần bạn. Toạ độ được làm tròn về ô lưới khoảng 2 km trước khi lưu; người khác chỉ thấy tên xã, phường và vùng trồng.</small>
         {act.error && <p className="error" role="alert">{act.error}</p>}
-        <label>Hoặc tự chọn vùng trồng
-          <select value={manual} onChange={(e) => { setManual(e.target.value); setFound(null); setWard(null); }}>
-            <option value="">— Chọn vùng —</option>
-            {ZONES.map((z) => (
-              <optgroup key={z} label={ZONE_NAMES[z]}>
-                {Object.values(REGIONS).filter((r) => r.zone === z).map((r) => <option key={r.id} value={r.id}>{regionLabel(r.id)}</option>)}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-        {chosen && (
-          <div className="notice">
-            <strong>{regionLabel(chosen)}</strong>
-            {found && <span> · cách bạn khoảng {found.km} km</span>}
-            <p>Đặc sản trồng được: {specialtiesOfRegion(chosen).map((s) => s.name).join(', ')}.</p>
-            <p className="muted">Chọn xã, phường để hiện trên vườn của bạn (không bắt buộc). Người khác chỉ thấy tên xã, phường này, không thấy vị trí thật.</p>
-            <WardPicker province={ward?.province ?? REGIONS[chosen].province} ward={ward?.name ?? ''} onChange={(province, name) => setWard({ province, name })} />
-            {found?.urban && (
-              <>
-                <p><strong>Bạn đang ở trung tâm {found.urban.name}.</strong> Bạn có thể làm vườn ngay trên sân thượng nhà mình: {ROOFTOP_TILES.length} thùng trồng, bán hàng phương xa được thêm {Math.round(CITY_BONUS * 100)}% vì dân phố chuộng đặc sản.</p>
-                <button className="primary" disabled={claim.busy} onClick={() => claim.run(() => api('POST', '/api/onboard', { lat: found.lat, lng: found.lng, rooftop: true, ...wardBody }))}>🏙️ Nhận vườn sân thượng</button>
-                <p className="muted">Hoặc nhận mảnh vườn {PLOT_COLS * PLOT_ROWS} ô ở vùng trồng gần nhất:</p>
-              </>
-            )}
-            <button className={found?.urban ? '' : 'primary'} disabled={claim.busy}
-              onClick={() => claim.run(() => api('POST', '/api/onboard', found ? { lat: found.lat, lng: found.lng, ...wardBody } : { regionId: chosen, ...wardBody }))}>
-              {found?.urban ? `🌾 Nhận vườn ở ${REGIONS[chosen].name}` : 'Nhận vườn ở đây'}
-            </button>
-            {claim.error && <p className="error" role="alert">{claim.error}</p>}
-          </div>
+        {!pickManual ? <button className="link" onClick={() => setPickManual(true)}>Không muốn chia sẻ vị trí? Tự chọn vùng trồng</button> : (
+          <label>Chọn vùng trồng
+            <select value={manual} onChange={(e) => { setManual(e.target.value); setWard(null); }}>
+              <option value="">— Chọn vùng —</option>
+              {ZONES.map((z) => (
+                <optgroup key={z} label={ZONE_NAMES[z]}>
+                  {Object.values(REGIONS).filter((r) => r.zone === z).map((r) => <option key={r.id} value={r.id}>{regionLabel(r.id)}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </label>
         )}
+      </div>
+    </main>
+  );
+
+  // Bước 2: xác nhận địa điểm
+  const region = REGIONS[chosen];
+  return (
+    <main className="auth">
+      <div className="card confirm-place">
+        <p className="step-tag">Bước 2 / 2 · Xác nhận địa điểm</p>
+        <h2>{region.name}, {region.province}</h2>
+        <p className="muted">{found ? `Vùng trồng gần bạn nhất, cách khoảng ${found.km} km.` : 'Vùng trồng bạn đã chọn.'} Đặc sản: {specialtiesOfRegion(chosen).map((s) => s.name).join(', ')}.</p>
+        <p><strong>Bạn ở xã, phường nào?</strong></p>
+        <WardPicker province={ward?.province ?? region.province} ward={ward?.name ?? ''} onChange={(province, name) => setWard({ province, name })} />
+        <small>Tên xã, phường sẽ hiện trên vườn của bạn thay cho vị trí thật.</small>
+        {found?.urban && (
+          <>
+            <p><strong>Bạn đang ở trung tâm {found.urban.name}.</strong> Bạn có thể làm vườn ngay trên sân thượng nhà mình.</p>
+            <button className="primary" disabled={claim.busy || !ward?.name} onClick={() => claim.run(() => api('POST', '/api/onboard', { lat: found.lat, lng: found.lng, rooftop: true, ...wardBody }))}>🏙️ Nhận vườn sân thượng</button>
+          </>
+        )}
+        <button className={found?.urban ? '' : 'primary'} disabled={claim.busy || !ward?.name}
+          onClick={() => claim.run(() => api('POST', '/api/onboard', found ? { lat: found.lat, lng: found.lng, ...wardBody } : { regionId: chosen, ...wardBody }))}>
+          {found?.urban ? `🌾 Nhận vườn ở ${region.name}` : '✅ Xác nhận và nhận vườn'}
+        </button>
+        {!ward?.name && <small className="error">Hãy chọn xã, phường để tiếp tục.</small>}
+        {claim.error && <p className="error" role="alert">{claim.error}</p>}
+        <button className="link" onClick={reset}>← Chọn lại địa điểm</button>
       </div>
     </main>
   );
 }
 
 // ------------------------------------------------------------------ khung chính
-type Tab = 'vuon' | 'kho' | 'cho' | 'ban' | 'bando' | 'so' | 'sap' | 'toi' | 'trangtri';
+type Tab = 'vuon' | 'kho' | 'cho' | 'ban' | 'bando' | 'so' | 'sap' | 'toi' | 'trangtri' | 'trungbay';
 interface Trip { tripId: number; fromRegionId: string; toRegionId: string; km: number; fuel: number; needsBoat: boolean; seconds: number }
 const TABS: [Tab, string, string][] = [['kho', '🧺', 'Kho'], ['cho', '🛒', 'Chợ'], ['ban', '🧑‍🤝‍🧑', 'Xóm'], ['bando', '🚌', 'Du lịch'], ['trangtri', '🎨', 'Trang trí']];
-const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho, đơn hàng, xưởng', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch và sổ tem', so: '', sap: 'Sạp hàng xóm', toi: 'Hồ sơ của tôi', trangtri: 'Trang trí nhà, sạp, nhân vật' };
+const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho, đơn hàng, xưởng', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch và sổ tem', so: '', sap: 'Sạp hàng xóm', toi: 'Hồ sơ của tôi', trungbay: 'Quầy trưng bày đặc sản', trangtri: 'Trang trí nhà, sạp, nhân vật' };
+
+/** Vườn mẫu của một vùng: trồng đủ mọi đặc sản của vùng, cây đang ra trái, để khách tham quan. */
+function modelLot(regionId: string): LotView {
+  const sps = specialtiesOfRegion(regionId), name = REGIONS[regionId].name;
+  return {
+    plot: { id: -1, regionId, isHome: false, kind: 'ground', wardName: null, wardProvince: null, ownerId: 0, ownerName: `vườn mẫu ${name}`, mine: false, friend: false, ownerRole: 'nong_dan', style: { ...DEFAULT_STYLE, gateName: `Vườn mẫu ${name}`, stallName: 'Quầy trưng bày' }, decor: [], ownerAvatar: null },
+    plantings: Array.from({ length: PLOT_COLS * PLOT_ROWS }, (_, tile) => {
+      const sp = sps[Math.floor((tile % PLOT_COLS) / PLOT_COLS * sps.length)];
+      return { id: -(tile + 1), tile, specialtyId: sp.id, stepIndex: processOf(CROPS[sp.crop]).length - 1, stepReadyAt: Number.MAX_SAFE_INTEGER, lateCount: 0 };
+    }),
+    stall: sps.map((sp, i) => ({ id: -(i + 1), specialtyId: sp.id, quality: 'A' as const, kg: 1, price: sp.refPrice })),
+  };
+}
 
 function burstKind(stepName: string): 'water' | 'soil' | 'leaf' | 'harvest' {
   const n = stepName.toLowerCase();
@@ -193,6 +223,10 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [toast, setToast] = useState<string | null>(null);
   const [driving, setDriving] = useState(false);
   const [respin, setRespin] = useState(false);
+  const [tour, setTour] = useState<string | null>(null);
+  const [ride, setRide] = useState<{ mode: RideMode; to: string; km: number } | null>(null);
+  const [seedOpen, setSeedOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [trip, setTrip] = useState<Trip | null>(null);
   const [travelTab, setTravelTab] = useState<'di' | 'so'>('di');
   const [marketTab, setMarketTab] = useState<'cho' | 'gia'>('cho');
@@ -227,19 +261,21 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const reload = useCallback(() => { void load(); void refresh(); }, [load, refresh]);
   const act = useAction(reload);
 
-  const lots = useMemo(() => (village ? [village.center, ...village.neighbors] : []), [village]);
+  const lots = useMemo(() => (tour ? [modelLot(tour)] : village ? [village.center, ...village.neighbors] : []), [village, tour]);
   const worldState = useMemo(() => ({
-    regionId: village?.center.plot.regionId ?? me.user.homeRegionId!, clockOffset: offset, weather: village?.weather?.kind,
+    regionId: tour ?? village?.center.plot.regionId ?? me.user.homeRegionId!, clockOffset: offset, weather: tour ? weatherAt(tour, Date.now()).kind : village?.weather?.kind,
     lots: Array.from({ length: SLOT_COUNT }, (_, i) => {
       const l = lots[i];
       return l ? { plotId: l.plot.id, ownerName: l.plot.ownerName, mine: l.plot.mine, friend: l.plot.friend, kind: l.plot.kind, ownerRole: l.plot.ownerRole ?? null, style: l.plot.style, decor: l.plot.decor, avatar: l.plot.ownerAvatar, plantings: l.plantings, stall: l.stall } : null;
     }),
-  }), [village, lots, offset, me.user.homeRegionId]);
+  }), [village, lots, offset, me.user.homeRegionId, tour]);
 
   const now = Date.now() + offset;
-  const center = village?.center;
-  const atHome = plotId === homePlotId;
-  const goHome = () => { setPlotId(homePlotId); setTab('vuon'); worldRef.current?.goHome(); };
+  const center = tour ? lots[0] : village?.center;
+  const atHome = plotId === homePlotId && !tour;
+  const goHome = () => { setTour(null); setPlotId(homePlotId); setTab('vuon'); worldRef.current?.goHome(); };
+  const pace = me.config.timeScale * (me.config.pace ?? 1);
+  useEffect(() => { setSeedOpen(false); setInfoOpen(false); }, [ctx]);
   const isTrader = me.user.role === 'thuong_lai';
   // Trang phục của mình và xe tải của thương lái (chỉ hiện ở xóm nhà)
   useEffect(() => { worldRef.current?.setAvatar(me.user.avatar); }, [me.user.avatar, village]);
@@ -247,11 +283,12 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const startTrip = async (toRegionId: string) => { const t = await api<Trip>('POST', '/api/trips/start', { toRegionId }); setTab('vuon'); setTrip(t); await refresh(); };
   const finishTrip = async () => {
     if (!trip) return;
-    try { await api('POST', `/api/trips/${trip.tripId}/finish`, {}); setToast(`🚚 Đã tới ${REGIONS[trip.toRegionId].name}. Mở Kho để bán cho doanh nghiệp ở đây.`); }
+    try { await api('POST', `/api/trips/${trip.tripId}/finish`, {}); setToast(`🚚 Đã tới ${REGIONS[trip.toRegionId].name}. Mở Kho để bán cho doanh nghiệp ở đây.`); if (trip.toRegionId !== me.user.homeRegionId) { setTour(trip.toRegionId); worldRef.current?.goHome(); } else setTour(null); }
     catch (e) { setToast(e instanceof Error ? e.message : 'Có lỗi xảy ra.'); }
     setTrip(null); reload();
   };
-  const visit = (id: number) => { setPlotId(id); setTab('vuon'); worldRef.current?.goHome(); };
+  const visit = (id: number) => { setTour(null); setPlotId(id); setTab('vuon'); worldRef.current?.goHome(); };
+  const startRide = async (mode: RideMode, to: string, km: number) => { await api('POST', '/api/travel', { regionId: to, mode }); setTab('vuon'); setRide({ mode, to, km }); await refresh(); };
 
   // Nhân vật đứng lên ô có cây đã đến giờ: tự làm bước đó (vườn mình), hoặc chăm giúp (vườn bạn).
   const onReady = useCallback(async (lotIndex: number, planting: Planting) => {
@@ -287,7 +324,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const mine = center?.plot.mine ?? true;
   const ready = center && mine ? center.plantings.filter((p) => now >= p.stepReadyAt) : [];
   const nextAt = center && mine && center.plantings.length ? Math.min(...center.plantings.map((p) => p.stepReadyAt)) : null;
-  const quest: [string, string] = !center ? ['⏳', 'Đang mở xóm…']
+  const quest: [string, string] = tour ? ['🧳', `Đang tham quan ${REGIONS[tour].name}: dạo vườn mẫu, ghé quầy trưng bày trước cổng`]
+    : !center ? ['⏳', 'Đang mở xóm…']
     : !mine ? ['👋', `Đang thăm vườn ${center.plot.ownerName}`]
     : center.plantings.length === 0 ? ['🌱', 'Chạy vào vườn, đứng lên một ô đất và chọn giống để trồng']
     : ready.length > 0 ? ['⭐', `Chạy tới ${ready.length} ô có dấu vàng để chăm cây`]
@@ -322,56 +360,61 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       )}
       {toast && <div className="toast" role="status">{toast}</div>}
 
-      {tab === 'vuon' && ctx.kind !== 'none' && !driving && (
-        <div className="context">
-          {act.error && <p className="error" role="alert">{act.error}</p>}
-          {ctx.kind === 'tile' && ctxLot && !ctxPlanting && ctxLot.plot.mine && (
-            <>
-              <p className="context-title">Chọn giống để trồng</p>
-              <div className="seeds">
-                {specialtiesOfRegion(ctxLot.plot.regionId).map((sp) => {
-                  const crop = CROPS[sp.crop], cost = seedCost(sp), steps = processOf(crop).length;
-                  return (
-                    <button key={sp.id} className="seed" disabled={act.busy || me.user.cash < cost}
-                      onClick={() => act.run(async () => { await api('POST', `/api/plots/${ctxLot.plot.id}/plant`, { tile: ctx.tile, specialtyId: sp.id }); worldRef.current?.burst(ctx.lot, ctx.tile, 'soil'); worldRef.current?.floatText(ctx.lot, ctx.tile, `${crop.emoji} ${processOf(crop)[0].name}`, '#fff6dc'); })}>
-                      <span className="emoji">{crop.emoji}</span>
-                      <strong>{sp.name}</strong>
-                      <small>{crop.yieldKg} kg · {fmtDuration(stepWaitMs(sp, me.config.timeScale) * (steps - 1))}</small>
-                      {inSeason(crop.id, now) && <span className="tag">Chính vụ +15%</span>}
-                      {(prices[sp.id]?.glut ?? 1) < 1 && <span className="tag warn">Nhiều người trồng −{Math.round((1 - prices[sp.id]!.glut!) * 100)}%</span>}
-                      <span className="price">{fmtMoney(cost)}</span>
-                    </button>
-                  );
-                })}
+      {tab === 'vuon' && ctx.kind !== 'none' && !driving && (() => {
+        const emptyMine = ctx.kind === 'tile' && ctxLot && !ctxPlanting && ctxLot.plot.mine;
+        const plantInfo = ctx.kind === 'tile' && ctxLot && ctxPlanting ? (() => {
+          const sp = SPECIALTIES[ctxPlanting.specialtyId], steps = processOf(CROPS[sp.crop]), step = steps[ctxPlanting.stepIndex];
+          const wait = ctxPlanting.stepReadyAt - now, isLast = ctxPlanting.stepIndex === steps.length - 1;
+          return { sp, steps, step, wait, isLast };
+        })() : null;
+        return (
+          <>
+            {plantInfo && infoOpen && (
+              <div className="ctx-detail" role="dialog" aria-label={plantInfo.sp.name}>
+                <div className="sheet-head"><h3>{CROPS[plantInfo.sp.crop].emoji} {plantInfo.sp.name}</h3><button className="round" aria-label="Đóng" onClick={() => setInfoOpen(false)}>✕</button></div>
+                <ol className="steps">{plantInfo.steps.map((st, i) => <li key={i} className={tour || i < ctxPlanting!.stepIndex ? 'done' : i === ctxPlanting!.stepIndex ? 'current' : ''}><strong>{st.name}</strong>{(tour || i === ctxPlanting!.stepIndex) && <p>{st.desc}</p>}</li>)}</ol>
               </div>
-            </>
-          )}
-          {ctx.kind === 'tile' && ctxLot && !ctxPlanting && !ctxLot.plot.mine && <p className="context-title">Ô này của {ctxLot.plot.ownerName} đang để trống</p>}
-          {ctx.kind === 'tile' && ctxLot && ctxPlanting && (() => {
-            const sp = SPECIALTIES[ctxPlanting.specialtyId];
-            const steps = processOf(CROPS[sp.crop]);
-            const step = steps[ctxPlanting.stepIndex];
-            const wait = ctxPlanting.stepReadyAt - now;
-            const isLast = ctxPlanting.stepIndex === steps.length - 1;
-            return (
-              <div className="plant-card">
-                <span className="emoji big">{CROPS[sp.crop].emoji}</span>
-                <div className="grow">
-                  <p className="context-title">{sp.name} <span className="tag">Bước {ctxPlanting.stepIndex + 1}/{steps.length}</span></p>
-                  <div className="progress" aria-hidden="true">{steps.map((_, i) => <i key={i} className={i < ctxPlanting.stepIndex ? 'done' : i === ctxPlanting.stepIndex ? 'now' : ''} />)}</div>
-                  <p className="step-name">{step.name}{wait > 0 ? ` · sau ${fmtDuration(wait)}` : !ctxLot.plot.mine && isLast ? ' · chờ chủ vườn' : ''}</p>
-                  <p className="step-desc">{step.desc}</p>
+            )}
+            {emptyMine && seedOpen && (
+              <div className="ctx-detail" role="dialog" aria-label="Chọn giống để trồng">
+                <div className="sheet-head"><h3>Chọn giống để trồng</h3><button className="round" aria-label="Đóng" onClick={() => setSeedOpen(false)}>✕</button></div>
+                {act.error && <p className="error" role="alert">{act.error}</p>}
+                <div className="seeds">
+                  {specialtiesOfRegion(ctxLot.plot.regionId).map((sp) => {
+                    const crop = CROPS[sp.crop], cost = seedCost(sp), steps = processOf(crop).length;
+                    return (
+                      <button key={sp.id} className="seed" disabled={act.busy || me.user.cash < cost}
+                        onClick={() => act.run(async () => { await api('POST', `/api/plots/${ctxLot.plot.id}/plant`, { tile: ctx.tile, specialtyId: sp.id }); setSeedOpen(false); worldRef.current?.burst(ctx.lot, ctx.tile, 'soil'); worldRef.current?.floatText(ctx.lot, ctx.tile, `${crop.emoji} ${processOf(crop)[0].name}`, '#fff6dc'); })}>
+                        <span className="emoji">{crop.emoji}</span>
+                        <strong>{sp.name}</strong>
+                        <small>{crop.yieldKg} kg · {fmtDuration(stepWaitMs(sp, pace) * (steps - 1))}</small>
+                        {inSeason(crop.id, now) && <span className="tag">Chính vụ +15%</span>}
+                        {(prices[sp.id]?.glut ?? 1) < 1 && <span className="tag warn">Nhiều người trồng −{Math.round((1 - prices[sp.id]!.glut!) * 100)}%</span>}
+                        <span className="price">{fmtMoney(cost)}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
-            );
-          })()}
-          {ctx.kind === 'stall' && ctxLot && (
-            <button className="primary" onClick={() => setTab(ctxLot.plot.mine ? 'kho' : 'sap')}>{ctxLot.plot.mine ? '🧺 Mở kho & sạp của mình' : `🛒 Xem sạp của ${ctxLot.plot.ownerName}`}</button>
-          )}
-          {ctx.kind === 'truck' && !driving && <button className="primary" onClick={() => { worldRef.current?.enterTruck(); setDriving(true); }}>🚚 Lên xe tải</button>}
-          {ctx.kind === 'empty-lot' && <button className="primary" onClick={() => setTab('ban')}>🧑‍🤝‍🧑 Mời bạn về làm hàng xóm</button>}
-        </div>
-      )}
+            )}
+            <div className="ctx-bar">
+              {emptyMine && !seedOpen && <button className="ctx-btn go" onClick={() => setSeedOpen(true)}>🌱 Trồng ở ô này</button>}
+              {ctx.kind === 'tile' && ctxLot && !ctxPlanting && !ctxLot.plot.mine && <span className="ctx-pill">Ô đất trống</span>}
+              {plantInfo && !infoOpen && (
+                <button className="ctx-btn" onClick={() => setInfoOpen(true)}>
+                  {CROPS[plantInfo.sp.crop].emoji} <b>{plantInfo.sp.name}</b>
+                  {tour ? ' · xem quy trình trồng' : ` · ${ctxPlanting!.stepIndex + 1}/${plantInfo.steps.length} ${plantInfo.step.name}${plantInfo.wait > 0 ? ` · ${fmtDuration(plantInfo.wait)}` : !ctxLot!.plot.mine && plantInfo.isLast ? ' · chờ chủ vườn' : ''}`}
+                </button>
+              )}
+              {ctx.kind === 'stall' && ctxLot && (
+                <button className="ctx-btn go" onClick={() => setTab(tour ? 'trungbay' : ctxLot.plot.mine ? 'kho' : 'sap')}>{tour ? '🏪 Vào quầy trưng bày' : ctxLot.plot.mine ? '🧺 Mở kho & sạp' : `🛒 Xem sạp của ${ctxLot.plot.ownerName}`}</button>
+              )}
+              {ctx.kind === 'truck' && <button className="ctx-btn go" onClick={() => { worldRef.current?.enterTruck(); setDriving(true); }}>🚚 Lên xe tải</button>}
+              {ctx.kind === 'empty-lot' && <button className="ctx-btn go" onClick={() => setTab('ban')}>🧑‍🤝‍🧑 Mời bạn về làm hàng xóm</button>}
+            </div>
+          </>
+        );
+      })()}
 
       {tab === 'vuon' && driving && (
         <div className="context drive-bar">
@@ -383,6 +426,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         </div>
       )}
       {respin && <div className="overlay"><RoleWheel regionName={REGIONS[me.user.homeRegionId!].name} onDone={() => { setRespin(false); reload(); }} /></div>}
+      {ride && <TravelRide mode={ride.mode} fromRegionId={me.user.homeRegionId!} toRegionId={ride.to} km={ride.km} seconds={TRAVEL_MODES[ride.mode].seconds} onFinish={() => { setTour(ride.to); setRide(null); worldRef.current?.goHome(); }} />}
       {trip && <DriveGame fromRegionId={trip.fromRegionId} toRegionId={trip.toRegionId} km={trip.km} seconds={trip.seconds} needsBoat={trip.needsBoat} truckColor={me.user.avatar?.truck ?? '#f08a6c'} onFinish={finishTrip} onCancel={() => { setTrip(null); setToast('Đã huỷ chuyến. Tiền xăng không được hoàn lại.'); }} />}
 
       {tab !== 'vuon' && (
@@ -423,9 +467,10 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
             {tab === 'bando' && (
               <>
                 <div className="tabs"><button aria-selected={travelTab === 'di'} onClick={() => setTravelTab('di')}>Các vùng trồng</button><button aria-selected={travelTab === 'so'} onClick={() => setTravelTab('so')}>Sổ tem đặc sản</button></div>
-                {travelTab === 'di' ? <TravelPanel me={me} priceOf={priceOf} refresh={reload} visit={visit} startTrip={isTrader ? startTrip : undefined} /> : <AlbumPanel />}
+                {travelTab === 'di' ? <TravelPanel me={me} startRide={startRide} startTrip={isTrader ? startTrip : undefined} touring={tour} /> : <AlbumPanel />}
               </>
             )}
+            {tab === 'trungbay' && tour && <ShowcasePanel me={me} regionId={tour} priceOf={priceOf} refresh={reload} visit={visit} />}
             {tab === 'trangtri' && <CustomizePanel me={me} home={atHome ? center ?? null : null} worldRef={worldRef} atHome={atHome} onChanged={reload} />}
             {tab === 'sap' && ctxLot && (ctxLot.stall.length ? <StallList listings={ctxLot.stall} canBuy onChanged={reload} /> : <p className="hint">{ctxLot.plot.ownerName} chưa bày món nào.</p>)}
           </div>

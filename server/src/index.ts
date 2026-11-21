@@ -19,6 +19,7 @@ const app = await buildApp({
   adminToken: process.env.ADMIN_TOKEN,
   secureCookies: process.env.NODE_ENV === 'production',
   trustProxy: process.env.TRUST_PROXY === '1',
+  testerUsernames: (process.env.TESTER_USERNAMES ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 });
 const port = Number(process.env.PORT ?? 3000);
 await app.listen({ port, host: process.env.HOST ?? '0.0.0.0' });

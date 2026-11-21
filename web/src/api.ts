@@ -21,11 +21,11 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
 }
 
 export interface Me {
-  user: { id: number; username: string; displayName: string; cash: number; homeRegionId: string | null; homeKind?: PlotKind; coopId?: number | null; role?: Role | null; roleNextSpinAt?: number | null; truckRegionId?: string | null; avatar?: Avatar | null };
+  user: { id: number; username: string; displayName: string; cash: number; homeRegionId: string | null; homeKind?: PlotKind; coopId?: number | null; role?: Role | null; tester?: boolean; harvests?: number; roleNextSpinAt?: number | null; truckRegionId?: string | null; avatar?: Avatar | null };
   plots: { id: number; regionId: string; isHome: boolean; kind?: PlotKind; wardName?: string | null }[];
   walkin?: { kg: number; total: number } | null;
   inventory: { specialtyId: string; quality: Quality; kg: number }[];
-  config: { timeScale: number; now: number };
+  config: { timeScale: number; now: number; pace?: number };
 }
 export interface Planting { id: number; tile: number; specialtyId: string; stepIndex: number; stepReadyAt: number; lateCount: number }
 export interface Listing { id: number; specialtyId: string; quality: Quality; kg: number; price: number; sellerId?: number; sellerName?: string; sellerRegionId?: string }

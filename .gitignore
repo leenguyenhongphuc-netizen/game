@@ -3,3 +3,5 @@ dist/
 .env
 *.log
 .vercel
+tools/ui-test/out/
+tools/ui-test/server.log

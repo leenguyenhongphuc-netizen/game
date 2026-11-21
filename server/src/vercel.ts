@@ -13,6 +13,7 @@ async function boot(): Promise<FastifyInstance> {
   const app = await buildApp({
     db, timeScale: Number(process.env.TIME_SCALE ?? 1) || 1, adminToken: process.env.ADMIN_TOKEN,
     secureCookies: true, trustProxy: true, staticDir: '/khong-co',
+    testerUsernames: (process.env.TESTER_USERNAMES ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   });
   await app.ready();
   return app;

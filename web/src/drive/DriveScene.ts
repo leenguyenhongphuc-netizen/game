@@ -22,8 +22,8 @@ const SEG = 3, SEGS = 62;
 const roadX = (s: number) => 6 * Math.sin(s * 0.012) + 3.2 * Math.sin(s * 0.031 + 1);
 const roadDX = (s: number) => 0.072 * Math.cos(s * 0.012) + 0.0992 * Math.cos(s * 0.031 + 1);
 
-interface Theme { ground: number; road: number; kinds: string[]; mountains: number | null }
-const THEMES: Record<Zone, Theme> = {
+export interface Theme { ground: number; road: number; kinds: string[]; mountains: number | null }
+export const THEMES: Record<Zone, Theme> = {
   bac: { ground: 0xa9d672, road: 0x9aa1ab, kinds: ['leaf', 'leaf', 'house', 'rice', 'rock', 'pole', 'leaf'], mountains: 0xa9cbbd },
   trung: { ground: 0xd6dc94, road: 0x9aa1ab, kinds: ['leaf', 'dune', 'house', 'palm', 'pole', 'dune', 'rock'], mountains: 0xc9d3b4 },
   taynguyen: { ground: 0xb4cf78, road: 0xdc9a78, kinds: ['pine', 'pine', 'bush', 'house', 'pole', 'pine', 'rock'], mountains: 0x9cc79a },
@@ -33,7 +33,7 @@ const THEMES: Record<Zone, Theme> = {
 const SEA_KINDS = ['islet', 'ghe', 'islet', 'seastone'];
 
 /** Gộp các khối cùng chất liệu thành một lưới (bản rút gọn, đủ dùng cho vật trang trí). */
-function bake(root: THREE.Group, shadow = false): THREE.Group {
+export function bake(root: THREE.Group, shadow = false): THREE.Group {
   root.updateMatrixWorld(true);
   const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
   root.traverse((o) => {
@@ -47,14 +47,14 @@ function bake(root: THREE.Group, shadow = false): THREE.Group {
   for (const [material, geos] of buckets) { const m = new THREE.Mesh(mergeGeometries(geos, false), material); m.castShadow = shadow; m.receiveShadow = false; out.add(m); }
   return out;
 }
-function gradient(top: number, bottom: number): THREE.CanvasTexture {
+export function gradient(top: number, bottom: number): THREE.CanvasTexture {
   const c = document.createElement('canvas'); c.width = 4; c.height = 256;
   const g = c.getContext('2d')!, grad = g.createLinearGradient(0, 0, 0, 256);
   grad.addColorStop(0, '#' + new THREE.Color(top).getHexString()); grad.addColorStop(0.6, '#' + new THREE.Color(bottom).getHexString());
   g.fillStyle = grad; g.fillRect(0, 0, 4, 256);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
-function makeSign(text: string, bg: string, fg = '#ffffff'): THREE.Sprite {
+export function makeSign(text: string, bg: string, fg = '#ffffff'): THREE.Sprite {
   const c = document.createElement('canvas'); c.width = 512; c.height = 128;
   const g = c.getContext('2d')!; g.font = '800 50px "Baloo 2", "Be Vietnam Pro", sans-serif';
   const w = Math.min(496, g.measureText(text).width + 60);
@@ -92,8 +92,8 @@ function buildBoat(color: number): THREE.Group {
   return g;
 }
 
-type Prefab = () => THREE.Group;
-const SCENERY: Record<string, Prefab> = {
+export type Prefab = () => THREE.Group;
+export const SCENERY: Record<string, Prefab> = {
   leaf: () => { const g = new THREE.Group(); g.add(mesh(GEO.cyl, mat(0x9a7150), 0, 0.9, 0, 0.2, 1.8, 0.2), mesh(GEO.ball, mat(0x5cb85f), -0.5, 2.3, 0.1, 1.1), mesh(GEO.ball, mat(0x79c96d), 0.6, 2.4, -0.1, 1.15), mesh(GEO.ball, mat(0x9bdc84), 0, 3.2, 0.1, 1.2)); return g; },
   pine: () => { const g = new THREE.Group(); g.add(mesh(GEO.cyl, mat(0x9a7150), 0, 0.7, 0, 0.18, 1.4, 0.18)); for (let i = 0; i < 3; i++) g.add(mesh(GEO.cone, mat(i % 2 ? 0x4f9f6a : 0x66b47c), 0, 1.8 + i * 1.0, 0, 1.4 - i * 0.33, 1.7, 1.4 - i * 0.33)); return g; },
   palm: () => { const g = new THREE.Group(), h = 4.2; const t = mesh(GEO.cyl, mat(0xa98a62), 0.15, h / 2, 0, 0.16, h, 0.16); t.rotation.z = -0.08; g.add(t); for (let i = 0; i < 7; i++) { const p = new THREE.Group(); p.position.set(0.32, h, 0); p.rotation.y = (i / 7) * 6.28; p.rotation.z = -0.5; p.add(mesh(GEO.sphere, mat(i % 2 ? 0x5cb85f : 0x8fd67c), 1.05, 0, 0, 1.2, 0.07, 0.32)); g.add(p); } return g; },

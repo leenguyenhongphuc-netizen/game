@@ -19,7 +19,7 @@ Ba mục tiêu, phải đạt cùng lúc để game tồn tại được:
 | Vị trí hiện theo xã/phường, không lộ vị trí người chơi | Người chơi chọn xã, phường từ danh sách 3.321 đơn vị sau sáp nhập 2025; máy chủ chỉ lưu tên đó và ô lưới ~2 km. Đổi được trong Hồ sơ. | Đã có |
 | Vai trò được giao bằng vòng quay, không tự chọn | Xem mục "Vai trò và chuỗi cung ứng" bên dưới. Áp dụng cho mọi nơi; thành phố vẫn có vườn sân thượng. | Đã có |
 | Đặc sản gắn theo vùng trồng; Đà Lạt là vùng đặc biệt | 53 vùng trồng. Đà Lạt có 13 đặc sản gồm trái cây, rau củ và 6 loại hoa, có quy trình trồng hoa riêng. | Đã có |
-| Thời gian nén | Mỗi vụ 10–48 giờ thật, chia đều cho các bước. | Đã có |
+| Thời gian nén | Thời gian gốc 10–48 giờ mỗi vụ, rút ngắn theo kinh nghiệm: người mới nhanh gấp 30, về sau nhanh gấp 2. | Đã có |
 | NPC có tên và logo | Sáu doanh nghiệp thu mua hư cấu, tên chơi chữ, logo là biểu tượng. Xem ghi chú bên dưới. | Đã có, tên cần bạn duyệt |
 | Thời tiết và mùa vụ thật theo vùng | Thời tiết đổi mỗi 3 giờ. Theo tháng thật: hạn mặn miền Nam (tháng 2–4), bão miền Trung và đảo (9–11), mưa lũ miền Trung (10–11), sương muối miền Bắc (12–1), nắng nóng (6–7). Mỗi loại cây có tháng chính vụ; thu đúng vụ được thêm 15% sản lượng. | Đã có, số liệu mùa vụ cần chuyên gia rà |
 | Được mùa mất giá khi cả máy chủ trồng cùng loại | Giá thương lái giảm theo số ô đang trồng và lượng đã bán của đặc sản đó trên toàn máy chủ, tối đa 30%. Thanh chọn giống cảnh báo trước khi trồng. | Đã có |
@@ -51,6 +51,33 @@ Sau khi chia sẻ vị trí, người chơi quay **vòng quay vai trò**. Không
 **Thương lái đi buôn:** xe tải đỗ trước cổng, lên xe lái dọc đường làng ghé các sạp. Đi vùng khác là một màn lái xe thật (né xe máy, trâu bò, ổ gà); ra đảo có thêm chặng lái tàu. Mỗi chuyến tốn tiền xăng theo quãng đường. Tới nơi, thương lái bán cho doanh nghiệp ở vùng đó, nên chở đặc sản đi xa mới được giá hàng phương xa.
 
 **Chưa có:** giá tự điều chỉnh theo mức thiếu vai trong vùng, sức chở của xe, hợp đồng thu mua đặt trước.
+
+## Du lịch
+
+Chọn nơi đến trong mục Du lịch rồi mua vé theo phương tiện. Giá vé tính theo quãng đường.
+
+| Phương tiện | Khi nào có | Giá |
+|---|---|---|
+| 🚌 Xe khách | Mọi chuyến trong đất liền | 10.000đ + 150đ/km |
+| 🚆 Tàu hoả | Từ 150 km | 20.000đ + 250đ/km |
+| ✈️ Máy bay | Từ 400 km (đảo: từ 300 km) | 300.000đ + 1.500đ/km |
+| ⛴️ Tàu thuỷ | Mọi chuyến ra hoặc vào đảo | 50.000đ + 600đ/km |
+
+Sau khi mua vé, người chơi xem hoạt cảnh phương tiện đó đi qua cảnh quan của vùng đi rồi vùng đến (bỏ qua được). Tới nơi là **vườn mẫu** của vùng: trồng đủ mọi đặc sản đang ra trái, đứng lên từng ô để xem trọn quy trình trồng. Trước cổng có **quầy trưng bày**: mua đặc sản làm quà (được tem trong sổ sưu tập), ghé vườn của người chơi ở vùng đó, mua đất. Bấm "Về nhà" để trở lại xóm.
+
+Thương lái tự lái xe tải tới nơi cũng vào vườn mẫu của vùng đó.
+
+## Nhịp chơi cho người mới
+
+Thời gian chờ được rút ngắn theo số lần đã thu hoạch: dưới 5 lần nhanh gấp 30 (vụ 12 giờ còn 24 phút), dưới 20 lần nhanh gấp 6, sau đó nhanh gấp 2 so với thời gian gốc. Tiền giống giảm còn 8% doanh thu kỳ vọng của ô, nên vốn 1 triệu trồng được nhiều ô hơn.
+
+## Tài khoản thử nghiệm
+
+Tên đăng nhập nằm trong biến môi trường `TESTER_USERNAMES` sẽ có mục "Công cụ thử nghiệm" trong Hồ sơ: đổi vai trò ngay, xoá vai để quay lại, chuyển vườn nhà sang vùng khác hoặc sân thượng, đặt 1 tỷ đồng, cho mọi cây tới bước kế ngay, thêm nông sản vào kho. Các công cụ chỉ tác động lên chính tài khoản đó.
+
+## Kiểm thử giao diện tự động
+
+`tools/ui-test/` đi qua 23 màn trên 7 cỡ thiết bị (iPhone SE, iPhone 15 dọc và ngang, iPad mini, iPad Pro ngang, máy tính 1280 và 1920), chụp ảnh và tự soát: trang bị phóng to, tràn ngang, nút hoặc khối nằm ngoài màn hình, các khối đè nhau, nút quá nhỏ, chữ bị cắt, lỗi JavaScript. Kỹ năng `.claude/skills/ui-test` hướng dẫn tác tử AI chạy bộ kiểm, xem ảnh, sửa và chạy lại.
 
 ## Cá nhân hoá
 

@@ -4,8 +4,9 @@ import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, specialtiesOfRegion } from '..
 import type { Zone } from '../../shared/catalog.ts';
 import {
   COOP_BONUS, COOP_CREATE_COST, COOP_MAX_MEMBERS, COOP_ORDER_BONUS, GIFT_DAILY_LIMIT, LAND_PRICE, QUALITY_NAMES, REGION_SET_REWARD,
-  SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_COST, fmtMoney, tripInfo,
+  SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_MODES, fmtMoney, travelOptions, tripInfo,
 } from '../../shared/rules.ts';
+import type { TravelMode } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import type { Collection, Coop, CoopOrder, CoopSummary, GiftInbox, Me } from './api.ts';
 import { fmtDuration, regionLabel, useAction } from './ui.ts';
@@ -107,72 +108,90 @@ export function GiftsPanel() {
   );
 }
 
-// ------------------------------------------------------------------ du lịch
-export function TravelPanel({ me, priceOf, refresh, visit, startTrip }: { me: Me; priceOf: (id: string) => number; refresh: () => void; visit: (plotId: number) => void; startTrip?: (toRegionId: string) => Promise<void> }) {
+// ------------------------------------------------------------------ du lịch: chọn nơi đến và phương tiện
+export function TravelPanel({ me, startRide, startTrip, touring }: {
+  me: Me; touring: string | null;
+  startRide: (mode: TravelMode, regionId: string, km: number) => Promise<void>;
+  startTrip?: (toRegionId: string) => Promise<void>;
+}) {
   const [visited, setVisited] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
-  const [farms, setFarms] = useState<{ total: number; farms: { plotId: number; ownerName: string; growing: number; wardName?: string | null }[] } | null>(null);
-  const load = useCallback(async () => { setVisited(new Set((await api('GET', '/api/travel')).visited)); }, []);
-  useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    setFarms(null);
-    if (open) void api('GET', `/api/regions/${open}/farms`).then(setFarms).catch(() => setFarms({ total: 0, farms: [] }));
-  }, [open, me.plots.length]);
-  const act = useAction(() => { void load(); refresh(); });
+  useEffect(() => { void api('GET', '/api/travel').then((r) => setVisited(new Set(r.visited))); }, []);
+  const act = useAction();
+  const home = me.user.homeRegionId!;
   const owned = new Set(me.plots.map((p) => p.regionId));
   return (
     <div>
-      <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Vé đi mỗi vùng mới {fmtMoney(TRAVEL_COST)}. Tới nơi, bạn mua được đặc sản làm quà (tối đa {SOUVENIR_MAX_KG} kg mỗi lần, {SOUVENIR_DAILY_BUYS} lần mỗi ngày, giá bằng {pct(SOUVENIR_RATIO)} giá tham chiếu), ghé vườn người khác để phụ thu hoạch và mua tại sạp, hoặc mua đất {fmtMoney(LAND_PRICE)}.</p>
+      <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Chọn nơi muốn đến rồi mua vé xe khách, tàu hoả, máy bay hoặc tàu thuỷ. Tới nơi bạn được dạo vườn mẫu, ghé quầy trưng bày để mua đặc sản và sưu tập tem.</p>
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {ZONES.map((z) => (
         <div key={z}>
           <h3>{ZONE_NAMES[z]}</h3>
           {Object.values(REGIONS).filter((r) => r.zone === z).map((r) => {
-            const been = visited.has(r.id);
+            const here = (touring ?? home) === r.id;
             return (
               <div className="row" key={r.id}>
                 <button className="row-toggle" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
-                  <span><strong>{r.name}</strong>, {r.province}{r.formerProvince ? ` (${r.formerProvince} cũ)` : ''} {r.special && <span className="tag new">Vùng đặc biệt</span>} {owned.has(r.id) ? <span className="tag">Có đất</span> : been ? <span className="tag">Đã tới</span> : null}<br />
-                    <small>{specialtiesOfRegion(r.id).map((s) => s.name).join(' · ')}</small></span>
+                  <span><strong>{r.name}</strong>, {r.province}{r.formerProvince ? ` (${r.formerProvince} cũ)` : ''} {r.special && <span className="tag new">Vùng đặc biệt</span>} {here ? <span className="tag">Bạn đang ở đây</span> : r.id === home ? <span className="tag">Nhà</span> : owned.has(r.id) ? <span className="tag">Có đất</span> : visited.has(r.id) ? <span className="tag">Đã tới</span> : null}<br />
+                    <small>{specialtiesOfRegion(r.id).map((sp) => sp.name).join(' · ')}</small></span>
                 </button>
-                {open === r.id && (
+                {open === r.id && r.id !== home && (
                   <div className="region-body">
-                    {startTrip && (me.user.truckRegionId ?? me.user.homeRegionId) === r.id && <span className="tag">🚚 Xe đang đỗ ở đây</span>}
-                    {startTrip && (me.user.truckRegionId ?? me.user.homeRegionId) !== r.id && (() => {
-                      const info = tripInfo(me.user.truckRegionId ?? me.user.homeRegionId!, r.id);
-                      return <button className="primary" disabled={act.busy || me.user.cash < info.fuel} onClick={() => act.run(() => startTrip(r.id))}>🚚 Lái xe tới {r.name} · {info.km} km{info.needsBoat ? ' · có chặng tàu' : ''} · xăng {fmtMoney(info.fuel)}</button>;
+                    <div className="pick-row">
+                      {travelOptions(home, r.id).map((o) => (
+                        <button key={o.mode} className="pick" disabled={act.busy || me.user.cash < o.fare} onClick={() => act.run(() => startRide(o.mode, r.id, o.km))}>
+                          <span className="emoji">{TRAVEL_MODES[o.mode].icon}</span><strong>{TRAVEL_MODES[o.mode].name}</strong><small>{o.km} km · {fmtMoney(o.fare)}</small>
+                        </button>
+                      ))}
+                    </div>
+                    {startTrip && (me.user.truckRegionId ?? home) !== r.id && (() => {
+                      const info = tripInfo(me.user.truckRegionId ?? home, r.id);
+                      return <button disabled={act.busy || me.user.cash < info.fuel} onClick={() => act.run(() => startTrip(r.id))}>🚚 Tự lái xe tải đi buôn · {info.km} km{info.needsBoat ? ' · có chặng tàu' : ''} · xăng {fmtMoney(info.fuel)}</button>;
                     })()}
-                    {!been && <button className="primary" disabled={act.busy || me.user.cash < TRAVEL_COST} onClick={() => act.run(() => api('POST', '/api/travel', { regionId: r.id }))}>🚌 Đi {r.name} · {fmtMoney(TRAVEL_COST)}</button>}
-                    {been && (
-                      <>
-                        <small className="muted">Mua đặc sản làm quà (1 kg)</small>
-                        {specialtiesOfRegion(r.id).map((sp) => {
-                          const price = Math.round(priceOf(sp.id) * SOUVENIR_RATIO);
-                          return (
-                            <div className="row-line" key={sp.id}>
-                              <span className="emoji">{CROPS[sp.crop].emoji}</span><div className="grow">{sp.name}</div>
-                              <button disabled={act.busy || me.user.cash < price} onClick={() => act.run(() => api('POST', '/api/souvenir', { regionId: r.id, specialtyId: sp.id, kg: 1 }))}>Mua {fmtMoney(price)}</button>
-                            </div>
-                          );
-                        })}
-                        {!owned.has(r.id) && <button disabled={act.busy || me.user.cash < LAND_PRICE} onClick={() => act.run(() => api('POST', '/api/plots/buy', { regionId: r.id }))}>{me.user.cash < LAND_PRICE ? `Cần ${fmtMoney(LAND_PRICE)} để mua đất ở đây` : `Mua đất ở đây ${fmtMoney(LAND_PRICE)}`}</button>}
-                        {farms === null ? <p className="hint">Đang tải…</p> : farms.farms.length === 0 ? <p className="hint">Chưa có ai lập vườn ở đây.</p> : (
-                          <>
-                            <small className="muted">{farms.total} mảnh vườn</small>
-                            {farms.farms.map((f) => (
-                              <div className="row-line" key={f.plotId}><div className="grow">{f.ownerName} <small className="muted">· {f.wardName ? `${f.wardName} · ` : ''}đang trồng {f.growing} ô</small></div><button onClick={() => visit(f.plotId)}>Ghé thăm</button></div>
-                            ))}
-                          </>
-                        )}
-                      </>
-                    )}
+                    {startTrip && (me.user.truckRegionId ?? home) === r.id && <span className="tag">🚚 Xe tải đang đỗ ở đây</span>}
                   </div>
                 )}
+                {open === r.id && r.id === home && <div className="region-body"><small className="muted">Đây là vùng nhà của bạn.</small></div>}
               </div>
             );
           })}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ quầy trưng bày ở nơi đến
+export function ShowcasePanel({ me, regionId, priceOf, refresh, visit }: { me: Me; regionId: string; priceOf: (id: string) => number; refresh: () => void; visit: (plotId: number) => void }) {
+  const [have, setHave] = useState<Set<string>>(new Set());
+  const [farms, setFarms] = useState<{ total: number; farms: { plotId: number; ownerName: string; growing: number; wardName?: string | null }[] } | null>(null);
+  const load = useCallback(async () => { setHave(new Set((await api<Collection>('GET', '/api/collection')).specialties)); }, []);
+  useEffect(() => { void load(); void api('GET', `/api/regions/${regionId}/farms`).then(setFarms).catch(() => setFarms({ total: 0, farms: [] })); }, [load, regionId]);
+  const act = useAction(() => { void load(); refresh(); });
+  const r = REGIONS[regionId], sps = specialtiesOfRegion(regionId);
+  const owned = me.plots.some((p) => p.regionId === regionId);
+  return (
+    <div>
+      <p className="muted">Đặc sản của {r.name}. Mua về làm quà là được một con tem trong sổ sưu tập. Mỗi lần tối đa {SOUVENIR_MAX_KG} kg, mỗi ngày {SOUVENIR_DAILY_BUYS} lần, giá bằng {pct(SOUVENIR_RATIO)} giá tham chiếu.</p>
+      {act.error && <p className="error" role="alert">{act.error}</p>}
+      <div className="stamps showcase">
+        {sps.map((sp) => {
+          const price = Math.round(priceOf(sp.id) * SOUVENIR_RATIO);
+          return (
+            <div key={sp.id} className={`stamp ${have.has(sp.id) ? 'got' : 'todo'}`}>
+              <span className="emoji">{CROPS[sp.crop].emoji}</span><strong>{sp.name}</strong>
+              <small>{have.has(sp.id) ? 'Đã có tem ✓' : 'Chưa có tem'}</small>
+              <button disabled={act.busy || me.user.cash < price} onClick={() => act.run(() => api('POST', '/api/souvenir', { regionId, specialtyId: sp.id, kg: 1 }))}>Mua 1 kg · {fmtMoney(price)}</button>
+            </div>
+          );
+        })}
+      </div>
+      <h3>Vườn của người chơi ở {r.name}</h3>
+      {farms === null ? <p className="hint">Đang tải…</p> : farms.farms.length === 0 ? <p className="hint">Chưa có ai lập vườn ở đây.</p> : farms.farms.map((f) => (
+        <div className="row-line" key={f.plotId}><div className="grow">{f.ownerName} <small className="muted">· {f.wardName ? `${f.wardName} · ` : ''}đang trồng {f.growing} ô</small></div><button onClick={() => visit(f.plotId)}>Ghé thăm</button></div>
+      ))}
+      <h3>Mua đất ở đây</h3>
+      {owned ? <p className="hint">Bạn đã có đất ở {r.name}.</p> : <button disabled={act.busy || me.user.cash < LAND_PRICE} onClick={() => act.run(() => api('POST', '/api/plots/buy', { regionId }))}>{me.user.cash < LAND_PRICE ? `Cần ${fmtMoney(LAND_PRICE)} để mua một lô` : `Mua một lô ${fmtMoney(LAND_PRICE)}`}</button>}
     </div>
   );
 }

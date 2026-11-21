@@ -82,7 +82,7 @@ function makeLabel(text: string, bg: string, fg = '#3b2a17'): THREE.Sprite {
   g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 256, 64, 440);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  sp.scale.set(6, 1.5, 1);
+  sp.scale.set(4.6, 1.15, 1);
   return sp;
 }
 
@@ -136,7 +136,8 @@ type Sky = { top: number; sky: number; sun: number; sunI: number; dir: [number, 
 function skyFor(hour: number): Sky {
   if (hour >= 7 && hour < 16.5) return { top: 0x8fd0f5, sky: 0xdff3fb, sun: 0xfff2d8, sunI: 2.1, dir: [12, 24, 10], hemiSky: 0xfafcff, hemiGround: 0xd6e6b0, hemiI: 1.35, night: false };
   if ((hour >= 5.3 && hour < 7) || (hour >= 16.5 && hour < 18.6)) return { top: 0xf7a98a, sky: 0xffe2bd, sun: 0xffbd7a, sunI: 2.0, dir: [22, 11, 9], hemiSky: 0xffe6cf, hemiGround: 0xc9b98a, hemiI: 1.2, night: false };
-  return { top: 0x141d3f, sky: 0x33477a, sun: 0xbccaff, sunI: 1.1, dir: [-10, 22, 10], hemiSky: 0x93a8e8, hemiGround: 0x3a4768, hemiI: 1.2, night: true };
+  // Đêm trăng sáng: vẫn đủ rõ và tươi, chỉ ngả xanh nhẹ.
+  return { top: 0x1f2f66, sky: 0x5a78c4, sun: 0xdfe6ff, sunI: 1.7, dir: [-10, 22, 10], hemiSky: 0xcfd9ff, hemiGround: 0x7f93b0, hemiI: 1.55, night: true };
 }
 function gradient(top: number, bottom: number): THREE.CanvasTexture {
   const c = document.createElement('canvas'); c.width = 4; c.height = 256;
@@ -370,7 +371,7 @@ export class World {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.NeutralToneMapping; this.renderer.toneMappingExposure = this.sky.night ? 1.35 : 1.0;
+    this.renderer.toneMapping = THREE.NeutralToneMapping; this.renderer.toneMappingExposure = this.sky.night ? 1.3 : 1.0;
     const el = this.renderer.domElement;
     el.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;user-select:none;-webkit-user-select:none';
     container.appendChild(el);
@@ -644,10 +645,13 @@ export class World {
     for (const lot of this.lots) lot.animate(t, now, this);
     // Máy quay bám theo nhân vật
     this.camPos.lerp(this.pos, 1 - Math.pow(0.002, dt));
-    const portrait = this.camera.aspect < 0.9, k = (portrait ? 1.35 : 1) * this.zoom * (this.driving ? 1.15 : 1);
-    if (this.opts.demo) { const a = t * 0.12; this.camera.position.set(this.camPos.x + Math.sin(a) * 27, 25, this.camPos.z + Math.cos(a) * 27); }
-    else this.camera.position.set(this.camPos.x, 24 * k, this.camPos.z + 23 * k);
-    this.camera.lookAt(this.camPos.x, 0.8, this.camPos.z - (this.opts.demo ? 0 : 1.2));
+    const portrait = this.camera.aspect < 0.9, k = (portrait ? 1.12 : 1) * this.zoom * (this.driving ? 1.15 : 1);
+    if (this.opts.demo) { const a = 0.55 + Math.sin(t * 0.08) * 0.22; this.camera.position.set(Math.sin(a) * 30, 26, 4 + Math.cos(a) * 30); }
+    // Màn dọc: đẩy nhân vật lên nửa trên màn hình để thanh thao tác bên dưới không che.
+    const lift = portrait ? 3.4 * k : 0;
+    if (!this.opts.demo) this.camera.position.set(this.camPos.x, 24 * k, this.camPos.z + 23 * k + lift);
+    if (this.opts.demo) this.camera.lookAt(0, 0.8, 2);
+    else this.camera.lookAt(this.camPos.x, 0.8, this.camPos.z - 1.2 + lift);
     this.sun.target.position.copy(this.camPos); this.sun.position.set(this.camPos.x + this.sky.dir[0], this.sky.dir[1], this.camPos.z + this.sky.dir[2]);
     this.updateGuide(now, t);
     this.animateLife(dt, t);

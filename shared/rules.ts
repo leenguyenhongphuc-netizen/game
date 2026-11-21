@@ -9,7 +9,12 @@ export const TILE_COUNT = PLOT_COLS * PLOT_ROWS;
 
 export const START_CASH = 1_000_000;
 export const LAND_PRICE = 50_000_000;
-export const SEED_COST_RATIO = 0.15;
+export const SEED_COST_RATIO = 0.08;
+
+/** Nhịp chơi: người mới thu hoạch được ít lần thì cây lớn nhanh hơn nhiều, để không phải chờ hàng giờ ngay từ đầu. */
+export function paceFactor(harvests: number): number {
+  return harvests < 5 ? 30 : harvests < 20 ? 6 : 2;
+}
 
 /** Xóm: mỗi người có tối đa bấy nhiêu bạn, cũng là số vườn hàng xóm quanh nhà. */
 export const MAX_FRIENDS = 9;
@@ -259,6 +264,24 @@ export function glutFactor(kg24h: number): number {
 }
 /** Quà đặc sản bán đắt hơn mọi mức thương lái trả (kể cả cộng dồn thưởng) và giới hạn số lần mua mỗi ngày, để không mua đi bán lại kiếm lời. */
 export const TRAVEL_COST = 20_000, SOUVENIR_RATIO = 1.8, SOUVENIR_MAX_KG = 5, SOUVENIR_DAILY_BUYS = 3;
+/** Phương tiện đi du lịch: giá vé = base + perKm × quãng đường; seconds là thời lượng hoạt cảnh trên đường. */
+export type TravelMode = 'xe_khach' | 'tau_hoa' | 'may_bay' | 'tau_thuy';
+export const TRAVEL_MODES: Record<TravelMode, { name: string; icon: string; base: number; perKm: number; seconds: number }> = {
+  xe_khach: { name: 'Xe khách', icon: '🚌', base: 10_000, perKm: 150, seconds: 10 },
+  tau_hoa: { name: 'Tàu hoả', icon: '🚆', base: 20_000, perKm: 250, seconds: 10 },
+  may_bay: { name: 'Máy bay', icon: '✈️', base: 300_000, perKm: 1500, seconds: 8 },
+  tau_thuy: { name: 'Tàu thuỷ', icon: '⛴️', base: 50_000, perKm: 600, seconds: 10 },
+};
+/** Các phương tiện đi được giữa hai vùng, kèm giá vé. Ra vào đảo phải đi tàu thuỷ hoặc máy bay. */
+export function travelOptions(fromRegionId: string, toRegionId: string): { mode: TravelMode; fare: number; km: number }[] {
+  const a = region(fromRegionId), b = region(toRegionId);
+  if (!a || !b || a.id === b.id) return [];
+  const km = Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng));
+  const modes: TravelMode[] = a.island || b.island
+    ? ['tau_thuy', ...(km >= 300 ? ['may_bay' as const] : [])]
+    : ['xe_khach', ...(km >= 150 ? ['tau_hoa' as const] : []), ...(km >= 400 ? ['may_bay' as const] : [])];
+  return modes.map((mode) => ({ mode, fare: Math.round((TRAVEL_MODES[mode].base + TRAVEL_MODES[mode].perKm * km) / 1000) * 1000, km }));
+}
 export const GIFT_DAILY_LIMIT = 5, GIFT_MAX_KG = 20, REGION_SET_REWARD = 50_000;
 
 // ---------------------------------------------------------------- vườn sân thượng trong phố
