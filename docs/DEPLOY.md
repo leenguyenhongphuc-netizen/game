@@ -10,12 +10,25 @@
 
 ## 1. Supabase
 
-1. Tạo dự án mới, chọn vùng gần Việt Nam (Singapore).
-2. Vào **Project Settings → Database → Connection string**, chọn chế độ **Transaction pooler** (cổng 6543) và chép chuỗi kết nối. Hàm serverless mở kết nối liên tục nên phải đi qua pooler.
+Game đang dùng chung dự án `pum-studio` (gói miễn phí chỉ cho hai dự án), trong một ngăn riêng:
+
+- Schema `vuon_viet` chứa toàn bộ bảng của game. Bảng được tạo tự động khi máy chủ khởi động lần đầu.
+- Tài khoản cơ sở dữ liệu `vuon_viet` là chủ schema đó, có `search_path = vuon_viet`, không có quyền trên bảng của Pum Studio.
+- Schema này không nằm trong danh sách schema mà API của Supabase công khai.
+
+Chuỗi kết nối cho Vercel (lấy phần máy chủ ở **Connect → Transaction pooler** trong trang Supabase, rồi thay tên người dùng và mật khẩu):
+
+```
+postgresql://vuon_viet.lpiwmdomdzebzhmxzesn:<mật khẩu>@<máy chủ pooler>:6543/postgres
+```
+
+Mật khẩu không lưu trong kho mã. Đổi mật khẩu bằng `alter role vuon_viet password '...'` trong SQL Editor.
+
+Khi game cần dự án riêng: tạo dự án mới, trỏ `DATABASE_URL` sang đó, rồi chuyển dữ liệu bằng `pg_dump --schema=vuon_viet`.
 
 ## 2. Vercel
 
-1. Nhập kho mã `game` từ GitHub. Vercel đọc `vercel.json` nên không cần chỉnh lệnh dựng.
+1. Vào vercel.com → **Add New → Project**, nhập kho mã `game` từ GitHub. Vercel đọc `vercel.json` nên không cần chỉnh lệnh dựng. Vercel triển khai bản chính thức từ nhánh `main`, nên cần gộp PR trước (hoặc chọn nhánh `claude/dreamy-lovelace-0twwum` làm nhánh triển khai).
 2. Thêm biến môi trường:
 
 | Biến | Giá trị |
