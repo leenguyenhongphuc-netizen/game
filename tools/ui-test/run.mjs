@@ -74,6 +74,7 @@ for (const dev of DEVICES) {
   const dir = join(OUT, dev.id); mkdirSync(dir, { recursive: true });
   const ctx = await browser.newContext({ viewport: { width: dev.w, height: dev.h }, deviceScaleFactor: 1, hasTouch: dev.touch, isMobile: dev.touch, geolocation: { latitude: 10.34, longitude: 106.03 }, permissions: ['geolocation'], locale: 'vi-VN' });
   const page = await ctx.newPage();
+  await page.addInitScript(() => { window.__rideStep = 0.15; }); // hoạt cảnh du lịch: cho mỗi khung hình nhảy bước dài hơn vì máy thử không có GPU
   const logs = [];
   page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) logs.push(`console: ${m.text().slice(0, 200)}`); });
@@ -134,7 +135,7 @@ for (const dev of DEVICES) {
     const post = (path, body = {}) => page.evaluate(async ([path, body]) => { const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json().catch(() => null) }; }, [path, body]);
     const enter = async (query = '') => { await page.goto(`${BASE}/?gio=10${query}`); await page.waitForFunction(() => window.__vuon); await page.waitForTimeout(2500); };
     /** Chụp đều đặn trong lúc một hoạt cảnh toàn màn hình (sel) đang chạy; fn trả về nhãn pha hiện tại. */
-    const during = async (sel, prefix, phaseOf, { every = 5000, max = 12, timeout = 420000 } = {}) => {
+    const during = async (sel, prefix, phaseOf, { every = 5000, max = 12, timeout = 420000, hurry = null } = {}) => {
       await page.locator(sel).waitFor({ timeout: 30000 });
       const t0 = Date.now(); let last = null, k = 0, lastShot = 0;
       while (await page.locator(sel).count() > 0) {
@@ -142,6 +143,8 @@ for (const dev of DEVICES) {
         const phase = await page.evaluate(phaseOf).catch(() => null);
         if (k < max && ((phase !== null && phase !== last) || Date.now() - lastShot > every)) { last = phase; lastShot = Date.now(); k++; await shot(`${prefix}-${String(k).padStart(2, '0')}${phase !== null ? `-${String(phase).replace(/[^\w-]/g, '')}` : ''}`); }
         else await page.waitForTimeout(400);
+        // máy không có GPU chạy rất chậm: khi đã chụp đủ thì cho hoạt cảnh nhảy gần tới đoạn kết
+        if (hurry && (k >= max || Date.now() - t0 > 150000)) { await page.evaluate(hurry).catch(() => {}); await page.waitForTimeout(1500); }
       }
     };
     await step('tai-khoan-thu', async () => {
@@ -157,7 +160,7 @@ for (const dev of DEVICES) {
     });
     if (!QUICK) await step('lai-xe', async () => {
       await page.locator('.trip-card button.primary').click();
-      await during('.dg', 'lai-xe', () => window.__drive?.debug?.().phase ?? null, { every: 6000, max: 14 });
+      await during('.dg', 'lai-xe', () => window.__drive?.debug?.().phase ?? null, { every: 8000, max: 14, hurry: () => { const w = window.__drive, d = w?.debug?.(); if (d && d.total - d.s > 90) w.warp(d.total - 70); } });
       await page.waitForTimeout(2500); await shot('toi-noi-sau-chuyen-xe');
     });
     else await step('tham-quan-nhanh', async () => { await closeModal(); await post('/api/test/role', { role: 'nong_dan' }); });
