@@ -356,8 +356,8 @@ export class DriveScene {
     for (const s of this.sparks) { if (s.life <= 0) continue; s.life -= dt; s.v.y -= 12 * dt; s.m.position.addScaledVector(s.v, dt); s.m.position.z += this.speed * dt; s.m.scale.setScalar(Math.max(0.01, 0.16 * s.life)); if (s.life <= 0) s.m.visible = false; }
     this.shake = Math.max(0, this.shake - dt);
     const sh = this.shake * 0.5, portrait = this.camera.aspect < 0.9;
-    this.camera.position.set(this.px * 0.55 + (Math.random() - 0.5) * sh, (portrait ? 9.5 : 7.2) + (Math.random() - 0.5) * sh, portrait ? 12.5 : 10.5);
-    this.camera.lookAt(this.px * 0.7, 1.2, -9);
+    this.camera.position.set(this.px * 0.55 + (Math.random() - 0.5) * sh, (portrait ? 14 : 7.2) + (Math.random() - 0.5) * sh, portrait ? 16 : 10.5);
+    this.camera.lookAt(this.px * 0.7, 1.2, portrait ? -14 : -9);
     this.sun.target.position.set(0, 0, -8); this.sun.position.set(10, 22, 0);
     this.renderer.render(this.scene, this.camera);
     this.tickAcc += dt;

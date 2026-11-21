@@ -203,7 +203,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       q.query(`select 1 from plots where user_id = $1 and is_home and kind = 'rooftop'`, [userId]),
     ]);
     return {
-      glut, marketDay: eventsOf(marketRegionId, now).some((e) => e.id === 'cho_phien' && e.active), coop: coop.rows.length > 0,
+      glut, marketDay: marketDayOf(now).active, coop: coop.rows.length > 0,
       city: home.rows.length > 0 && marketRegionId === homeRegionId, floating: floatingAt(marketRegionId, now),
     };
   }

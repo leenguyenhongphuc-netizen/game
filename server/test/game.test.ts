@@ -7,17 +7,21 @@ import type { Db } from '../src/db.ts';
 import { NPCS, PROVINCES, REGIONS, SPECIALTIES, CROPS, npcOf, processOf, recipeOf, specialtiesOfRegion } from '../../shared/catalog.ts';
 import {
   CITY_BONUS, COOP_BONUS, COOP_CREATE_COST, GIFT_DAILY_LIMIT, GLUT_KG, GLUT_MAX_DROP, HELP_REWARD, LAND_PRICE, MARKET_DAY_BONUS, MAX_FRIENDS,
-  COOP_ORDER_BONUS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, IN_SEASON_YIELD, ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS, PROCESS_SLOTS_XUONG,
-  PROCESS_SPEED_XUONG, ROLE_INFO, inSeason, marketEventsAt, seasonAt, supplyKg,
+  COOP_ORDER_BONUS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, IN_SEASON_YIELD, ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS_XUONG,
+  ROLE_INFO, inSeason, marketEventsAt, seasonAt, supplyKg,
   DUMP_RATIO, FUEL_PER_KM, ROLES, ROLE_TARGETS, SEASON_DAYS, SMALL_TILES, allowedTiles, spinWeights, tripInfo,
   HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_COST, glutFactor, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
   seedCost, snapCell, stepCount, urbanCoreAt, weatherAt, weatherInfo,
 } from '../../shared/rules.ts';
 import type { Weather, WeatherKind } from '../../shared/rules.ts';
+import { DECOR_ITEMS, DEFAULT_AVATAR, DEFAULT_STYLE, HOUSE_TYPES, ROOF_COLORS, cleanName, validDecor, validStyle } from '../../shared/custom.ts';
 
 const url = process.env.TEST_DATABASE_URL ?? 'postgres://vuon:vuon@localhost:5432/vuon_test';
 const ADMIN = 'test-admin-token-0123456789';
-let db: Db, app: FastifyInstance, fairApp: FastifyInstance, slowApp: FastifyInstance, seasonApp: FastifyInstance;
+let db: Db, app: FastifyInstance, fairApp: FastifyInstance, slowApp: FastifyInstance, seasonApp: FastifyInstance, spinApp: FastifyInstance;
+type RoleId = 'nong_dan' | 'xuong' | 'thuong_lai';
+/** Vai mà vòng quay của spinApp sẽ trả, và trọng số nó nhận được ở lần quay gần nhất. */
+let nextRole: RoleId = 'nong_dan', lastWeights: Record<RoleId, number> | null = null;
 const fixedWeather = (kind: WeatherKind) => (_regionId: string, nowMs: number): Weather => ({ kind, ...weatherInfo(kind), until: nowMs + 3600_000 });
 
 before(async () => {
@@ -35,8 +39,10 @@ before(async () => {
   slowApp = await buildApp({ ...base, ...quiet, timeScale: 1 }); // thời gian thật, để kiểm việc chưa xong
   seasonApp = await buildApp({ ...base, ...quiet, inSeason: () => true }); // luôn đúng chính vụ
   fairApp = await buildApp({ ...base, weatherAt: fixedWeather('nang_gat'), marketDayAt: () => ({ active: true, startsAt: 0, endsAt: 1 }) });
+  // Vòng quay tất định và chuyến xe tới nơi ngay.
+  spinApp = await buildApp({ ...base, ...quiet, pickRole: (w) => { lastWeights = w; return nextRole; }, tripMinFactor: 0 });
 });
-after(async () => { await app.close(); await fairApp.close(); await slowApp.close(); await seasonApp.close(); await db.close(); });
+after(async () => { await app.close(); await fairApp.close(); await slowApp.close(); await seasonApp.close(); await spinApp.close(); await db.close(); });
 
 type Res = { status: number; body: any; cookie?: string };
 const call = (method: string, path: string, body?: unknown, cookie?: string, headers: Record<string, string> = {}) => callOn(app, method, path, body, cookie, headers);
@@ -297,12 +303,12 @@ test('xóm và chăm giúp: hàng xóm là bạn bè, bạn giúp được bư�
 
   // Xóm của chủ vườn: lô nhà ở giữa, bạn bè là hàng xóm, người lạ thì không.
   const v = (await call('GET', '/api/village', undefined, owner)).body;
-  assert.deepEqual(v.center.plot, { id: ownerPlot, regionId: 'qng_lyson', isHome: true, kind: 'ground', wardName: null, wardProvince: null, ownerId, ownerName: 'chu_vuon', mine: true, friend: false });
+  assert.deepEqual(v.center.plot, { id: ownerPlot, regionId: 'qng_lyson', isHome: true, kind: 'ground', wardName: null, wardProvince: null, ownerId, ownerName: 'chu_vuon', mine: true, friend: false, ownerRole: 'nong_dan', style: null, decor: [], ownerAvatar: null, ownedHouses: ['mai_ngoi'] });
   assert.equal(v.center.plantings.length, 1);
   assert.deepEqual(Object.keys(v.center.plantings[0]).sort(), ['id', 'lateCount', 'specialtyId', 'stepIndex', 'stepReadyAt', 'tile']);
   assert.equal(typeof v.center.plantings[0].stepReadyAt, 'number');
   assert.equal(v.center.stall.length, 1); assert.equal(v.center.stall[0].kg, 4);
-  assert.deepEqual(v.neighbors.map((n: any) => n.plot), [{ id: friendPlot, regionId: 'hn_phudien', isHome: true, kind: 'ground', wardName: null, wardProvince: null, ownerId: friendId, ownerName: 'hang_xom', mine: false, friend: true }]);
+  assert.deepEqual(v.neighbors.map((n: any) => n.plot), [{ id: friendPlot, regionId: 'hn_phudien', isHome: true, kind: 'ground', wardName: null, wardProvince: null, ownerId: friendId, ownerName: 'hang_xom', mine: false, friend: true, ownerRole: 'nong_dan', style: null, decor: [], ownerAvatar: null }]);
   assert.ok(typeof v.now === 'number');
   // Ghé lô của người khác: không kèm hàng xóm.
   const visit = (await call('GET', `/api/village?plotId=${ownerPlot}`, undefined, friend)).body;
@@ -431,10 +437,10 @@ test('sân thượng: chỉ ở lõi đô thị, chỉ 12 ô giữa, bán hàng 
   assert.equal((await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: ROOFTOP_TILES[0], specialtyId: 'buoi_bach_dang' }, city)).status, 200);
 
   await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'man_bac_ha','A',3), ($1,'buoi_bach_dang','A',2)`, [me.user.id]);
-  // Thưởng dân phố chỉ dành cho vai trò thương lái.
+  // Nhà vườn chỉ bán tháo; thưởng dân phố dành cho thương lái bán hàng phương xa ngay tại phố nhà.
   const plain = await call('POST', '/api/sell/npc', { specialtyId: 'man_bac_ha', quality: 'A', kg: 1 }, city);
-  assert.equal(plain.body.mods.city, false);
-  assert.equal((await call('POST', '/api/role', { role: 'thuong_lai' }, city)).status, 200);
+  assert.deepEqual([plain.body.dump, plain.body.mods], [true, {}]);
+  await setRole('dan_pho', 'thuong_lai');
   assert.equal((await meOf(city)).user.role, 'thuong_lai');
   const far = await call('POST', '/api/sell/npc', { specialtyId: 'man_bac_ha', quality: 'A', kg: 1 }, city);
   assert.equal(far.body.mods.city, true);
@@ -470,7 +476,7 @@ test('thời tiết kéo dài bước chờ; xóm và bảng giá báo thời ti
 });
 
 test('được mùa mất giá, chợ phiên được giá', async () => {
-  const cookie = await signup('ban_nhieu');
+  const cookie = await signup('ban_nhieu', 'thuong_lai');
   await call('POST', '/api/onboard', { regionId: 'sl_mocchau' }, cookie);
   const me = await meOf(cookie);
   const sp = SPECIALTIES.man_moc_chau;
@@ -500,7 +506,7 @@ test('được mùa mất giá, chợ phiên được giá', async () => {
 });
 
 test('hợp tác xã: lập, vào, khác vùng, thưởng giá, rời và chuyển chủ', async () => {
-  const chu = await signup('chu_nhiem'), xa = await signup('xa_vien'), la = await signup('vung_khac'), ngheo = await signup('het_tien');
+  const chu = await signup('chu_nhiem'), xa = await signup('xa_vien', 'thuong_lai'), la = await signup('vung_khac'), ngheo = await signup('het_tien');
   await call('POST', '/api/onboard', { regionId: 'bn_lucngan' }, chu);
   await call('POST', '/api/onboard', { regionId: 'bn_lucngan' }, xa);
   await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, la);
@@ -687,7 +693,7 @@ test('hàm thuần mới: mùa vụ theo miền, chính vụ, lịch chợ, ngu�
   for (const role of ['thuong_lai', 'che_bien', 'xuat_khau', 'sieu_thi'] as const) assert.equal(npcOf(role).role, role);
   assert.equal(new Set(NPCS.map((n) => n.id)).size, 6);
   for (const n of NPCS) assert.ok(n.name && n.logo && n.tagline && /^#[0-9a-f]{6}$/.test(n.color));
-  assert.deepEqual(Object.keys(ROLE_INFO).sort(), ['chu_sap', 'nong_dan', 'thuong_lai', 'xuong']);
+  assert.deepEqual(Object.keys(ROLE_INFO).sort(), ['nong_dan', 'thuong_lai', 'xuong']);
 
   assert.equal(REGIONS.ld_dalat.special, true);
   const dalat = specialtiesOfRegion('ld_dalat');
@@ -724,14 +730,15 @@ test('xã phường: danh sách theo tỉnh, chọn khi nhận đất, đổi sa
   assert.equal((await call('POST', `/api/plots/${ob.body.plotId}/ward`, { wardProvince: 'Hà Nội', wardName: hn[0] }, other)).status, 404);
 });
 
-test('vai trò dân phố: chỉ cho vườn sân thượng; chủ sạp có khách vãng lai', async () => {
-  const que = await signup('dan_que');
+test('khách vãng lai: chỉ thương lái có vườn sân thượng trong phố mới có', async () => {
+  const que = await signup('dan_que', 'thuong_lai');
   await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, que);
-  const no = await call('POST', '/api/role', { role: 'thuong_lai' }, que);
-  assert.deepEqual([no.status, no.body.error], [409, 'chi_dan_pho']);
-  assert.equal((await call('POST', '/api/role', { role: 'nong_dan' }, que)).status, 200);
-  assert.equal((await call('POST', '/api/role', { role: 'vua' }, que)).status, 400);
-  assert.equal((await meOf(que)).walkin, null);
+  assert.equal((await call('POST', '/api/role', { role: 'thuong_lai' }, que)).status, 404, 'không còn tự chọn vai trò');
+  const queMe = await meOf(que);
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'atiso_da_lat','A',10)`, [queMe.user.id]);
+  const queListing = await call('POST', '/api/market/listings', { specialtyId: 'atiso_da_lat', quality: 'A', kg: 10, price: SPECIALTIES.atiso_da_lat.refPrice }, que);
+  await db.query(`update listings set walkin_at = now() - interval '2 hours' where id = $1`, [queListing.body.listingId]);
+  assert.equal((await meOf(que)).walkin, null, 'thương lái ở quê không có khách vãng lai');
 
   const pho = await signup('chu_sap_pho');
   await call('POST', '/api/onboard', { lat: 10.776, lng: 106.7, rooftop: true }, pho);
@@ -741,9 +748,9 @@ test('vai trò dân phố: chỉ cho vườn sân thượng; chủ sạp có kh�
   await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'buoi_bach_dang','A',40)`, [me.user.id]);
   const cheap = await call('POST', '/api/market/listings', { specialtyId: 'buoi_bach_dang', quality: 'A', kg: 20, price: ref }, pho);
   const dear = await call('POST', '/api/market/listings', { specialtyId: 'buoi_bach_dang', quality: 'A', kg: 20, price: ref * 2 }, pho);
-  assert.equal((await meOf(pho)).walkin, null, 'chưa là chủ sạp thì không có khách vãng lai');
-  assert.equal((await call('POST', '/api/role', { role: 'chu_sap' }, pho)).status, 200);
   await db.query(`update listings set walkin_at = now() - interval '2 hours' where id = any($1::bigint[])`, [[cheap.body.listingId, dear.body.listingId]]);
+  assert.equal((await meOf(pho)).walkin, null, 'nhà vườn ở phố thì không có khách vãng lai');
+  await setRole('chu_sap_pho', 'thuong_lai');
   const after = await meOf(pho);
   assert.deepEqual(after.walkin, { kg: 20, total: 20 * ref }, 'chỉ tin giá hợp lý mới có khách');
   assert.equal(after.user.cash, me.user.cash + 20 * ref);
@@ -752,27 +759,29 @@ test('vai trò dân phố: chỉ cho vườn sân thượng; chủ sạp có kh�
   assert.equal((await meOf(pho)).walkin, null);
 });
 
-test('xưởng chế biến: bắt đầu, hết chỗ, chưa xong, nhận hàng, bán thành phẩm; chủ xưởng nhanh và nhiều chỗ hơn', async () => {
-  const cookie = await signup('tho_say');
+test('xưởng chế biến: chỉ chủ xưởng làm được; bắt đầu, hết chỗ, chưa xong, nhận hàng, bán thành phẩm', async () => {
+  const cookie = await signup('tho_say', 'xuong');
   await call('POST', '/api/onboard', { regionId: 'qng_lyson' }, cookie);
   const me = await meOf(cookie);
   await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'toi_ly_son','A',30), ($1,'toi_ly_son','C',10)`, [me.user.id]);
   const recipe = recipeOf(CROPS.toi);
   const toiRef: number = (await call('GET', '/api/prices')).body.prices.toi_ly_son.price; // test bảng giá đã nạp giá mới cho tỏi
-  assert.equal((await call('GET', '/api/workshop', undefined, cookie)).body.slots, PROCESS_SLOTS);
+  assert.equal((await call('GET', '/api/workshop', undefined, cookie)).body.slots, PROCESS_SLOTS_XUONG);
   const j1 = await callOn(slowApp, 'POST', '/api/workshop/start', { specialtyId: 'toi_ly_son', quality: 'A', kg: 10 }, cookie);
   assert.equal(j1.status, 200, JSON.stringify(j1.body));
   assert.equal(j1.body.kgOut, Math.floor(10 * recipe.ratio + 1e-9));
   assert.ok(Math.abs(j1.body.readyAt - Date.now() - recipe.hours * 3600_000) < 5000);
   const j2 = await callOn(slowApp, 'POST', '/api/workshop/start', { specialtyId: 'toi_ly_son', quality: 'C', kg: 10 }, cookie);
   assert.equal(j2.body.kgOut, Math.floor(10 * recipe.ratio * 0.7 + 1e-9), 'hàng hạng thấp cho ít thành phẩm hơn');
+  for (let i = 2; i < PROCESS_SLOTS_XUONG; i++) assert.equal((await callOn(slowApp, 'POST', '/api/workshop/start', { specialtyId: 'toi_ly_son', quality: 'A', kg: 5 }, cookie)).status, 200);
   const full = await callOn(slowApp, 'POST', '/api/workshop/start', { specialtyId: 'toi_ly_son', quality: 'A', kg: 5 }, cookie);
   assert.deepEqual([full.status, full.body.error], [409, 'het_cho']);
   assert.equal((await call('POST', '/api/workshop/start', { specialtyId: 'toi_ly_son', quality: 'A', kg: 999 }, cookie)).status, 409);
   const early = await call('POST', `/api/workshop/collect/${j1.body.jobId}`, {}, cookie);
   assert.deepEqual([early.status, early.body.error], [409, 'chua_xong']);
   const ws = (await call('GET', '/api/workshop', undefined, cookie)).body;
-  assert.deepEqual(ws.jobs.map((j: any) => [j.specialtyId, j.kgIn, j.kgOut]), [['toi_ly_son', 10, j1.body.kgOut], ['toi_ly_son', 10, j2.body.kgOut]]);
+  assert.equal(ws.jobs.length, PROCESS_SLOTS_XUONG);
+  assert.deepEqual(ws.jobs.slice(0, 2).map((j: any) => [j.specialtyId, j.kgIn, j.kgOut]), [['toi_ly_son', 10, j1.body.kgOut], ['toi_ly_son', 10, j2.body.kgOut]]);
 
   await db.query(`update process_jobs set ready_at = now() - interval '1 second' where user_id = $1`, [me.user.id]);
   assert.equal((await call('POST', `/api/workshop/collect/${j1.body.jobId}`, {}, cookie)).status, 200);
@@ -795,14 +804,15 @@ test('xưởng chế biến: bắt đầu, hết chỗ, chưa xong, nhận hàng
   assert.equal((await callOn(fairApp, 'POST', '/api/workshop/sell', { specialtyId: 'toi_ly_son', kg: 1 }, cookie)).body.unitPrice,
     Math.round((toiRef * recipe.value * (1 + MARKET_DAY_BONUS)) / 100) * 100, 'chợ phiên thì thành phẩm cũng được giá');
 
-  const xuong = await signup('chu_xuong');
-  await call('POST', '/api/onboard', { lat: 10.776, lng: 106.7, rooftop: true }, xuong);
-  await call('POST', '/api/role', { role: 'xuong' }, xuong);
-  const xme = await meOf(xuong);
-  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'toi_ly_son','A',10)`, [xme.user.id]);
-  assert.equal((await call('GET', '/api/workshop', undefined, xuong)).body.slots, PROCESS_SLOTS_XUONG);
-  const fast = await callOn(slowApp, 'POST', '/api/workshop/start', { specialtyId: 'toi_ly_son', quality: 'A', kg: 10 }, xuong);
-  assert.ok(Math.abs(fast.body.readyAt - Date.now() - recipe.hours * 3600_000 * PROCESS_SPEED_XUONG) < 5000);
+  // Vai khác không chế biến được, nhưng hàng dở trong xưởng vẫn lấy và bán được sau khi đổi vai.
+  await setRole('tho_say', 'nong_dan');
+  assert.equal((await call('GET', '/api/workshop', undefined, cookie)).body.slots, 0);
+  const no = await call('POST', '/api/workshop/start', { specialtyId: 'toi_ly_son', quality: 'A', kg: 5 }, cookie);
+  assert.deepEqual([no.status, no.body.error], [403, 'chi_chu_xuong']);
+  const left = (await call('GET', '/api/workshop', undefined, cookie)).body.jobs;
+  assert.ok(left.length > 0);
+  assert.equal((await call('POST', `/api/workshop/collect/${left[0].id}`, {}, cookie)).status, 200);
+  assert.equal((await call('POST', '/api/workshop/sell', { specialtyId: 'toi_ly_son', kg: 1 }, cookie)).status, 200);
 });
 
 test('chính vụ thêm sản lượng; được mùa mất giá tính cả diện tích đang trồng', async () => {
@@ -823,6 +833,7 @@ test('chính vụ thêm sản lượng; được mùa mất giá tính cả di�
   assert.ok(p.glut < 1);
   const me = await meOf(cookie);
   await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'xoai_yen_chau','B',5)`, [me.user.id]);
+  await setRole('dung_vu', 'thuong_lai');
   const sell = await call('POST', '/api/sell/npc', { specialtyId: 'xoai_yen_chau', quality: 'B', kg: 1 }, cookie);
   assert.equal(sell.body.mods.glut, p.glut);
   assert.equal(sell.body.unitPrice, npcPrice(SPECIALTIES.xoai_yen_chau.refPrice, 'B', 'sl_mocchau', 'sl_mocchau', { glut: p.glut }));
@@ -930,4 +941,217 @@ test('đơn hàng cá nhân: tất định trong ngày, giao hàng hạng thấp
   assert.deepEqual([again.status, again.body.error], [409, 'da_giao']);
   assert.equal((await call('GET', '/api/orders', undefined, cookie)).body.orders[0].done, true);
   assert.equal((await call('POST', '/api/orders/9/deliver', {}, cookie)).status, 404);
+});
+
+test('hàm thuần: trọng số vòng quay, ô theo vai, chuyến xe, cá nhân hoá', () => {
+  const sum = (w: Record<string, number>) => Object.values(w).reduce((a, b) => a + b, 0);
+  const empty = spinWeights(ROLE_TARGETS.rural, { nong_dan: 0, xuong: 0, thuong_lai: 0 });
+  assert.ok(Math.abs(sum(empty) - 1) < 1e-9);
+  for (const r of ROLES) assert.ok(Math.abs(empty[r] - ROLE_TARGETS.rural[r]) < 1e-9, 'chưa có ai thì đúng tỉ lệ mong muốn');
+  // Vùng toàn nhà vườn: vòng quay nghiêng mạnh về hai vai đang thiếu.
+  const lopsided = spinWeights(ROLE_TARGETS.rural, { nong_dan: 20, xuong: 0, thuong_lai: 0 });
+  assert.ok(Math.abs(sum(lopsided) - 1) < 1e-9);
+  assert.ok(lopsided.nong_dan < ROLE_TARGETS.rural.nong_dan && lopsided.xuong > ROLE_TARGETS.rural.xuong && lopsided.thuong_lai > ROLE_TARGETS.rural.thuong_lai);
+  // Đúng tỉ lệ thì giữ nguyên.
+  const balanced = spinWeights(ROLE_TARGETS.urban, { nong_dan: 30, xuong: 30, thuong_lai: 40 });
+  for (const r of ROLES) assert.ok(Math.abs(balanced[r] - ROLE_TARGETS.urban[r]) < 1e-9);
+  assert.ok(Math.abs(sum(ROLE_TARGETS.rural) - 1) < 1e-9 && Math.abs(sum(ROLE_TARGETS.urban) - 1) < 1e-9);
+  assert.equal(SEASON_DAYS, 30);
+
+  assert.deepEqual(SMALL_TILES, [7, 8, 9, 10, 13, 14, 15, 16]);
+  assert.deepEqual(allowedTiles('ground', null), []);
+  assert.equal(allowedTiles('ground', 'nong_dan').length, 30);
+  assert.deepEqual(allowedTiles('rooftop', 'nong_dan'), ROOFTOP_TILES);
+  assert.deepEqual(allowedTiles('ground', 'xuong'), SMALL_TILES);
+  assert.deepEqual(allowedTiles('rooftop', 'thuong_lai'), SMALL_TILES);
+
+  const sea = tripInfo('dt_caibe', 'qng_lyson');
+  assert.equal(sea.needsBoat, true, 'ra đảo phải qua bến tàu');
+  assert.equal(tripInfo('qng_lyson', 'dt_caibe').needsBoat, true);
+  const near = tripInfo('dt_caibe', 'dt_caolanh');
+  assert.equal(near.needsBoat, false);
+  assert.equal(near.fuel, Math.max(5000, Math.round((near.km * FUEL_PER_KM) / 1000) * 1000));
+  assert.ok(near.fuel >= 5000 && sea.fuel > near.fuel);
+  for (const from of Object.keys(REGIONS)) {
+    const t = tripInfo(from, 'hn_phudien');
+    assert.ok(t.seconds >= 30 && t.seconds <= 75, `thời lượng màn lái ngoài khoảng: ${from}`);
+  }
+
+  assert.equal(cleanName('  Vườn   <b>chú</b>\u0000 Tư  '), 'Vườn b chú /b Tư');
+  assert.equal([...cleanName('x'.repeat(60))].length, 24);
+  assert.equal(validStyle({ ...DEFAULT_STYLE, roof: '#000000' }), null);
+  assert.deepEqual(validStyle({ ...DEFAULT_STYLE, gateName: ' Vườn  nhà ' }), { ...DEFAULT_STYLE, gateName: 'Vườn nhà' });
+  assert.equal(validDecor([{ item: 'chau_hoa', x: 0, z: 0, rot: 0 }]), null, 'không đặt trong ruộng');
+  assert.equal(validDecor([{ item: 'chau_hoa', x: 0, z: -10, rot: 0 }]), null, 'không đặt trong nhà');
+  assert.equal(validDecor([{ item: 'chau_hoa', x: 12, z: 7, rot: 0 }]), null, 'không đặt ngoài lô');
+  assert.equal(validDecor([{ item: 'chau_hoa', x: 8, z: 7, rot: 1 }]), null, 'góc xoay phải là bội của 90 độ');
+  assert.equal(validDecor([{ item: 'khong_co', x: 8, z: 7, rot: 0 }]), null);
+  assert.deepEqual(validDecor([{ item: 'chau_hoa', x: 8.04, z: 7.26, rot: Math.PI / 2 }]), [{ item: 'chau_hoa', x: 8, z: 7.3, rot: Math.PI / 2 }]);
+  assert.equal(DECOR_ITEMS.length, 10);
+  assert.equal(HOUSE_TYPES[0].price, 0);
+});
+
+test('vòng quay vai trò: cần có đất, kết quả do vòng quay, mỗi mùa một lần, nghiêng về vai đang thiếu', async () => {
+  const cookie = await signupRaw('nguoi_quay');
+  assert.equal((await meOf(cookie)).user.role, null);
+  assert.equal((await callOn(spinApp, 'POST', '/api/role/spin', {}, cookie)).body.error, 'chua_co_dat');
+  const ob = await call('POST', '/api/onboard', { regionId: 'lch_tamduong' }, cookie);
+  const noRole = await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: SMALL_TILES[0], specialtyId: 'che_tam_duong' }, cookie);
+  assert.deepEqual([noRole.status, noRole.body.error], [409, 'chua_co_vai']);
+
+  nextRole = 'xuong';
+  const spin = await callOn(spinApp, 'POST', '/api/role/spin', {}, cookie);
+  assert.equal(spin.status, 200, JSON.stringify(spin.body));
+  assert.equal(spin.body.role, 'xuong');
+  for (const r of ROLES) assert.ok(Math.abs(spin.body.weights[r] - ROLE_TARGETS.rural[r]) < 1e-9, 'vùng chưa có ai thì đúng tỉ lệ nông thôn');
+  assert.ok(Math.abs(spin.body.nextSpinAt - Date.now() - SEASON_DAYS * 86400_000) < 5000);
+  const me = await meOf(cookie);
+  assert.deepEqual([me.user.role, me.user.truckRegionId, me.user.avatar], ['xuong', 'lch_tamduong', null]);
+  assert.equal(me.user.roleNextSpinAt, spin.body.nextSpinAt);
+  assert.equal((await call('GET', `/api/plots/${ob.body.plotId}`, undefined, cookie)).body.plot.ownerRole, 'xuong');
+  const again = await callOn(spinApp, 'POST', '/api/role/spin', {}, cookie);
+  assert.deepEqual([again.status, again.body.error], [409, 'chua_den_mua']);
+
+  // Hết mùa thì quay lại được, và vai mới có hiệu lực.
+  await db.query(`update users set role_assigned_at = now() - interval '31 days' where username = 'nguoi_quay'`);
+  nextRole = 'thuong_lai';
+  assert.equal((await callOn(spinApp, 'POST', '/api/role/spin', {}, cookie)).body.role, 'thuong_lai');
+  assert.equal((await meOf(cookie)).user.role, 'thuong_lai');
+
+  // Người mới vào một vùng toàn thương lái còn chơi: vòng quay nghiêng khỏi vai đó. Người lâu không vào thì không tính.
+  const idle = await signup('thuong_lai_cu', 'thuong_lai');
+  await call('POST', '/api/onboard', { regionId: 'lch_tamduong' }, idle);
+  await db.query(`update users set last_seen_at = now() - interval '8 days' where username = 'thuong_lai_cu'`);
+  const fresh = await signupRaw('nguoi_moi');
+  await call('POST', '/api/onboard', { regionId: 'lch_tamduong' }, fresh);
+  nextRole = 'nong_dan';
+  const spin2 = await callOn(spinApp, 'POST', '/api/role/spin', {}, fresh);
+  assert.equal(spin2.body.role, 'nong_dan');
+  assert.deepEqual(spin2.body.weights, spinWeights(ROLE_TARGETS.rural, { nong_dan: 0, xuong: 0, thuong_lai: 1 }));
+  assert.deepEqual(lastWeights, spin2.body.weights);
+  assert.ok(spin2.body.weights.thuong_lai < ROLE_TARGETS.rural.thuong_lai);
+
+  // Ở phố thì dùng tỉ lệ đô thị.
+  const pho = await signupRaw('quay_o_pho');
+  await call('POST', '/api/onboard', { lat: 16.06, lng: 108.22, rooftop: true }, pho);
+  const spin3 = await callOn(spinApp, 'POST', '/api/role/spin', {}, pho);
+  const cityMates = await db.query(`select role, count(*)::int as n from users where home_region_id = (select home_region_id from users where username = 'quay_o_pho') and username <> 'quay_o_pho' and role is not null group by role`);
+  const counts = { nong_dan: 0, xuong: 0, thuong_lai: 0 } as Record<RoleId, number>;
+  for (const r of cityMates.rows) counts[r.role as RoleId] = r.n;
+  assert.deepEqual(spin3.body.weights, spinWeights(ROLE_TARGETS.urban, counts));
+});
+
+test('ô trồng theo vai: thương lái và chủ xưởng chỉ có vườn nhỏ, cây cũ ở ô bị khoá vẫn chăm được', async () => {
+  const cookie = await signup('vuon_nho', 'thuong_lai');
+  const ob = await call('POST', '/api/onboard', { regionId: 'qng_lyson' }, cookie);
+  const locked = await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: 0, specialtyId: 'hanh_ly_son' }, cookie);
+  assert.deepEqual([locked.status, locked.body.error], [409, 'o_bi_khoa']);
+  assert.equal((await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: SMALL_TILES[0], specialtyId: 'hanh_ly_son' }, cookie)).status, 200);
+  await setRole('vuon_nho', 'xuong');
+  assert.equal((await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: 29, specialtyId: 'hanh_ly_son' }, cookie)).body.error, 'o_bi_khoa');
+  assert.equal((await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: SMALL_TILES[7], specialtyId: 'hanh_ly_son' }, cookie)).status, 200);
+  // Cây trồng từ khi còn là nhà vườn nằm ở ô nay bị khoá: vẫn thu hoạch được.
+  const old = await ripePlanting(ob.body.plotId, 0, 'hanh_ly_son');
+  assert.equal((await call('POST', `/api/plantings/${old}/step`, {}, cookie)).body.harvested.kg, CROPS.hanh.yieldKg);
+  await setRole('vuon_nho', 'nong_dan');
+  assert.equal((await call('POST', `/api/plots/${ob.body.plotId}/plant`, { tile: 29, specialtyId: 'hanh_ly_son' }, cookie)).status, 200);
+});
+
+test('chuyến xe: chỉ thương lái, tốn xăng, phải lái tới nơi; bán theo vùng xe đang đỗ', async () => {
+  const farmer = await signup('khong_co_xe');
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, farmer);
+  const no = await call('POST', '/api/trips/start', { toRegionId: 'dt_caolanh' }, farmer);
+  assert.deepEqual([no.status, no.body.error], [403, 'chi_thuong_lai']);
+
+  const cookie = await signup('tai_xe', 'thuong_lai');
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, cookie);
+  const start0 = await meOf(cookie);
+  assert.equal(start0.user.truckRegionId, 'dt_caibe');
+  assert.equal((await call('POST', '/api/trips/start', { toRegionId: 'dt_caibe' }, cookie)).status, 400, 'xe đang ở đó rồi');
+  assert.equal((await call('POST', '/api/trips/start', { toRegionId: 'khong_co' }, cookie)).status, 400);
+  await db.query('update users set cash = 1000 where id = $1', [start0.user.id]);
+  assert.equal((await call('POST', '/api/trips/start', { toRegionId: 'dt_caolanh' }, cookie)).body.error, 'khong_du_tien');
+  await db.query('update users set cash = $2 where id = $1', [start0.user.id, START_CASH]);
+
+  const info = tripInfo('dt_caibe', 'dt_caolanh');
+  const trip = await call('POST', '/api/trips/start', { toRegionId: 'dt_caolanh' }, cookie);
+  assert.equal(trip.status, 200, JSON.stringify(trip.body));
+  assert.deepEqual({ ...trip.body, tripId: 0 }, { tripId: 0, fromRegionId: 'dt_caibe', toRegionId: 'dt_caolanh', ...info });
+  assert.equal((await meOf(cookie)).user.cash, START_CASH - info.fuel);
+  const early = await call('POST', `/api/trips/${trip.body.tripId}/finish`, {}, cookie);
+  assert.deepEqual([early.status, early.body.error], [409, 'chua_toi_noi']);
+  assert.equal((await callOn(spinApp, 'POST', `/api/trips/${trip.body.tripId}/finish`, {}, farmer)).status, 404, 'không phải chuyến của mình');
+  assert.deepEqual((await callOn(spinApp, 'POST', `/api/trips/${trip.body.tripId}/finish`, {}, cookie)).body, { regionId: 'dt_caolanh' });
+  assert.equal((await callOn(spinApp, 'POST', `/api/trips/${trip.body.tripId}/finish`, {}, cookie)).status, 404, 'chuyến đã xong');
+  assert.equal((await meOf(cookie)).user.truckRegionId, 'dt_caolanh');
+  assert.ok((await call('GET', '/api/travel', undefined, cookie)).body.visited.includes('dt_caolanh'), 'tới nơi thì được ghi là đã tới');
+
+  // Xe đỗ ở Cao Lãnh: xoài Cao Lãnh là hàng tại vườn, xoài Hòa Lộc của vùng nhà lại thành hàng phương xa.
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'xoai_cao_lanh','A',2), ($1,'xoai_hoa_loc','A',2)`, [start0.user.id]);
+  const there = await call('POST', '/api/sell/npc', { specialtyId: 'xoai_cao_lanh', quality: 'A', kg: 1 }, cookie);
+  assert.deepEqual([there.body.dump, there.body.marketRegionId], [false, 'dt_caolanh']);
+  assert.equal(there.body.unitPrice, npcPrice(SPECIALTIES.xoai_cao_lanh.refPrice, 'A', 'dt_caolanh', 'dt_caolanh', there.body.mods));
+  const carried = await call('POST', '/api/sell/npc', { specialtyId: 'xoai_hoa_loc', quality: 'A', kg: 1 }, cookie);
+  assert.equal(carried.body.unitPrice, npcPrice(SPECIALTIES.xoai_hoa_loc.refPrice, 'A', 'dt_caibe', 'dt_caolanh', carried.body.mods));
+  assert.ok(carried.body.unitPrice > SPECIALTIES.xoai_hoa_loc.refPrice, 'chở đi vùng khác thì được giá hàng phương xa');
+  // Người bán tháo luôn thấp hơn thương lái bán tại vườn.
+  const farmerMe = await meOf(farmer);
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'xoai_hoa_loc','B',1)`, [farmerMe.user.id]);
+  const dump = await call('POST', '/api/sell/npc', { specialtyId: 'xoai_hoa_loc', quality: 'B', kg: 1 }, farmer);
+  assert.equal(dump.body.dump, true);
+  assert.equal(dump.body.unitPrice, Math.round((SPECIALTIES.xoai_hoa_loc.refPrice * DUMP_RATIO * 0.85) / 100) * 100);
+  assert.ok(dump.body.unitPrice < npcPrice(SPECIALTIES.xoai_hoa_loc.refPrice, 'B', 'dt_caibe', 'dt_caibe'));
+});
+
+test('cá nhân hoá: kiểu nhà, màu, tên, đồ trang trí, nhân vật; người khác nhìn thấy', async () => {
+  const cookie = await signup('chu_nha'), guest = await signup('khach_tham');
+  const ob = await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, cookie);
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, guest);
+  const plotId = ob.body.plotId;
+  const paid = HOUSE_TYPES.find((h) => h.price > 0)!;
+
+  assert.equal((await call('POST', `/api/plots/${plotId}/style`, { ...DEFAULT_STYLE, wall: 'do' }, cookie)).status, 400);
+  assert.equal((await call('POST', `/api/plots/${plotId}/style`, DEFAULT_STYLE, guest)).status, 404, 'không sửa được lô của người khác');
+  const free = await call('POST', `/api/plots/${plotId}/style`, { ...DEFAULT_STYLE, roof: ROOF_COLORS[3], gateName: '  Vườn <chú> Tư ', stallName: 'Sạp Xoài Ngọt' }, cookie);
+  assert.equal(free.status, 200, JSON.stringify(free.body));
+  assert.deepEqual(free.body, { style: { ...DEFAULT_STYLE, roof: ROOF_COLORS[3], gateName: 'Vườn chú Tư', stallName: 'Sạp Xoài Ngọt' }, ownedHouses: [HOUSE_TYPES[0].id], cost: 0 });
+  const buy = await call('POST', `/api/plots/${plotId}/style`, { ...DEFAULT_STYLE, house: paid.id }, cookie);
+  assert.deepEqual([buy.body.cost, buy.body.ownedHouses], [paid.price, [HOUSE_TYPES[0].id, paid.id]]);
+  assert.equal((await meOf(cookie)).user.cash, START_CASH - paid.price);
+  // Đổi về kiểu cũ rồi đổi lại kiểu đã mua: không tính tiền lần nữa.
+  assert.equal((await call('POST', `/api/plots/${plotId}/style`, DEFAULT_STYLE, cookie)).body.cost, 0);
+  assert.equal((await call('POST', `/api/plots/${plotId}/style`, { ...DEFAULT_STYLE, house: paid.id, gateName: 'Vườn chú Tư' }, cookie)).body.cost, 0);
+  assert.equal((await meOf(cookie)).user.cash, START_CASH - paid.price);
+  await db.query('update users set cash = 0 where username = $1', ['khach_tham']);
+  const guestPlot = (await meOf(guest)).plots[0].id;
+  assert.equal((await call('POST', `/api/plots/${guestPlot}/style`, { ...DEFAULT_STYLE, house: paid.id }, guest)).body.error, 'khong_du_tien');
+
+  const pot = DECOR_ITEMS.find((d) => d.id === 'chau_hoa')!, pond = DECOR_ITEMS.find((d) => d.id === 'ao_ca')!;
+  assert.equal((await call('POST', `/api/plots/${plotId}/decor`, { items: [{ item: 'chau_hoa', x: 0, z: 0, rot: 0 }] }, cookie)).status, 400, 'không đặt trong ruộng');
+  const d1 = await call('POST', `/api/plots/${plotId}/decor`, { items: [{ item: 'chau_hoa', x: 8, z: 7, rot: 0 }, { item: 'chau_hoa', x: -8, z: 7, rot: 0 }] }, cookie);
+  assert.equal(d1.body.cost, pot.price * 2);
+  // Dời chỗ không tốn tiền; thêm món mới chỉ tính món mới; bỏ món không hoàn tiền.
+  const d2 = await call('POST', `/api/plots/${plotId}/decor`, { items: [{ item: 'chau_hoa', x: 8, z: 6, rot: Math.PI }, { item: 'chau_hoa', x: -8, z: 7, rot: 0 }, { item: 'ao_ca', x: 8, z: -10, rot: 0 }] }, cookie);
+  assert.equal(d2.body.cost, pond.price);
+  const d3 = await call('POST', `/api/plots/${plotId}/decor`, { items: [{ item: 'ao_ca', x: 8, z: -10, rot: 0 }] }, cookie);
+  assert.deepEqual([d3.body.cost, d3.body.decor], [0, [{ item: 'ao_ca', x: 8, z: -10, rot: 0 }]]);
+  assert.equal((await meOf(cookie)).user.cash, START_CASH - paid.price - pot.price * 2 - pond.price);
+  assert.equal((await call('POST', `/api/plots/${guestPlot}/decor`, { items: [{ item: 'ao_ca', x: 8, z: -10, rot: 0 }] }, guest)).body.error, 'khong_du_tien');
+  assert.equal((await call('POST', `/api/plots/${plotId}/decor`, { items: [] }, guest)).status, 404);
+
+  assert.equal((await call('POST', '/api/avatar', { ...DEFAULT_AVATAR, hat: 'vuong_mien' }, cookie)).status, 400);
+  const av = await call('POST', '/api/avatar', { ...DEFAULT_AVATAR, hat: 'khan_ran' }, cookie);
+  assert.deepEqual(av.body, { avatar: { ...DEFAULT_AVATAR, hat: 'khan_ran' } });
+  assert.deepEqual((await meOf(cookie)).user.avatar, { ...DEFAULT_AVATAR, hat: 'khan_ran' });
+
+  // Khách ghé thăm và hàng xóm đều thấy nhà, đồ trang trí và trang phục của chủ vườn.
+  const seen = (await call('GET', `/api/plots/${plotId}`, undefined, guest)).body.plot;
+  assert.deepEqual(seen.style, { ...DEFAULT_STYLE, house: paid.id, gateName: 'Vườn chú Tư' });
+  assert.deepEqual(seen.decor, [{ item: 'ao_ca', x: 8, z: -10, rot: 0 }]);
+  assert.deepEqual(seen.ownerAvatar, { ...DEFAULT_AVATAR, hat: 'khan_ran' });
+  assert.equal(seen.ownedHouses, undefined, 'người khác không thấy danh sách kiểu nhà đã mua');
+  await befriend(cookie, guest);
+  const neighbor = (await call('GET', '/api/village', undefined, guest)).body.neighbors[0].plot;
+  assert.deepEqual([neighbor.style.house, neighbor.decor.length, neighbor.ownerAvatar.hat, neighbor.ownerRole], [paid.id, 1, 'khan_ran', 'nong_dan']);
+  assert.deepEqual((await call('GET', '/api/village', undefined, cookie)).body.center.plot.ownedHouses, [HOUSE_TYPES[0].id, paid.id]);
 });
