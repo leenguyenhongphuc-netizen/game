@@ -14,5 +14,8 @@
       "source": "/api/(.*)",
       "destination": "/api"
     }
+  ],
+  "regions": [
+    "sin1"
   ]
 }

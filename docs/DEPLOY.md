@@ -6,7 +6,9 @@
 | **Vercel** | Phục vụ giao diện (`web/dist`) và chạy máy chủ dưới dạng một hàm serverless ở `/api/*`. |
 | **Cloudflare** | Tên miền, DNS và lớp chắn phía trước Vercel. |
 
-> Cấu hình này mới được thử tại chỗ (gói máy chủ bằng `npm run build:api` rồi gọi hàm qua một máy chủ HTTP giả lập). **Chưa triển khai thật lên Vercel lần nào**, nên lần đầu có thể cần chỉnh.
+> **Đang chạy thật tại https://vuon-viet-rho.vercel.app** (dự án Vercel `vuon-viet`, máy chủ chạy ở vùng Singapore `sin1`, cơ sở dữ liệu ở Supabase `pum-studio`).
+>
+> Triển khai lại sau khi sửa mã: `npx vercel deploy --prod` từ thư mục gốc (cần mã truy cập Vercel). Dự án chưa nối với GitHub nên đẩy mã lên GitHub **không** tự triển khai.
 
 ## 1. Supabase
 
@@ -19,7 +21,7 @@ Game đang dùng chung dự án `pum-studio` (gói miễn phí chỉ cho hai d�
 Chuỗi kết nối cho Vercel (lấy phần máy chủ ở **Connect → Transaction pooler** trong trang Supabase, rồi thay tên người dùng và mật khẩu):
 
 ```
-postgresql://vuon_viet.lpiwmdomdzebzhmxzesn:<mật khẩu>@<máy chủ pooler>:6543/postgres
+postgresql://vuon_viet.lpiwmdomdzebzhmxzesn:<mật khẩu>@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres
 ```
 
 Mật khẩu không lưu trong kho mã. Đổi mật khẩu bằng `alter role vuon_viet password '...'` trong SQL Editor.
