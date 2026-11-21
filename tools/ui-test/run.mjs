@@ -71,7 +71,9 @@ for (const dev of DEVICES) {
   const page = await ctx.newPage();
   const logs = [];
   page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error' && !/401|409/.test(m.text())) logs.push(`console: ${m.text().slice(0, 200)}`); });
+  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) logs.push(`console: ${m.text().slice(0, 200)}`); });
+  // Phản hồi lỗi từ máy chủ, trừ 401 (chưa đăng nhập ở lần mở đầu) và 409 (từ chối theo luật chơi)
+  page.on('response', (r) => { if (r.status() >= 400 && ![401, 409].includes(r.status())) logs.push(`${r.status()} ${r.request().method()} ${r.url().replace(BASE, '')}`); });
   page.on('dialog', (d) => d.accept());
   let n = 0;
   const shot = async (screen) => {

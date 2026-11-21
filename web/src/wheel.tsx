@@ -55,16 +55,18 @@ export function RoleWheel({ regionName, onDone }: { regionName: string; onDone: 
           <text x="100" y="106" textAnchor="middle" fontSize="16">🌱</text>
         </svg>
       </div>
+      <div className="wheel-action">
       {phase !== 'done' && <button className="primary spin-btn" disabled={phase === 'spinning'} onClick={spin}>{phase === 'spinning' ? 'Đang quay…' : 'Quay'}</button>}
-      {phase !== 'done' && <p className="wheel-note">Mỗi mùa dài {SEASON_DAYS} ngày, hết mùa được quay lại.</p>}
-      {error && <p className="error wheel-error" role="alert">{error}</p>}
-      {phase === 'done' && role && (
-        <div className="card role-result" role="status">
-          <h2>{ROLE_INFO[role].icon} Mùa này bạn là {ROLE_INFO[role].name}</h2>
-          <p>{ROLE_INFO[role].desc}</p>
-          <button className="primary" onClick={onDone}>Vào xóm</button>
-        </div>
-      )}
+        {phase !== 'done' && <p className="wheel-note">Mỗi mùa dài {SEASON_DAYS} ngày, hết mùa được quay lại.</p>}
+        {error && <p className="error wheel-error" role="alert">{error}</p>}
+        {phase === 'done' && role && (
+          <div className="card role-result" role="status">
+            <h2>{ROLE_INFO[role].icon} Mùa này bạn là {ROLE_INFO[role].name}</h2>
+            <p>{ROLE_INFO[role].desc}</p>
+            <button className="primary" onClick={onDone}>Vào xóm</button>
+          </div>
+        )}
+      </div>
     </main>
   );
 }

@@ -335,7 +335,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const ctxPlanting = ctx.kind === 'tile' && ctxLot ? ctxLot.plantings.find((p) => p.tile === ctx.tile) : undefined;
 
   return (
-    <div className="game">
+    <div className={tab === 'vuon' ? 'game' : 'game has-modal'}>
       <WorldView state={worldState} worldRef={worldRef} paused={tab !== 'vuon'} onContext={setCtx} onReady={onReady} />
 
       <header className="hud-top">
