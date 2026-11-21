@@ -332,7 +332,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const mine = center?.plot.mine ?? true;
   const ready = center && mine ? center.plantings.filter((p) => now >= p.stepReadyAt) : [];
   const nextAt = center && mine && center.plantings.length ? Math.min(...center.plantings.map((p) => p.stepReadyAt)) : null;
-  const quest: [string, string] = tour ? ['🧳', `Đang tham quan ${REGIONS[tour].name}: dạo vườn mẫu, ghé quầy trưng bày trước cổng`]
+  const quest: [string, string] = tour ? ['🧳', `Tham quan ${REGIONS[tour].name}: dạo vườn mẫu, ghé quầy trước cổng`]
     : !center ? ['⏳', 'Đang mở xóm…']
     : !mine ? ['👋', `Đang thăm vườn ${center.plot.ownerName}`]
     : center.plantings.length === 0 ? ['🌱', 'Chạy vào vườn, đứng lên một ô đất và chọn giống để trồng']

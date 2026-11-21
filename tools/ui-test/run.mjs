@@ -175,7 +175,7 @@ for (const dev of DEVICES) {
       await page.getByRole('button', { name: /Về nhà/ }).click(); await page.waitForTimeout(2500); await page.locator('.plot-switch').waitFor(); await shot('nhieu-vuon');
       await world('w.teleportToTile(0, 8)'); await page.locator('.ctx-btn').first().waitFor(); await shot('nhieu-vuon-dung-tren-o');
     });
-    if (!QUICK) for (const [i, mode] of [[0, 'xe-khach'], [1, 'phuong-tien-2'], [2, 'phuong-tien-3']]) await step(`du-lich-${mode}`, async () => {
+    if (!QUICK) for (const [i, mode] of [[0, 'chuyen-1'], [1, 'chuyen-2'], [2, 'chuyen-3']]) await step(`du-lich-${mode}`, async () => {
       await enter(); await dock(/Du lịch/);
       // chọn một vùng xa (cuối danh sách) để có nhiều phương tiện; mỗi lượt thử một phương tiện khác
       const rows = page.locator('.row-toggle'), nRows = await rows.count(); await rows.nth(nRows - 2 - i * 9).click();
