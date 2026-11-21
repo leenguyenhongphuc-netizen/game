@@ -4,7 +4,7 @@ import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, specialtiesOfRegion } from '..
 import type { Zone } from '../../shared/catalog.ts';
 import {
   COOP_BONUS, COOP_CREATE_COST, COOP_MAX_MEMBERS, COOP_ORDER_BONUS, GIFT_DAILY_LIMIT, LAND_PRICE, QUALITY_NAMES, REGION_SET_REWARD,
-  SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_COST, fmtMoney,
+  SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_COST, fmtMoney,
 } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import type { Collection, Coop, CoopOrder, CoopSummary, GiftInbox, Me } from './api.ts';
@@ -122,7 +122,7 @@ export function TravelPanel({ me, priceOf, refresh, visit }: { me: Me; priceOf: 
   const owned = new Set(me.plots.map((p) => p.regionId));
   return (
     <div>
-      <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Vé đi mỗi vùng mới {fmtMoney(TRAVEL_COST)}. Tới nơi, bạn mua được đặc sản làm quà (tối đa {SOUVENIR_MAX_KG} kg mỗi lần, giá bằng {pct(SOUVENIR_RATIO)} giá tham chiếu), ghé vườn người khác để phụ thu hoạch và mua tại sạp, hoặc mua đất {fmtMoney(LAND_PRICE)}.</p>
+      <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Vé đi mỗi vùng mới {fmtMoney(TRAVEL_COST)}. Tới nơi, bạn mua được đặc sản làm quà (tối đa {SOUVENIR_MAX_KG} kg mỗi lần, {SOUVENIR_DAILY_BUYS} lần mỗi ngày, giá bằng {pct(SOUVENIR_RATIO)} giá tham chiếu), ghé vườn người khác để phụ thu hoạch và mua tại sạp, hoặc mua đất {fmtMoney(LAND_PRICE)}.</p>
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {ZONES.map((z) => (
         <div key={z}>

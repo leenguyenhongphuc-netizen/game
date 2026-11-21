@@ -218,7 +218,8 @@ export const GLUT_KG = 3000, GLUT_MAX_DROP = 0.3;
 export function glutFactor(kg24h: number): number {
   return 1 - GLUT_MAX_DROP * Math.min(1, Math.max(0, kg24h) / GLUT_KG);
 }
-export const TRAVEL_COST = 20_000, SOUVENIR_RATIO = 1.2, SOUVENIR_MAX_KG = 5;
+/** Quà đặc sản bán đắt hơn mọi mức thương lái trả (kể cả cộng dồn thưởng) và giới hạn số lần mua mỗi ngày, để không mua đi bán lại kiếm lời. */
+export const TRAVEL_COST = 20_000, SOUVENIR_RATIO = 1.8, SOUVENIR_MAX_KG = 5, SOUVENIR_DAILY_BUYS = 3;
 export const GIFT_DAILY_LIMIT = 5, GIFT_MAX_KG = 20, REGION_SET_REWARD = 50_000;
 
 // ---------------------------------------------------------------- vườn sân thượng trong phố

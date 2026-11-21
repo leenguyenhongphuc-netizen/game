@@ -66,7 +66,7 @@ Ngoài ra đã có: đơn hàng cá nhân theo ngày (đơn thu mua, giỏ quà 
 
 ## 5. Vùng trồng và đặc sản
 
-Danh mục nằm ở `shared/catalog.ts`: **53 vùng trồng, 127 đặc sản, 47 loại cây**, phủ đủ **34 tỉnh, thành phố** (theo sắp xếp hành chính 2025) và bốn đảo: Cát Bà, Lý Sơn, Côn Đảo, Phú Quốc.
+Danh mục nằm ở `shared/catalog.ts`: **53 vùng trồng, 136 đặc sản, 56 loại cây**, phủ đủ **34 tỉnh, thành phố** (theo sắp xếp hành chính 2025) và bốn đảo: Cát Bà, Lý Sơn, Côn Đảo, Phú Quốc.
 
 Đặc sản gắn với **vùng trồng** chứ không gắn với tên tỉnh, vì tên tỉnh đã đổi sau sáp nhập còn vùng trồng thì không. Ví dụ:
 
