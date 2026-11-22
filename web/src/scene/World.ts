@@ -63,14 +63,17 @@ export function bake(root: THREE.Object3D): THREE.Group {
     if (!m.isMesh) return;
     const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
     g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
-    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
     let material = m.material as THREE.Material;
     const sm = material as THREE.MeshStandardMaterial;
+    // Lưới đã gộp từ trước (đang dùng màu đỉnh) phải GIỮ thuộc tính color khi gộp lần nữa, nếu không sẽ đen sì.
+    const keepColor = !!sm.vertexColors && !!g.attributes.color;
+    for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && !(keepColor && name === 'color')) g.deleteAttribute(name);
     // Khối màu trơn, nhám (phần lớn mô hình): ghi màu vào đỉnh rồi dùng chung MỘT chất liệu — mỗi cụm chỉ còn một lần vẽ.
     const plain = sm.isMeshStandardMaterial && !sm.map && !sm.transparent && sm.roughness >= 0.7 && sm.emissive.getHex() === 0 && !sm.vertexColors;
     const n = g.attributes.position.count, col = new Float32Array(n * 3), c = plain ? sm.color : WHITE;
     for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
     if (plain) { g.setAttribute('color', new THREE.BufferAttribute(col, 3)); material = VC_MAT; }
+    else if (sm.vertexColors && !g.attributes.color) g.setAttribute('color', new THREE.BufferAttribute(col, 3)); // chất liệu đọc màu đỉnh mà lưới không có: tô trắng thay vì để đen
     if (!buckets.has(material)) buckets.set(material, []);
     buckets.get(material)!.push(g);
   });
