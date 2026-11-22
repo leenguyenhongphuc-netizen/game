@@ -112,8 +112,8 @@ export class SightScene {
   dismiss() { this.dismissed = this.nearIdx; this.lookAt = null; }
   /** Đưa nhân vật tới sát một điểm dừng (dùng cho thử nghiệm). */
   goto(index: number) {
-    const st = this.set.stops[Math.max(0, Math.min(this.set.stops.length - 1, index))]; const pr = this.project(st.at), back = this.at(Math.max(0, pr.s - 2.2));
-    this.state.pos.copy(back.p); this.state.seg = back.seg; this.state.s = pr.s - 2.2; this.heading = Math.atan2(back.dir.x, -back.dir.z); this.yaw = this.heading; this.dismissed = null; this.nearIdx = null;
+    const st = this.set.stops[Math.max(0, Math.min(this.set.stops.length - 1, index))]; const pr = this.project(st.at), back = this.at(Math.max(0, pr.s - 1.6));
+    this.state.pos.copy(back.p); this.state.seg = back.seg; this.state.s = pr.s - 1.6; this.heading = Math.atan2(back.dir.x, -back.dir.z); this.yaw = this.heading; this.dismissed = null; this.nearIdx = null;
     this.step(0.016); if (this.lookAt) { this.yaw = Math.atan2(this.lookAt.x - this.state.pos.x, -(this.lookAt.z - this.state.pos.z)); for (let i = 0; i < 40; i++) this.step(0.05); } this.placeCamera(true); this.renderer.render(this.scene, this.camera);
   }
   pos() { return { x: this.state.pos.x, y: this.state.pos.y, z: this.state.pos.z, s: this.state.s, total: this.total }; }

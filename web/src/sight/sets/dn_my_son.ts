@@ -116,7 +116,7 @@ export function mySon(kit: Kit, _s: Sight): SightSet {
       { id: 'nhom_bcd', at: V(7, 0, -26), look: V(-14, 8, -4) },
       { id: 'linga', at: V(-8.4, 0, 11), look: V(-18, 2, 12) },
       { id: 'nhom_a', at: V(40, 0, 30.4), look: V(52, 2.5, 30) },
-      { id: 'nha_mua', at: V(62, 0, -32), look: V(64, 3, -40) },
+      { id: 'nha_mua', at: V(62, 0, -27), look: V(64, 3, -40) },
     ],
     sky: [0x8fc4ea, 0xf4f1dc], fog: [0xdfe9d8, 50, 330],
     light: { ambient: 1.55, sun: 1.5, sunColor: 0xfff0cf, sunDir: [0.7, 0.8, -0.3] },
