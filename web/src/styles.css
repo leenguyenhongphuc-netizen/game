@@ -300,3 +300,60 @@ button.primary.spin-btn { width: min(240px, 70vw); font-size: 1.3rem; }
   .guide .step-nav { display: none; }
   .truck-actions { grid-template-columns: repeat(4, 1fr); }
 }
+
+/* ---- Hoạt ảnh minh hoạ từng bước trồng (guide.tsx) ---- */
+.stage-art * { transform-box: view-box; }
+.aa-swing { animation: aa-swing 1.1s ease-in-out infinite; }
+.aa-tilt { animation: aa-tilt 2s ease-in-out infinite; }
+.aa-rain { animation: aa-rain 1s linear infinite; }
+.aa-puddle { animation: aa-puddle 2s ease-in-out infinite; transform-origin: 60px 80px; }
+.aa-pop { animation: aa-pop 1.1s ease-out infinite; }
+.aa-drop { animation: aa-drop 1.8s ease-in infinite; }
+.aa-bob { animation: aa-bob 1s ease-in-out infinite; }
+.aa-pull { animation: aa-pull 1.6s ease-in infinite; }
+.aa-snip { animation: aa-snip 0.9s steps(2) infinite; transform-origin: 88px 34px; }
+.aa-fall { animation: aa-fall 1.6s ease-in infinite; }
+.aa-rise { animation: aa-rise 2.2s ease-out infinite; }
+.aa-draw { stroke-dasharray: 140; animation: aa-draw 2.2s ease-out infinite; }
+.aa-wrap { animation: aa-wrap 2.2s ease-out infinite both; }
+.aa-bloom { animation: aa-bloom 2s ease-out infinite both; }
+.aa-bee { animation: aa-bee 2.6s ease-in-out infinite; }
+.aa-pick { animation: aa-pick 1.6s ease-in infinite both; }
+.aa-spin { animation: aa-spin 6s linear infinite; }
+.aa-steam { animation: aa-steam 1.6s ease-out infinite; }
+@keyframes aa-swing { 0%, 100% { transform: rotate(-22deg); } 50% { transform: rotate(12deg); } }
+@keyframes aa-tilt { 0%, 100% { transform: rotate(0deg); } 30%, 80% { transform: rotate(-22deg); } }
+@keyframes aa-rain { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(-6px, 40px); opacity: 0; } }
+@keyframes aa-puddle { 0%, 20% { transform: scale(0.2); opacity: 0; } 70%, 100% { transform: scale(1); opacity: 0.55; } }
+@keyframes aa-pop { 0% { transform: translateY(0); opacity: 0; } 30% { opacity: 1; } 100% { transform: translateY(-14px); opacity: 0; } }
+@keyframes aa-drop { 0% { transform: translateY(-26px); opacity: 0; } 20% { opacity: 1; } 60%, 100% { transform: translateY(8px); opacity: 1; } }
+@keyframes aa-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(5px); } }
+@keyframes aa-pull { 0%, 25% { transform: translateY(0); opacity: 1; } 70% { transform: translateY(-16px) rotate(10deg); opacity: 1; } 100% { transform: translateY(-22px); opacity: 0; } }
+@keyframes aa-snip { 0% { transform: rotate(-16deg); } 100% { transform: rotate(8deg); } }
+@keyframes aa-fall { 0%, 30% { transform: translate(0, 0) rotate(0); opacity: 1; } 100% { transform: translate(10px, 38px) rotate(50deg); opacity: 0; } }
+@keyframes aa-rise { 0% { transform: scaleY(0); } 45%, 100% { transform: scaleY(1); } }
+@keyframes aa-draw { 0%, 40% { stroke-dashoffset: 140; } 85%, 100% { stroke-dashoffset: 0; } }
+@keyframes aa-wrap { 0% { transform: scale(0) translateY(-10px); opacity: 0; } 35%, 100% { transform: scale(1); opacity: 1; } }
+@keyframes aa-bloom { 0% { transform: scale(0); } 40% { transform: scale(1.25); } 60%, 100% { transform: scale(1); } }
+@keyframes aa-bee { 0%, 100% { transform: translate(-14px, 4px); } 33% { transform: translate(12px, -2px); } 66% { transform: translate(0, -12px); } }
+@keyframes aa-pick { 0%, 20% { transform: translate(0, 0); opacity: 1; } 85% { transform: translate(var(--dx), var(--dy)); opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)); opacity: 0; } }
+@keyframes aa-spin { to { transform: rotate(360deg); } }
+@keyframes aa-steam { 0% { transform: translateY(6px); opacity: 0; } 40% { opacity: 0.9; } 100% { transform: translateY(-8px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .stage-art [class^='aa-'] { animation: none; } }
+.step-flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.step-flow li { display: grid; gap: 2px; justify-items: center; text-align: center; padding: 6px 4px; border: 2px solid var(--line); border-radius: 12px; background: #fffdf4; font-size: 0.74rem; line-height: 1.25; color: var(--muted); position: relative; }
+.step-flow li > span { font-size: 1.15rem; line-height: 1; }
+.step-flow li b { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink); }
+.step-flow li em { font-style: normal; font-weight: 700; color: var(--green-dark); }
+.step-flow li + li::before { content: '▸'; position: absolute; left: -7px; top: 50%; transform: translate(-50%, -50%); color: var(--gold-dark); font-size: 0.8rem; }
+
+/* Thẻ "vừa làm xong" sau mỗi bước chăm cây: thấy động tác và biết bước kế tiếp */
+.act-card { align-self: center; pointer-events: none; display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: center; width: min(380px, 100%); background: var(--paper); border: 3px solid var(--green-dark); border-radius: 18px; padding: 8px 12px 8px 8px; box-shadow: 0 5px 0 var(--green-dark), 0 12px 24px #0003; animation: pop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1); }
+.act-card > div { display: grid; gap: 2px; justify-items: start; min-width: 0; }
+.act-card small { color: var(--muted); font-size: 0.72rem; }
+.act-card strong { font-family: var(--display); font-size: 1.05rem; line-height: 1.15; }
+.act-card p { font-size: 0.82rem; color: var(--muted); }
+.act-card .tag { white-space: normal; }
+/* Khi mở bảng: chỉ giữ hàng trên cùng, các dải bên dưới không ló ra sau bảng */
+.game.has-modal .chips, .game.has-modal .quest, .game.has-modal .plot-switch, .game.has-modal .act-card { display: none; }
+.modal-head .round { color: var(--wood-dark); font-weight: 800; font-size: 1.1rem; }

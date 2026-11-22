@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, npcOf, processOf, specialtiesOfRegion } from '../../shared/catalog.ts';
+import type { Specialty } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
   CITY_BONUS, GIFT_MAX_KG, HELP_REWARD, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, ROOFTOP_TILES, TILE_M2, DUMP_RATIO, QUALITY_MULT, ROLE_INFO, TRAVEL_MODES, TRUCK, fmtMoney, inSeason, npcPrice, seedCost, stepWaitMs, weatherAt,
@@ -12,7 +13,7 @@ import { RoleWheel } from './wheel.tsx';
 import { CustomizePanel } from './custom.tsx';
 import { DriveGame } from './drive/DriveGame.tsx';
 import type { DrivePlan, DriveResult } from './drive/DriveGame.tsx';
-import { CropGuide } from './guide.tsx';
+import { CropGuide, KIND_VERB, StageArt, stepIcon, stepKind } from './guide.tsx';
 import type { Friends, GiftInbox, Listing, LotView, Me, Planting, Prices, Village } from './api.ts';
 import { DEFAULT_STYLE } from '../../shared/custom.ts';
 import { TravelRide } from './drive/TravelRide.tsx';
@@ -293,6 +294,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     } catch (e) { setToast(e instanceof Error ? e.message : 'Có lỗi xảy ra.'); }
     setTrip(null); reload();
   };
+  const [acted, setActed] = useState<{ sp: Specialty; stepIndex: number; kg?: number; at: number } | null>(null);
+  useEffect(() => { if (!acted) return; const t = setTimeout(() => setActed(null), 3200); return () => clearTimeout(t); }, [acted]);
   const visit = (id: number) => { setTour(null); setPlotId(id); setTab('vuon'); worldRef.current?.goHome(); };
   const startRide = async (mode: RideMode, to: string, km: number) => { await api('POST', '/api/travel', { regionId: to, mode }); setTab('vuon'); setRide({ mode, to, km }); await refresh(); };
 
@@ -313,6 +316,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         worldRef.current?.burst(lotIndex, planting.tile, kind);
         if (r.harvested) { worldRef.current?.floatText(lotIndex, planting.tile, `+${r.harvested.kg} kg ${CROPS[sp.crop].emoji}`); setToast(`Thu hoạch ${r.harvested.kg} kg ${sp.name} (${QUALITY_NAMES[r.harvested.quality as 'A']})${r.harvested.inSeason ? ' · chính vụ +15%' : ''}`); }
         else worldRef.current?.floatText(lotIndex, planting.tile, `${STEP_ICON[kind]} ${step.name}`, '#fff6dc');
+        setActed({ sp, stepIndex: planting.stepIndex, kg: r.harvested?.kg, at: Date.now() });
       } else {
         const r = await api('POST', `/api/plantings/${planting.id}/help`, {});
         worldRef.current?.burst(lotIndex, planting.tile, kind);
@@ -337,7 +341,12 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     : !mine ? ['👋', `Đang thăm vườn ${center.plot.ownerName}`]
     : center.plantings.length === 0 ? ['🌱', 'Chạy vào vườn, đứng lên một ô đất và chọn giống để trồng']
     : ready.length > 0 ? ['⭐', `Chạy tới ${ready.length} ô có dấu vàng để chăm cây`]
-    : ['⏰', `Bước kế tiếp sau ${fmtDuration((nextAt ?? now) - now)}`];
+    : (() => {
+        // nói rõ việc sắp tới là gì, của cây nào — không chỉ đếm giờ
+        const nx = center.plantings.reduce((a, b) => (a.stepReadyAt <= b.stepReadyAt ? a : b));
+        const nsp = SPECIALTIES[nx.specialtyId], nst = processOf(CROPS[nsp.crop])[nx.stepIndex];
+        return [stepIcon(nst.name), `${fmtDuration((nextAt ?? now) - now)} nữa: ${nst.name} cho ${nsp.name}`] as [string, string];
+      })();
 
   const ctxLot = ctx.kind === 'none' || ctx.kind === 'truck' ? null : lots[ctx.lot] ?? null;
   const ctxPlanting = ctx.kind === 'tile' && ctxLot ? ctxLot.plantings.find((p) => p.tile === ctx.tile) : undefined;
@@ -367,6 +376,20 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
           {me.plots.map((p) => <button key={p.id} aria-pressed={p.id === plotId} onClick={() => visit(p.id)}>{p.isHome ? '🏠 ' : '🌾 '}{REGIONS[p.regionId].name}</button>)}
         </div>
       )}
+        {acted && tab === 'vuon' && (() => {
+          const steps = processOf(CROPS[acted.sp.crop]), st = steps[acted.stepIndex], nxt = steps[acted.stepIndex + 1];
+          return (
+            <div className="act-card" role="status" key={acted.at}>
+              <StageArt t={steps.length > 1 ? acted.stepIndex / (steps.length - 1) : 1} kind={stepKind(st.name)} fruit={CROPS[acted.sp.crop].emoji} />
+              <div>
+                <small>Vừa làm xong · bước {acted.stepIndex + 1}/{steps.length}</small>
+                <strong>{st.name}</strong>
+                <p>{KIND_VERB[stepKind(st.name)]}.</p>
+                <span className="tag">{nxt ? `Tiếp theo: ${nxt.name} · sau ${fmtDuration(stepWaitMs(acted.sp, pace))}` : `Vào kho ${acted.kg ?? ''} kg · ô đất trống, trồng vụ mới được rồi`}</span>
+              </div>
+            </div>
+          );
+        })()}
         {toast && <div className="toast" role="status">{toast}</div>}
       </div>
 
