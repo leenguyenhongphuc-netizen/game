@@ -240,6 +240,8 @@ export function flag(h = 7): THREE.Group { return grp(0, 0, 0, 0, cyl(0xcfd6e0, 
 /** Bảng chỉ dẫn hai cánh trên cột. */
 export function wayPost(a = 0x2f7d6a, b = 0x7a4a22): THREE.Group { return grp(0, 0, 0, 0, cyl(0x5a4a34, 0, 1.3, 0, 0.07, 2.6), box(a, 0.42, 2.3, 0, 0.9, 0.26, 0.05), box(b, -0.42, 1.95, 0, 0.9, 0.26, 0.05), box(0xf3ead2, 0.42, 2.3, 0.03, 0.6, 0.06, 0.01), box(0xf3ead2, -0.42, 1.95, 0.03, 0.6, 0.06, 0.01)); }
 /** Thùng rác đôi. */
+/** Bảng thuyết minh di tích: khung gỗ, mặt bảng kem có tiêu đề và các dòng chữ giả. */
+export function infoBoard(c = 0x7a4a22): THREE.Group { const g = grp(0, 0, 0, 0, cyl(c, -0.55, 0.7, 0, 0.05, 1.4), cyl(c, 0.55, 0.7, 0, 0.05, 1.4), box(c, 0, 1.2, 0, 1.3, 0.86, 0.06), box(0xf6ecd0, 0, 1.2, 0.035, 1.16, 0.72, 0.02), box(0xb8322a, 0, 1.44, 0.05, 0.8, 0.1, 0.01), gable(c, 0, 1.63, 0, 0.3, 0.14, 1.46, Math.PI / 2)); for (let i = 0; i < 4; i++) g.add(box(0x8a7a66, i % 2 ? -0.06 : 0, 1.28 - i * 0.11, 0.05, i % 2 ? 0.86 : 0.98, 0.035, 0.01)); return g; }
 export function bin(): THREE.Group { return grp(0, 0, 0, 0, cyl(0x2f7d26, -0.24, 0.42, 0, 0.2, 0.84), cyl(0xe2a33c, 0.24, 0.42, 0, 0.2, 0.84), box(0x3a3a3a, 0, 0.9, 0, 0.9, 0.06, 0.4)); }
 /** Bảng hiệu gỗ treo ngang (không chữ, có vạch giả chữ thếp vàng). */
 export function shopSign(w = 1.8, bg = 0x2a1a12, fg = 0xd9a83a): THREE.Group { const g = grp(0, 0, 0, 0, box(bg, 0, 0, 0, w, 0.42, 0.06)); const n = Math.max(2, Math.round(w / 0.42)); for (let i = 0; i < n; i++) g.add(box(fg, (i - (n - 1) / 2) * (w * 0.8 / n), 0, 0.04, w * 0.5 / n, 0.2, 0.02)); return g; }

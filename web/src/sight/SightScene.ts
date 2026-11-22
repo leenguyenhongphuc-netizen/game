@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { bake } from '../scene/World.ts';
 import { gradient } from '../drive/RideKit.ts';
-import { Kit, V, ball, box, cyl, cone, glow, dot, walker, shopModel, cloud, label } from './SightKit.ts';
+import { Kit, V, ball, box, cyl, cone, glow, dot, walker, shopModel, cloud, label, infoBoard, bench, potPlant } from './SightKit.ts';
 import type { PlayerState, SightSet, ShopSpot } from './SightKit.ts';
 import { SETS } from './sets/index.ts';
 import type { Sight } from '../../../shared/sights.ts';
@@ -45,6 +45,8 @@ export class SightScene {
     const sun = new THREE.DirectionalLight(s.light.sunColor ?? 0xfff2d6, s.light.sun); sun.position.set(...(s.light.sunDir ?? [0.5, 1, 0.35])); this.scene.add(sun);
     const sd = s.light.sunDir ?? [0.5, 1, 0.35];
     const fill = new THREE.DirectionalLight(s.light.ambientColor ?? 0xffffff, s.fill ?? 0.45); fill.position.set(-sd[0], 0.5, -sd[2]); this.scene.add(fill);
+    this.cum = [0]; for (let i = 1; i < s.path.length; i++) this.cum.push(this.cum[i - 1] + s.path[i].distanceTo(s.path[i - 1])); this.total = this.cum[this.cum.length - 1];
+    this.furnish();
     this.collectBlockers();
     this.scene.add(bake(this.kit.stat), this.kit.dyn);
     this.buildSky();
@@ -91,6 +93,18 @@ export class SightScene {
       this.npcs.push({ g, legs, arms, s: a + r() * (b - a), dir: r() < 0.5 ? 1 : -1, off, want: off, a, b, sp: 0.9 + r() * 0.8, ph: r() * 6 }); this.scene.add(g);
     }
   }
+  /** Mỗi điểm dừng có bảng thuyết minh ở mép lối đi, đối diện là ghế nghỉ hoặc chậu hoa — như ở các khu di tích thật. */
+  private furnish() {
+    const s = this.set;
+    s.stops.forEach((st, i) => {
+      const pr = this.project(st.at), a = this.at(Math.min(this.total, pr.s + 1.4)), nx = -a.dir.z, nz = a.dir.x;
+      // bảng đặt ở phía đối diện với công trình cần nhìn để không che tầm mắt
+      const side = st.look ? ((st.look.x - a.p.x) * nx + (st.look.z - a.p.z) * nz > 0 ? -1 : 1) : (i % 2 ? 1 : -1), off = s.half - 0.2;
+      const b = infoBoard(); b.position.set(a.p.x + nx * off * side, a.p.y, a.p.z + nz * off * side); b.rotation.y = Math.atan2(-nx * side, -nz * side); this.kit.add(b);
+      const o = i % 2 ? bench(0x8d8478) : potPlant([0xe85aa0, 0xffd23f, 0xf3ead2][i % 3], 1.3), c = this.at(Math.max(0, pr.s - 2.6));
+      o.position.set(c.p.x + (-c.dir.z) * off * side, c.p.y, c.p.z + c.dir.x * off * side); o.rotation.y = Math.atan2(c.dir.x, c.dir.z); this.kit.add(o);
+    });
+  }
   /** Gom hộp bao của các khối tĩnh cao, đủ dày và nằm gần lối đi để chặn máy ảnh chui vào. */
   private collectBlockers() {
     const path = this.set.path, b = new THREE.Box3(), sz = new THREE.Vector3(), c = new THREE.Vector3();
@@ -133,7 +147,7 @@ export class SightScene {
     }
     if (lum >= 0.18) {
       // trời còn sáng: mây trôi chậm và vài cánh chim
-      const tint = lum < 0.4 ? 0xf6b8a0 : 0xffffff, clouds: THREE.Object3D[] = [], holder = new THREE.Group();
+      const hz = new THREE.Color(s.sky[1]), tint = hz.r > hz.b * 1.15 ? 0xf6b8a0 : 0xffffff, clouds: THREE.Object3D[] = [], holder = new THREE.Group();
       for (let i = 0; i < 9; i++) { const cl = cloud(2.2 + r() * 2.6, tint); cl.position.set(mid.x + (r() - 0.5) * 760, 95 + r() * 70, mid.z + (r() - 0.5) * 760); holder.add(cl); }
       const baked = bake(holder); baked.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.material = new THREE.MeshBasicMaterial({ color: tint, fog: false, transparent: true, opacity: 0.86 }); } }); this.scene.add(baked); clouds.push(baked);
       const birds: THREE.Group[] = [];
@@ -248,8 +262,9 @@ export class SightScene {
       // đang xem thuyết minh: máy ảnh lướt tới góc ngắm đẹp, đẩy công trình lên phần màn không bị thẻ che
       if (snap) this.camera.position.copy(this.postcard.pos); else this.camera.position.lerp(this.postcard.pos, 0.07);
       this.camLook.lerp(this.postcard.look, snap ? 1 : 0.09); this.camera.lookAt(this.camLook); this.camera.rotateX(-(portrait ? 0.07 : 0.02));
-      return;
+      this.zoom(portrait ? 74 : 54, snap); return;
     }
+    this.zoom(portrait ? 62 : 52, snap);
     const distMax = portrait ? 8.6 : 7.4, h = Math.max(1.3, 3.1 + this.pitch * 5.5);
     const head = new THREE.Vector3(p.x, p.y + 1.75, p.z);
     const dirx = -Math.sin(this.yaw) * Math.cos(this.pitch * 0.6), dirz = Math.cos(this.yaw) * Math.cos(this.pitch * 0.6);
@@ -266,6 +281,7 @@ export class SightScene {
     this.camera.lookAt(this.camLook);
   }
   private camLook = new THREE.Vector3();
+  private zoom(fov: number, snap: boolean) { const f = snap ? fov : this.camera.fov + (fov - this.camera.fov) * 0.08; if (Math.abs(f - this.camera.fov) > 0.01) { this.camera.fov = f; this.camera.updateProjectionMatrix(); } }
   private frame = (now: number) => {
     if (this.disposed) return; this.raf = requestAnimationFrame(this.frame);
     const dt = Math.min(0.05, (now - this.last) / 1000); this.last = now; this.time += dt;
@@ -275,7 +291,7 @@ export class SightScene {
     this.legs[0].rotation.x = sw; this.legs[1].rotation.x = -sw; this.arms[0].rotation.x = -sw * 0.8; this.arms[1].rotation.x = sw * 0.8;
     this.blob.position.set(st.pos.x, st.pos.y + 0.06, st.pos.z);
     // máy ảnh áp sát thì ẩn nhân vật để không che công trình
-    this.player.visible = this.blob.visible = Math.hypot(this.camera.position.x - st.pos.x, this.camera.position.z - st.pos.z) > 2.4;
+    this.player.visible = this.blob.visible = Math.hypot(this.camera.position.x - st.pos.x, this.camera.position.z - st.pos.z) > (this.postcard ? 4.2 : 2.4);
     for (let i = 0; i < this.npcs.length; i++) {
       const n = this.npcs[i];
       n.s += n.dir * n.sp * dt; if (n.s > n.b) { n.s = n.b; n.dir = -1; } if (n.s < n.a) { n.s = n.a; n.dir = 1; }

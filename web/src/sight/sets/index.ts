@@ -8,6 +8,12 @@ import { baNa } from './dn_ba_na.ts';
 import { sonTra } from './dn_son_tra.ts';
 import { cuLaoCham } from './dn_cu_lao_cham.ts';
 import { mySon } from './dn_my_son.ts';
+import { haiVan } from './dn_hai_van.ts';
+import { myKhe } from './dn_my_khe.ts';
+import { thanhHa } from './dn_thanh_ha.ts';
+import { bayMau } from './dn_bay_mau.ts';
+import { tamThanh } from './dn_tam_thanh.ts';
+import { lySon } from './qng_ly_son.ts';
 
 export type SetBuilder = (kit: Kit, sight: Sight) => SightSet;
 export const SETS: Record<string, SetBuilder> = {
@@ -18,6 +24,12 @@ export const SETS: Record<string, SetBuilder> = {
   dn_ba_na: baNa,
   dn_son_tra: sonTra,
   dn_cu_lao_cham: cuLaoCham,
+  dn_hai_van: haiVan,
+  dn_my_khe: myKhe,
+  dn_thanh_ha: thanhHa,
+  dn_bay_mau: bayMau,
+  dn_tam_thanh: tamThanh,
+  qng_ly_son: lySon,
   'kind:pho_co': hoiAn,
   'kind:chua': sonTra,
   'kind:dao': cuLaoCham,

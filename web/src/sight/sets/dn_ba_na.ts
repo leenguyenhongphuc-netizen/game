@@ -95,7 +95,7 @@ export function baNa(kit: Kit, _s: Sight): SightSet {
     stops: [
       { id: 'ga_cap', at: V(128, 0, 128), look: V(60, 40, 60) },
       { id: 'cabin', at: A.clone().lerp(B, 0.5), look: V(-60, H + 4, -60) },
-      { id: 'cau_vang', at: bridgePt(0.36), look: bridgePt(0.74).setY(H + 1) },
+      { id: 'cau_vang', at: bridgePt(0.36), look: bridgePt(0.58).setY(H - 3), cam: V(CXc + Math.cos(0.2) * (R + 17), H + 3.2, CZc - Math.sin(0.2) * (R + 17)) },
       { id: 'vuon_hoa', at: V(GX + 3, H, GZ + 6), look: V(GX, H + 1, GZ) },
       { id: 'lang_phap', at: V(VX - 5.6, H, VZ + 13), look: V(VX - 14, H + 16, VZ - 14) },
     ],

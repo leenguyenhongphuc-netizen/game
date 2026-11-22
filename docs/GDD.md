@@ -40,7 +40,7 @@ Sau khi chia sẻ vị trí, người chơi quay **vòng quay vai trò**. Không
 | Vai | Vườn | Quyền riêng | Thu nhập chính |
 |---|---|---|---|
 | 🧑‍🌾 Nhà vườn | 30 ô (sân thượng: 12) | Thưởng chính vụ trên diện tích lớn | Bán nông sản qua sạp cho thương lái và chủ xưởng |
-| 🏭 Chủ xưởng | 8 ô, có xưởng trong sân | Chỉ mình chế biến được, 4 chỗ làm | Mua trái tươi, bán thành phẩm |
+| 🏭 Chủ xưởng | Không trồng: lô đất là nhà xưởng với các máy | Chỉ mình chế biến được; xưởng mới có sẵn 1 máy (2 mẻ) | Mua nông sản, bán thành phẩm cho siêu thị, doanh nghiệp, xuất khẩu |
 | 🚚 Thương lái | 8 ô, có xe tải | Chỉ mình bán cho doanh nghiệp với giá đầy đủ; lái xe, lái tàu đi vùng khác | Chênh lệch giá giữa các vùng |
 
 **Cân bằng:**
@@ -124,12 +124,14 @@ Mục xuất khẩu cho người chơi gửi hàng trong kho ra nước ngoài. 
 
 | Đường | Lô (kg) | Cước cố định + mỗi kg | Thời gian | Hao hụt hàng tươi | Cửa ngõ |
 |---|---|---|---|---|---|
-| 🚚 Xe tải biên mậu | 50 – 500 | 300.000đ + 1.500đ | 20 phút | 3% | Cửa khẩu |
-| 🚛 Xe container lạnh | 500 – 5.000 | 2,5 triệu + 900đ | 30 phút | 1% | Cửa khẩu |
-| 🚂 Tàu hoả liên vận | 300 – 8.000 | 1,5 triệu + 600đ | 45 phút | 4% | Ga liên vận |
-| ✈️ Máy bay chở hàng | 20 – 1.000 | 800.000đ + 12.000đ | 10 phút | 0% | Sân bay |
-| ⛴️ Tàu biển nhỏ | 200 – 3.000 | 1 triệu + 500đ | 60 phút | 6% | Cảng |
-| 🚢 Tàu container viễn dương | 2.000 – 50.000 | 6 triệu + 250đ | 120 phút | 10% | Cảng |
+| 🚚 Xe tải biên mậu | 30 – 500 | 300.000đ + 1.500đ | 20 phút | 3% | Cửa khẩu |
+| 🚛 Xe container lạnh | 200 – 5.000 | 2,5 triệu + 900đ | 30 phút | 1% | Cửa khẩu |
+| 🚂 Tàu hoả liên vận | 100 – 8.000 | 1,5 triệu + 600đ | 45 phút | 4% | Ga liên vận |
+| ✈️ Máy bay chở hàng | 10 – 1.000 | 800.000đ + 12.000đ | 10 phút | 0% | Sân bay |
+| ⛴️ Tàu biển nhỏ | 100 – 3.000 | 1 triệu + 500đ | 60 phút | 6% | Cảng |
+| 🚢 Tàu container viễn dương | 500 – 50.000 | 6 triệu + 250đ | 120 phút | 10% | Cảng |
+
+Mức tối thiểu đã hạ so với bản đầu (container từ 500 xuống 200 kg, tàu lớn từ 2 tấn xuống 500 kg): lô nhỏ được coi là hàng lẻ đi ghép container. Cước cố định vẫn giữ nên lô nhỏ đi đường lớn tự khắc không lời.
 
 Hàng khô (cây công nghiệp như cà phê, tiêu, chè, quế; lúa gạo) chỉ hao một phần năm, nên đi tàu lớn là rẻ nhất; trái tươi giá trị cao thì đáng đi máy bay; lô vừa đi container lạnh. Cộng thêm cước nội địa 1,2đ mỗi kg mỗi km từ vùng nhà tới cửa ngõ gần nhất (cửa khẩu Hữu Nghị, Kim Thành, Móng Cái, Lao Bảo, Mộc Bài; ga Đồng Đăng, Lào Cai; sân bay Nội Bài, Đà Nẵng, Tân Sơn Nhất; cảng Hải Phòng, Tiên Sa, Cái Mép), nên vườn miền Nam bán sang Trung Quốc bằng đường bộ tốn hơn vườn miền Bắc.
 
@@ -138,16 +140,24 @@ Hàng khô (cây công nghiệp như cà phê, tiêu, chè, quế; lúa gạo) c
 | 🇨🇳 Trung Quốc | 125% | Xe tải, container, tàu hoả | |
 | 🇱🇦 Lào – Campuchia | 115% | Xe tải, container | |
 | 🌏 Thái Lan – Singapore | 130% | Tàu nhỏ, máy bay | |
-| 🇯🇵 Nhật Bản – Hàn Quốc | 160% | Máy bay, tàu lớn | Chỉ Loại 1 |
-| 🌍 Châu Âu – Mỹ | 190% | Máy bay, tàu lớn | Chỉ Loại 1 |
+| 🇮🇳 Ấn Độ | 135% | Tàu nhỏ, tàu lớn, máy bay | |
+| 🇦🇪 Trung Đông | 150% | Máy bay, tàu lớn | |
+| 🇯🇵 Nhật Bản – Hàn Quốc | 160% | Máy bay, tàu lớn | Trái tươi: chỉ Loại 1, xử lý hơi nước nóng 2.500đ/kg, thêm 5 phút |
+| 🇷🇺 Nga – Á Âu | 145% | Tàu hoả, tàu lớn | Chỉ nhận hàng chế biến và hàng khô |
+| 🇦🇺 Úc – New Zealand | 175% | Máy bay, tàu lớn | Trái tươi: chỉ Loại 1, chiếu xạ 4.000đ/kg, thêm 10 phút |
+| 🌍 Châu Âu – Mỹ | 190% | Máy bay, tàu lớn | Trái tươi: chỉ Loại 1, chiếu xạ 4.000đ/kg, thêm 10 phút |
 
 Giá xuất khẩu không chịu "được mùa mất giá" trong nước, nên xuất khẩu là lối thoát khi cả máy chủ trồng cùng một loại.
 
-Ai đi được đường nào: thương lái đi mọi đường; nhà vườn và chủ xưởng gửi xe tải biên mậu và máy bay, vào hợp tác xã thì thêm container, tàu hoả, tàu nhỏ. Mỗi người tối đa 3 lô đang trên đường.
+**Hàng chế biến của xưởng xuất khẩu được** (`processed: true`): giá = giá nông sản × hệ số giá trị của công thức × hệ số thị trường (cộng 8% nếu xưởng có máy đóng gói); hao hụt chỉ bằng một phần mười hàng tươi; không xét loại; miễn phí kiểm dịch. Đây là đầu ra chính của chủ xưởng và là loại hàng duy nhất (cùng hàng khô) đi được Nga – Á Âu.
+
+**Ai đi được đường nào:** mọi vai đi được mọi đường. Thương lái được giảm 15% cước (có mối vận tải), thành viên hợp tác xã giảm thêm 10% (gom hàng chung); phí kiểm dịch không được giảm. Số lô đang trên đường: 4 ở cấp 1, mỗi cấp thêm 1, tối đa 10 (xem mục Hộ chiếu và cấp bậc).
+
+Đơn giản hoá so với thực tế: mã số vùng trồng, kiểm dịch thực vật, chứng nhận xuất xứ được gộp vào cước; chiếu xạ và xử lý hơi nước nóng là một khoản phí mỗi kg cộng thời gian; không có hạn ngạch, thuế, tỷ giá.
 
 Đơn lớn của hợp tác xã ghi sẵn thị trường và đường đi (`exportMode`, `market`) để giao diện phát đúng hoạt cảnh khi đủ đơn.
 
-Chưa có: xuất khẩu thành phẩm của xưởng, rủi ro dọc đường (ùn ứ cửa khẩu, trả hàng), giá thị trường nước ngoài biến động.
+Chưa có: rủi ro dọc đường (ùn ứ cửa khẩu, trả hàng), giá thị trường nước ngoài biến động, đơn lớn hợp tác xã tạo lô hàng thật.
 
 ## Ba trụ: vườn là nguồn tiền, xây dựng tự do, du lịch là nơi tiêu tiền và gặp nhau
 
@@ -174,9 +184,67 @@ Danh mục ở `shared/sights.ts`: toạ độ thật, các điểm dừng theo 
 Mỗi tỉnh có điểm tham quan có một siêu thị ở lối ra.
 
 - **Ký gửi:** ai đang ở trong tỉnh cũng đem hàng trong kho bày lên kệ được. Giá tự đặt trong khung 100–160% giá tham chiếu; mỗi lô 5–300 kg; mỗi người tối đa 6 lô đang bày. Hàng rời kho ngay, rút về được bất cứ lúc nào.
-- **Mua:** phải đang ở trong tỉnh; mỗi người 30 kg mỗi ngày ở mỗi siêu thị. Hàng mua được tính vào sổ tem. Người bán nhận tiền ngay, trừ phí kệ 5%.
+- **Mua:** phải đang ở trong tỉnh; mỗi người 30 kg mỗi ngày ở mỗi siêu thị (thêm 5 kg mỗi cấp). Kệ nhận cả thành phẩm của xưởng; thành phẩm mua về nằm ở kho thành phẩm riêng. Hàng mua được tính vào sổ tem. Người bán nhận tiền ngay, trừ phí kệ 5%.
 - **Kệ nhà bán:** để siêu thị không trống khi ít người chơi, "Tiệm Ba Miền" luôn bày đặc sản của các vùng trong tỉnh và 3 đặc sản tỉnh khác xoay theo ngày, giá 150% giá tham chiếu, mỗi món 20 kg mỗi ngày cho mọi người. Kệ người chơi rẻ hơn hiện trước.
 - **Cân bằng:** mua của nhà bán ở 150% rồi ký gửi lại tối đa 160% trừ phí 5% còn 152%, lãi 2% trên tối đa 20 kg, không đáng tiền taxi. Mua hàng người chơi ở sàn 100% rồi bán tháo cho doanh nghiệp thì lỗ. Kẽ hở còn lại: mua ở sàn 100% rồi giao đơn hàng, bán hàng phương xa hay xuất khẩu sang thị trường giá cao; đã bị chặn ở 30 kg mỗi ngày mỗi siêu thị, và chợ người chơi vốn đã cho mua rẻ hơn thế. Sàn 100% còn giữ cho siêu thị không phá giá chợ và sạp ở quê.
+
+## Hộ chiếu du lịch, điểm kinh nghiệm và cấp bậc
+
+Mỗi người chơi có một **hộ chiếu Vườn Việt** (`GET /api/passport`), số hộ chiếu sinh từ mã tài khoản. Hộ chiếu đóng ba loại dấu, có ngày giờ:
+
+- **Dấu check-in** cho mỗi điểm dừng đã chụp ảnh ở một địa danh.
+- **Dấu chứng nhận** (dấu lớn) khi đi trọn mọi điểm dừng của một địa danh.
+- **Dấu vùng** cho mỗi vùng trồng đã đặt chân tới (bằng vé, bằng xe tải, hoặc có đất ở đó).
+
+**Điểm kinh nghiệm** (`XP` trong `shared/rules.ts`): check-in điểm dừng 10, tham quan trọn địa danh 50, lần đầu tới một vùng 30, thu hoạch 5, giao đơn 15, một lô xuất khẩu tới nơi 40, nhận một mẻ chế biến 8, mua đất 100, bán được hàng ký gửi 5, chăm giúp 2.
+
+**10 cấp** (`LEVELS`): Tập sự 0 → Lữ khách 100 → Người ham đi 300 → Thổ địa 600 → Nhà thám hiểm 1.000 → Người kể chuyện vùng miền 1.600 → Hướng dẫn viên 2.400 → Chuyên gia đặc sản 3.500 → Sứ giả miền quê 5.000 → Đại sứ Vườn Việt 7.000.
+
+**Quyền lợi theo cấp** (`levelPerks`), cố ý vừa phải để cấp là niềm tự hào chứ không là lợi thế áp đảo: thể lực tối đa +10 mỗi cấp (100 → 190), số lô xuất khẩu cùng lúc +1 mỗi cấp (4 → 10), lượng mua ở mỗi siêu thị +5 kg mỗi cấp (30 → 75).
+
+Chưa có: bảng xếp hạng, dấu theo sự kiện mùa, thưởng khi gom đủ dấu một tỉnh.
+
+## Giấy chứng nhận quyền sử dụng đất
+
+Mỗi thửa của người chơi có một **Giấy chứng nhận quyền sử dụng đất, quyền sở hữu tài sản gắn liền với đất** (`GET /api/plots/:id/certificate`, chỉ chủ thửa xem được): số vào sổ, tên chủ, tỉnh và xã phường, diện tích (30 ô × 25 m² = 750 m²; sân thượng 300 m²), mục đích sử dụng (đất trồng cây lâu năm ở vùng có cây ăn trái, cây công nghiệp; đất trồng cây hằng năm ở vùng rau, lúa, hoa; đất cơ sở sản xuất phi nông nghiệp với lô nhà của chủ xưởng; đất ở tại đô thị với vườn sân thượng), thời hạn 50 năm với đất nông nghiệp, nguồn gốc ("Nhà nước giao đất không thu tiền sử dụng đất" với thửa đầu, "Nhận chuyển nhượng" với đất mua), giá và các khoản phí đã nộp.
+
+Mua đất thu thêm **lệ phí trước bạ 0,5%** giá trị và **phí cấp giấy 100.000đ** (`landFees`), hiện rõ trong kết quả mua.
+
+Đơn giản hoá so với Luật Đất đai 2024: không có hạn mức nhận chuyển nhượng, không có thuế thu nhập 2% của bên bán (đất mua từ "quỹ đất của vùng" chứ không từ người chơi khác), không công chứng, không thuế sử dụng đất hằng năm, hết 50 năm mặc nhiên được dùng tiếp. Thửa có từ trước khi có luật này không ghi giá đã trả: giấy hiện giá đất hiện hành của vùng.
+
+## Thể lực, ăn uống và quầy hàng
+
+Nhân vật có **thể lực** (tối đa 100 ở cấp 1), tự hồi 1 điểm mỗi 3 phút thật (đầy lại sau 5 giờ; theo `TIME_SCALE`). Việc tốn sức (`ENERGY_COST`): trồng 1, chăm một bước 1, thu hoạch 2, chăm giúp 1, đứng máy một mẻ 3, lái xe tải 2 điểm mỗi 100 km (tối đa 12), mỗi điểm dừng mới khi đi bộ tham quan 2. Hết sức thì việc đó bị từ chối với lỗi `het_suc` kèm lời nhắc ăn uống. **Không tốn sức:** mua bán, xem bảng, ngồi xe khách, tàu, máy bay, taxi, ăn uống. Riêng tham quan: cần còn ít nhất 2 điểm mới vào cổng; nếu giữa chừng hết sức thì trừ hết phần còn lại chứ không huỷ chuyến.
+
+**Người mới không bị kẹt:** vườn 8 ô trồng hết 8 điểm, chăm một lượt 8 điểm; một vụ 8 bước cho cả 8 ô hết khoảng 80 điểm trải trên nhiều giờ, trong khi mỗi giờ hồi 20 điểm. Nhà vườn 30 ô chăm một lượt hết 30 điểm, bằng 1,5 giờ hồi; các bước cách nhau lâu hơn thế. Thể lực chỉ thật sự giới hạn khi dồn nhiều việc nặng trong một lúc (thu hoạch 30 ô rồi lái xe rồi đi tham quan), và lúc đó có quầy hàng.
+
+**Đồ ăn thức uống** (`shared/items.ts`): nước suối 6.000đ (+6), nước mía 10.000đ (+12), cà phê sữa đá 20.000đ (+20), bánh mì 20.000đ (+25), cơm hộp 35.000đ (+40), phở 45.000đ (+50)… và món riêng của tỉnh: mì Quảng, cao lầu, bánh ít lá gai, bánh tráng cuốn thịt heo, chè xoa xoa (Đà Nẵng); gỏi tỏi Lý Sơn, don, ram bắp, nước rong biển (Quảng Ngãi). Mua xong ăn ngay hoặc bỏ túi (mỗi món tối đa 20 phần) để dùng sau.
+
+**Quầy hàng:** mỗi địa danh mỗi ngày mọc ngẫu nhiên 2–4 quầy trong sáu kiểu (xe nước mía, gánh hàng rong, quán cà phê, tiệm tạp hoá, quầy đặc sản, quán ăn), tên chủ quầy và món bán đổi theo ngày; cùng ngày thì ai cũng thấy như nhau. Phải đang ở trong tỉnh mới mua được. Mỗi vùng nhà có một tiệm tạp hoá luôn mở bán món cơ bản.
+
+Cân bằng: tiền ăn là khoản tiêu nhỏ có ý nghĩa (một bữa phở 45.000đ so với một ô xoài bán vài triệu), không phải thuế chơi game. Chưa có: quầy lưu niệm bán vật phẩm trang trí (hệ trang trí hiện gắn món với lô đất, chưa có khái niệm món độc quyền theo địa danh), đói khát, ngủ nghỉ ở nhà nghỉ, món ăn cho hiệu ứng tạm thời.
+
+## Xưởng chế biến: máy móc thay cho ruộng
+
+Chủ xưởng **không trồng trọt**. Trồng cây trên lô của chủ xưởng bị từ chối (`xuong_khong_trong`); `allowedTiles` trả về rỗng; `GET /api/plots/:id` của lô nhà chủ xưởng có thêm `factory.machines` để giao diện vẽ nhà xưởng. Cây trồng từ trước khi đổi sang vai chủ xưởng vẫn chăm và thu hoạch nốt được, chỉ không trồng thêm.
+
+| Máy | Giá | Làm được | Ghi chú |
+|---|---|---|---|
+| ♨️ Máy sấy | 6 triệu | Sấy dẻo trái cây, sấy khô củ, hoa khô | 2 mẻ song song |
+| 🧃 Máy ép – cô đặc | 5 triệu | Nước ép trái dây leo | 2 mẻ |
+| 🍯 Dây chuyền mứt – đóng hũ | 7 triệu | Mứt | 2 mẻ |
+| 🔥 Máy rang xay – xay xát | 8 triệu | Rang sao cây công nghiệp, xay xát lúa gạo | 2 mẻ |
+| 🚿 Máy rửa – phân loại | 3 triệu | Phụ trợ | Mỗi mẻ ra thêm 5% |
+| 📦 Máy đóng gói hút chân không | 4 triệu | Phụ trợ | Thành phẩm bán được thêm 8% (doanh nghiệp, xuất khẩu) |
+| ❄️ Kho lạnh | 5 triệu | Phụ trợ | Nguyên liệu Loại 2, 3 chỉ thiệt một nửa |
+
+- Xưởng mới được cấp sẵn một máy hợp với đặc sản đầu tiên của vùng nhà (`starterMachine`).
+- Tối đa 8 máy; máy chế biến mỗi loại 2 cái, máy phụ trợ mỗi loại 1 cái. Máy chế biến nâng tới cấp 3: mỗi cấp thêm 1 mẻ song song và nhanh hơn 10%; giá nâng = nửa giá máy × cấp hiện tại.
+- Mỗi mẻ tốn tiền điện và bảo trì 200đ mỗi kg nguyên liệu và 3 thể lực.
+- Nguyên liệu: xưởng mua qua sạp người chơi, chợ, siêu thị hoặc từ thương lái; không tự trồng.
+- Đầu ra: (a) ký gửi siêu thị nội địa (`processed: true`, khung giá 100–160% giá tham chiếu của thành phẩm), (b) xuất khẩu, (c) bán ngay cho doanh nghiệp chế biến như cũ.
+
+Kẽ hở còn lại: người mua thành phẩm ở siêu thị đúng giá sàn có thể bán lại cho doanh nghiệp lúc chợ phiên (+10%) để lãi nhẹ, bị chặn bởi giới hạn mua mỗi ngày; chủ xưởng có máy đóng gói mua thành phẩm của xưởng khác ở sàn rồi bán doanh nghiệp lãi 8% trừ phí, cũng trong giới hạn đó. Vai khác đổi sang chủ xưởng giữa mùa không bị mất cây đang trồng.
 
 ## Vì sao có giới hạn
 

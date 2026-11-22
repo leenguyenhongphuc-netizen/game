@@ -204,8 +204,8 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
   for (const [x, z] of [[-57, 20], [-43.4, 20.6], [12.4, 5.6], [27.6, 5.6], [12.4, 12], [27.6, 12]] as const) { const o = potPlant(0xffd23f, 1.5); o.position.set(x, 0, z); kit.add(o); }
   { const t = tree(r, 0.9); t.position.set(-55, 0, 18.4); kit.add(t); const u = incenseUrn(); u.position.set(20, 0, -0.4 - 2.4); u.scale.setScalar(0.9); kit.add(u); }
   // vệt đèn phản chiếu trên sông Hoài và khói bếp
-  for (let x = -84; x < 130; x += 12) kit.add(reflection(0xffd98a, x, -0.93, 57, 1.6, 9, false, 0.35));
-  for (let x = -60; x < 150; x += 7) kit.add(reflection(LANTERN_COLORS[Math.floor(r() * 7)], x, -0.93, 87, 1.4, 8, false, 0.3));
+  for (let x = -84; x < 130; x += 12) kit.add(reflection(0xffd98a, x, -0.93, 57, 0.8, 8, false, 0.14));
+  for (let x = -60; x < 150; x += 7) kit.add(reflection(LANTERN_COLORS[Math.floor(r() * 7)], x, -0.93, 86, 0.9, 9, false, 0.22));
   kit.motes(24, 0xcfc6c0, 2.4, (i) => V([-30, 70, 118][i % 3], 9 + (i % 8), [-10, 14, 30][i % 3]), (p, i, _t, dt) => { p.y += 0.7 * dt; p.x += 0.25 * dt; if (p.y > 17) { p.y = 8.6; p.x = [-30, 70, 118][i % 3]; } });
 
   kit.live(FAC.build()); FAC = null;

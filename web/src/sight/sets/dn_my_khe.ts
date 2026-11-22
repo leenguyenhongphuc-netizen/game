@@ -2,7 +2,7 @@
 // Từ công viên Biển Đông đi dọc lối dạo ven đường Võ Nguyên Giáp, xuống bãi cát, qua chòi cứu hộ, bến thuyền thúng rồi tới phố hải sản.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, ball, bead, box, cone, cyl, gable, grp, label, lampPost, mountain, palm, person, signPost, stall } from '../SightKit.ts';
+import { Kit, V, ball, bead, box, cone, cyl, gable, grp, label, lampPost, mountain, palm, person, rock, signPost, stall } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
 import { basket, baked, coracle, flagPole, pigeon, tower, umbrella, wave } from './_extra.ts';
 import type { Spots } from './_extra.ts';
@@ -64,7 +64,7 @@ export function myKhe(kit: Kit, _s: Sight): SightSet & Spots {
   // ---- bến thuyền thúng và chợ cá sáng trên cát
   const CZ = 46;
   for (let i = 0; i < 9; i++) { const c = coracle(1.15 + r() * 0.2, 0xe2c58a, [0x6a5038, 0x2a5f8a, 0x7a5a3c][i % 3]); c.position.set(20 + (i % 3) * 4.4 + r(), 0, CZ - 4 + Math.floor(i / 3) * 4.6); if (i % 4 === 0) { c.rotation.z = 1.25; c.position.y = 0.9; } kit.add(c); }
-  for (let i = 0; i < 6; i++) { const b = basket([0xb9c8d6, 0xd9a06a, 0xc0c8cc][i % 3], 1.2); b.position.set(12 + (i % 3) * 2, 0, CZ - 2 + Math.floor(i / 3) * 2.4); kit.add(b); for (let k = 0; k < 4; k++) kit.add(ball(0xcfd8de, 12 + (i % 3) * 2 + (r() - 0.5) * 0.5, 0.62, CZ - 2 + Math.floor(i / 3) * 2.4 + (r() - 0.5) * 0.5, 0.26, 0.06, 0.1, r() * 3)); }
+  for (let i = 0; i < 6; i++) { const b = basket([0xb9c8d6, 0xd9a06a, 0xc0c8cc][i % 3], 1.2); b.position.set(12 + (i % 3) * 2, 0, CZ - 2 + Math.floor(i / 3) * 2.4); kit.add(b); for (let k = 0; k < 4; k++) kit.add(rock(0xcfd8de, 12 + (i % 3) * 2 + (r() - 0.5) * 0.5, 0.62, CZ - 2 + Math.floor(i / 3) * 2.4 + (r() - 0.5) * 0.5, 0.26, 0.06, 0.1, r() * 3)); }
   for (let i = 0; i < 5; i++) { const p = person(i + 2, 1, [0x9b7fd6, 0x4aa3d8, 0xe2573c][i % 3]); p.position.set(10.6 + i * 1.8, 0, CZ + 2.8 + (i % 2)); p.rotation.y = 3; kit.add(p); }
   kit.add(grp(shore(CZ) + 9, -0.3, CZ + 6, 0.5, ball(0x2a6f9a, 0, 0.4, 0, 1.4, 0.9, 5), box(0xd2301e, 0, 0.95, 0, 2.2, 0.12, 7), box(0xf4f1ea, 0, 1.6, 1.4, 1.6, 1.2, 2)), box(0x5f8a8f, 16, 0.9, CZ + 9, 5, 0.04, 3, 0.3), cyl(0x7a5a3c, 13.6, 0.6, CZ + 8.4, 0.05, 1.2), cyl(0x7a5a3c, 18.4, 0.6, CZ + 9.6, 0.05, 1.2));
   kit.live(label('Bến thuyền thúng', 22, 5.4, CZ, '#7a5a3c', 0.8));

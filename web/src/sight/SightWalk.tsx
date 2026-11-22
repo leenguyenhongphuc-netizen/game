@@ -36,6 +36,7 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const [flash, setFlash] = useState(0);
   const [open, setOpen] = useState(false);
   const [shop, setShop] = useState<number | null>(null);
+  const [splash, setSplash] = useState<'on' | 'fade' | 'off'>('on');
   const [stamp, setStamp] = useState<{ k: number; name: string } | null>(null);
   const [hint, setHint] = useState(true);
   const [stick, setStick] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
@@ -54,8 +55,10 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
     const sc = new SightScene(host.current, s, seenRef.current, { onNear: (i) => { setNear(i); setOpen(false); }, onHud: setHud, onShop: setShop }, props.shops);
     sc.auto = !!w.__sightAuto; sc.speedMul = w.__sightAuto && w.__rideStep ? 6 : 1; scene.current = sc;
     w.__sight = { goto: (i) => sc.goto(i), snap, pos: () => sc.pos(), info: () => sc.info(), close };
-    const t = window.setTimeout(() => setHint(false), 6000);
-    return () => { window.clearTimeout(t); sc.dispose(); scene.current = null; delete w.__sight; };
+    const t = window.setTimeout(() => setHint(false), 9000);
+    // màn chào: giữ ảnh tới khi cảnh dựng xong rồi mới mờ dần vào cảnh 3D
+    const hold = w.__sightAuto ? 250 : 1500, t2 = window.setTimeout(() => setSplash('fade'), hold), t3 = window.setTimeout(() => setSplash('off'), hold + 800);
+    return () => { window.clearTimeout(t); window.clearTimeout(t2); window.clearTimeout(t3); sc.dispose(); scene.current = null; delete w.__sight; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.sightId]);
 
@@ -94,7 +97,7 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const leave = (toMarket: boolean) => props.onExit({ stops: seenRef.current, toMarket });
   const xp = props.xpPerStop ?? 10, en = props.energy, shopNear = shop !== null && props.shops ? props.shops[shop] : null;
   return (
-    <div className="sw" data-stop={stop?.id ?? ''} data-seen={seen.length}>
+    <div className={`sw${en ? ' has-energy' : ''}`} data-stop={stop?.id ?? ''} data-seen={seen.length}>
       <div className="sw-scene" ref={host} onPointerDown={down} onPointerMove={moveP} onPointerUp={up} onPointerCancel={up} />
       <div className="sw-top">
         <div className="sw-bar">
@@ -115,7 +118,7 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
       )}
       {hint && !stop && <div className="sw-hint">Kéo nửa dưới màn hình để đi · kéo nửa trên để nhìn quanh</div>}
       {stick && <div className="sw-stick" style={{ left: stick.x, top: stick.y }}><i style={{ transform: `translate(${stick.dx}px, ${stick.dy}px)` }} /></div>}
-      <div className="sw-splash" aria-hidden="true"><img src={`${ART}${s.id}.jpg`} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} /><div><b>{s.emoji}</b><h1>{s.name}</h1><p>{s.blurb}</p></div></div>
+      {splash !== 'off' && <div className={`sw-splash${splash === 'fade' ? ' fade' : ''}`} aria-hidden="true"><img src={`${ART}${s.id}.jpg`} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} /><div><b>{s.emoji}</b><h1>{s.name}</h1><p>{s.blurb}</p></div></div>}
       {flash > 0 && <div className="sw-flash" key={flash} />}
       {stamp && (
         <div className="sw-seal" key={stamp.k} aria-hidden="true">
