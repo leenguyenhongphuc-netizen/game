@@ -1,6 +1,7 @@
 // Màn lái xe tải của Thương lái: rời làng, lên cao tốc ba làn, theo biển rẽ ở nút giao, ghé trạm xăng,
 // qua trạm thu phí ETC, ra đường tỉnh tới cổng chào. Chặng biển đi theo luồng có phao số.
 import * as THREE from 'three';
+import { IS_MOBILE, Quality, debugScene, rendererParams } from '../perf.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { REGIONS } from '../../../shared/catalog.ts';
 import type { Zone } from '../../../shared/catalog.ts';
@@ -319,9 +320,8 @@ export class DriveScene {
     this.seaL = Math.max(300, SEA_V * sea.seconds);
     this.layout(road.seconds);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer = new THREE.WebGLRenderer(rendererParams(container));
+    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = IS_MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.NeutralToneMapping; this.renderer.toneMappingExposure = 1.0;
     const el = this.renderer.domElement; el.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;user-select:none;-webkit-user-select:none';
     container.appendChild(el);
@@ -368,6 +368,7 @@ export class DriveScene {
     this.bindInput(el);
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(container); this.resize();
     this.applyLeg(true);
+    this.quality = new Quality(this.renderer, { name: 'lái xe', onLevel: (l) => { this.sun.castShadow = l < (IS_MOBILE ? 1 : 2); } }); debugScene(this.scene); this.resize();
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
@@ -575,7 +576,8 @@ export class DriveScene {
   resume() { if (this.pulled?.shown) { this.pulled.go = true; } }
   /** Dùng cho kiểm thử: nhảy tới vị trí s trên chặng hiện tại (không tính sự kiện đã bỏ qua). */
   warp(s: number) { this.s = s; this.nextSc = s + 6; for (const it of this.scen) { it.active = false; it.obj.visible = false; } const plan = this.mode === 'boat' ? this.seaPlan : this.tplan; while (this.tIdx < plan.length && plan[this.tIdx].s < s + 30) this.tIdx++; }
-  private resize() { const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.fovNow = this.camera.fov = this.baseFov(); this.camera.updateProjectionMatrix(); const pt = w / h < 0.9; this.cab.root.position.set(0, pt ? -0.42 : -0.06, pt ? -0.1 : 0); this.cab.roof.visible = !pt; }
+  private quality?: Quality;
+  private resize() { const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1; if (this.quality) this.quality.resize(w, h); else this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.fovNow = this.camera.fov = this.baseFov(); this.camera.updateProjectionMatrix(); const pt = w / h < 0.9; this.cab.root.position.set(0, pt ? -0.42 : -0.06, pt ? -0.1 : 0); this.cab.roof.visible = !pt; }
   private baseFov() { const portrait = this.camera.aspect < 0.9; return this.view === 'pov' && this.mode !== 'boat' ? (portrait ? 78 : 62) : portrait ? 58 : 46; }
 
   private applyLeg(first = false) {
@@ -847,6 +849,7 @@ export class DriveScene {
 
   private frame() {
     if (this.disposed) return;
+    if (this.quality && !this.quality.tick()) { this.clock.getDelta(); return; }
     const dt = Math.min(this.clock.getDelta(), 0.05), t = this.clock.elapsedTime;
     if (this.running && !this.arrived) this.step(dt);
     const boat = this.mode === 'boat', s = this.s, live = this.running && !this.arrived && this.switching <= 0;
@@ -1018,11 +1021,11 @@ export class DriveScene {
   }
 
   dispose() {
-    this.disposed = true; this.renderer.setAnimationLoop(null);
+    this.disposed = true; this.renderer.setAnimationLoop(null); this.quality?.dispose();
     for (const fn of this.cleanup) fn();
     this.ro.disconnect();
     this.scene.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.geometry && !Object.values(GEO).includes(m.geometry as never)) m.geometry.dispose(); const sm2 = (o as THREE.Sprite).material as THREE.SpriteMaterial | undefined; if ((o as THREE.Sprite).isSprite && sm2) { sm2.map?.dispose(); sm2.dispose(); } });
     this.sky.dispose();
-    this.renderer.dispose(); this.renderer.domElement.remove();
+    this.renderer.dispose(); this.renderer.forceContextLoss(); this.renderer.domElement.remove();
   }
 }

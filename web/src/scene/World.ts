@@ -1,5 +1,6 @@
 // Thế giới xóm vườn 3D: đường làng, các lô vườn (nhà mình và hàng xóm), nhân vật chạy bằng cần điều khiển.
 import * as THREE from 'three';
+import { IS_MOBILE, Quality, debugScene, SHADOW_MAP, rendererParams } from '../perf.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CROPS, REGIONS, SPECIALTIES, processOf } from '../../../shared/catalog.ts';
 import type { Zone } from '../../../shared/catalog.ts';
@@ -46,7 +47,10 @@ function toLocal(slot: number, X: number, Z: number): { x: number; z: number } {
   return s === 1 ? { x: X - k * PITCH, z: Z } : { x: k * PITCH - X, z: 2 * ROAD_Z - Z };
 }
 
+const SHARED_GEO = new Set<THREE.BufferGeometry>(Object.values(GEO));
 const WHITE = new THREE.Color(1, 1, 1), VC_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0 });
+/** Nhả bộ nhớ đồ hoạ của một cụm đã gộp bằng bake() khi bỏ nó khỏi cảnh (lưới gộp là hình riêng, không dùng chung). */
+function freeBaked(root: THREE.Object3D) { root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && !(m as unknown as THREE.InstancedMesh).isInstancedMesh && !SHARED_GEO.has(m.geometry)) m.geometry.dispose(); }); }
 /** Gộp các khối tĩnh cùng chất liệu thành một lưới để giảm số lần vẽ. */
 export function bake(root: THREE.Object3D): THREE.Group {
   root.updateMatrixWorld(true);
@@ -185,6 +189,7 @@ class Lot {
   private labelText = '';
   private look = '';
   private signs: THREE.Sprite[] = [];
+  private goodsKey = '';
   markers = new Map<number, THREE.Mesh>();
   /** Trạm máy đang hiện (chỉ khi lô là xưởng). */
   fx: { m: FactoryMachine; group: THREE.Group; lamp: THREE.Mesh; done: THREE.Group; puffs: THREE.Mesh[]; x: number; z: number; state: MachineState | '' }[] = [];
@@ -215,7 +220,7 @@ class Lot {
   }
 
   private rebuild(kind: 'empty' | 'farm' | 'roof') {
-    this.group.clear(); this.plants.clear(); this.markers.clear(); this.fx = []; this.belt = null; this.smoke = []; this.label = null; this.labelText = ''; this.npc = null; this.signs = [];
+    freeBaked(this.group); this.group.clear(); this.plants.clear(); this.markers.clear(); this.fx = []; this.belt = null; this.smoke = []; this.label = null; this.labelText = ''; this.npc = null; this.signs = [];
     const data = this.data, style = data?.style ?? null, tiles = data ? lotTiles(data) : [];
     const roofColor = hex(style?.roof, ROOFS[this.slot % 5]), wallColor = hex(style?.wall, [0xfff6e2, 0xffeceb, 0xeef6ff, 0xf1f9e4, 0xfff8d6][this.slot % 5]), awning = hex(style?.awning, ROOFS[this.slot % 5]);
     this.plantLayer = new THREE.Group(); this.goods = new THREE.Group();
@@ -336,14 +341,16 @@ class Lot {
       const stage: Stage = p.stepIndex >= last ? 3 : prog < 0.3 ? 0 : prog < 0.65 ? 1 : 2;
       const key = `${p.id}:${stage}`, cur = this.plants.get(p.tile);
       if (cur?.key === key) continue;
-      if (cur) this.plantLayer.remove(cur.group);
+      if (cur) { this.plantLayer.remove(cur.group); freeBaked(cur.group); }
       const group = bake(buildPlant(crop, stage, p.id * 7 + p.tile));
       const l = tileLocal(p.tile); group.position.set(l.x, 0, l.z); group.userData.sway = p.tile * 0.7;
       this.plantLayer.add(group); this.plants.set(p.tile, { key, group, born: time });
     }
-    for (const [tile, cur] of this.plants) if (!seen.has(tile)) { this.plantLayer.remove(cur.group); this.plants.delete(tile); }
-    this.goods.clear();
+    for (const [tile, cur] of this.plants) if (!seen.has(tile)) { this.plantLayer.remove(cur.group); freeBaked(cur.group); this.plants.delete(tile); }
     const kinds = [...new Set(data.stall.map((l) => SPECIALTIES[l.specialtyId].crop))].slice(0, 4);
+    // hàng trên sạp chỉ dựng lại khi món bày đổi (trước đây dựng lại mỗi lần tải dữ liệu, 15 giây một lần, và không nhả lưới cũ)
+    if (kinds.join(',') === this.goodsKey && this.goods.children.length === (kinds.length ? 1 : 0)) return;
+    this.goodsKey = kinds.join(','); freeBaked(this.goods); this.goods.clear();
     const g = new THREE.Group();
     kinds.forEach((cropId, i) => {
       const x = -1.2 + i * 0.8, r = rng(i + 3), color = fruitColor(cropId);
@@ -445,9 +452,9 @@ export class World {
     this.container = container; this.opts = opts;
     const d = new Date();
     this.sky = skyFor(opts.hour ?? d.getHours() + d.getMinutes() / 60);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer = new THREE.WebGLRenderer(rendererParams(container));
+    // điện thoại: bóng đổ lọc đơn (PCF) và chỉ dựng lại bản đồ bóng cách khung, thay vì bóng mềm đắt gấp mấy lần
+    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = IS_MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap; this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = THREE.NeutralToneMapping; this.renderer.toneMappingExposure = this.sky.night ? 1.3 : 1.0;
     const el = this.renderer.domElement;
     el.style.cssText = 'display:block;width:100%;height:100%;touch-action:none;user-select:none;-webkit-user-select:none';
@@ -455,7 +462,7 @@ export class World {
     this.scene.background = gradient(this.sky.top, this.sky.sky);
     this.scene.fog = new THREE.Fog(this.sky.sky, 90, 260);
     this.sun = new THREE.DirectionalLight(this.sky.sun, this.sky.sunI);
-    this.sun.castShadow = true; this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.castShadow = true; this.sun.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
     Object.assign(this.sun.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 90 });
     this.sun.shadow.bias = -0.0006; this.sun.shadow.normalBias = 0.05; this.sun.shadow.radius = 5;
     this.hemi = new THREE.HemisphereLight(this.sky.hemiSky, this.sky.hemiGround, this.sky.hemiI);
@@ -478,8 +485,23 @@ export class World {
     this.stickEl.className = 'stick'; this.knobEl.className = 'stick-knob'; this.stickEl.appendChild(this.knobEl); container.appendChild(this.stickEl);
     if (!opts.demo) this.bindInput(el);
     this.camPos.copy(this.pos);
+    this.quality = new Quality(this.renderer, { name: opts.demo ? 'vườn mẫu' : 'vườn', onLevel: (l) => this.applyQuality(l) }); debugScene(this.scene);
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(container); this.resize();
     this.renderer.setAnimationLoop(() => this.frame());
+  }
+  private quality!: Quality; private qLevel = 0; private frameNo = 0; private shadowKey = '';
+  /** Bậc chất lượng đổi: tắt bóng đổ, bớt mưa, kéo sương và tầm nhìn gần lại. */
+  private applyQuality(l: number) {
+    this.qLevel = l;
+    if (this.sun) this.sun.castShadow = l < 2;
+    if (this.rain) this.rain.count = [900, 600, 380, 240][l];
+    this.applyFog();
+  }
+  private applyFog() {
+    const fog = this.scene.fog as THREE.Fog | null; if (!fog) return;
+    const wet = this.weather === 'mua' || this.weather === 'bao', k = [1, 1, 0.8, 0.65][this.qLevel];
+    fog.near = (wet ? 45 : 90) * k; fog.far = (wet ? 150 : 260) * k;
+    this.camera.far = this.qLevel >= 2 ? fog.far + 40 : 600; this.camera.updateProjectionMatrix();
   }
 
   /** Đổi áo, nón của nhân vật mình điều khiển. */
@@ -577,6 +599,7 @@ export class World {
   }
 
   private buildEnvironment(regionId: string) {
+    this.env.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && !SHARED_GEO.has(m.geometry) && m.geometry !== TUFT_GEO && m.geometry !== FLOWER_GEO) m.geometry.dispose(); if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose(); }); // đổi vùng: nhả lưới cảnh nền cũ
     this.env.clear(); this.water = null;
     const zone = REGIONS[regionId]?.zone ?? 'nam', th = this.urban ? CITY : THEMES[zone];
     const r = rng([...regionId].reduce((a, c) => a * 31 + c.charCodeAt(0), 7));
@@ -711,7 +734,7 @@ export class World {
   }
 
   private buildRain() {
-    const N = 900; this.rain = new THREE.InstancedMesh(new THREE.BoxGeometry(0.035, 0.9, 0.035), new THREE.MeshBasicMaterial({ color: 0xdff1ff, transparent: true, opacity: 0.55, depthWrite: false }), N);
+    const N = 900; this.rain = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07, 1.1, 0.07), new THREE.MeshBasicMaterial({ color: 0xdff1ff, transparent: true, opacity: 0.3, depthWrite: false }), N);
     for (let i = 0; i < N; i++) this.rainDrops.push({ x: (Math.random() - 0.5) * 70, y: Math.random() * 30, z: (Math.random() - 0.5) * 70, v: 26 + Math.random() * 12 });
     this.rain.frustumCulled = false; this.rain.visible = false; this.scene.add(this.rain);
   }
@@ -738,7 +761,7 @@ export class World {
     const grey = new THREE.Color(this.sky.night ? 0x2a3350 : 0xb9c6d2), top = new THREE.Color(this.sky.top), low = new THREE.Color(this.sky.sky), k = wet ? (kind === 'bao' ? 0.85 : 0.65) : kind === 'may' ? 0.3 : 0;
     top.lerp(grey, k); low.lerp(grey, k * 0.8);
     (this.scene.background as THREE.Texture).dispose?.(); this.scene.background = gradient(top.getHex(), low.getHex());
-    (this.scene.fog as THREE.Fog).color.copy(low); (this.scene.fog as THREE.Fog).near = wet ? 45 : 90; (this.scene.fog as THREE.Fog).far = wet ? 150 : 260;
+    (this.scene.fog as THREE.Fog).color.copy(low); this.applyFog();
     for (const c of this.clouds) c.visible = kind !== 'nang_gat';
   }
 
@@ -769,12 +792,16 @@ export class World {
 
   private resize() {
     const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1;
-    this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+    this.quality.resize(w, h); this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
   }
 
   // ------------------------------------------------------------ vòng lặp
   private frame() {
     if (this.disposed) return;
+    // bị hoạt cảnh khác che kín hoặc tab ẩn: nghỉ hẳn; đang mở bảng (paused): chỉ vẽ ~8 khung/giây cho phần nền lộ ra
+    if (!this.quality.tick()) { this.clock.getDelta(); return; }
+    this.frameNo++;
+    if (this.paused && !this.opts.demo && this.frameNo % 8 !== 0) return;
     const dt = Math.min(this.clock.getDelta(), 0.05), t = this.clock.elapsedTime, now = Date.now() + (this.state?.clockOffset ?? 0);
     this.movePlayer(dt, t);
     this.updateContext(now, t);
@@ -788,7 +815,10 @@ export class World {
     if (!this.opts.demo) this.camera.position.set(this.camPos.x, 24 * k, this.camPos.z + 23 * k + lift);
     if (this.opts.demo) this.camera.lookAt(0, 0.8, 2);
     else this.camera.lookAt(this.camPos.x, 0.8, this.camPos.z - 1.2 + lift);
-    this.sun.target.position.copy(this.camPos); this.sun.position.set(this.camPos.x + this.sky.dir[0], this.sky.dir[1], this.camPos.z + this.sky.dir[2]);
+    // Mặt trời bám theo máy quay theo từng nấc 2 m để bóng không rung; bản đồ bóng dựng lại cách khung (điện thoại) hoặc mỗi khung (máy tính)
+    const sx = Math.round(this.camPos.x / 2) * 2, sz = Math.round(this.camPos.z / 2) * 2;
+    this.sun.target.position.set(sx, 0, sz); this.sun.position.set(sx + this.sky.dir[0], this.sky.dir[1], sz + this.sky.dir[2]);
+    if (this.sun.castShadow) { const every = IS_MOBILE ? (this.qLevel >= 1 ? 3 : 2) : 1, key = `${sx},${sz}`; if (this.frameNo % every === 0 || key !== this.shadowKey) { this.renderer.shadowMap.needsUpdate = true; this.shadowKey = key; } }
     this.updateGuide(now, t);
     this.animateLife(dt, t);
     this.renderer.render(this.scene, this.camera);
@@ -907,7 +937,7 @@ export class World {
     for (const f of this.flies) { f.s.position.set(this.camPos.x + Math.sin(t * 0.31 + f.ph) * 13 + Math.sin(f.ph * 7) * 6, 0.8 + Math.abs(Math.sin(t * 0.7 + f.ph)) * 1.6, this.camPos.z - 2 + Math.cos(t * 0.23 + f.ph * 1.7) * 11); (f.s.material as THREE.SpriteMaterial).opacity = 0.35 + Math.abs(Math.sin(t * 2.1 + f.ph)) * 0.6; }
     if (this.rain.visible) {
       const m = new THREE.Matrix4(), slant = this.weather === 'bao' ? 0.45 : 0.12;
-      for (let i = 0; i < this.rainDrops.length; i++) {
+      for (let i = 0, n = Math.min(this.rain.count, this.rainDrops.length); i < n; i++) {
         const d = this.rainDrops[i]; d.y -= d.v * dt * (this.weather === 'bao' ? 1.4 : 1); d.x += d.v * dt * slant;
         if (d.y < 0) { d.y = 26 + Math.random() * 6; d.x = (Math.random() - 0.5) * 70; d.z = (Math.random() - 0.5) * 70; }
         m.makeRotationZ(slant).setPosition(this.camPos.x + d.x, d.y, this.camPos.z + d.z - 4); this.rain.setMatrixAt(i, m);
@@ -927,8 +957,8 @@ export class World {
   }
 
   dispose() {
-    this.disposed = true; this.renderer.setAnimationLoop(null);
+    this.disposed = true; this.renderer.setAnimationLoop(null); this.quality.dispose();
     for (const fn of this.cleanup) fn();
-    this.ro.disconnect(); this.renderer.dispose(); this.renderer.domElement.remove(); this.stickEl.remove();
+    this.ro.disconnect(); this.renderer.dispose(); this.renderer.forceContextLoss(); this.renderer.domElement.remove(); this.stickEl.remove();
   }
 }

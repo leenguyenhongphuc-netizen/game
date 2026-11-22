@@ -1,5 +1,6 @@
 // Dựng mô hình cây trồng low-poly theo loại cây và giai đoạn sinh trưởng.
 import * as THREE from 'three';
+import { IS_MOBILE } from '../perf.ts';
 import type { Crop } from '../../../shared/catalog.ts';
 
 const matCache = new Map<string, THREE.MeshStandardMaterial>();
@@ -16,12 +17,14 @@ export function mat(color: number, opts: { emissive?: number; rough?: number; tr
 }
 
 // Hình khối bo tròn, đổ bóng mịn để cảnh mềm mại hơn.
+// Điện thoại, máy tính bảng dùng khối ít mặt hơn (quả cầu 80 thay vì 320 tam giác, trụ 9 cạnh): nhìn từ máy quay trên cao gần như không khác.
+const LITE = IS_MOBILE;
 const geo = {
   box: new THREE.BoxGeometry(1, 1, 1),
   sphere: new THREE.IcosahedronGeometry(1, 1),
-  ball: new THREE.IcosahedronGeometry(1, 2),
-  cone: new THREE.ConeGeometry(1, 1, 10),
-  cyl: new THREE.CylinderGeometry(1, 1, 1, 14),
+  ball: new THREE.IcosahedronGeometry(1, LITE ? 1 : 2),
+  cone: new THREE.ConeGeometry(1, 1, LITE ? 8 : 10),
+  cyl: new THREE.CylinderGeometry(1, 1, 1, LITE ? 9 : 14),
 };
 export const GEO = geo;
 

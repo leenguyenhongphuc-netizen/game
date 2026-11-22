@@ -1,6 +1,7 @@
 // Máy chạy cảnh đi bộ tham quan: dựng cảnh từ một bộ (set), cho nhân vật đi trong hành lang quanh lối đi,
 // camera sau lưng tầm thấp, cột mốc điểm dừng, khách tham quan đi lại.
 import * as THREE from 'three';
+import { IS_MOBILE, Quality, debugScene, rendererParams } from '../perf.ts';
 import { bake } from '../scene/World.ts';
 import { gradient } from '../drive/RideKit.ts';
 import { Kit, V, ball, box, cyl, cone, glow, dot, walker, shopModel, cloud, label, infoBoard, bench, potPlant } from './SightKit.ts';
@@ -33,14 +34,15 @@ export class SightScene {
 
   constructor(private host: HTMLElement, private sight: Sight, seen: string[], private cb: SightCallbacks, private shops?: SightShop[]) {
     this.seen = new Set(seen);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer = new THREE.WebGLRenderer(rendererParams(host));
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.quality = new Quality(this.renderer, { name: 'tham quan', onLevel: (l) => this.applyQuality(l) }); debugScene(this.scene);
     host.appendChild(this.renderer.domElement); this.renderer.domElement.style.cssText = 'display:block;width:100%;height:100%';
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.3, 900);
     this.kit = new Kit(hash(sight.id));
     this.set = (SETS[sight.id] ?? SETS[`kind:${sight.kind}`] ?? SETS['kind:pho_co'])(this.kit, sight);
     const s = this.set;
-    this.scene.background = gradient(s.sky[0], s.sky[1]); this.scene.fog = new THREE.Fog(s.fog[0], s.fog[1], s.fog[2]);
+    this.scene.background = gradient(s.sky[0], s.sky[1]); this.scene.fog = new THREE.Fog(s.fog[0], s.fog[1], s.fog[2]); this.applyQuality(this.quality.level);
     this.scene.add(new THREE.HemisphereLight(s.light.ambientColor ?? 0xffffff, 0x8a7a66, s.light.ambient));
     const sun = new THREE.DirectionalLight(s.light.sunColor ?? 0xfff2d6, s.light.sun); sun.position.set(...(s.light.sunDir ?? [0.5, 1, 0.35])); this.scene.add(sun);
     const sd = s.light.sunDir ?? [0.5, 1, 0.35];
@@ -52,7 +54,7 @@ export class SightScene {
     this.buildSky();
     // chiều dài cộng dồn của lối đi
     this.cum = [0]; for (let i = 1; i < s.path.length; i++) this.cum.push(this.cum[i - 1] + s.path[i].distanceTo(s.path[i - 1])); this.total = this.cum[this.cum.length - 1];
-    this.buildPlayer(); this.buildMarkers(); this.buildNpcs(s.npcs ?? 8); this.buildShops();
+    this.buildPlayer(); this.buildMarkers(); this.buildNpcs(Math.round((s.npcs ?? 8) * (IS_MOBILE ? 0.6 : 1))); this.buildShops();
     const p0 = s.path[0].clone();
     this.state = { pos: p0, s: 0, seg: 0, near: null };
     const d0 = s.path[1].clone().sub(s.path[0]); this.heading = Math.atan2(d0.x, -d0.z); this.yaw = s.startYaw ?? this.heading;
@@ -285,6 +287,7 @@ export class SightScene {
   private zoom(fov: number, snap: boolean) { const f = snap ? fov : this.camera.fov + (fov - this.camera.fov) * 0.08; if (Math.abs(f - this.camera.fov) > 0.01) { this.camera.fov = f; this.camera.updateProjectionMatrix(); } }
   private frame = (now: number) => {
     if (this.disposed) return; this.raf = requestAnimationFrame(this.frame);
+    if (!this.quality.tick(now)) { this.last = now; return; }
     const dt = Math.min(0.05, (now - this.last) / 1000); this.last = now; this.time += dt;
     this.step(dt);
     const st = this.state, sw = Math.sin(this.time * 9) * 0.7 * this.moving;
@@ -320,9 +323,17 @@ export class SightScene {
     const t = s.stops[next].at, bearing = Math.atan2(t.x - st.pos.x, -(t.z - st.pos.z)) - this.yaw;
     return { near: this.nearIdx, next, dist: Math.max(0, Math.abs(this.markers[next].s - st.s)), bearing, yaw: this.yaw };
   }
-  private resize = () => { const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.fov = w < h ? 62 : 52; this.camera.updateProjectionMatrix(); };
+  private quality: Quality; private fog0: [number, number] | null = null;
+  /** Bậc thấp: kéo sương và tầm nhìn gần lại để bớt vật phải vẽ. */
+  private applyQuality(l: number) {
+    const fog = this.scene?.fog as THREE.Fog | null; if (!fog || !this.camera) return;
+    if (!this.fog0) this.fog0 = [fog.near, fog.far];
+    const k = [1, 1, 0.8, 0.65][l]; fog.near = this.fog0[0] * k; fog.far = this.fog0[1] * k;
+    this.camera.far = l >= 2 ? Math.min(900, fog.far + 60) : 900; this.camera.updateProjectionMatrix();
+  }
+  private resize = () => { const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1; this.quality.resize(w, h); this.camera.aspect = w / h; this.camera.fov = w < h ? 62 : 52; this.camera.updateProjectionMatrix(); };
   dispose() {
-    this.disposed = true; cancelAnimationFrame(this.raf);
+    this.disposed = true; cancelAnimationFrame(this.raf); this.quality.dispose();
     window.removeEventListener('resize', this.resize); window.removeEventListener('keydown', this.onKey); window.removeEventListener('keyup', this.onKey);
     this.scene.traverse((o) => { const m = o as THREE.Mesh; if (m.geometry && !SHARED.has(m.geometry)) m.geometry.dispose(); const mm = m.material as THREE.MeshStandardMaterial | undefined; if (m.isMesh && mm && mm.map && (mm.map as THREE.Texture).image && !(mm.map instanceof THREE.CanvasTexture)) { mm.map.dispose(); mm.dispose(); } else if (m.isMesh && mm?.map && mm.map.userData?.own) { mm.map.dispose(); mm.dispose(); } const sp = o as THREE.Sprite; if (sp.isSprite) { sp.material.map?.dispose(); sp.material.dispose(); } });
     (this.scene.background as THREE.Texture | null)?.dispose?.(); this.renderer.dispose(); this.renderer.forceContextLoss(); this.renderer.domElement.remove();

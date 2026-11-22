@@ -20,7 +20,7 @@ const UA = nav.userAgent ?? '';
 /** Điện thoại, máy tính bảng (kể cả iPad tự xưng là Macintosh). */
 export const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(UA) || (/Macintosh/i.test(UA) && (nav.maxTouchPoints ?? 0) > 1) || (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && (nav.maxTouchPoints ?? 0) > 0);
 /** Chạy dưới bộ kiểm tự động: giữ nguyên bậc cao để ảnh chụp ổn định (máy thử không có GPU nên lúc nào cũng "chậm"). */
-const AUTOMATED = !!(nav as Navigator & { webdriver?: boolean }).webdriver;
+const AUTOMATED = !!(nav as Navigator & { webdriver?: boolean }).webdriver && LS.get('vv-quality-auto') !== '1'; // vv-quality-auto=1: thử cơ chế tự thích nghi ngay cả khi chạy tự động
 /** Số điểm ảnh tối đa mỗi khung. */
 const BUDGET = IS_MOBILE ? 1_400_000 : (nav.hardwareConcurrency ?? 4) >= 8 ? 5_000_000 : 3_000_000;
 const DPR_CAP = 2;
@@ -97,9 +97,9 @@ export class Quality {
     if (this.disposed) return false;
     if (!this.active) { this.last = 0; return false; }
     const dt = this.last ? now - this.last : 0; this.last = now;
-    if (dt > 0 && dt < 250) { // khung quá dài là do chuyển tab, nạp cảnh: không tính
+    if (dt > 0 && dt < 1000) { // khung dài cả giây là do chuyển tab, nạp cảnh: không tính
       this.acc += dt; this.n++;
-      if (this.acc >= 1000) {
+      if (this.acc >= 1000 && this.n >= 3) {
         this.avg = this.acc / this.n; this.acc = 0; this.n = 0;
         if (!this.locked) this.adapt(now);
         if (wantBox()) this.paint();
@@ -140,3 +140,6 @@ export class Quality {
     if (!stack.length && box) { box.remove(); box = null; }
   }
 }
+
+/** Để soi cảnh khi gỡ lỗi hiệu năng: window.__scene là cảnh vừa dựng gần nhất. */
+export function debugScene(scene: unknown) { (window as unknown as { __scene?: unknown }).__scene = scene; }
