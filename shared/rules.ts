@@ -372,3 +372,29 @@ export function specialty(id: string): Specialty | undefined {
 export function region(id: string): Region | undefined {
   return Object.hasOwn(REGIONS, id) ? REGIONS[id] : undefined;
 }
+
+// ---------------------------------------------------------------- luật đường bộ (dùng cho màn lái xe)
+/** Tốc độ khai thác (km/h). Cao tốc: tối đa 120, tối thiểu 60 theo Thông tư 38/2024/TT-BGTVT; mỗi đoạn theo biển cắm. */
+export const ROAD_LIMITS = { village: 50, ramp: 60, highwayMin: 60, highwayPosted: [80, 100, 120] as number[], station: 30, toll: 40 };
+/**
+ * Mức phạt ô tô chạy quá tốc độ theo Điều 6 Nghị định 168/2024/NĐ-CP (hiệu lực 01/01/2025).
+ * `fine` là mức trung bình của khung phạt; `points` là số điểm giấy phép lái xe bị trừ.
+ * Cần người rà lại khi luật sửa đổi (có tin về nghị định sửa đổi năm 2026, chưa đối chiếu được văn bản gốc).
+ */
+export const SPEED_FINES: { overFrom: number; min: number; max: number; fine: number; points: number; label: string }[] = [
+  { overFrom: 35, min: 12_000_000, max: 14_000_000, fine: 13_000_000, points: 6, label: 'quá tốc độ trên 35 km/h' },
+  { overFrom: 20, min: 6_000_000, max: 8_000_000, fine: 7_000_000, points: 4, label: 'quá tốc độ trên 20 đến 35 km/h' },
+  { overFrom: 10, min: 4_000_000, max: 6_000_000, fine: 5_000_000, points: 2, label: 'quá tốc độ từ 10 đến 20 km/h' },
+  { overFrom: 5, min: 800_000, max: 1_000_000, fine: 900_000, points: 0, label: 'quá tốc độ từ 5 đến dưới 10 km/h' },
+];
+/** Khung phạt ứng với số km/h vượt quá; dưới 5 km/h thì không phạt (trả về null). */
+export function speedFine(overKmh: number): (typeof SPEED_FINES)[number] | null {
+  if (overKmh > 35) return SPEED_FINES[0];
+  if (overKmh > 20) return SPEED_FINES[1];
+  if (overKmh >= 10) return SPEED_FINES[2];
+  if (overKmh >= 5) return SPEED_FINES[3];
+  return null;
+}
+
+/** Các đường xuất khẩu. Giá cước, thời gian, sức chở do máy chủ định trong EXPORT_MODES. */
+export type ExportMode = 'xe_tai' | 'container' | 'tau_hoa' | 'hang_khong' | 'tau_nho' | 'tau_lon';
