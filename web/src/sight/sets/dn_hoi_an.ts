@@ -110,7 +110,7 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
   // ---- đèn lồng giăng ngang phố
   for (let x = -80; x < 130; x += 9) if (!gaps.some(([a, b]) => x > a - 2 && x < b + 2)) kit.add(lanternString(V(x, 5.4, -3.1), V(x, 5.4, 3.1), 4, r, 0.5));
   for (let x = -80; x < 96; x += 11) kit.add(lanternString(V(x, 5.4, 22.9), V(x, 5.4, 29.1), 4, r, 0.5));
-  for (const [z0, z1] of [[4.5, 21.5], [30.5, 43.5]] as const) for (let z = z0; z <= z1; z += 2.1) kit.add(lanternString(V(46.8, 5.3 + (r() - 0.5) * 0.6, z), V(53.2, 5.3 + (r() - 0.5) * 0.6, z), 5, r, 0.6, 0.95));
+  for (const [z0, z1] of [[4.5, 21.5], [30.5, 40]] as const) for (let z = z0; z <= z1; z += 2.1) kit.add(lanternString(V(46.8, 5.3 + (r() - 0.5) * 0.6, z), V(53.2, 5.3 + (r() - 0.5) * 0.6, z), 5, r, 0.6, 0.95));
   for (const z of [8, 14, 19, 33, 39]) for (const s of [-1, 1]) { const st = stall([0xe2573c, 0xffd23f, 0x4aa3d8][Math.floor(r() * 3)], r); st.scale.setScalar(0.7); st.position.set(50 + s * 2.6, 0, z); st.rotation.y = s * Math.PI / 2; for (let i = 0; i < 5; i++) st.add(lantern(LANTERN_COLORS[i], -1.2 + i * 0.6, 1.9, 1.0, 0.9)); kit.add(st); }
   kit.live(label('Phố đèn lồng', 50, 7.2, 12, '#7a2e22', 0.8));
 
@@ -151,7 +151,7 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
       { id: 'cong', at: V(-126, 0, 3.6), look: V(-120, 4, 3) },
       { id: 'chua_cau', at: V(-107, 0, 3.4), look: V(-95, 3.2, 0) },
       { id: 'nha_co', at: V(-60, 0, 24.4), look: V(-50, 3.5, 29.6) },
-      { id: 'hoi_quan', at: V(8, 0, 1.6), look: V(19, 6.5, -5.4) },
+      { id: 'hoi_quan', at: V(3, 0, 2), look: V(19, 7, -5.4) },
       { id: 'pho_den_long', at: V(50, 0, 9), look: V(50, 3.5, 22) },
       { id: 'song_hoai', at: V(50, 0, 48.6), look: V(20, 0, 78) },
       { id: 'cho', at: V(92, 0, 49), look: V(108, 4.5, 40) },

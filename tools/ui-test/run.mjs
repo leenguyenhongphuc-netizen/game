@@ -45,7 +45,7 @@ function audit(touch) {
     if (touch && !el.classList.contains('link') && (r.width < 38 || r.height < 38)) issues.push({ level: 'warn', rule: 'nut-qua-nho', detail: `${label(el)} ${Math.round(r.width)}×${Math.round(r.height)}` });
   }
   // 2. Khối giao diện nổi tràn khỏi màn hình
-  const blocks = ['.dg-top', '.dg-hud', '.tr-cap', '.tr-hud', '.context', '.hud-top', '.chips', '.quest', '.plot-switch', '.toast', '.ctx-bar', '.ctx-detail', '.dock', '.modal', '.card', '.wheel-wrap', '.wheel-head', '.brand'];
+  const blocks = ['.dg-top', '.dg-hud', '.tr-cap', '.tr-hud', '.sw-top', '.sw-card', '.sw-guide', '.context', '.hud-top', '.chips', '.quest', '.plot-switch', '.toast', '.ctx-bar', '.ctx-detail', '.dock', '.modal', '.card', '.wheel-wrap', '.wheel-head', '.brand'];
   const rects = {};
   for (const sel of blocks) for (const el of document.querySelectorAll(sel)) {
     if (!visible(el)) continue;
@@ -74,7 +74,7 @@ for (const dev of DEVICES) {
   const dir = join(OUT, dev.id); mkdirSync(dir, { recursive: true });
   const ctx = await browser.newContext({ viewport: { width: dev.w, height: dev.h }, deviceScaleFactor: 1, hasTouch: dev.touch, isMobile: dev.touch, geolocation: { latitude: 10.34, longitude: 106.03 }, permissions: ['geolocation'], locale: 'vi-VN' });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { window.__rideStep = 0.15; window.__driveAuto = true; window.__drivePolice = false; }); // hoạt cảnh du lịch: cho mỗi khung hình nhảy bước dài hơn vì máy thử không có GPU
+  await page.addInitScript(() => { window.__rideStep = 0.15; window.__driveAuto = true; window.__drivePolice = false; window.__sightAuto = true; }); // hoạt cảnh du lịch: cho mỗi khung hình nhảy bước dài hơn vì máy thử không có GPU
   const logs = [];
   page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) logs.push(`console: ${m.text().slice(0, 200)}`); });
@@ -198,6 +198,34 @@ for (const dev of DEVICES) {
       if (await page.locator('.tr button').filter({ hasText: /Bỏ qua/ }).count() > 0) throw new Error('hoạt cảnh du lịch vẫn còn nút Bỏ qua');
       await during('.tr', `du-lich-${mode}`, () => { const d = window.__ride?.debug?.(); return d ? `canh-${d.stage}` : null; }, { every: 60000, max: 8 });
       await page.waitForTimeout(2500); await shot(`du-lich-${mode}-toi-noi`);
+    });
+    await step('tham-quan', async () => {
+      await post('/api/test/region', { regionId: 'dn_tienphuoc' }); await post('/api/test/stock', { specialtyId: 'sau_rieng_ngu_hiep', kg: 100 });
+      await enter(); await dock(/Du lịch/); await page.locator('.vmap').waitFor(); await page.waitForTimeout(500); await shot('ban-do-viet-nam');
+      await page.locator('.vmap-zoom button').first().click(); await page.locator('.vmap-zoom button').first().click(); await page.waitForTimeout(500); await shot('ban-do-phong-to');
+      await page.getByRole('button', { name: 'Tham quan', exact: true }).click(); await page.locator('.sights').waitFor(); await page.waitForTimeout(500); await shot('tham-quan-ban-do-tinh');
+      const go = page.locator('.sights .go:not([disabled])').first(); if (await go.count() === 0) { const head = page.locator('.sight-head').first(); await head.click(); }
+      await go.waitFor(); await go.scrollIntoViewIfNeeded(); await shot('tham-quan-chon-dia-danh'); await go.click();
+      await page.locator('.tr').waitFor({ timeout: 30000 });
+      let k = 0; const t0 = Date.now();
+      while (await page.locator('.sw').count() === 0) {
+        if (Date.now() - t0 > 300000) throw new Error('taxi không tới nơi sau 300 giây');
+        if (await page.locator('.taxi-cabin').count() > 0 && k < 3) { k++; if (k === 2) await page.getByRole('button', { name: 'Nhìn sang trái' }).click(); if (k === 3) await page.getByRole('button', { name: 'Nhìn sang phải' }).click(); await page.waitForTimeout(900); await shot(`taxi-ghe-sau-${['thang', 'trai', 'phai'][k - 1]}`); }
+        else await page.waitForTimeout(500);
+      }
+      await page.waitForTimeout(2500); await shot('di-bo-vao-cong');
+      const t1 = Date.now(); let seen = -1, n = 0;
+      while (await page.locator('.sw').count() > 0) {
+        if (Date.now() - t1 > 400000) throw new Error('đi bộ tham quan không kết thúc sau 400 giây');
+        const out = page.locator('.sw-go', { hasText: /Siêu thị/ });
+        if (await out.count() > 0) { await shot('di-bo-diem-cuoi'); await out.click(); break; }
+        const cur = Number(await page.locator('.sw').getAttribute('data-seen').catch(() => '0'));
+        if (cur !== seen && await page.locator('.sw-card').count() > 0 && n < 4) { seen = cur; n++; await shot(`di-bo-diem-dung-${n}`); }
+        await page.waitForTimeout(400);
+      }
+      await page.locator('.super').waitFor({ timeout: 20000 }); await page.waitForTimeout(600); await shot('sieu-thi-mua-hang');
+      const buy = page.locator('.super .go:not([disabled])').first(); if (await buy.count() > 0) { await buy.click(); await page.waitForTimeout(800); }
+      await page.getByRole('tab', { name: /Ký gửi/ }).click(); await page.waitForTimeout(600); await shot('sieu-thi-ky-gui'); await closeModal();
     });
     await step('san-thuong', async () => { await post('/api/test/role', { role: 'nong_dan' }); await enter('&santhuong=1'); await shot('san-thuong'); await world('w.teleportToTile(0, 2)'); await page.waitForTimeout(600); await shot('san-thuong-gan'); });
     await step('ban-dem', async () => { await page.goto(`${BASE}/?gio=21`); await page.waitForFunction(() => window.__vuon); await page.waitForTimeout(2500); await shot('ban-dem'); await world('w.pos.set(6.2, 0, 12.2)'); await page.waitForTimeout(600); await shot('ban-dem-truoc-sap'); });

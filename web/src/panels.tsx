@@ -12,6 +12,8 @@ import type { Collection, Coop, CoopOrder, CoopSummary, GiftInbox, Me } from './
 import { fmtDuration, regionLabel, useAction } from './ui.ts';
 import { NpcBadge } from './work.tsx';
 import { CompareCard, WhyLimit } from './trade.tsx';
+import { VietnamMap } from './map/VietnamMap.tsx';
+import { SIGHT_PROVINCES } from '../../shared/sights.ts';
 
 const ZONES = Object.keys(ZONE_NAMES) as Zone[];
 const pct = (n: number) => `${Math.round(n * 100)}%`;
@@ -124,6 +126,8 @@ export function TravelPanel({ me, startRide, startTrip, touring }: {
   return (
     <div>
       <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Chọn nơi muốn đến rồi mua vé xe khách, tàu hoả, máy bay hoặc tàu thuỷ. Tới nơi bạn được dạo vườn mẫu, ghé quầy trưng bày để mua đặc sản và sưu tập tem.</p>
+      <VietnamMap regions={Object.values(REGIONS)} homeId={home} currentId={touring ?? home} visited={visited} owned={[...owned]} sightProvinces={SIGHT_PROVINCES} selectedId={open ?? undefined}
+        onSelect={(id) => { setOpen(id); window.setTimeout(() => document.getElementById(`vung-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }} />
       <CompareCard isTrader={!!startTrip} />
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {ZONES.map((z) => (
@@ -132,7 +136,7 @@ export function TravelPanel({ me, startRide, startTrip, touring }: {
           {Object.values(REGIONS).filter((r) => r.zone === z).map((r) => {
             const here = (touring ?? home) === r.id;
             return (
-              <div className="row" key={r.id}>
+              <div className="row" key={r.id} id={`vung-${r.id}`}>
                 <button className="row-toggle" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
                   <span><strong>{r.name}</strong>, {r.province}{r.formerProvince ? ` (${r.formerProvince} cũ)` : ''} {r.special && <span className="tag new">Vùng đặc biệt</span>} {here ? <span className="tag">Bạn đang ở đây</span> : r.id === home ? <span className="tag">Nhà</span> : owned.has(r.id) ? <span className="tag">Có đất</span> : visited.has(r.id) ? <span className="tag">Đã tới</span> : null}<br />
                     <small>{specialtiesOfRegion(r.id).map((sp) => sp.name).join(' · ')}</small></span>

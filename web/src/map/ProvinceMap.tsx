@@ -1,6 +1,6 @@
 // Bản đồ một tỉnh: bờ biển thật, sông, mốc địa danh và ghim các điểm tham quan đúng toạ độ.
 // Thêm tỉnh mới: thêm một bản ghi vào PROVINCE_MAPS (khung, sông, mốc); không phải sửa component.
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { Sight } from '../../../shared/sights.ts';
 import { makeProj, ringPath, usePanZoom } from './geo.ts';
 import type { BBox } from './geo.ts';
@@ -108,6 +108,9 @@ export function ProvinceMap({ province, sights, regions, currentRegionId, select
     for (const r of regions) if (r.province === province) { const x = P.x(r.lng), y = P.y(r.lat), w = Math.max(r.name.length, 14) * 3.2 * u; fixed.push([x - w, y - 20 * u, x + w, y + 24 * u]); }
     return placeLabels(pins.map((p) => ({ id: p.s.id, x: p.x, y: p.y, w: p.s.name.length * 6.3 * u })), u, P.w, fixed);
   }, [pins, u, P, data, regions, province]);
+  // màn ngang chỉ thấy một dải: mở đầu ở giữa cụm địa danh
+  const centred = useRef(false);
+  useEffect(() => { if (!centred.current && pz.landscape && pins.length) { centred.current = true; pz.focus(pins.reduce((a, p) => a + p.x, 0) / pins.length, pins.reduce((a, p) => a + p.y, 0) / pins.length, 1); } }, [pz.landscape, pins]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!data) return <p className="hint">Tỉnh này chưa có bản đồ chi tiết.</p>;
   const cur = farms.find((f) => f.r.id === currentRegionId), sel = pins.find((p) => p.s.id === selectedId);
 

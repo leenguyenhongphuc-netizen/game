@@ -95,15 +95,19 @@ export class Village {
     roadAlongZ(S, th.road);
     // Vỉa hè, nhà chờ, cột biển dừng xe
     box(S, 0xe9dfc8, 5.5, 0.06, -2.2, 3.2, 0.16, 15);
+    const stop = mode !== 'taxi'; // taxi đón ngay trước cổng vườn nên không có nhà chờ, biển bến xe
+    if (stop) {
     box(S, 0x6fb7d9, 6.4, 2.98, -5.0, 2.7, 0.2, 5.2); box(S, 0xfffaf0, 6.4, 3.12, -5.0, 2.3, 0.1, 4.8);
     for (const z of [-7.3, -2.7]) { post(S, 0xf2c65c, 7.5, 0, z, 2.9, 0.09); post(S, 0xf2c65c, 5.4, 0, z, 2.9, 0.09); }
     box(S, 0xbfe6f7, 7.55, 1.6, -5.0, 0.06, 1.9, 4.4, { transparent: 0.45 });
     box(S, 0xc99a68, 7.0, 0.62, -5.0, 0.55, 0.12, 3.4); for (const z of [-6.4, -3.6]) box(S, 0x8a6a4a, 7.0, 0.3, z, 0.4, 0.6, 0.12);
     post(S, 0x8f97a3, 4.5, 0, -0.6, 2.6, 0.07);
     const disc = mesh(GEO.cyl, mat(0x2a7fd6), 4.5, 2.9, -0.6, 0.48, 0.1, 0.48); disc.rotation.z = Math.PI / 2; S.add(disc);
-    const label = sign(`Bến xe ${from}`, '#2a7fd6', 6.6, 7.3, 4.7, 3.7); this.root.add(label); post(S, 0x8f97a3, 7.3, 0, 3.7, 3.9, 0.08);
-    prop(S, timeBoard(1.6, 1.0), 7.46, 2.0, -6.4, 1, Math.PI); prop(S, lampPost(4.6), 4.6, 0, -9.4, 1, Math.PI);
-    crowd(S, [[6.9, 0.16, -6.2, -1.6], [6.2, 0.16, -3.4, -1.9], [5.3, 0.16, -8.6, -1.2]], hash(from) & 7);
+    }
+    const label = sign(stop ? `Bến xe ${from}` : `Cổng vườn · ${from}`, stop ? '#2a7fd6' : '#2f9a4a', 6.6, 7.3, 4.7, 3.7); this.root.add(label); post(S, 0x8f97a3, 7.3, 0, 3.7, 3.9, 0.08);
+    if (stop) prop(S, timeBoard(1.6, 1.0), 7.46, 2.0, -6.4, 1, Math.PI); prop(S, lampPost(4.6), 4.6, 0, -9.4, 1, Math.PI);
+    if (stop) crowd(S, [[6.9, 0.16, -6.2, -1.6], [6.2, 0.16, -3.4, -1.9], [5.3, 0.16, -8.6, -1.2]], hash(from) & 7);
+    else { crowd(S, [[6.6, 0.16, -7.4, -1.4]], hash(from) & 7); prop(S, SCENERY.bush(), 6.9, 0, -4.4, 0.7); prop(S, SCENERY.leaf(), 7.2, 0, -9.6, 0.9); }
     box(S, 0x4fa86a, 4.7, 0.5, -10.6, 0.6, 0.9, 0.6); box(S, 0x3f8f52, 4.7, 0.98, -10.6, 0.66, 0.08, 0.66);
     // Vườn nhà: hàng rào, cổng, nhà, lối đi
     box(S, 0xb7e69a, 14.6, 0.03, 9.2, 12, 0.08, 13.6); box(S, 0xe9dfc8, 7.4, 0.05, 6.5, 3.4, 0.1, 1.5);
