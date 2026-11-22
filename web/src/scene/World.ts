@@ -956,6 +956,40 @@ export class World {
     }
   }
 
+  // ---- chế độ xây dựng (đồ trang trí sân): chỉ thêm, không đụng phần khác
+  private buildGroup: THREE.Group | null = null;
+  /** Vải vẽ của vườn, để chế độ xây dựng nghe thao tác chạm. */
+  buildCanvas(): HTMLCanvasElement { return this.renderer.domElement; }
+  /** Điểm trên mặt sân (toạ độ của vườn đang xem) ứng với một điểm chạm trên màn. */
+  screenToGround(clientX: number, clientY: number): { x: number; z: number } | null {
+    const r = this.renderer.domElement.getBoundingClientRect(), ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), this.camera);
+    const hit = new THREE.Vector3(); return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit) ? { x: hit.x, z: hit.z } : null;
+  }
+  /** Bỏ lệnh "chạy tới điểm vừa chạm" (khi cú chạm đó dùng để đặt đồ). */
+  cancelWalk() { this.walkTo = null; }
+  /** Vẽ các món xem trước: ok = bóng xanh, bad = bóng đỏ, pending = món vừa đặt chờ lưu, select = vòng sáng quanh món đã có. Gọi với [] hoặc null để xoá. */
+  buildPreview(items: { item: string; x: number; z: number; rot: number; tone: 'ok' | 'bad' | 'pending' | 'select' }[] | null, grid = false) {
+    if (this.buildGroup) {
+      this.scene.remove(this.buildGroup);
+      this.buildGroup.traverse((o) => { const m = o as THREE.Mesh; if (m.userData.own) { (m.material as THREE.Material).dispose(); if (m.userData.ownGeo) m.geometry.dispose(); } });
+      this.buildGroup = null;
+    }
+    if (!items) return;
+    const g = new THREE.Group();
+    if (grid) { const gh = new THREE.GridHelper(28, 56, 0xffffff, 0xffffff); gh.position.set(0, 0.09, -2.5); const gm = gh.material as THREE.Material; gm.transparent = true; gm.opacity = 0.16; gm.depthWrite = false; gh.userData.own = true; gh.userData.ownGeo = true; g.add(gh); }
+    for (const it of items) {
+      const color = it.tone === 'bad' ? 0xff5a4a : it.tone === 'ok' ? 0x6fe07a : 0xffd23f;
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.95, 28), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.set(it.x, 0.12, it.z); ring.userData.own = true; ring.userData.ownGeo = true; g.add(ring);
+      if (it.tone === 'select') continue;
+      const o = buildDecor(it.item); o.position.set(it.x, it.tone === 'pending' ? 0 : 0.05, it.z); o.rotation.y = it.rot;
+      if (it.tone !== 'pending') o.traverse((c) => { const m = c as THREE.Mesh; if (m.isMesh) { m.material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false }); m.userData.own = true; m.castShadow = false; } });
+      g.add(o);
+    }
+    this.buildGroup = g; this.scene.add(g);
+  }
+
   dispose() {
     this.disposed = true; this.renderer.setAnimationLoop(null); this.quality.dispose();
     for (const fn of this.cleanup) fn();
