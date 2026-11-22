@@ -81,6 +81,80 @@ Mỗi chuyến có lộ trình cố định theo cặp vùng (`tripPlan`): quãn
 
 Tiền xăng và phí đường tính khi tới nơi, theo quãng đường thật đã chạy (kể cả phần đi lố).
 
+**Phạt quá tốc độ.** Chạy quá tốc độ có thể bị công an dừng xe. Mỗi lần bị dừng, màn lái gửi số km/h vượt quá; máy chủ tính tiền phạt theo Điều 6 Nghị định 168/2024/NĐ-CP (lấy mức giữa khung) và trừ tiền mặt khi tới nơi, tối đa 6 lần một chuyến:
+
+| Vượt quá | Khung phạt | Mức trong game | Trừ điểm GPLX |
+|---|---|---|---|
+| 5 đến dưới 10 km/h | 800.000 – 1.000.000đ | 900.000đ | 0 |
+| 10 đến 20 km/h | 4 – 6 triệu | 5 triệu | 2 |
+| trên 20 đến 35 km/h | 6 – 8 triệu | 7 triệu | 4 |
+| trên 35 km/h | 12 – 14 triệu | 13 triệu | 6 |
+
+Bảng nằm ở `SPEED_FINES` trong `shared/rules.ts`. Cần người rà lại khi luật sửa đổi (có tin về nghị định sửa đổi năm 2026, chưa đối chiếu được văn bản gốc).
+
+### Mua vé khác tự lái xe tải chỗ nào
+
+| | Mua vé (xe khách, tàu, máy bay) | Tự lái xe tải |
+|---|---|---|
+| Ai đi được | Ai cũng đi được | Chỉ thương lái |
+| Mang được gì | Chỉ người đi; mua quà tối đa 5 kg mỗi lần, 3 lần mỗi ngày, giá 180% | Thu mua sỉ tới 500 kg mỗi điểm đỗ, giá 90%; chở hàng nhà đi bán |
+| Bán hàng | Vẫn bán theo giá vùng nhà | Bán ở nơi xe đỗ: hàng vùng khác được 110% giá tham chiếu, so với 85% khi bán tại vườn |
+| Chi phí | Một lần tiền vé | Xăng, phí đường, có thể bị phạt |
+| Để làm gì | Tham quan, lấy tem | Buôn chênh lệch giá giữa các vùng |
+
+Hai cách có thể tốn ngang nhau (ví dụ đi Côn Đảo khoảng 2 triệu), nhưng vé là tiền tiêu, còn chuyến xe là tiền vốn: một xe 500 kg hàng 30.000đ/kg mua 90% bán 110% lãi gộp khoảng 3 triệu. Nội dung này nằm ở `TRAVEL_VS_TRUCK` để giao diện đặt hai cách cạnh nhau.
+
+### Thu mua sỉ tại vùng
+
+Thương lái có xe đỗ ở vùng nào (vùng nhà hoặc nơi vừa lái tới) thì thu mua sỉ được đặc sản của vùng đó:
+
+- Giá sỉ bằng 90% giá tham chiếu hiện hành (`WHOLESALE_RATIO`), rẻ hơn nữa khi đặc sản đang được mùa. Hàng nhận về là Loại 1.
+- **Sức chở 500 kg** (`TRUCK.cargoKg`) cho mỗi điểm đỗ: tới vùng mới thì tính lại từ đầu; xe không đi đâu thì tính lại mỗi ngày.
+- **Nguồn hàng 1.500 kg mỗi đặc sản mỗi ngày**, chung cho mọi thương lái (`WHOLESALE_SUPPLY_KG`).
+- Mua xong bán lại ngay tại vùng đó là lỗ (85% < 90%); phải chở đi vùng khác (110%), đem xuất khẩu, giao đơn hàng hoặc rao chợ.
+- Tới một vùng, `GET /api/regions/:id/trade` cho bảng "mua gì ở đây, mang về bán lời bao nhiêu" và "hàng trong kho bán ở đây hơn ở nhà bao nhiêu".
+
+Chỉ thương lái có xe tải nên chỉ thương lái thu mua sỉ được; đó là ưu thế của vai này. Nhà vườn và chủ xưởng lấy hàng vùng khác qua chợ hoặc từ thương lái.
+
+Điểm cần theo dõi khi cân bằng: thương lái mua sỉ đặc sản vùng nhà (90%) rồi góp vào đơn lớn hợp tác xã (100% + thưởng 25%) là có lời mà không cần chạy xe. Mức lời bị chặn bởi kích cỡ đơn (100 kg mỗi thành viên mỗi 7 ngày).
+
+## Xuất khẩu
+
+Mục xuất khẩu cho người chơi gửi hàng trong kho ra nước ngoài. Chọn hàng, thị trường và đường đi; trả cước ngay; khi lô tới nơi thì tiền hàng về (giá chốt lúc gửi).
+
+| Đường | Lô (kg) | Cước cố định + mỗi kg | Thời gian | Hao hụt hàng tươi | Cửa ngõ |
+|---|---|---|---|---|---|
+| 🚚 Xe tải biên mậu | 50 – 500 | 300.000đ + 1.500đ | 20 phút | 3% | Cửa khẩu |
+| 🚛 Xe container lạnh | 500 – 5.000 | 2,5 triệu + 900đ | 30 phút | 1% | Cửa khẩu |
+| 🚂 Tàu hoả liên vận | 300 – 8.000 | 1,5 triệu + 600đ | 45 phút | 4% | Ga liên vận |
+| ✈️ Máy bay chở hàng | 20 – 1.000 | 800.000đ + 12.000đ | 10 phút | 0% | Sân bay |
+| ⛴️ Tàu biển nhỏ | 200 – 3.000 | 1 triệu + 500đ | 60 phút | 6% | Cảng |
+| 🚢 Tàu container viễn dương | 2.000 – 50.000 | 6 triệu + 250đ | 120 phút | 10% | Cảng |
+
+Hàng khô (cây công nghiệp như cà phê, tiêu, chè, quế; lúa gạo) chỉ hao một phần năm, nên đi tàu lớn là rẻ nhất; trái tươi giá trị cao thì đáng đi máy bay; lô vừa đi container lạnh. Cộng thêm cước nội địa 1,2đ mỗi kg mỗi km từ vùng nhà tới cửa ngõ gần nhất (cửa khẩu Hữu Nghị, Kim Thành, Móng Cái, Lao Bảo, Mộc Bài; ga Đồng Đăng, Lào Cai; sân bay Nội Bài, Đà Nẵng, Tân Sơn Nhất; cảng Hải Phòng, Tiên Sa, Cái Mép), nên vườn miền Nam bán sang Trung Quốc bằng đường bộ tốn hơn vườn miền Bắc.
+
+| Thị trường | Giá so với tham chiếu | Đường đi được | Yêu cầu |
+|---|---|---|---|
+| 🇨🇳 Trung Quốc | 125% | Xe tải, container, tàu hoả | |
+| 🇱🇦 Lào – Campuchia | 115% | Xe tải, container | |
+| 🌏 Thái Lan – Singapore | 130% | Tàu nhỏ, máy bay | |
+| 🇯🇵 Nhật Bản – Hàn Quốc | 160% | Máy bay, tàu lớn | Chỉ Loại 1 |
+| 🌍 Châu Âu – Mỹ | 190% | Máy bay, tàu lớn | Chỉ Loại 1 |
+
+Giá xuất khẩu không chịu "được mùa mất giá" trong nước, nên xuất khẩu là lối thoát khi cả máy chủ trồng cùng một loại.
+
+Ai đi được đường nào: thương lái đi mọi đường; nhà vườn và chủ xưởng gửi xe tải biên mậu và máy bay, vào hợp tác xã thì thêm container, tàu hoả, tàu nhỏ. Mỗi người tối đa 3 lô đang trên đường.
+
+Đơn lớn của hợp tác xã ghi sẵn thị trường và đường đi (`exportMode`, `market`) để giao diện phát đúng hoạt cảnh khi đủ đơn.
+
+Chưa có: xuất khẩu thành phẩm của xưởng, rủi ro dọc đường (ùn ứ cửa khẩu, trả hàng), giá thị trường nước ngoài biến động.
+
+## Vì sao có giới hạn
+
+Mỗi giới hạn có một câu lý do trong `LIMIT_REASONS` (`shared/rules.ts`) để giao diện hiện ngay cạnh con số: quà đặc sản, sức chở xe, nguồn hàng sỉ, ai được thu mua sỉ, tặng quà, đơn hàng mỗi ngày, số ô theo vai, bán tháo, hợp tác xã, đơn lớn, quyền xuất khẩu, kg tối thiểu mỗi lô, số lô cùng lúc, thị trường khó tính, số bạn.
+
+Lý do chung: (1) giữ cho ba vai cần nhau — quầy trưng bày giới hạn 5 kg × 3 lần vì đó là quà lấy tem, còn muốn mua nhiều thì phải là thương lái lái xe tới thu mua sỉ; (2) chặn chuyển tiền, chuyển hàng giữa tài khoản phụ; (3) để quãng đường, sức chở và việc gom hàng là quyết định có cân nhắc.
+
 ## Nhịp chơi cho người mới
 
 Thời gian chờ được rút ngắn theo số lần đã thu hoạch: dưới 5 lần nhanh gấp 30 (vụ 12 giờ còn 24 phút), dưới 20 lần nhanh gấp 6, sau đó nhanh gấp 2 so với thời gian gốc. Tiền giống giảm còn 8% doanh thu kỳ vọng của ô, nên vốn 1 triệu trồng được nhiều ô hơn.
@@ -195,7 +269,7 @@ Tiền trong game là **đồng**, giá mỗi kg bằng giá tham chiếu ngoài
 | **Quà tặng** | Tặng nông sản cho bạn bè, tối đa 5 món mỗi ngày. | Đã có |
 | Đơn hàng theo dịp | Mâm ngũ quả Tết, giỏ quà Trung thu: mỗi đơn cần trái từ nhiều vùng. | Dự kiến |
 | Chế biến | Mứt, trái sấy, nước ép: bán giá cao hơn trái tươi. | Dự kiến |
-| Đơn xuất khẩu | Hợp tác xã góp hàng Loại 1 số lượng lớn. | Dự kiến |
+| Đơn xuất khẩu | Hợp tác xã góp hàng cho đơn lớn có sẵn thị trường và đường đi; ai cũng tự gửi được lô xuất khẩu theo 6 đường (xem mục Xuất khẩu). | Đã có ở máy chủ |
 
 Các con số trên nằm trong `shared/rules.ts` và chưa được cân bằng với người chơi thật.
 

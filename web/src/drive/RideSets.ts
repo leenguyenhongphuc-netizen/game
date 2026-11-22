@@ -6,8 +6,9 @@ import { GEO, mat, mesh, rng } from '../scene/plants.ts';
 import { SCENERY, THEMES, bake } from './RideKit.ts';
 import {
   FERRY_DECK, FERRY_PLANK_Z, PLANE_DOOR_Z, PLANE_Y, TRAIN_DOOR_Z, V3, Walker, buildBus, buildFerry, buildMinibus, buildPlane, buildTaxi, buildTrain,
-  chamTower, coffeeHill, ease, fishRaft, karst, lighthouse, nhaRong, seg, sign, terraces,
+  Gulls, Smoke, Wake, chamTower, clockPost, coffeeHill, crateStack, ease, fishRaft, harbourCrane, karst, lampPost, lighthouse, nhaRong, person, seaSurface, seg, sign, terraces, timeBoard, warehouse,
 } from './RideParts.ts';
+import type { Sea } from './RideParts.ts';
 
 export type RideMode = 'xe_khach' | 'tau_hoa' | 'may_bay' | 'tau_thuy';
 
@@ -28,20 +29,20 @@ export interface Act {
   update(t: number, dt: number, c: Ctx): void;
 }
 
-const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7);
+export const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7);
 const WATER = 0x7fd3e8;
 
-function slab(color: number, rough = 1): THREE.Mesh {
+export function slab(color: number, rough = 1): THREE.Mesh {
   const m = mesh(GEO.box, mat(color, { rough }), 0, -0.1, 0, 900, 0.2, 900); m.castShadow = false; return m;
 }
-function box(S: THREE.Group, color: number, x: number, y: number, z: number, sx: number, sy: number, sz: number, opts?: { rough?: number; transparent?: number; emissive?: number }) {
+export function box(S: THREE.Group, color: number, x: number, y: number, z: number, sx: number, sy: number, sz: number, opts?: { rough?: number; transparent?: number; emissive?: number }) {
   S.add(mesh(GEO.box, mat(color, opts), x, y, z, sx, sy, sz));
 }
-function post(S: THREE.Group, color: number, x: number, y0: number, z: number, h: number, r = 0.12) { S.add(mesh(GEO.cyl, mat(color), x, y0 + h / 2, z, r, h, r)); }
-function prop(S: THREE.Group, o: THREE.Group, x: number, y: number, z: number, scale = 1, rotY = 0) { o.position.set(x, y, z); o.scale.setScalar(scale); o.rotation.y = rotY; S.add(o); }
+export function post(S: THREE.Group, color: number, x: number, y0: number, z: number, h: number, r = 0.12) { S.add(mesh(GEO.cyl, mat(color), x, y0 + h / 2, z, r, h, r)); }
+export function prop(S: THREE.Group, o: THREE.Group, x: number, y: number, z: number, scale = 1, rotY = 0) { o.position.set(x, y, z); o.scale.setScalar(scale); o.rotation.y = rotY; S.add(o); }
 
 /** Hậu cảnh phía -x theo miền: cây cối, nhà cửa và công trình điểm nhấn; núi xa. */
-function backdrop(S: THREE.Group, root: THREE.Group, zone: Zone, r: () => number, near = 13) {
+export function backdrop(S: THREE.Group, root: THREE.Group, zone: Zone, r: () => number, near = 13) {
   const th = THEMES[zone];
   if (zone === 'dao') { box(S, WATER, -260, 0.02, 0, 400, 0.1, 700, { rough: 0.25 }); box(S, 0xf6ecc6, -58, 0.04, 0, 8, 0.12, 700); }
   const edge = zone === 'dao' ? -52 : -74;
@@ -61,14 +62,19 @@ function backdrop(S: THREE.Group, root: THREE.Group, zone: Zone, r: () => number
   }
 }
 
-function roadAlongZ(S: THREE.Group, color: number) {
+export function roadAlongZ(S: THREE.Group, color: number) {
   box(S, color, 0, 0.02, 0, 8, 0.12, 500);
   for (const x of [-3.85, 3.85]) box(S, 0xfbf3df, x, 0.04, 0, 0.26, 0.12, 500);
   for (let z = -140; z <= 140; z += 7) box(S, 0xffffff, 0, 0.05, z, 0.26, 0.12, 2.6);
 }
 
+/** Rải vài người đứng chờ: mỗi mục là [x, y, z, hướng quay]. */
+export function crowd(S: THREE.Group, list: [number, number, number, number][], seed = 0) {
+  list.forEach(([x, y, z, rot], i) => prop(S, person(i + seed), x, y, z, 1.25, rot));
+}
+
 /** Lắc nhẹ theo bánh xe khi đang chạy. */
-const bob = (time: number, moving: number) => Math.abs(Math.sin(time * 18)) * 0.03 * moving;
+export const bob = (time: number, moving: number) => Math.abs(Math.sin(time * 18)) * 0.03 * moving;
 
 // ================================================================ cảnh 1 + 2: bến xe trước xóm
 export class Village {
@@ -94,6 +100,9 @@ export class Village {
     post(S, 0x8f97a3, 4.5, 0, -0.6, 2.6, 0.07);
     const disc = mesh(GEO.cyl, mat(0x2a7fd6), 4.5, 2.9, -0.6, 0.48, 0.1, 0.48); disc.rotation.z = Math.PI / 2; S.add(disc);
     const label = sign(`Bến xe ${from}`, '#2a7fd6', 6.6, 7.3, 4.7, 3.7); this.root.add(label); post(S, 0x8f97a3, 7.3, 0, 3.7, 3.9, 0.08);
+    prop(S, timeBoard(2.6, 1.5), 7.46, 1.9, -5.0, 1, Math.PI); prop(S, lampPost(4.6), 4.6, 0, -9.4, 1, Math.PI);
+    crowd(S, [[6.9, 0.16, -6.2, -1.6], [6.2, 0.16, -3.4, -1.9], [5.3, 0.16, -8.6, -1.2]], hash(from) & 7);
+    box(S, 0x4fa86a, 4.7, 0.5, -10.6, 0.6, 0.9, 0.6); box(S, 0x3f8f52, 4.7, 0.98, -10.6, 0.66, 0.08, 0.66);
     // Vườn nhà: hàng rào, cổng, nhà, lối đi
     box(S, 0xb7e69a, 14.6, 0.03, 9.2, 12, 0.08, 13.6); box(S, 0xe9dfc8, 7.4, 0.05, 6.5, 3.4, 0.1, 1.5);
     for (let z = 2.6; z <= 16; z += 1.1) if (z < 5.4 || z > 7.6) post(S, 0xfff6e2, 8.6, 0, z, 1.05, 0.08);
@@ -173,6 +182,9 @@ export class TrainStation {
     for (let z = 15; z <= 41; z += 6.5) { post(S, 0x4fa3a5, 8.4, 0.9, z, 4.3, 0.14); box(S, 0x4fa3a5, 7.2, 4.9, z, 2.6, 0.16, 0.16); }
     for (const z of [-9, 20, 30]) { box(S, 0xc99a68, 8.2, 1.42, z, 0.6, 0.12, 2.6); box(S, 0x8a6a4a, 8.2, 1.15, z - 1, 0.4, 0.5, 0.12); box(S, 0x8a6a4a, 8.2, 1.15, z + 1, 0.4, 0.5, 0.12); }
     for (const z of [-16, -3, 9]) { post(S, 0x4a5160, 8.9, 0.9, z, 3.6, 0.07); S.add(mesh(GEO.ball, mat(0xfff3b0, { emissive: 0xffe08a }), 8.9, 4.6, z, 0.22)); }
+    prop(S, clockPost(3.6), 8.6, 0.9, 13.5); prop(S, timeBoard(3.6, 2), 9.3, 3.2, 25, 1, Math.PI);
+    crowd(S, [[7.6, 0.9, 6.5, -1.7], [8.0, 0.9, -5.5, -1.5], [6.8, 0.9, 17, -2.0], [7.9, 0.9, 22.5, -1.4], [5.2, 0.9, -13, -1.8]], hash(name) & 7);
+    prop(S, crateStack(3), 8.3, 0.9, -19, 1, 0.3);
     // Nhà ga phía sau đường ray
     box(S, 0xfff0cf, -11, 3.1, 0, 8.4, 6.2, 26); box(S, arrival ? 0x6fb7d9 : 0xd9482b, -11, 6.5, 0, 10, 0.6, 27.6); box(S, 0xfffaf0, -11, 7.4, 0, 4, 1.4, 6);
     for (const z of [-9.5, -5.2, 5.2, 9.5]) box(S, 0xa9dcf2, -6.78, 3.5, z, 0.08, 2.2, 2.2, { rough: 0.25 });
@@ -258,6 +270,14 @@ export class Airport {
     box(S, col, -18.4, 2.2, 10, 3.4, 0.3, 8); for (const z of [7, 13]) post(S, 0xfffaf0, -17, 0, z, 2.2, 0.12);
     S.add(mesh(GEO.cyl, mat(0xfffaf0), -29, 12, -42, 2.2, 24, 2.2), mesh(GEO.cyl, mat(0x7fb9d9, { rough: 0.25 }), -29, 24.8, -42, 3.4, 2.4, 3.4), mesh(GEO.cyl, mat(col), -29, 26.4, -42, 3.7, 0.6, 3.7));
     const label = sign(arrival ? `Chào mừng đến ${name}` : `Sân bay ${name}`, arrival ? '#d9482b' : '#2a7fd6', arrival ? 17 : 14, -19.6, 12.2, 0); this.root.add(label);
+    for (let x = -180; x <= 180; x += 12) for (const dz of [-16, 16]) S.add(mesh(GEO.ball, mat(dz < 0 ? 0xfff3b0 : 0x9fe0ff, { emissive: dz < 0 ? 0xffe08a : 0x6fc8ff }), x, 0.22, -150 + dz, 0.22));
+    for (let z = -100; z <= 100; z += 10) S.add(mesh(GEO.ball, mat(0x9fe0ff, { emissive: 0x6fc8ff }), 23.6, 0.2, z, 0.2));
+    // Ống lồng kính từ nhà ga vươn ra sân đỗ, mái che lối đi bộ
+    box(S, 0xe9edf2, -14.5, 3.4, -24, 11, 2.4, 2.8); box(S, 0x7fb9d9, -14.5, 3.6, -22.58, 10.4, 1.2, 0.06, { rough: 0.25 }); box(S, 0x7fb9d9, -14.5, 3.6, -25.42, 10.4, 1.2, 0.06, { rough: 0.25 });
+    for (const x of [-18, -11]) post(S, 0xb9bfc9, x, 0, -24, 2.3, 0.22);
+    box(S, col, -8.6, 3.4, -24, 1.4, 2.8, 3.2);
+    crowd(S, [[12.4, 0, 2.0, -1.8], [13.2, 0, 4.2, -1.5], [-16.4, 0, 8.6, 1.4], [-16.2, 0, 11.8, 1.7]], hash(name) & 7);
+    for (const z of [-34, 32]) prop(S, lampPost(7), -18.6, 0, z, 1, Math.PI);
     // Xe hành lý, cọc tiêu
     box(S, 0xf2c65c, 11, 0.75, 7, 1.5, 0.9, 2.4); box(S, 0x4a5160, 11, 0.3, 7, 1.3, 0.2, 2.2);
     for (let i = 0; i < 2; i++) { box(S, 0xe9edf2, 11, 0.45, 10 + i * 2.4, 1.5, 0.2, 2.0); box(S, [0xf08a6c, 0x6fb7d9][i], 11, 0.85, 10 + i * 2.4, 1.1, 0.6, 1.4); }
@@ -323,55 +343,70 @@ export class Port {
   private w = new Walker();
   private ferry: THREE.Group;
   private plank: THREE.Mesh;
-  private gulls: THREE.Group[] = [];
+  private sea: Sea = seaSurface(1300, 130);
+  private wake = new Wake(2.5, 30);
+  private smoke = new Smoke(8);
+  private gulls = new Gulls(5);
   private pts: THREE.Vector3[]; private signs: THREE.Sprite[] = [];
   private name: string; private s: number;
 
   /** s = +1: đất liền ở phía +z (tàu rời bến đi về -z); s = -1: đất liền ở phía -z (tàu cập bến). */
   constructor(zone: Zone, name: string, arrival: boolean) {
     this.name = name; const s = this.s = arrival ? -1 : 1;
-    const r = rng(hash(name + 'cang' + arrival)), S = new THREE.Group(), th = THEMES[zone];
-    this.root.add(slab(WATER, 0.25));
-    // Bờ: bãi cát, đất, nhà chờ, cây
-    box(S, 0xf6ecc6, 0, 0.5, s * 130, 700, 1.4, 232); box(S, th.ground, 0, 0.56, s * 150, 700, 1.4, 180);
-    box(S, 0xd9d2c4, 8, 0.75, s * 20, 22, 1.3, 12);
-    box(S, 0xfff6e2, 14.5, 3.2, s * 21, 7, 3.8, 8); box(S, arrival ? 0xf08a6c : 0x6fb7d9, 14.5, 5.3, s * 21, 8.4, 0.4, 9.6); box(S, 0xa9dcf2, 10.96, 3.4, s * 21, 0.08, 1.6, 5, { rough: 0.25 });
-    for (const dz of [-3.6, 3.6]) post(S, 0xf2c65c, 9.6, 1.4, s * 21 + dz, 3.8, 0.1);
-    box(S, arrival ? 0xf08a6c : 0x6fb7d9, 10.2, 5.2, s * 21, 1.6, 0.2, 9.6);
-    for (let i = 0; i < 16; i++) { const kinds = th.kinds.filter((k) => k !== 'rice' && k !== 'pond'), kd = kinds[Math.floor(r() * kinds.length)]; prop(S, SCENERY[kd](), -60 + r() * 150, 1.2, s * (30 + r() * 60), 1 + r() * 0.4, kd === 'house' ? (s > 0 ? Math.PI : 0) : r() * 6); }
-    for (const x of [3, 20, -8]) prop(S, SCENERY.palm(), x, 1.2, s * (18 + Math.abs(x) * 0.3), 1.1, r() * 6);
-    // Cầu tàu gỗ dọc mạn tàu
-    box(S, 0xc99a68, 6.4, 1.2, 0, 4.6, 0.3, 30); box(S, 0xb8875a, 6.4, 1.36, 0, 4.2, 0.04, 30);
-    for (let z = -13; z <= 13; z += 6.5) for (const x of [4.4, 8.4]) post(S, 0x8a6a4a, x, -0.8, z, 2.4, 0.26);
-    for (let z = -13; z <= 13; z += 6.5) { post(S, 0xe0342b, 4.5, 1.3, z, 0.6, 0.2); post(S, 0x8a6a4a, 8.5, 1.3, z, 1.2, 0.07); }
-    box(S, 0x8a6a4a, 8.5, 2.4, 0, 0.08, 0.08, 26);
-    for (const z of [-9, 9]) { box(S, 0xf08a6c, 7.6, 1.7, z, 0.9, 0.7, 0.9); box(S, 0x6fb7d9, 7.6, 1.6, z + 1.2, 0.8, 0.5, 0.8); }
-    const label = sign(arrival ? `Chào mừng đến ${name}` : `Bến cảng ${name}`, arrival ? '#d9482b' : '#2a7fd6', arrival ? 14 : 12, 10, 8.4, s * 16); this.root.add(label);
-    // Biển phía sau: đảo nhỏ, ghe, bè cá, hải đăng
-    for (let i = 0; i < 9; i++) prop(S, SCENERY[['islet', 'ghe', 'seastone', 'ghe'][i % 4]](), -22 - r() * 80, 0, -s * (r() * 110) + s * 6, 1.1 + r() * 0.7, r() * 6);
-    prop(S, fishRaft(), -30, 0, -s * 14, 1, 0.4); prop(S, lighthouse(), -70, 0, -s * 52);
-    const caps = new THREE.Group(); for (let i = 0; i < 70; i++) caps.add(mesh(GEO.ball, mat(0xffffff, { rough: 0.3 }), -120 + r() * 170, 0.02, (r() - 0.5) * 200 - s * 30, 1.2 + r() * 1.4, 0.12, 0.4));
-    this.root.add(bake(S, true), bake(caps));
-
-    this.ferry = bake(buildFerry(), true); this.root.add(this.ferry, this.w.g);
-    this.plank = mesh(GEO.box, mat(0xc99a68), 3.5, 1.72, FERRY_PLANK_Z, 2.6, 0.12, 1.2); this.plank.rotation.z = -0.24; this.root.add(this.plank);
-    for (let i = 0; i < 4; i++) {
-      const gull = new THREE.Group();
-      for (const k of [-1, 1]) { const wing = mesh(GEO.box, mat(0xffffff), k * 0.55, 0, 0, 1.1, 0.05, 0.34); wing.castShadow = false; gull.add(wing); }
-      gull.add(mesh(GEO.ball, mat(0xffffff), 0, 0, 0, 0.2, 0.16, 0.4)); this.gulls.push(gull); this.root.add(gull);
+    const r = rng(hash(name + 'cang' + arrival)), S = new THREE.Group(), th = THEMES[zone], col = arrival ? 0xf08a6c : 0x6fb7d9;
+    this.root.add(this.sea.mesh);
+    // Bờ: kè đá, bãi cát, đất liền
+    box(S, 0xf6ecc6, 0, 0.5, s * 132, 700, 1.4, 232); box(S, th.ground, 0, 0.56, s * 152, 700, 1.4, 180);
+    box(S, 0xcfc8ba, 0, 0.55, s * 16.6, 700, 1.5, 1.6);
+    for (let x = -80; x <= 90; x += 3.2) S.add(mesh(GEO.sphere, mat(x % 2 ? 0x9aa1ab : 0xb4bac4), x + r(), 0.5, s * (15.4 + r() * 0.6), 1.1 + r() * 0.5, 0.8, 1.0));
+    // Sân cảng lát bê tông, nhà ga hành khách có mái hiên, kho hàng, cần cẩu
+    box(S, 0xd9d2c4, 10, 0.75, s * 24, 46, 1.3, 16);
+    box(S, 0xfff6e2, 16.5, 3.4, s * 24.5, 9, 4.2, 9); box(S, col, 16.5, 5.7, s * 24.5, 10.4, 0.4, 10.6); box(S, 0xa9dcf2, 11.96, 3.5, s * 24.5, 0.08, 1.8, 6, { rough: 0.25 });
+    for (const dz of [-4, 0, 4]) post(S, 0xf2c65c, 10.2, 1.4, s * 24.5 + dz, 4.0, 0.1);
+    box(S, col, 11, 5.4, s * 24.5, 2.4, 0.2, 10.6); box(S, 0xfffaf0, 16.5, 6.6, s * 24.5, 3.4, 1.3, 4);
+    prop(S, timeBoard(3, 1.7), 11.9, 3.3, s * 24.5 - 3.6, 1, Math.PI); prop(S, clockPost(3.4), 9.4, 1.4, s * 19.5);
+    prop(S, warehouse(13, 9, 4.6, arrival ? 0xf2b25c : 0x4fa3a5), -9, 1.4, s * 27, 1, s > 0 ? Math.PI : 0);
+    prop(S, harbourCrane(12), -1.5, 1.4, s * 19.6, 1, s > 0 ? Math.PI / 2 : -Math.PI / 2);
+    prop(S, crateStack(6), -4.6, 1.4, s * 20.4, 1.2, 0.4); prop(S, crateStack(4, 0x6fb7d9), 24, 1.4, s * 20, 1.2, -0.3);
+    for (const x of [26, -16]) prop(S, lampPost(6), x, 1.4, s * 18.6, 1, Math.PI / 2 * s);
+    crowd(S, [[9.2, 1.4, s * 21, 3.14], [10.4, 1.4, s * 22.4, 2.6], [8.0, 1.36, s * 12.5, 0.4], [7.0, 1.36, s * 6.5, -1.4]], hash(name) & 7);
+    for (let i = 0; i < 18; i++) { const kinds = th.kinds.filter((k) => k !== 'rice' && k !== 'pond'), kd = kinds[Math.floor(r() * kinds.length)]; prop(S, SCENERY[kd](), -70 + r() * 170, 1.2, s * (36 + r() * 60), 1 + r() * 0.4, kd === 'house' ? (s > 0 ? Math.PI : 0) : r() * 6); }
+    for (const x of [30, 34, -20, -24]) prop(S, SCENERY.palm(), x, 1.2, s * (22 + Math.abs(x) * 0.1), 1.1, r() * 6);
+    // Núi đảo phía sau bến khi cập đảo; đất liền thì theo màu núi của miền
+    const mc = zone === 'dao' ? 0x6fae78 : th.mountains;
+    if (mc !== null) for (let i = 0; i < 7; i++) {
+      const h = (zone === 'dao' ? 34 : 24) + r() * 26, x = -150 + i * 52 + r() * 20, m = mesh(GEO.sphere, mat(i % 2 ? mc : 0x86c08a, { rough: 1 }), x, 0, s * (120 + r() * 50), 38 + r() * 22, h, 30 + r() * 14);
+      m.castShadow = false; this.root.add(m);
     }
-    this.pts = [V3(-2.7, 0, -9.6), V3(2.7, 0, 8), V3(0, 7, 3), V3(0, 4, -9), V3(9, 1.3, 11), V3(9, 1.3, -11)]; this.signs = [label];
+    // Cầu tàu gỗ dọc mạn tàu: cọc, cột bích buộc dây, tay vịn, đèn
+    box(S, 0xc99a68, 6.4, 1.2, 0, 4.6, 0.3, 30); box(S, 0xb8875a, 6.4, 1.36, 0, 4.2, 0.04, 30);
+    for (let z = -14; z <= 14; z += 2) box(S, 0xa97a4c, 6.4, 1.37, z, 4.5, 0.03, 0.08);
+    for (let z = -13; z <= 13; z += 6.5) for (const x of [4.4, 8.4]) post(S, 0x8a6a4a, x, -0.8, z, 2.4, 0.26);
+    for (let z = -13; z <= 13; z += 6.5) { post(S, 0x2e3440, 4.5, 1.3, z, 0.5, 0.22); S.add(mesh(GEO.cyl, mat(0x2e3440), 4.5, 1.84, z, 0.3, 0.1, 0.3)); post(S, 0x8a6a4a, 8.5, 1.3, z, 1.2, 0.07); }
+    box(S, 0x8a6a4a, 8.5, 2.4, 0, 0.08, 0.08, 26); box(S, 0x8a6a4a, 8.5, 1.9, 0, 0.06, 0.06, 26);
+    for (const z of [-9, 9]) { box(S, 0xf08a6c, 7.6, 1.7, z, 0.9, 0.7, 0.9); box(S, 0x6fb7d9, 7.6, 1.6, z + 1.2, 0.8, 0.5, 0.8); }
+    for (const z of [-4, 6]) { const t = mesh(new THREE.TorusGeometry(0.42, 0.16, 6, 12), mat(0x2e3440), 4.1, 1.0, z); t.rotation.y = Math.PI / 2; S.add(t); }
+    const label = sign(arrival ? `Chào mừng đến ${name}` : `Bến cảng ${name}`, arrival ? '#d9482b' : '#2a7fd6', arrival ? 14 : 12, 10, 9.6, s * 17); this.root.add(label);
+    // Ngoài khơi: đảo nhỏ, thuyền chài, bè cá, hải đăng, phao luồng
+    for (let i = 0; i < 9; i++) prop(S, SCENERY[['islet', 'ghe', 'seastone', 'ghe'][i % 4]](), -22 - r() * 80, 0, -s * (r() * 110) + s * 6, 1.1 + r() * 0.7, r() * 6);
+    for (let i = 0; i < 4; i++) prop(S, SCENERY.ghe(), 16 + i * 4.2, 0.05, s * (11.5 + (i % 2) * 1.6), 1.3, Math.PI / 2 + (r() - 0.5) * 0.3);
+    prop(S, fishRaft(), -30, 0, -s * 14, 1, 0.4); prop(S, lighthouse(), -70, 0, -s * 52);
+    for (let k = 1; k <= 4; k++) { box(S, 0xe0342b, -9, 0.5, -s * k * 22, 0.9, 1.4, 0.9); box(S, 0x4fa86a, 14, 0.5, -s * (k * 22 + 11), 0.9, 1.4, 0.9); }
+    this.root.add(bake(S, true));
+
+    this.ferry = bake(buildFerry(), true); this.root.add(this.ferry, this.w.g, this.wake.g, this.smoke.g, this.gulls.g);
+    this.plank = mesh(GEO.box, mat(0xc99a68), 3.5, 1.72, FERRY_PLANK_Z, 2.6, 0.12, 1.2); this.plank.rotation.z = -0.24; this.root.add(this.plank);
+    this.pts = [V3(-2.7, 0, -9.6), V3(2.7, 0, 8), V3(0, 8.4, 2), V3(0, 4, -9), V3(9, 1.3, 11), V3(9, 1.3, -11)]; this.signs = [label];
   }
 
-  private common(c: Ctx, moving: boolean) {
-    const f = this.ferry, time = c.time;
-    f.position.y = 0.25 + Math.sin(time * 1.6) * (moving ? 0.14 : 0.05); f.rotation.x = Math.sin(time * 1.3) * 0.015; f.rotation.z = Math.sin(time * 1.1) * (moving ? 0.02 : 0.008);
-    this.gulls.forEach((g, i) => {
-      const a = time * 0.5 + i * 1.6; g.position.set(Math.cos(a) * (8 + i * 2), 9 + Math.sin(time * 1.4 + i) * 0.8 + i * 0.5, f.position.z + Math.sin(a) * (7 + i)); g.rotation.y = -a;
-      const flap = Math.sin(time * 9 + i) * 0.55; g.children[0].rotation.z = flap; g.children[1].rotation.z = -flap;
-    });
+  private common(c: Ctx, power: number) {
+    const f = this.ferry, time = c.time, moving = power > 0;
+    f.position.y = 0.25 + Math.sin(time * 1.6) * (moving ? 0.12 : 0.05); f.rotation.x = Math.sin(time * 1.3) * 0.012; f.rotation.z = Math.sin(time * 1.1) * (moving ? 0.018 : 0.008);
+    this.sea.tick(time); this.wake.update(time, 0, f.position.z, 9.4, 7.6, Math.min(1, power));
+    this.smoke.update(time, 0, 7.8, f.position.z + 3.4, 3 + power * 9, 0.5 + power * 0.25);
+    this.gulls.update(time, 2, 10.5, f.position.z - 2);
     const yaw = this.s > 0 ? (c.portrait ? 2.8 : 1.98) : (c.portrait ? 0.36 : 1.2);
-    c.shoot(this.pts, yaw, c.portrait ? 0.5 : 0.24, this.signs);
+    c.shoot(this.pts, yaw, c.portrait ? 0.46 : 0.24, this.signs);
   }
   private deckPath(): THREE.Vector3[] {
     const d = FERRY_DECK + 0.25;
@@ -379,32 +414,32 @@ export class Port {
   }
 
   depart(): Act {
-    const D = 6.4, P = this.deckPath();
+    const D = 6.6, P = this.deckPath();
     this.w.g.position.copy(P[0]); this.w.g.rotation.y = Math.PI;
     return {
-      stage: 3, caption: `Lên tàu ở bến cảng ${this.name}`, duration: D, root: this.root, fog: [130, 380],
+      stage: 3, caption: `Lên tàu ở bến cảng ${this.name}`, duration: D, root: this.root, fog: [150, 420],
       update: (t, _dt, c) => {
         const u = seg(t, 0.2, 3.9);
         this.w.walk(P, u, c.time); this.w.hide(seg(u, 0.95, 1));
         const lift = ease(seg(t, 4.0, 4.6)); this.plank.rotation.z = -0.24 - lift * 1.2; this.plank.position.set(3.5 + lift * 1.0, 1.72 + lift * 0.9, FERRY_PLANK_Z); this.plank.visible = lift < 1;
         const go = Math.max(0, t - 4.5);
-        this.ferry.position.z = -2.2 * go * go; this.common(c, go > 0);
+        this.ferry.position.z = -2.2 * go * go; this.common(c, Math.min(1, go * 0.7));
       },
     };
   }
 
   arrive(): Act {
-    const D = 5.8, P = this.deckPath().reverse(); P[P.length - 1] = V3(6.6, 1.38, -11.5);
+    const D = 6, P = this.deckPath().reverse(); P[P.length - 1] = V3(6.6, 1.38, -11.5);
     this.w.hide(1); this.plank.visible = false;
     return {
-      stage: 5, caption: `Cập bến cảng ${this.name}`, duration: D, root: this.root, fog: [130, 380],
+      stage: 5, caption: `Cập bến cảng ${this.name}`, duration: D, root: this.root, fog: [150, 420],
       update: (t, _dt, c) => {
-        const k = seg(t, 0, 2.5);
+        const k = seg(t, 0, 2.7);
         this.ferry.position.z = 60 * (1 - k) ** 2;
-        const drop = ease(seg(t, 2.4, 2.9)); this.plank.visible = drop > 0; this.plank.rotation.z = -0.24 - (1 - drop) * 1.2; this.plank.position.set(3.5 + (1 - drop) * 1.0, 1.72 + (1 - drop) * 0.9, FERRY_PLANK_Z);
-        const u = seg(t, 3.0, 5.5);
-        if (t >= 3.0) { this.w.walk(P, u, c.time); this.w.hide(1 - seg(u, 0, 0.06)); }
-        this.common(c, k < 1);
+        const drop = ease(seg(t, 2.6, 3.1)); this.plank.visible = drop > 0; this.plank.rotation.z = -0.24 - (1 - drop) * 1.2; this.plank.position.set(3.5 + (1 - drop) * 1.0, 1.72 + (1 - drop) * 0.9, FERRY_PLANK_Z);
+        const u = seg(t, 3.2, 5.7);
+        if (t >= 3.2) { this.w.walk(P, u, c.time); this.w.hide(1 - seg(u, 0, 0.06)); }
+        this.common(c, (1 - k) * 0.9);
       },
     };
   }
@@ -429,6 +464,8 @@ export class BusStation {
     for (let z = -12; z <= 12; z += 6) post(S, 0xf2c65c, -9.6, 0, z, 4.3, 0.16);
     for (const z of [-9, -3, 3, 9]) box(S, 0xa9dcf2, -13.46, 2.6, z, 0.08, 2.0, 3.2, { rough: 0.25 });
     box(S, 0xfffaf0, -17, 7.0, 0, 5, 1.6, 8);
+    prop(S, clockPost(3.8), -9.8, 0, -15.5); prop(S, timeBoard(4.2, 2.2), -13.3, 4.4, 0);
+    crowd(S, [[-10.6, 0, -4, 1.6], [-10.9, 0, 2.4, 1.3], [-11.2, 0, 7.6, 1.9], [7.9, 0.16, 5.6, -1.6], [8.3, 0.16, 3.3, -1.3]], hash(name) & 7);
     const parked = buildMinibus(); prop(S, parked, -7.6, 0, 22, 1, 0.5); const parked2 = buildBus(); prop(S, parked2, -8, 0, -26, 1, -0.4);
     const label = sign(`Chào mừng đến ${name}`, '#d9482b', 15, -12.4, 9.8, 0); this.root.add(label);
     box(S, 0x6fb7d9, 7.8, 2.9, 4.5, 2.4, 0.2, 4.4); for (const z of [2.5, 6.5]) post(S, 0xf2c65c, 8.8, 0, z, 2.9, 0.09); box(S, 0xc99a68, 8.4, 0.62, 4.5, 0.5, 0.12, 3);

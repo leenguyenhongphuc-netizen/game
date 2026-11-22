@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import type { Zone } from '../../../shared/catalog.ts';
 import { GEO, mat, mesh, rng } from '../scene/plants.ts';
 import { SCENERY, THEMES, bake } from './RideKit.ts';
-import { buildBus, buildFerry, buildPlane, buildTrain, buoy, cableBridge, chamTower, coffeeHill, fishRaft, karst, lighthouse, nhaRong, terraces, tunnelHill } from './RideParts.ts';
+import { Gulls, Smoke, Wake, buildBus, buildFerry, buildPlane, buildTrain, buoy, seaSurface, cableBridge, chamTower, coffeeHill, fishRaft, karst, lighthouse, nhaRong, terraces, tunnelHill } from './RideParts.ts';
+import type { Sea } from './RideParts.ts';
 import type { Act, Ctx, RideMode } from './RideSets.ts';
 
 interface Spec { speed: number; half: number; radius: number; height: number; look: number; wide: number }
@@ -12,7 +13,7 @@ const SPECS: Record<RideMode, Spec> = {
   xe_khach: { speed: 30, half: 5.2, radius: 18, height: 6, look: 1.6, wide: 1.4 },
   tau_hoa: { speed: 34, half: 19, radius: 31, height: 10, look: 2, wide: 1.4 },
   may_bay: { speed: 95, half: 9, radius: 22, height: 5, look: 1, wide: 8.4 },
-  tau_thuy: { speed: 22, half: 8.5, radius: 24, height: 9, look: 2.2, wide: 2.6 },
+  tau_thuy: { speed: 22, half: 8.6, radius: 27, height: 11, look: 3.2, wide: 2.8 },
 };
 const CRUISE = 62; // độ cao bay bằng, phía trên tầng mây
 const WATER = 0x7fd3e8;
@@ -34,7 +35,10 @@ export class Journey implements Act {
   private vehicle: THREE.Group;
   private spec: Spec;
   private puffs: { m: THREE.Mesh; life: number }[] = [];
-  private gulls: THREE.Group[] = [];
+  private gulls: Gulls | null = null;
+  private sea: Sea | null = null;
+  private wake: Wake | null = null;
+  private smoke: Smoke | null = null;
   private info: JourneyInfo;
 
   constructor(info: JourneyInfo) {
@@ -47,10 +51,9 @@ export class Journey implements Act {
     this.root.add(this.world, this.vehicle);
     this.build();
     if (info.mode === 'tau_hoa') for (let i = 0; i < 10; i++) { const m = mesh(GEO.ball, mat(0xffffff, { transparent: 0.75 }), 0, -50, 0, 0.5); m.castShadow = false; this.root.add(m); this.puffs.push({ m, life: i * 0.12 }); }
-    if (info.mode === 'tau_thuy') for (let i = 0; i < 5; i++) {
-      const gull = new THREE.Group();
-      for (const s of [-1, 1]) { const w = mesh(GEO.box, mat(0xffffff), s * 0.55, 0, 0, 1.1, 0.05, 0.34); w.castShadow = false; gull.add(w); }
-      gull.add(mesh(GEO.ball, mat(0xffffff), 0, 0, 0, 0.2, 0.16, 0.4)); this.gulls.push(gull); this.root.add(gull);
+    if (info.mode === 'tau_thuy') {
+      this.sea = seaSurface(1500, 150); this.wake = new Wake(2.5, 34, 36); this.smoke = new Smoke(9); this.gulls = new Gulls(6);
+      this.root.add(this.sea.mesh, this.wake.g, this.smoke.g, this.gulls.g);
     }
   }
 
@@ -70,7 +73,7 @@ export class Journey implements Act {
     const ground = new THREE.InstancedMesh(new THREE.BoxGeometry(900, 0.2, strip + 0.05), gm, n); ground.userData.own = true;
     const cA = new THREE.Color(sea ? WATER : THEMES[zA].ground), cB = new THREE.Color(sea ? 0x6cc6e0 : THEMES[zB].ground);
     for (let i = 0; i < n; i++) { const s = -200 + i * strip; m4.makeTranslation(0, -0.12, -s); ground.setMatrixAt(i, m4); ground.setColorAt(i, c.copy(cA).lerp(cB, ss(s / L, 0.36, 0.64))); }
-    ground.receiveShadow = true; W.add(ground);
+    ground.receiveShadow = true; if (!sea) W.add(ground); else { ground.dispose(); gm.dispose(); }
 
     // Vùng không rải cây cối (sông, cầu, hầm, biển…)
     const holes: { x0: number; x1: number; s0: number; s1: number }[] = [];
@@ -235,9 +238,8 @@ export class Journey implements Act {
         const base = z === zA ? 0 : L * 0.5;
         for (let i = 0; i < 6; i++) { const h = 24 + r() * 22, mt = mesh(new THREE.ConeGeometry(26 + r() * 14, h, 7), mat(THEMES[z].mountains!, { rough: 1 }), -(150 + r() * 40), h / 2 - 3, -(base + i * L * 0.09)); mt.castShadow = false; W.add(mt); }
       }
-      const caps = new THREE.InstancedMesh(GEO.ball, mat(0xffffff, { rough: 0.3 }), 280);
-      for (let i = 0; i < 280; i++) { m4.compose(new THREE.Vector3((r() - 0.5) * 260, 0.0, -(r() * (L + 100) - 40)), new THREE.Quaternion(), new THREE.Vector3(1.4 + r() * 1.6, 0.16, 0.45)); caps.setMatrixAt(i, m4); }
-      W.add(caps);
+      // Tàu hàng và thuyền chài đi ngược chiều ngoài luồng
+      for (const [k, x] of [[0.3, -20], [0.58, 22], [0.76, -24]]) { const o = put(SCENERY.ghe(), x, 0.05, L * k); o.scale.setScalar(2.2); o.rotation.y = Math.PI; }
     }
     W.add(bake(S, true));
   }
@@ -275,10 +277,10 @@ export class Journey implements Act {
       f.life += dt * (0.5 + speed * 0.8); const k = f.life % 1.2;
       f.m.position.set(Math.sin(f.life * 3) * 0.3, 4.6 + k * 4.2, -16.8 + k * (6 + speed * 12)); f.m.scale.setScalar(0.35 + k * 0.95);
     }
-    this.gulls.forEach((g, i) => {
-      const ang = time * 0.5 + i * 1.3; g.position.set(Math.cos(ang) * (7 + i * 1.6), 8.5 + Math.sin(time * 1.4 + i) * 0.8 + i * 0.4, -3 + Math.sin(ang) * (6 + i)); g.rotation.y = -ang;
-      const flap = Math.sin(time * 9 + i) * 0.55; g.children[0].rotation.z = flap; g.children[1].rotation.z = -flap;
-    });
+    if (this.sea) {
+      this.sea.tick(time, this.dist); this.wake!.update(time, 0, 0, 9.4, 7.6, 0.35 + speed * 0.65);
+      this.smoke!.update(time, 0, v.position.y + 7.6, 3.4, 4 + speed * 12, 0.55); this.gulls!.update(time, 0, 11, -3);
+    }
     this.info.onTick?.(p);
   }
 }

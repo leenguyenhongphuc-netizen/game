@@ -96,7 +96,7 @@ export const PLANE_Y = 2.1;
 export const PLANE_DOOR_Z = -4.7;
 
 /** Thân tàu nhìn từ trên xuống: mũi nhọn về -z, đuôi bo tròn; đùn theo chiều cao. */
-function hullGeo(half: number, bow: number, stern: number, height: number, flare = 1): THREE.BufferGeometry {
+export function hullGeo(half: number, bow: number, stern: number, height: number, flare = 1): THREE.BufferGeometry {
   const sh = new THREE.Shape();
   sh.moveTo(-half, -stern + half * 0.5); sh.quadraticCurveTo(-half, -stern, -half * 0.5, -stern); sh.lineTo(half * 0.5, -stern); sh.quadraticCurveTo(half, -stern, half, -stern + half * 0.5);
   sh.lineTo(half, bow * 0.45); sh.quadraticCurveTo(half * 0.92, bow * 0.8, 0, bow); sh.quadraticCurveTo(-half * 0.92, bow * 0.8, -half, bow * 0.45); sh.closePath();
@@ -105,7 +105,7 @@ function hullGeo(half: number, bow: number, stern: number, height: number, flare
   return g;
 }
 /** Lan can: tay vịn chạy theo đường gấp khúc kín hoặc hở, có trụ đỡ. */
-function railing(g: THREE.Group, pts: [number, number][], y: number, h = 0.62, color = 0xfffdf6) {
+export function railing(g: THREE.Group, pts: [number, number][], y: number, h = 0.62, color = 0xfffdf6) {
   const m = mat(color);
   for (let i = 1; i < pts.length; i++) {
     const [x0, z0] = pts[i - 1], [x1, z1] = pts[i], len = Math.hypot(x1 - x0, z1 - z0), ang = Math.atan2(x1 - x0, z1 - z0);
@@ -157,7 +157,11 @@ export class Walker {
   private arm = new THREE.Group();
   private body = new THREE.Group();
   private size: number;
-  constructor(size = 1.3) {
+  private fixedArm = false;
+  private bag = new THREE.Group();
+  private load = new THREE.Group();
+  /** carry = 'sot': bưng sọt hàng trước ngực thay vì kéo vali. */
+  constructor(size = 1.3, carry: 'vali' | 'sot' = 'vali') {
     this.size = size;
     const skin = mat(0xf6cfa8), shirt = mat(0x4f9fe0), pants = mat(0x6b5140);
     const b = this.body;
@@ -174,16 +178,22 @@ export class Walker {
     const hold = new THREE.Group(); hold.position.set(0.37, 1.4, 0); hold.rotation.x = 0.55;
     hold.add(mesh(GEO.cyl, shirt, 0, -0.26, 0, 0.085, 0.52, 0.085), mesh(GEO.ball, skin, 0, -0.56, 0, 0.09));
     // Vali kéo phía sau tay phải
-    const bag = new THREE.Group(); bag.position.set(0.4, 0, -0.62); bag.rotation.x = 0.3;
+    const bag = this.bag; bag.position.set(0.4, 0, -0.62); bag.rotation.x = 0.3;
     bag.add(mesh(GEO.box, mat(0xf08a6c), 0, 0.52, 0, 0.46, 0.7, 0.28), mesh(GEO.box, mat(0xd9482b), 0, 0.52, 0.15, 0.3, 0.42, 0.03), mesh(GEO.cyl, mat(0x4a5160), 0, 1.1, 0, 0.03, 0.5, 0.03));
     for (const x of [-0.17, 0.17]) { const w = mesh(GEO.cyl, mat(0x3a3f4a), x, 0.09, 0, 0.09, 0.07, 0.09); w.rotation.z = Math.PI / 2; bag.add(w); }
     b.add(this.arm, hold, bag);
+    if (carry === 'sot') {
+      bag.visible = false; hold.rotation.x = -1.1; this.arm.rotation.x = -1.1; this.fixedArm = true;
+      this.load.add(mesh(GEO.box, mat(0xc99a68), 0, 1.12, 0.52, 0.66, 0.46, 0.5), mesh(GEO.box, mat(0x8a6a4a), 0, 1.12, 0.52, 0.7, 0.07, 0.54));
+      for (const [x, c] of [[-0.17, 0xf08a24], [0.17, 0xdc342b], [0, 0x9bd64a]] as [number, number][]) this.load.add(mesh(GEO.ball, mat(c, { rough: 0.5 }), x, 1.4, 0.52 + (x === 0 ? 0.1 : -0.06), 0.15));
+      b.add(this.load);
+    }
     this.g.add(b); this.g.scale.setScalar(size);
   }
   /** Nhịp bước: phase tăng theo thời gian, moving = đang đi. */
   pose(phase: number, moving: boolean) {
     const s = moving ? Math.sin(phase) : 0;
-    this.legs[0].rotation.x = s * 0.75; this.legs[1].rotation.x = -s * 0.75; this.arm.rotation.x = -s * 0.6;
+    this.legs[0].rotation.x = s * 0.75; this.legs[1].rotation.x = -s * 0.75; if (!this.fixedArm) this.arm.rotation.x = -s * 0.6;
     this.body.position.y = moving ? Math.abs(Math.cos(phase)) * 0.05 : 0;
   }
   /** Đi theo đường gấp khúc: u = 0..1 dọc đường. */
@@ -202,6 +212,8 @@ export class Walker {
     while (diff > Math.PI) diff -= Math.PI * 2; while (diff < -Math.PI) diff += Math.PI * 2;
     this.g.rotation.y += diff * 0.3;
   }
+  /** Đang bưng sọt hay đi tay không. */
+  holding(v: boolean) { this.load.visible = v; }
   /** Khuất dần khi bước vào phương tiện (k = 1 là đã vào hẳn). */
   hide(k: number) { const s = 1 - clamp01(k); this.g.visible = s > 0.02; this.g.scale.setScalar(this.size * Math.max(0.02, s)); }
 }
@@ -340,15 +352,15 @@ void main() {
   float dx = cos(p.x * 0.11 + t * 1.1) * 0.022 + c2 * 0.0085 + c3 * 0.0186;
   float dz = c2 * 0.0272 + c3 * 0.0186;
   float r1 = nz(p * 0.5 + vec2(t * 0.35, t * 0.2)), r2 = nz(p * 1.25 - vec2(t * 0.3, t * 0.45)), r3 = nz(p * 3.1 + vec2(-t * 0.5, t * 0.6));
-  vec3 N = normalize(vec3(-dx * 2.4 - (r1 - 0.5) * 0.42 - (r3 - 0.5) * 0.16, 1.0, -dz * 2.4 - (r2 - 0.5) * 0.42 - (r3 - 0.5) * 0.16));
+  vec3 N = normalize(vec3(-dx * 2.4 - (r1 - 0.5) * 0.3 - (r3 - 0.5) * 0.08, 1.0, -dz * 2.4 - (r2 - 0.5) * 0.3 - (r3 - 0.5) * 0.08));
   vec3 V = normalize(cameraPosition - vW);
   float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-  vec3 col = mix(uDeep, uShallow, smoothstep(0.2, 0.85, r1 * 0.55 + r2 * 0.45));
+  vec3 col = mix(uDeep, uShallow, smoothstep(0.1, 0.95, r1 * 0.6 + r2 * 0.3 + 0.1));
   col = mix(col, uSky, clamp(fres * 0.8 + 0.06, 0.0, 1.0));
   vec3 H = normalize(V + normalize(uSunDir));
   col += vec3(1.0, 0.96, 0.84) * pow(max(dot(N, H), 0.0), 90.0) * 0.8;
-  float foam = smoothstep(0.83, 0.93, nz(p * 0.2 + vec2(t * 0.1, 0.0)) * 0.55 + r2 * 0.5);
-  col = mix(col, vec3(1.0), foam * 0.6);
+  float foam = smoothstep(0.9, 0.99, nz(p * 0.16 + vec2(t * 0.1, 0.0)) * 0.62 + r2 * 0.42);
+  col = mix(col, vec3(1.0), foam * 0.45);
   gl_FragColor = vec4(col, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -361,7 +373,7 @@ export function seaSurface(size = 1500, segs = 150): Sea {
   const material = new THREE.ShaderMaterial({
     vertexShader: SEA_VERT, fragmentShader: SEA_FRAG, fog: true,
     uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-      uTime: { value: 0 }, uScroll: { value: 0 }, uDeep: { value: new THREE.Color(0x1f7fb0) }, uShallow: { value: new THREE.Color(0x4fc3dc) },
+      uTime: { value: 0 }, uScroll: { value: 0 }, uDeep: { value: new THREE.Color(0x2b8fbf) }, uShallow: { value: new THREE.Color(0x52bfd8) },
       uSky: { value: new THREE.Color(0xcfeefc) }, uSunDir: { value: new THREE.Vector3(18, 30, 12).normalize() },
     }]),
   });
@@ -388,16 +400,16 @@ export class Wake {
     this.parts.forEach((p, i) => {
       const k = (time * 0.42 + i / n) % 1, side = i % 2 ? 1 : -1, lane = i % 6;
       if (lane < 4) { // chữ V sau đuôi
-        p.position.set(x + side * (this.half * 0.5 + k * this.half * 2.6), 0.16, z + stern + k * this.len * power);
-        p.scale.set(0.9 + k * 3.2, 0.05, 1.4 + k * 3.4);
+        p.position.set(x + side * (this.half * 0.55 + k * this.half * 2.2), 0.2, z + stern * 0.6 + k * this.len * power);
+        p.scale.set(0.35 + k * 0.9, 0.04, 1.6 + k * 2.6); p.rotation.y = -side * 0.32;
       } else if (lane === 4) { // bọt chân vịt giữa đuôi
         p.position.set(x + Math.sin(i * 3.1 + time * 5) * 0.7, 0.18, z + stern + k * this.len * 0.7 * power);
-        p.scale.set(1.6 + k * 2.2, 0.06, 1.5 + k * 2.6);
+        p.scale.set(1.0 + k * 1.0, 0.05, 1.2 + k * 2.2);
       } else { // sóng rẽ mũi
         p.position.set(x + side * (0.5 + k * this.half * 1.9), 0.18, z - bow * 0.82 + k * bow * 1.1);
-        p.scale.set(0.6 + k * 1.3, 0.07, 1.0 + k * 2.0);
+        p.scale.set(0.3 + k * 0.5, 0.05, 0.9 + k * 1.6); p.rotation.y = -side * 0.5;
       }
-      this.mats[i].opacity = 0.82 * (1 - k) * Math.min(1, power * 1.6);
+      this.mats[i].opacity = 0.7 * (1 - k) * (1 - k) * Math.min(1, power * 1.6);
     });
   }
 }

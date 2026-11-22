@@ -14,6 +14,8 @@ import { CustomizePanel } from './custom.tsx';
 import { DriveGame } from './drive/DriveGame.tsx';
 import type { DrivePlan, DriveResult } from './drive/DriveGame.tsx';
 import { Icon } from './icons.tsx';
+import { ExportPanel, TradePanel } from './trade.tsx';
+import type { ExportSent } from './trade.tsx';
 import type { IconName } from './icons.tsx';
 import { CropGuide, KIND_VERB, StageArt, stepIcon, stepKind } from './guide.tsx';
 import type { Friends, GiftInbox, Listing, LotView, Me, Planting, Prices, Village } from './api.ts';
@@ -193,7 +195,7 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
 // ------------------------------------------------------------------ khung chính
 type Tab = 'vuon' | 'kho' | 'cho' | 'ban' | 'bando' | 'so' | 'sap' | 'toi' | 'trangtri' | 'trungbay';
 interface Trip { tripId: number; fromRegionId: string; toRegionId: string; plan: DrivePlan; fuelL: number; etc: number; cash: number; truck: { tankL: number; lPer100km: number; fuelPrice: number } }
-interface TripDone { regionId: string; fuelUsedL: number; fuelCost: number; rescueL: number; tollCost: number; tollFromEtc: number; fuelL: number; etc: number; cash: number }
+interface TripDone { regionId: string; fuelUsedL: number; fuelCost: number; rescueL: number; tollCost: number; tollFromEtc: number; fuelL: number; etc: number; cash: number; fineCost?: number; fines?: { overKmh: number; fine: number; points: number; label: string }[] }
 const TABS: [Tab, IconName, string][] = [['kho', 'kho', 'Kho'], ['cho', 'cho', 'Chợ'], ['ban', 'xom', 'Xóm'], ['bando', 'dulich', 'Du lịch'], ['trangtri', 'trangtri', 'Trang trí']];
 const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho, đơn hàng, xưởng', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch và sổ tem', so: '', sap: 'Sạp hàng xóm', toi: 'Hồ sơ của tôi', trungbay: 'Quầy trưng bày đặc sản', trangtri: 'Trang trí nhà, sạp, nhân vật' };
 
@@ -237,7 +239,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [travelTab, setTravelTab] = useState<'di' | 'so'>('di');
   const [marketTab, setMarketTab] = useState<'cho' | 'gia'>('cho');
   const [xomTab, setXomTab] = useState<'ban' | 'htx' | 'qua'>('ban');
-  const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong'>('kho');
+  const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua'>('kho');
   const [unseen, setUnseen] = useState(0);
   const [friendList, setFriendList] = useState<Friends['friends']>([]);
   const [, tick] = useState(0);
@@ -292,10 +294,14 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     if (!trip) return;
     try {
       const d = await api<TripDone>('POST', `/api/trips/${trip.tripId}/finish`, res);
-      setToast(`🚚 Đã tới ${REGIONS[trip.toRegionId].name} · xăng ${fmtMoney(d.fuelCost)}${d.rescueL > 0 ? ' (có phí cứu hộ)' : ''} · phí đường ${fmtMoney(d.tollCost)}. Mở Kho để bán hàng ở đây.`); if (trip.toRegionId !== me.user.homeRegionId) { setTour(trip.toRegionId); worldRef.current?.goHome(); } else setTour(null);
+      setToast(`🚚 Đã tới ${REGIONS[trip.toRegionId].name} · xăng ${fmtMoney(d.fuelCost)}${d.rescueL > 0 ? ' (có phí cứu hộ)' : ''} · phí đường ${fmtMoney(d.tollCost)}${d.fineCost ? ` · phạt quá tốc độ ${fmtMoney(d.fineCost)}` : ''}.`); if (trip.toRegionId !== me.user.homeRegionId) { setTour(trip.toRegionId); worldRef.current?.goHome(); setTourTab('buon'); setTab('trungbay'); } else { setTour(null); setKhoTab('kho'); setTab('kho'); }
     } catch (e) { setToast(e instanceof Error ? e.message : 'Có lỗi xảy ra.'); }
     setTrip(null); reload();
   };
+  const paid = (me as Me & { exportPaid?: { kg: number; specialtyId: string; payout: number }[] }).exportPaid;
+  useEffect(() => { if (paid?.length) setToast(`📦 Lô xuất khẩu đã tới nơi: +${fmtMoney(paid.reduce((a, b) => a + b.payout, 0))}`); }, [paid]);
+  const [tourTab, setTourTab] = useState<'buon' | 'qua'>('qua');
+  const [exportRide, setExportRide] = useState<ExportSent | null>(null);
   const [acted, setActed] = useState<{ sp: Specialty; stepIndex: number; kg?: number; at: number } | null>(null);
   useEffect(() => { if (!acted) return; const t = setTimeout(() => setActed(null), 3200); return () => clearTimeout(t); }, [acted]);
   const visit = (id: number) => { setTour(null); setPlotId(id); setTab('vuon'); worldRef.current?.goHome(); };
@@ -338,7 +344,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const mine = center?.plot.mine ?? true;
   const ready = center && mine ? center.plantings.filter((p) => now >= p.stepReadyAt) : [];
   const nextAt = center && mine && center.plantings.length ? Math.min(...center.plantings.map((p) => p.stepReadyAt)) : null;
-  const quest: [string, string] = tour ? ['🧳', `Tham quan ${REGIONS[tour].name}: dạo vườn mẫu, ghé quầy trước cổng`]
+  const quest: [string, string] = tour ? (isTrader && me.user.truckRegionId === tour ? ['🚚', `Đi buôn ở ${REGIONS[tour].name}: ghé quầy trước cổng để thu mua và bán hàng`] : ['🧳', `Tham quan ${REGIONS[tour].name}: dạo vườn mẫu, ghé quầy trước cổng`])
     : !center ? ['⏳', 'Đang mở xóm…']
     : !mine ? ['👋', `Đang thăm vườn ${center.plot.ownerName}`]
     : center.plantings.length === 0 ? ['🌱', 'Chạy vào vườn, đứng lên một ô đất và chọn giống để trồng']
@@ -479,9 +485,13 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                   <button aria-selected={khoTab === 'kho'} onClick={() => setKhoTab('kho')}>Kho & Sạp</button>
                   <button aria-selected={khoTab === 'don'} onClick={() => setKhoTab('don')}>Đơn hàng</button>
                   <button aria-selected={khoTab === 'xuong'} onClick={() => setKhoTab('xuong')}>Xưởng</button>
+                  <button aria-selected={khoTab === 'xuat'} onClick={() => setKhoTab('xuat')}>Xuất khẩu</button>
+                  {isTrader && atHome && <button aria-selected={khoTab === 'mua'} onClick={() => setKhoTab('mua')}>Thu mua</button>}
                 </div>
                 {khoTab === 'kho' && <Stock me={me} prices={prices} marketDay={!!village?.events?.some((e) => e.id === 'cho_phien' && e.active)} floating={!!village?.events?.some((e) => e.id === 'cho_noi' && e.active) && atHome} friends={friendList} refresh={reload} />}
                 {khoTab === 'don' && <OrdersPanel me={me} onChanged={reload} />}
+                {khoTab === 'xuat' && <ExportPanel me={me} refresh={reload} onSent={(x) => { setTab('vuon'); setExportRide(x); }} />}
+                {khoTab === 'mua' && <TradePanel me={me} regionId={me.user.homeRegionId!} refresh={reload} openStock={() => setKhoTab('kho')} />}
                 {khoTab === 'xuong' && (me.user.role === 'xuong' ? <WorkshopPanel me={me} priceOf={priceOf} onChanged={reload} /> : <p className="hint">Chỉ Chủ xưởng mới chế biến được. Bạn là {ROLE_INFO[me.user.role!].name}: hãy bán nông sản tươi cho chủ xưởng qua sạp, hoặc chờ mùa sau quay lại vai trò.</p>)}
               </>
             )}
@@ -510,7 +520,12 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                 {travelTab === 'di' ? <TravelPanel me={me} startRide={startRide} startTrip={isTrader ? startTrip : undefined} touring={tour} /> : <AlbumPanel />}
               </>
             )}
-            {tab === 'trungbay' && tour && <ShowcasePanel me={me} regionId={tour} priceOf={priceOf} refresh={reload} visit={visit} />}
+            {tab === 'trungbay' && tour && (
+              <>
+                <div className="tabs"><button aria-selected={tourTab === 'buon'} onClick={() => setTourTab('buon')}>Buôn bán</button><button aria-selected={tourTab === 'qua'} onClick={() => setTourTab('qua')}>Quà, tem, mua đất</button></div>
+                {tourTab === 'buon' ? <TradePanel me={me} regionId={tour} refresh={reload} openStock={() => { setKhoTab('kho'); setTab('kho'); }} /> : <ShowcasePanel me={me} regionId={tour} priceOf={priceOf} refresh={reload} visit={visit} />}
+              </>
+            )}
             {tab === 'trangtri' && <CustomizePanel me={me} home={atHome ? center ?? null : null} worldRef={worldRef} atHome={atHome} onChanged={reload} />}
             {tab === 'sap' && ctxLot && (ctxLot.stall.length ? <StallList listings={ctxLot.stall} canBuy onChanged={reload} /> : <p className="hint">{ctxLot.plot.ownerName} chưa bày món nào.</p>)}
           </div>

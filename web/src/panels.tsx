@@ -11,6 +11,7 @@ import { api } from './api.ts';
 import type { Collection, Coop, CoopOrder, CoopSummary, GiftInbox, Me } from './api.ts';
 import { fmtDuration, regionLabel, useAction } from './ui.ts';
 import { NpcBadge } from './work.tsx';
+import { CompareCard, WhyLimit } from './trade.tsx';
 
 const ZONES = Object.keys(ZONE_NAMES) as Zone[];
 const pct = (n: number) => `${Math.round(n * 100)}%`;
@@ -123,6 +124,7 @@ export function TravelPanel({ me, startRide, startTrip, touring }: {
   return (
     <div>
       <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Chọn nơi muốn đến rồi mua vé xe khách, tàu hoả, máy bay hoặc tàu thuỷ. Tới nơi bạn được dạo vườn mẫu, ghé quầy trưng bày để mua đặc sản và sưu tập tem.</p>
+      <CompareCard isTrader={!!startTrip} />
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {ZONES.map((z) => (
         <div key={z}>
@@ -149,6 +151,7 @@ export function TravelPanel({ me, startRide, startTrip, touring }: {
                       return (
                         <div className="trip-card">
                           <strong>🚚 Tự lái xe tải đi buôn</strong>
+                          <small>Chở hàng trong kho tới bán giá ở đó, rồi thu mua sỉ tới {plan.cargoKg ?? TRUCK.cargoKg} kg đặc sản chở về. Tiền xăng và phí đường là tiền vốn của chuyến buôn.</small>
                           <div className="facts">
                             <div><span aria-hidden="true">🛣️</span><b>{plan.km} km</b><small>{plan.needsBoat ? 'có chặng tàu' : `${plan.junctions.length} nút giao`}</small></div>
                             <div><span aria-hidden="true">⛽</span><b>{plan.fuelNeededL} lít</b><small>{fuel >= plan.fuelNeededL ? `bình đang có ${fuel.toFixed(0)}` : `thiếu ${(plan.fuelNeededL - fuel).toFixed(0)}, ghé ${plan.stationsAtKm.length} trạm`}</small></div>
@@ -183,6 +186,7 @@ export function ShowcasePanel({ me, regionId, priceOf, refresh, visit }: { me: M
   return (
     <div>
       <p className="muted">Đặc sản của {r.name}. Mua về làm quà là được một con tem trong sổ sưu tập. Mỗi lần tối đa {SOUVENIR_MAX_KG} kg, mỗi ngày {SOUVENIR_DAILY_BUYS} lần, giá bằng {pct(SOUVENIR_RATIO)} giá tham chiếu.</p>
+      <WhyLimit k="souvenir" />
       {act.error && <p className="error" role="alert">{act.error}</p>}
       <div className="stamps showcase">
         {sps.map((sp) => {

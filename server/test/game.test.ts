@@ -890,11 +890,11 @@ test('đơn lớn của hợp tác xã: góp hàng, không vượt đơn, hoàn 
   assert.deepEqual([over.status, over.body.error], [409, 'vuot_don']);
   const ref = SPECIALTIES[order.specialtyId].refPrice;
   const ca = await call('POST', '/api/coops/order/contribute', { quality: 'A', kg: 150 }, a);
-  assert.deepEqual(ca.body, { paid: ref * 150, completed: false });
+  assert.deepEqual(ca.body, { paid: ref * 150, completed: false, exportMode: order.exportMode, market: order.market });
   assert.deepEqual((({ kgFilled, mine }) => [kgFilled, mine])((await call('GET', '/api/coops/mine', undefined, a)).body.coop.order), [150, 150]);
   const cb = await call('POST', '/api/coops/order/contribute', { quality: 'B', kg: 50 }, b);
   const paidB = Math.round(ref * 0.85 * 50);
-  assert.deepEqual(cb.body, { paid: paidB, completed: true });
+  assert.deepEqual(cb.body, { paid: paidB, completed: true, exportMode: order.exportMode, market: order.market });
   assert.equal((await meOf(a)).user.cash, ma.user.cash + ref * 150 + Math.round(ref * 150 * COOP_ORDER_BONUS));
   assert.equal((await meOf(b)).user.cash, mb.user.cash + paidB + Math.round(paidB * COOP_ORDER_BONUS));
   const next = (await call('GET', '/api/coops/mine', undefined, a)).body.coop.order;
@@ -1181,7 +1181,7 @@ test('xe tải: nạp ETC, đổ xăng, cứu hộ khi thiếu xăng, phí đư�
   const done = await callOn(spinApp, 'POST', `/api/trips/${trip.body.tripId}/finish`, { refuelL: 20, detourKm: 25 }, cookie);
   assert.deepEqual(done.body, {
     regionId: 'hn_phudien', fuelUsedL: Math.round(used * 10) / 10, fuelCost, rescueL: Math.round(rescue * 10) / 10,
-    tollCost: 60_000 + tollCash, tollFromEtc: 60_000, fuelL: 0, etc: 0, cash: cash0 - fuelCost - tollCash,
+    tollCost: 60_000 + tollCash, tollFromEtc: 60_000, fuelL: 0, etc: 0, cash: cash0 - fuelCost - tollCash, fineCost: 0, fines: [],
   });
   me = await meOf(cookie);
   assert.deepEqual([me.user.fuelL, me.user.etc, me.user.cash, me.user.truckRegionId], [0, 0, cash0 - fuelCost - tollCash, 'hn_phudien']);
@@ -1199,7 +1199,7 @@ test('xe tải: nạp ETC, đổ xăng, cứu hộ khi thiếu xăng, phí đư�
   assert.deepEqual(d2.body, {
     regionId: 'hp_thanhha', fuelUsedL: Math.round(used2 * 10) / 10, fuelCost: TRUCK.tankL * 4 * TRUCK.fuelPrice, rescueL: 0,
     tollCost: back.tolls * TRUCK.tollFee, tollFromEtc: back.tolls * TRUCK.tollFee, fuelL: TRUCK.tankL,
-    etc: 1_000_000 - back.tolls * TRUCK.tollFee, cash: 9_000_000 - TRUCK.tankL * 4 * TRUCK.fuelPrice,
+    etc: 1_000_000 - back.tolls * TRUCK.tollFee, cash: 9_000_000 - TRUCK.tankL * 4 * TRUCK.fuelPrice, fineCost: 0, fines: [],
   });
 
   // Hết tiền vẫn tới nơi: trừ tới 0 chứ không chặn.

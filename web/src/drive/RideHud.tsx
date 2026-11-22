@@ -14,7 +14,7 @@ export const RIDE_CSS = `
 .tr-title b { flex-shrink: 0; }
 .tr-title small { margin-left: auto; flex-shrink: 0; font-family: 'Be Vietnam Pro', sans-serif; font-weight: 700; font-size: 0.74rem; color: #7a5a36; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 6px; }
 .tr-steps { list-style: none; margin: 7px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
-.tr-step { position: relative; display: grid; justify-items: center; gap: 2px; min-width: 0; }
+.tr-step { position: relative; display: grid; justify-items: center; gap: 4px; min-width: 0; }
 .tr-step::before { content: ''; position: absolute; top: 14px; right: 50%; width: 100%; height: 5px; background: #e6d3a3; border-radius: 3px; }
 .tr-step:first-child::before { display: none; }
 .tr-step i { position: absolute; top: 14px; left: -50%; height: 5px; border-radius: 3px; background: linear-gradient(#5fc46f, #2f9a4a); }
@@ -22,7 +22,7 @@ export const RIDE_CSS = `
 .tr-step em { font-style: normal; font-weight: 700; font-size: 0.66rem; line-height: 1.15; color: #8a744f; text-align: center; max-width: 100%; overflow-wrap: anywhere; }
 .tr-step.done .tr-dot { background: #dff2c8; border-color: #5fb05f; filter: none; opacity: 1; }
 .tr-step.done em { color: #3f7d3f; }
-.tr-step.now .tr-dot { background: #ffd95e; border-color: #7a4a22; filter: none; opacity: 1; transform: scale(1.22); box-shadow: 0 3px 0 #b8892a, 0 0 0 4px #ffd95e55; animation: tr-pulse 1.4s ease-in-out infinite; }
+.tr-step.now .tr-dot { background: #ffd95e; border-color: #7a4a22; filter: none; opacity: 1; transform: scale(1.12); box-shadow: 0 3px 0 #b8892a, 0 0 0 4px #ffd95e55; animation: tr-pulse 1.4s ease-in-out infinite; }
 .tr-step.now em { color: #3b2a17; font-weight: 800; }
 .tr-next { display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%; }
 .tr-pill { max-width: 100%; box-sizing: border-box; background: #7a4a22; color: #fff7d6; border: 3px solid #56310f; border-radius: 999px; padding: 2px 12px; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 0.9rem; line-height: 1.35; box-shadow: 0 3px 0 #2e1905; font-variant-numeric: tabular-nums; }

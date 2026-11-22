@@ -360,3 +360,38 @@ button.primary.spin-btn { width: min(240px, 70vw); font-size: 1.3rem; }
 .ico { display: block; flex-shrink: 0; }
 .dock button .ico { margin-bottom: 1px; }
 .quest button { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---- Buôn bán đường dài và xuất khẩu (trade.tsx) ---- */
+.why { border: 2px dashed var(--line); border-radius: 12px; padding: 6px 10px; margin: 6px 0; font-size: 0.85rem; background: #fffdf4; }
+.why summary { cursor: pointer; color: var(--muted); list-style: none; min-height: 32px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.why summary::-webkit-details-marker { display: none; }
+.why summary b { color: var(--ink); }
+.why[open] summary { margin-bottom: 4px; }
+.why p { color: var(--ink); line-height: 1.4; }
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 4px; }
+.compare .side { display: grid; gap: 4px; align-content: start; border: 2px solid var(--line); border-radius: 14px; padding: 8px 10px; background: #fffdf4; }
+.compare .side.truck { border-color: var(--gold-dark); background: #fff7dc; }
+.compare strong { font-family: var(--display); line-height: 1.15; }
+.compare ul { margin: 0; padding-left: 16px; font-size: 0.82rem; line-height: 1.35; display: grid; gap: 3px; }
+@media (max-width: 400px) { .compare { grid-template-columns: 1fr; } }
+.cargo { display: grid; gap: 4px; margin: 4px 0 8px; }
+.bar { height: 12px; border-radius: 999px; background: #ecdcae; border: 2px solid var(--wood); overflow: hidden; }
+.bar i { display: block; height: 100%; background: linear-gradient(#ffd95e, #f0a92a); border-radius: 999px; transition: width 0.4s; }
+.deal, .route, .ship { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin: 6px 0; border: 2px solid var(--line); border-radius: 14px; background: #fffdf4; }
+.deal .grow, .route .grow, .ship .grow { display: grid; gap: 2px; justify-items: start; }
+.deal strong, .route strong, .ship strong { font-family: var(--display); line-height: 1.15; }
+.deal small b, .route small b { color: var(--ink); }
+.tag.bad { background: #fbe0d8; color: var(--danger); }
+.tag { white-space: normal; }
+.deal-buy { display: grid; gap: 6px; justify-items: stretch; flex-shrink: 0; }
+.stepper { display: flex; align-items: center; gap: 4px; justify-content: space-between; }
+.stepper button { min-height: 40px; width: 40px; padding: 0; font-size: 1.2rem; }
+.stepper b { min-width: 58px; text-align: center; font-variant-numeric: tabular-nums; }
+button.go { background: linear-gradient(#6fd45c, var(--green)); border-color: var(--green-dark); box-shadow: 0 4px 0 var(--green-dark); color: #fff; text-shadow: 0 1px 0 #0003; display: grid; justify-items: center; line-height: 1.1; }
+button.go small { color: #eaffdf; font-size: 0.7rem; font-weight: 600; }
+.route.off { opacity: 0.6; background: #f3ead0; }
+.route-facts { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.8rem; color: var(--ink); margin-top: 2px; }
+.pick-row.wrap { flex-wrap: wrap; }
+.pick[aria-pressed='true'] { background: var(--gold); border-color: var(--gold-dark); box-shadow: 0 4px 0 var(--gold-dark); }
+.ship .bar { width: 100%; }
+@media (max-width: 420px) { .deal { flex-wrap: wrap; } .deal-buy { flex-direction: row; display: flex; width: 100%; } .deal-buy .go { flex: 1; } }
