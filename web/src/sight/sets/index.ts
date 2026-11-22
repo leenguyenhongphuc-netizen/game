@@ -3,6 +3,10 @@ import type { Sight } from '../../../../shared/sights.ts';
 import type { Kit, SightSet } from '../SightKit.ts';
 import { hoiAn } from './dn_hoi_an.ts';
 import { cauRong } from './dn_cau_rong.ts';
+import { nguHanhSon } from './dn_ngu_hanh_son.ts';
+import { baNa } from './dn_ba_na.ts';
+import { sonTra } from './dn_son_tra.ts';
+import { cuLaoCham } from './dn_cu_lao_cham.ts';
 import { mySon } from './dn_my_son.ts';
 
 export type SetBuilder = (kit: Kit, sight: Sight) => SightSet;
@@ -10,7 +14,14 @@ export const SETS: Record<string, SetBuilder> = {
   dn_hoi_an: hoiAn,
   dn_my_son: mySon,
   dn_cau_rong: cauRong,
+  dn_ngu_hanh_son: nguHanhSon,
+  dn_ba_na: baNa,
+  dn_son_tra: sonTra,
+  dn_cu_lao_cham: cuLaoCham,
   'kind:pho_co': hoiAn,
+  'kind:chua': sonTra,
+  'kind:dao': cuLaoCham,
+  'kind:nui': nguHanhSon,
   'kind:cau': cauRong,
   'kind:den_thap': mySon,
 };

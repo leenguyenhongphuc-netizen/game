@@ -39,7 +39,7 @@
 @media (max-height: 430px) {
   .sw-bar { padding: 4px 10px 5px; max-width: 360px; }
   .sw-dots { margin-top: 3px; } .sw-dots li { height: 20px; }
-  .sw-guide { top: max(10px, env(safe-area-inset-top)); left: auto; right: calc(max(10px, env(safe-area-inset-right)) + 96px); transform: none; max-width: calc(100% - 500px); }
+  .sw-guide { top: calc(max(10px, env(safe-area-inset-top)) + 66px); left: max(10px, env(safe-area-inset-left)); transform: none; max-width: 360px; }
   .sw-card { left: auto; right: max(10px, env(safe-area-inset-right)); transform: none; bottom: max(8px, env(safe-area-inset-bottom)); width: min(340px, 44%); max-height: calc(100% - 76px); animation: none; padding: 8px 12px 10px; }
   .sw-card p { font-size: 0.84rem; margin: 6px 0 8px; }
   .sw-hint { bottom: max(10px, env(safe-area-inset-bottom)); }

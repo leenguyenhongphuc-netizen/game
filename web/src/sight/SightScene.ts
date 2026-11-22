@@ -98,7 +98,7 @@ export class SightScene {
   }
 
   setMove(x: number, y: number) { this.move.set(x, y); }
-  look(dx: number, dy: number) { this.yaw += dx; this.pitch = Math.min(0.75, Math.max(-0.25, this.pitch + dy)); this.lookAt = null; }
+  look(dx: number, dy: number) { this.yaw += dx; this.pitch = Math.min(0.75, Math.max(-0.45, this.pitch + dy)); this.lookAt = null; }
   private onKey = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (e.type === 'keydown') this.keys.add(k); else this.keys.delete(k); };
   private keyMove(): THREE.Vector2 {
     const k = this.keys, v = new THREE.Vector2((k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0), (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0));
@@ -146,20 +146,20 @@ export class SightScene {
       this.nearIdx = open; st.near = open === null ? null : s.stops[open].id; this.cb.onNear(open);
       if (open !== null) { this.lookAt = s.stops[open].look ?? null; s.onStop?.(s.stops[open].id); this.autoWait = 0; } else this.lookAt = null;
     }
-    if (this.lookAt) { const want = Math.atan2(this.lookAt.x - st.pos.x, -(this.lookAt.z - st.pos.z)); let dy = want - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); this.yaw += dy * Math.min(1, dt * 3); const wp = Math.max(-0.2, Math.min(0.55, 0.16 - Math.atan2(this.lookAt.y - st.pos.y - 2, Math.hypot(this.lookAt.x - st.pos.x, this.lookAt.z - st.pos.z)) * 0.55)); this.pitch += (wp - this.pitch) * Math.min(1, dt * 3); }
+    if (this.lookAt) { const want = Math.atan2(this.lookAt.x - st.pos.x, -(this.lookAt.z - st.pos.z)); let dy = want - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); this.yaw += dy * Math.min(1, dt * 3); const wp = Math.max(-0.45, Math.min(0.55, 0.16 - Math.atan2(this.lookAt.y - st.pos.y - 2, Math.hypot(this.lookAt.x - st.pos.x, this.lookAt.z - st.pos.z)) * 0.9)); this.pitch += (wp - this.pitch) * Math.min(1, dt * 3); }
   }
   /** Khi thẻ thuyết minh đang mở ở chế độ tự đi thì đứng yên chờ chụp. */
   private nearIdxBlocking(): boolean { return this.auto && this.nearIdx !== null; }
 
   private placeCamera(snap = false) {
-    const p = this.state.pos, portrait = this.camera.aspect < 1, dist = portrait ? 6.4 : 5.6, h = 2.3 + this.pitch * 5;
+    const p = this.state.pos, portrait = this.camera.aspect < 1, dist = portrait ? 6.4 : 5.6, h = Math.max(1.0, 2.3 + this.pitch * 5);
     const cx = p.x - Math.sin(this.yaw) * dist * Math.cos(this.pitch * 0.6), cz = p.z + Math.cos(this.yaw) * dist * Math.cos(this.pitch * 0.6);
     const want = new THREE.Vector3(cx, p.y + h, cz);
     // giữ camera trong hành lang lối đi để không chui vào nhà hai bên; bị ép lại gần thì nâng cao lên
     const pr = this.project(want, this.state.seg), lim = this.set.half + 0.7;
     if (pr.d > lim) { const k = lim / pr.d; want.x = pr.q.x + (want.x - pr.q.x) * k; want.z = pr.q.z + (want.z - pr.q.z) * k; want.y += (dist - Math.hypot(want.x - p.x, want.z - p.z)) * 0.3; }
     if (snap) this.camera.position.copy(want); else this.camera.position.lerp(want, 0.18);
-    const ahead = 9, ly = p.y + 2.5 - this.pitch * 3.2 + (portrait ? 1.3 : 0.5);
+    const ahead = 9, ly = p.y + 2.5 - this.pitch * (this.pitch < 0 ? 14 : 3.2) + (portrait ? 1.3 : 0.5);
     this.camera.lookAt(p.x + Math.sin(this.yaw) * ahead, ly, p.z - Math.cos(this.yaw) * ahead);
   }
   private frame = (now: number) => {

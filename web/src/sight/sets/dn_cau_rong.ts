@@ -3,7 +3,7 @@
 // rồi ngược lên bắc theo bờ đông tới tượng cá chép hoá rồng và cầu tàu Tình yêu.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, ball, bead, boat, box, cone, cyl, glow, grp, label, lampPost, palm, tree } from '../SightKit.ts';
+import { Kit, V, ball, bead, boat, box, cone, cyl, glow, grp, label, lampPost, palm, stairs, tree } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
 
 const GOLD = 0xffc530, W = 62; // nửa bề rộng sông
@@ -60,7 +60,7 @@ export function cauRong(kit: Kit, _s: Sight): SightSet {
   kit.live(label('Cầu Rồng', 0, 40, 0, '#b8322a', 3));
   // lửa phun từ miệng rồng khi tới điểm dừng đầu rồng
   let fire = 0; const mouth = V(L + 7.4, bodyY(L) + 3.2, 0);
-  kit.motes(120, 0xff8a2a, 3.4, () => mouth.clone().setY(-50), (p, i, t, dt) => {
+  kit.motes(120, 0xff8a2a, 2.0, () => mouth.clone().setY(-50), (p, i, t, dt) => {
     if (fire > t) { if (p.y < -40 || p.x > mouth.x + 26) { if (r() < 0.2) p.set(mouth.x, mouth.y + (r() - 0.5), (r() - 0.5) * 1.2); } else { p.x += (14 + (i % 7)) * dt; p.y += ((i % 5) - 1.6) * 0.9 * dt; p.z += ((i % 9) - 4) * 0.5 * dt; } }
     else if (p.y > -40) { p.x += 12 * dt; if (p.x > mouth.x + 26) p.y = -50; }
   });
@@ -77,7 +77,7 @@ export function cauRong(kit: Kit, _s: Sight): SightSet {
   // cầu tàu Tình yêu: vươn ra sông về phía tây
   const PZ = -84;
   kit.add(box(0x8a6a48, W - 16, 0.4, PZ, 36, 0.3, 6)); for (let i = 0; i < 6; i++) for (const s of [-1, 1]) kit.add(cyl(0x5a4a34, W - 31 + i * 6, -0.6, PZ + s * 2.6, 0.22, 2.4));
-  for (const s of [-1, 1]) { kit.add(box(0xf4f1ea, W - 16, 1.5, PZ + s * 2.9, 36, 0.1, 0.1)); for (let i = 0; i < 13; i++) { kit.add(box(0xf4f1ea, W - 33 + i * 2.9, 1.0, PZ + s * 2.9, 0.1, 1.0, 0.1)); if (i % 2 === 0) { const hx = W - 33 + i * 2.9, hz = PZ + s * 2.9; kit.add(cyl(0x3d3a36, hx, 2.6, hz, 0.06, 3.2), bead(glow(0xff2a4a), hx - 0.28, 4.5, hz, 0.42), bead(glow(0xff2a4a), hx + 0.28, 4.5, hz, 0.42), cone(glow(0xff2a4a), hx, 3.9, hz, 0.62, 0.9, 0.36).rotateX(Math.PI)); } } }
+  for (const s of [-1, 1]) { kit.add(box(0xf4f1ea, W - 16, 1.5, PZ + s * 2.9, 36, 0.1, 0.1)); for (let i = 0; i < 13; i++) { kit.add(box(0xf4f1ea, W - 33 + i * 2.9, 1.0, PZ + s * 2.9, 0.1, 1.0, 0.1)); if (i % 2 === 0 && s < 0) { const hx = W - 33 + i * 2.9, hz = PZ + s * 2.9; kit.add(cyl(0x3d3a36, hx, 2.6, hz, 0.06, 3.2), bead(glow(0xff2a4a), hx - 0.28, 4.5, hz, 0.42), bead(glow(0xff2a4a), hx + 0.28, 4.5, hz, 0.42), cone(glow(0xff2a4a), hx, 3.9, hz, 0.62, 0.9, 0.36).rotateX(Math.PI)); } } }
   for (let i = 0; i < 16; i++) kit.add(box([0xd9a83a, 0xc0c4cc, 0xe2573c][i % 3], W - 30 + i * 1.7, 1.2, PZ + 2.9 + (i % 2) * 0.06, 0.3, 0.36, 0.1));
   kit.live(label('Cầu tàu Tình yêu', W - 10, 7, PZ, '#c0284a', 1.0));
   // du thuyền thắp đèn trên sông
@@ -87,17 +87,20 @@ export function cauRong(kit: Kit, _s: Sight): SightSet {
   const b = boat(0x4a7f8f, 5, true); b.position.set(-W + 9, -1.15, -60); kit.add(b);
   void clock;
 
-  const WX = -W - 4.6, EX = W + 4.6, SW = 8.6; // vỉa hè phía nam mặt cầu
-  const path = [V(WX, 0, -196), V(WX, 0, -160), V(WX, 0, -20), V(WX, 0, SW), V(-W - 30, 0, SW)];
-  path.splice(4, 1); for (let x = -W - 4; x <= W + 4; x += 6) path.push(V(Math.max(-W - 4.6, x), yDeck(x), SW));
-  path.push(V(EX, 0, SW), V(EX, 0, -10), V(EX, 0, -52), V(EX, 0, PZ), V(EX - 6, 0.55, PZ), V(W - 32, 0.55, PZ));
-  kit.add(box(0x8f96a2, WX, 0.3, SW, 6, 0.6, 4.4), box(0x8f96a2, EX, 0.3, SW, 6, 0.6, 4.4));
+  const WX = -W - 4.6, EX = W + 4.6, SW = 8.6, yW = yDeck(WX), yE = yDeck(74); // vỉa hè hai bên mặt cầu
+  // lên cầu bằng bậc thang ở bờ tây, đi vỉa hè phía bắc sang đông, vòng trước đầu rồng, về vỉa hè phía nam rồi xuống bậc thang bờ đông
+  const path = [V(WX, 0, -196), V(WX, 0, -160), V(WX, 0, -30), V(WX, yW, -13), V(WX, yW, -SW)];
+  for (let x = -60; x <= 90; x += 6) path.push(V(x, yDeck(x), -SW));
+  path.push(V(97, 0, -SW), V(105, 0, -SW), V(105, 0, SW), V(97, 0, SW));
+  for (let x = 90; x >= 78; x -= 6) path.push(V(x, yDeck(x), SW));
+  path.push(V(74, yE, SW), V(74, yE, 13), V(74, 0, 26), V(EX, 0, 26), V(EX, 0, -52), V(EX, 0, PZ), V(EX - 6, 0.55, PZ), V(W - 32, 0.55, PZ));
+  kit.add(stairs(0x8f96a2, V(WX, 0, -30), V(WX, yW, -13), 4.6), stairs(0x8f96a2, V(74, yE, 13), V(74, 0, 26), 4.6), box(0x8f96a2, WX, yW - 0.3, -11, 4.6, 0.6, 5), box(0x8f96a2, 74, yE - 0.3, 11.5, 4.6, 0.6, 4), box(0x6f7682, 101, 0.03, 0, 12, 0.1, 24));
   return {
     path, half: 2.2, npcs: 12,
     stops: [
       { id: 'bo_tay', at: V(WX, 0, -188), look: V(-20, 6, -40) },
       { id: 'cau_song_han', at: V(WX, 0, -128), look: V(-10, 18, -150) },
-      { id: 'dau_rong', at: V(W - 14, yDeck(W - 14), SW), look: V(L + 4, bodyY(L) + 3, 0) },
+      { id: 'dau_rong', at: V(105, 0, 0), look: V(L + 4, bodyY(L) + 4, 0) },
       { id: 'ca_chep', at: V(EX, 0, -44), look: V(W + 4, 6, -53) },
       { id: 'cau_tinh_yeu', at: V(W - 30, 0.55, PZ), look: V(30, 16, 0) },
     ],
