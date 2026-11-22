@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import type { Zone } from '../../../shared/catalog.ts';
 import { GEO, mat, mesh, rng } from '../scene/plants.ts';
-import { SCENERY, THEMES, bake } from './DriveScene.ts';
+import { SCENERY, THEMES, bake } from './RideKit.ts';
 import { buildBus, buildFerry, buildPlane, buildTrain, buoy, cableBridge, chamTower, coffeeHill, fishRaft, karst, lighthouse, nhaRong, terraces, tunnelHill } from './RideParts.ts';
 import type { Act, Ctx, RideMode } from './RideSets.ts';
 

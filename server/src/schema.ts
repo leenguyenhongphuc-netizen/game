@@ -205,4 +205,35 @@ alter table users add column if not exists harvests int not null default 0;
 alter table users add column if not exists is_tester boolean not null default false;
 alter table users add column if not exists fuel_l numeric not null default 30;
 alter table users add column if not exists etc bigint not null default 0;
+alter table users add column if not exists cargo_used int not null default 0;
+alter table users add column if not exists cargo_day date;
+create table if not exists wholesale_buys (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  region_id text not null,
+  specialty_id text not null,
+  kg int not null check (kg > 0),
+  unit_price bigint not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists wholesale_buys_day_idx on wholesale_buys (region_id, specialty_id, created_at);
+create table if not exists export_shipments (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  quality text not null,
+  kg int not null check (kg > 0),
+  arrive_kg int not null,
+  mode text not null,
+  market text not null,
+  gateway_id text not null,
+  freight bigint not null,
+  payout bigint not null,
+  created_at timestamptz not null default now(),
+  arrives_at timestamptz not null,
+  paid_at timestamptz
+);
+create index if not exists export_shipments_user_idx on export_shipments (user_id, id desc);
+alter table coop_orders add column if not exists export_mode text;
+alter table coop_orders add column if not exists market text;
 `;

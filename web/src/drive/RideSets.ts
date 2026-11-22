@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import type { Zone } from '../../../shared/catalog.ts';
 import { GEO, mat, mesh, rng } from '../scene/plants.ts';
-import { SCENERY, THEMES, bake } from './DriveScene.ts';
+import { SCENERY, THEMES, bake } from './RideKit.ts';
 import {
   FERRY_DECK, FERRY_PLANK_Z, PLANE_DOOR_Z, PLANE_Y, TRAIN_DOOR_Z, V3, Walker, buildBus, buildFerry, buildMinibus, buildPlane, buildTaxi, buildTrain,
   chamTower, coffeeHill, ease, fishRaft, karst, lighthouse, nhaRong, seg, sign, terraces,
@@ -20,7 +20,7 @@ export interface Ctx {
   shoot(points: THREE.Vector3[], yaw: number, pitch: number, signs?: THREE.Sprite[]): void;
 }
 export interface Act {
-  stage: 1 | 2 | 3 | 4 | 5;
+  stage: number;
   caption: string;
   duration: number;
   root: THREE.Group;

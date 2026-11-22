@@ -16,9 +16,10 @@ import {
   COOP_CREATE_COST, COOP_MAX_MEMBERS, GIFT_DAILY_LIMIT, GIFT_MAX_KG, HELP_DAILY_LIMIT, HELP_REWARD, LAND_PRICE, LATE_GRACE_MS, MAX_FRIENDS,
   QUALITIES, REGION_SET_REWARD, SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, START_CASH, TILE_COUNT, glutFactor, inVietnam, paceFactor, travelOptions,
   marketDayAt, nearestRegion, npcPrice, qualityFromLate, region as findRegion, seedCost, snapCell, specialty as findSpecialty, stepCount,
-  stepWaitMs, urbanCoreAt, weatherAt,
+  stepWaitMs, urbanCoreAt, weatherAt, speedFine, wholesalePrice, WHOLESALE_SUPPLY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_GATEWAYS, EXPORT_MAX_ACTIVE,
+  exportModesFor, exportQuote, coopOrderRoute, LIMIT_REASONS, TRAVEL_VS_TRUCK,
 } from '../../shared/rules.ts';
-import type { MarketDay, MarketEvent, PriceMods, Quality, Role, Weather } from '../../shared/rules.ts';
+import type { ExportMarket, ExportMode, MarketDay, MarketEvent, PriceMods, Quality, Role, Weather } from '../../shared/rules.ts';
 import { DECOR_ITEMS, HOUSE_TYPES, validAvatar, validDecor, validStyle } from '../../shared/custom.ts';
 import type { DecorPlacement, PlotStyle } from '../../shared/custom.ts';
 import type { Db, Q } from './db.ts';
@@ -280,6 +281,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   app.get('/api/me', async (req) => {
     const userId = await requireUser(req);
     const walkin = await db.tx((q) => settleWalkIns(q, userId, Date.now()));
+    const exportPaid = await db.tx((q) => settleExports(q, userId));
     const [u, plots, inv, coop] = await Promise.all([
       db.query('select id, username, display_name, cash, home_region_id, role, role_assigned_at, truck_region, avatar, harvests, is_tester, fuel_l, etc from users where id = $1', [userId]),
       db.query('select id, region_id, is_home, kind, ward_name from plots where user_id = $1 order by is_home desc, id', [userId]),
@@ -299,6 +301,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       inventory: inv.rows.map((i) => ({ specialtyId: i.specialty_id, quality: i.quality, kg: i.kg })),
       config: { timeScale, now: Date.now(), pace: paceOf(user.harvests) },
       walkin,
+      ...(exportPaid.length ? { exportPaid } : {}),
     };
   });
 
@@ -849,6 +852,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   // ---------------------------------------------------------------- hợp tác xã
+  /** Đường và thị trường xuất khẩu của một đơn lớn; đơn cũ chưa ghi thì suy ra theo mã đơn. */
+  const orderRoute = (o: any): { exportMode: ExportMode; market: ExportMarket } =>
+    o.export_mode && o.market && EXPORT_MODES[o.export_mode as ExportMode] && EXPORT_MARKETS[o.market as ExportMarket]
+      ? { exportMode: o.export_mode, market: o.market } : coopOrderRoute(Number(o.id), o.kg_target);
   app.post('/api/coops', async (req) => {
     const userId = await requireUser(req);
     const raw = (req.body as any)?.name;
@@ -911,11 +918,14 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         o = (await q.query(
           `insert into coop_orders (coop_id, specialty_id, npc_id, kg_target, expires_at) values ($1,$2,$3,$4,$5) returning *`,
           [c.id, sp.id, npcOf('xuat_khau').id, COOP_ORDER_KG_PER_MEMBER * Math.max(1, count.rows[0].n), new Date(Date.now() + COOP_ORDER_DAYS * DAY_MS)])).rows[0];
+        const route = coopOrderRoute(Number(o.id), o.kg_target);
+        await q.query('update coop_orders set export_mode = $2, market = $3 where id = $1', [o.id, route.exportMode, route.market]);
+        o.export_mode = route.exportMode; o.market = route.market;
       }
       const mine = await q.query('select kg from coop_contribs where order_id = $1 and user_id = $2', [o.id, userId]);
       return {
         id: o.id, specialtyId: o.specialty_id, npcId: o.npc_id, kgTarget: o.kg_target, kgFilled: o.kg_filled,
-        expiresAt: new Date(o.expires_at).getTime(), mine: mine.rows[0]?.kg ?? 0,
+        expiresAt: new Date(o.expires_at).getTime(), mine: mine.rows[0]?.kg ?? 0, ...orderRoute(o),
       };
     });
     return {
@@ -952,7 +962,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         const all = await q.query('select user_id, value from coop_contribs where order_id = $1 order by user_id', [o.id]);
         for (const r of all.rows) await addCash(q, r.user_id, Math.round(r.value * COOP_ORDER_BONUS), `thuong_don:${o.id}`);
       }
-      return { paid: value, completed };
+      return { paid: value, completed, ...orderRoute(o) };
     });
   });
 
@@ -1336,6 +1346,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (Date.now() - new Date(t.started_at).getTime() < t.min_seconds * 1000 * tripMinFactor) throw bad('chua_toi_noi', 'Xe chưa tới nơi.', 409);
       const plan = tripPlan(t.from_region, t.to_region), road = roadKm(plan.km, plan.needsBoat);
       const refuelL = num(body.refuelL, 0, TRUCK.tankL * 4), detourKm = num(body.detourKm, 0, road);
+      // Các lần bị công an dừng xe vì quá tốc độ: mỗi lần phạt theo khung của Nghị định 168/2024.
+      const fines = (Array.isArray(body.speeding) ? body.speeding.slice(0, 6) : [])
+        .map((v) => Math.round(num(v, 0, 200)))
+        .map((overKmh) => ({ overKmh, f: speedFine(overKmh) }))
+        .filter((x) => x.f)
+        .map((x) => ({ overKmh: x.overKmh, fine: x.f!.fine, points: x.f!.points, label: x.f!.label }));
       const have = Number(u.rows[0].fuel_l);
       const used = ((road + detourKm) * TRUCK.lPer100km) / 100;
       // Thiếu xăng giữa đường: gọi cứu hộ, phần thiếu tính giá cao hơn.
@@ -1348,12 +1364,193 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const tollCash = Math.min(cash, Math.round((tollCost - tollFromEtc) * (1 + TRUCK.etcCashSurcharge)));
       if (tollCash > 0) { await addCash(q, userId, -tollCash, `phi_duong:${t.to_region}`); cash -= tollCash; }
       etc -= tollFromEtc;
+      const fineCost = Math.min(cash, fines.reduce((sum, f) => sum + f.fine, 0));
+      if (fineCost > 0) { await addCash(q, userId, -fineCost, `phat_toc_do:${tripId}`); cash -= fineCost; }
       const fuelL = round1(Math.min(TRUCK.tankL, Math.max(0, have + refuelL + rescueL - used)));
       await q.query('update trips set finished_at = now() where id = $1', [tripId]);
-      await q.query('update users set truck_region = $2, fuel_l = $3, etc = $4 where id = $1', [userId, t.to_region, fuelL, etc]);
+      await q.query('update users set truck_region = $2, fuel_l = $3, etc = $4, cargo_used = 0 where id = $1', [userId, t.to_region, fuelL, etc]);
       await q.query('insert into visits (user_id, region_id) values ($1,$2) on conflict do nothing', [userId, t.to_region]);
-      return { regionId: t.to_region, fuelUsedL: round1(used), fuelCost, rescueL: round1(rescueL), tollCost: tollFromEtc + tollCash, tollFromEtc, fuelL, etc, cash };
+      return { regionId: t.to_region, fuelUsedL: round1(used), fuelCost, rescueL: round1(rescueL), tollCost: tollFromEtc + tollCash, tollFromEtc, fuelL, etc, cash, fineCost, fines };
     });
+  });
+
+  // ---------------------------------------------------------------- thu mua sỉ tại vùng (xe tải)
+  /** Lượng đã chất lên xe ở điểm đỗ hiện tại; sang ngày mới (giờ Việt Nam) hoặc tới vùng mới thì tính lại từ 0. */
+  async function cargoUsed(q: Q, userId: number, lock = false): Promise<number> {
+    const today = dayString(vnDay(Date.now()));
+    const { rows } = await q.query(`select cargo_used, cargo_day::text as d from users where id = $1${lock ? ' for update' : ''}`, [userId]);
+    return rows[0].d === today ? rows[0].cargo_used : 0;
+  }
+  async function wholesaleLeft(q: Q, regionId: string, specialtyId: string): Promise<number> {
+    const start = new Date(vnDay(Date.now()) * DAY_MS - VN_TZ_MS);
+    const { rows } = await q.query(
+      'select coalesce(sum(kg),0)::int as kg from wholesale_buys where region_id = $1 and specialty_id = $2 and created_at >= $3', [regionId, specialtyId, start]);
+    return Math.max(0, WHOLESALE_SUPPLY_KG - rows[0].kg);
+  }
+
+  /** Tới một vùng thì mua gì, bán gì, lời bao nhiêu. */
+  app.get('/api/regions/:id/trade', async (req) => {
+    const userId = await requireUser(req);
+    const r = findRegion(String((req.params as any).id));
+    if (!r) throw bad('khong_tim_thay', 'Vùng trồng không tồn tại.', 404);
+    const u = (await db.query('select role, home_region_id, truck_region from users where id = $1', [userId])).rows[0];
+    const home: string | null = u.home_region_id, trader = u.role === 'thuong_lai';
+    const truckAt: string | null = trader ? (u.truck_region ?? home) : null;
+    const now = Date.now();
+    const used = trader ? await cargoUsed(db, userId) : 0;
+    const free = trader ? Math.max(0, TRUCK.cargoKg - used) : 0;
+    const here = truckAt === r.id;
+    const canBuy = trader && here;
+    const whyNot = canBuy ? null : !trader ? LIMIT_REASONS.wholesale_role.reason : `Xe tải của bạn đang ở ${findRegion(truckAt ?? '')?.name ?? 'nơi khác'}. Hãy lái xe tới ${r.name} để thu mua sỉ.`;
+    const buy = [];
+    for (const sp of specialtiesOfRegion(r.id)) {
+      const ref = await currentPrice(db, sp.id), glut = await glutOf(db, sp.id);
+      const unit = wholesalePrice(ref, glut), left = await wholesaleLeft(db, r.id, sp.id);
+      // Mang về vùng nhà bán (nếu đây không phải vùng nhà); còn mua ngay tại nhà thì phải chở đi vùng khác mới có lời.
+      const atHome = home === r.id || !home;
+      const sellPrice = atHome ? npcPrice(ref, 'A', sp.regionId, '', { glut })
+        : npcPrice(ref, 'A', sp.regionId, home!, trader ? await priceMods(db, userId, sp.id, now, home!, home) : { glut });
+      buy.push({
+        specialtyId: sp.id, refPrice: ref, wholesalePrice: unit, sellPrice, sellAt: atHome ? 'vung_khac' : 'nha',
+        marginPerKg: sellPrice - unit, supplyLeftKg: left, maxKg: canBuy ? Math.min(left, free) : 0,
+      });
+    }
+    // Chiều ngược lại: hàng trong kho bán ở đây được bao nhiêu so với bán ở nhà.
+    const inv = await db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]);
+    const sell = [];
+    for (const i of inv.rows) {
+      const sp = SPECIALTIES[i.specialty_id];
+      if (!sp) continue;
+      const ref = await currentPrice(db, sp.id);
+      let priceHere: number, priceHome: number;
+      if (trader && home) {
+        priceHere = npcPrice(ref, i.quality, sp.regionId, r.id, await priceMods(db, userId, sp.id, now, r.id, home));
+        priceHome = npcPrice(ref, i.quality, sp.regionId, home, await priceMods(db, userId, sp.id, now, home, home));
+      } else priceHere = priceHome = Math.round((ref * DUMP_RATIO * QUALITY_MULT[i.quality as Quality]) / 100) * 100;
+      sell.push({ specialtyId: sp.id, quality: i.quality, kg: i.kg, priceHere, priceHome, diffPerKg: priceHere - priceHome });
+    }
+    sell.sort((a, b) => b.diffPerKg * b.kg - a.diffPerKg * a.kg);
+    return {
+      regionId: r.id, homeRegionId: home, truckRegionId: truckAt, role: u.role ?? null, here, canBuy, whyNot, canSellHere: trader && here,
+      cargo: { capacityKg: trader ? TRUCK.cargoKg : 0, usedKg: used, freeKg: free },
+      buy, sell, limits: { cargo: LIMIT_REASONS.wholesale_cargo, supply: LIMIT_REASONS.wholesale_supply, souvenir: LIMIT_REASONS.souvenir }, compare: TRAVEL_VS_TRUCK,
+    };
+  });
+
+  app.post('/api/wholesale/buy', async (req) => {
+    const userId = await requireUser(req);
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const sp = findSpecialty(String(b.specialtyId ?? ''));
+    if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
+    const kg = int(b.kg, 1, TRUCK.cargoKg, 'kg');
+    return db.tx(async (q) => {
+      const u = (await q.query('select cash, role, home_region_id, truck_region from users where id = $1 for update', [userId])).rows[0];
+      if (u.role !== 'thuong_lai') throw bad('chi_thuong_lai', 'Chỉ thương lái có xe tải mới thu mua sỉ được.', 403);
+      const at: string | null = u.truck_region ?? u.home_region_id;
+      if (!at) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
+      if (sp.regionId !== at) throw bad('khac_vung', `Xe của bạn đang ở ${findRegion(at)?.name}. Chỉ thu mua sỉ được đặc sản của vùng xe đang đỗ.`, 409);
+      const used = await cargoUsed(q, userId, true), free = TRUCK.cargoKg - used;
+      if (kg > free) throw bad('day_xe', `Thùng xe chỉ còn chở thêm được ${Math.max(0, free)} kg.`, 409);
+      // Khoá theo (vùng, đặc sản) để hai thương lái không mua vượt nguồn hàng trong ngày.
+      await q.query('select pg_advisory_xact_lock(hashtext($1))', [`si:${at}:${sp.id}`]);
+      const left = await wholesaleLeft(q, at, sp.id);
+      if (kg > left) throw bad('het_hang', left > 0 ? `Hôm nay vùng này chỉ còn ${left} kg để thu mua.` : 'Hôm nay vùng này đã hết hàng để thu mua.', 409);
+      const unit = wholesalePrice(await currentPrice(q, sp.id), await glutOf(q, sp.id));
+      if (u.cash < unit * kg) throw bad('khong_du_tien', 'Bạn không đủ tiền thu mua.', 409);
+      await addCash(q, userId, -unit * kg, `thu_mua_si:${sp.id}`);
+      await addInventory(q, userId, sp.id, 'A', kg);
+      await collect(q, userId, sp.id);
+      await q.query('insert into wholesale_buys (user_id, region_id, specialty_id, kg, unit_price) values ($1,$2,$3,$4,$5)', [userId, at, sp.id, kg, unit]);
+      await q.query('update users set cargo_used = $2, cargo_day = $3 where id = $1', [userId, used + kg, dayString(vnDay(Date.now()))]);
+      return { unitPrice: unit, total: unit * kg, cash: u.cash - unit * kg, cargo: { capacityKg: TRUCK.cargoKg, usedKg: used + kg, freeKg: free - kg }, supplyLeftKg: left - kg };
+    });
+  });
+
+  // ---------------------------------------------------------------- xuất khẩu
+  const shipmentOut = (s: any) => ({
+    id: Number(s.id), specialtyId: s.specialty_id, quality: s.quality, kg: s.kg, arriveKg: s.arrive_kg, mode: s.mode, market: s.market,
+    gatewayId: s.gateway_id, gatewayName: EXPORT_GATEWAYS.find((g) => g.id === s.gateway_id)?.name ?? '', freight: Number(s.freight), payout: Number(s.payout),
+    createdAt: new Date(s.created_at).getTime(), arrivesAt: new Date(s.arrives_at).getTime(), paidAt: s.paid_at ? new Date(s.paid_at).getTime() : null,
+    status: s.paid_at ? 'da_toi' : 'dang_di',
+  });
+  /** Lô nào đã tới nơi thì trả tiền hàng; trả về các lô vừa được chốt. */
+  async function settleExports(q: Q, userId: number) {
+    const { rows } = await q.query(
+      `update export_shipments set paid_at = now() where user_id = $1 and paid_at is null and arrives_at <= now() returning *`, [userId]);
+    for (const s of rows) await addCash(q, userId, Number(s.payout), `xuat_khau:${s.id}`);
+    return rows.map(shipmentOut);
+  }
+  async function exportContext(q: Q, userId: number) {
+    const [u, coop, active] = await Promise.all([
+      q.query('select cash, role, home_region_id, truck_region from users where id = $1', [userId]),
+      q.query('select 1 from coop_members where user_id = $1', [userId]),
+      q.query('select count(*)::int as n from export_shipments where user_id = $1 and paid_at is null', [userId]),
+    ]);
+    const role: Role | null = u.rows[0].role ?? null;
+    return { cash: Number(u.rows[0].cash), role, inCoop: coop.rows.length > 0, active: active.rows[0].n as number,
+      from: (u.rows[0].home_region_id ?? null) as string | null, modes: exportModesFor(role, coop.rows.length > 0) };
+  }
+
+  app.get('/api/export/options', async (req) => {
+    const userId = await requireUser(req);
+    const justPaid = await db.tx((q) => settleExports(q, userId));
+    const ctx = await exportContext(db, userId);
+    const inv = await db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]);
+    const stock = [];
+    for (const i of inv.rows) {
+      if (!SPECIALTIES[i.specialty_id] || !ctx.from) continue;
+      const ref = await currentPrice(db, i.specialty_id);
+      const quotes = [];
+      for (const market of Object.keys(EXPORT_MARKETS) as ExportMarket[]) for (const mode of EXPORT_MARKETS[market].modes) {
+        const allowed = ctx.modes.includes(mode);
+        const kg = Math.min(i.kg, EXPORT_MODES[mode].maxKg);
+        const qt = exportQuote(i.specialty_id, i.quality, kg, mode, market, ctx.from, ref);
+        quotes.push(allowed ? qt : { ...qt, ok: false, reason: LIMIT_REASONS.export_role.limit });
+      }
+      quotes.sort((a, b) => Number(b.ok) - Number(a.ok) || b.net - a.net);
+      stock.push({ specialtyId: i.specialty_id, quality: i.quality, kg: i.kg, refPrice: ref, quotes });
+    }
+    return {
+      modes: EXPORT_MODES, markets: EXPORT_MARKETS, allowedModes: ctx.modes, role: ctx.role, inCoop: ctx.inCoop, fromRegionId: ctx.from,
+      active: ctx.active, maxActive: EXPORT_MAX_ACTIVE, stock, justPaid,
+      limits: { role: LIMIT_REASONS.export_role, min: LIMIT_REASONS.export_min, active: LIMIT_REASONS.export_active, grade: LIMIT_REASONS.export_grade },
+    };
+  });
+
+  app.post('/api/export/ship', async (req) => {
+    const userId = await requireUser(req);
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const sp = findSpecialty(String(b.specialtyId ?? ''));
+    if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
+    const ql = quality(b.grade ?? b.quality);
+    const kg = int(b.kg, 1, 1_000_000, 'kg');
+    const mode = String(b.mode ?? '') as ExportMode, market = String(b.market ?? '') as ExportMarket;
+    if (!Object.hasOwn(EXPORT_MODES, mode) || !Object.hasOwn(EXPORT_MARKETS, market)) throw bad('du_lieu_sai', 'Đường xuất khẩu hoặc thị trường không hợp lệ.');
+    return db.tx(async (q) => {
+      await q.query('select id from users where id = $1 for update', [userId]);
+      const ctx = await exportContext(q, userId);
+      if (!ctx.from) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
+      if (!ctx.modes.includes(mode)) throw bad('khong_duoc_duong_nay', `${EXPORT_MODES[mode].name}: ${LIMIT_REASONS.export_role.reason}`, 403);
+      if (ctx.active >= EXPORT_MAX_ACTIVE) throw bad('qua_nhieu_lo', `Bạn đang có ${EXPORT_MAX_ACTIVE} lô hàng trên đường, chờ một lô tới nơi đã.`, 409);
+      const qt = exportQuote(sp.id, ql, kg, mode, market, ctx.from, await currentPrice(q, sp.id));
+      if (!qt.ok) throw bad('lo_hang_sai', qt.reason ?? 'Lô hàng không hợp lệ.', 409);
+      if (ctx.cash < qt.freight) throw bad('khong_du_tien', 'Bạn không đủ tiền trả cước.', 409);
+      await takeInventory(q, userId, sp.id, ql, kg);
+      const arrivesAt = new Date(Date.now() + Math.max(1000, Math.round((qt.minutes * 60_000) / timeScale)));
+      const ins = await q.query(
+        `insert into export_shipments (user_id, specialty_id, quality, kg, arrive_kg, mode, market, gateway_id, freight, payout, arrives_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
+        [userId, sp.id, ql, kg, qt.arriveKg, mode, market, qt.gatewayId, qt.freight, qt.payout, arrivesAt]);
+      await addCash(q, userId, -qt.freight, `cuoc_xuat_khau:${ins.rows[0].id}`);
+      return { shipment: shipmentOut(ins.rows[0]), quote: qt, cash: ctx.cash - qt.freight };
+    });
+  });
+
+  app.get('/api/export/shipments', async (req) => {
+    const userId = await requireUser(req);
+    const justPaid = await db.tx((q) => settleExports(q, userId));
+    const { rows } = await db.query('select * from export_shipments where user_id = $1 order by id desc limit 30', [userId]);
+    return { shipments: rows.map(shipmentOut), justPaid, now: Date.now() };
   });
 
   // ---------------------------------------------------------------- cá nhân hoá nhà, sạp, sân vườn, nhân vật
@@ -1479,7 +1676,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const sp = findSpecialty(String(b.specialtyId ?? ''));
     if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
     const kg = int(b.kg, 1, 10000, 'kg');
-    await db.tx(async (q) => { await addInventory(q, userId, sp.id, 'A', kg); await collect(q, userId, sp.id); });
+    const ql = b.grade === undefined ? 'A' : quality(b.grade);
+    await db.tx(async (q) => { await addInventory(q, userId, sp.id, ql, kg); await collect(q, userId, sp.id); });
     return { ok: true };
   });
 

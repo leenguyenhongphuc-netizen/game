@@ -2,7 +2,7 @@
 // Mọi phương tiện quay đầu về -z; cửa lên xuống ở bên +x (bên phải theo chiều chạy).
 import * as THREE from 'three';
 import { GEO, mat, mesh } from '../scene/plants.ts';
-import { SCENERY, makeSign } from './DriveScene.ts';
+import { SCENERY, makeSign } from './RideKit.ts';
 
 export const V3 = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
 export const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
@@ -95,15 +95,54 @@ export function buildPlane(): THREE.Group {
 export const PLANE_Y = 2.1;
 export const PLANE_DOOR_Z = -4.7;
 
+/** Thân tàu nhìn từ trên xuống: mũi nhọn về -z, đuôi bo tròn; đùn theo chiều cao. */
+function hullGeo(half: number, bow: number, stern: number, height: number, flare = 1): THREE.BufferGeometry {
+  const sh = new THREE.Shape();
+  sh.moveTo(-half, -stern + half * 0.5); sh.quadraticCurveTo(-half, -stern, -half * 0.5, -stern); sh.lineTo(half * 0.5, -stern); sh.quadraticCurveTo(half, -stern, half, -stern + half * 0.5);
+  sh.lineTo(half, bow * 0.45); sh.quadraticCurveTo(half * 0.92, bow * 0.8, 0, bow); sh.quadraticCurveTo(-half * 0.92, bow * 0.8, -half, bow * 0.45); sh.closePath();
+  const g = new THREE.ExtrudeGeometry(sh, { depth: height, bevelEnabled: false, curveSegments: 8 }); g.rotateX(-Math.PI / 2);
+  if (flare !== 1) { const pos = g.attributes.position; for (let i = 0; i < pos.count; i++) if (pos.getY(i) < 0.01) { pos.setX(i, pos.getX(i) * flare); pos.setZ(i, pos.getZ(i) * (0.5 + flare / 2)); } g.computeVertexNormals(); }
+  return g;
+}
+/** Lan can: tay vịn chạy theo đường gấp khúc kín hoặc hở, có trụ đỡ. */
+function railing(g: THREE.Group, pts: [number, number][], y: number, h = 0.62, color = 0xfffdf6) {
+  const m = mat(color);
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, z0] = pts[i - 1], [x1, z1] = pts[i], len = Math.hypot(x1 - x0, z1 - z0), ang = Math.atan2(x1 - x0, z1 - z0);
+    for (const k of [1, 0.5]) { const r = mesh(GEO.box, m, (x0 + x1) / 2, y + h * k, (z0 + z1) / 2, 0.06, 0.06, len); r.rotation.y = ang; g.add(r); }
+    const n = Math.max(1, Math.round(len / 1.3)); for (let j = 0; j <= n; j++) g.add(mesh(GEO.box, m, x0 + (x1 - x0) * j / n, y + h / 2, z0 + (z1 - z0) * j / n, 0.06, h, 0.06));
+  }
+}
+/** Tàu khách ba tầng: thân xanh trắng, lan can, cửa sổ từng tầng, ống khói, xuồng cứu sinh, cờ. */
 export function buildFerry(): THREE.Group {
-  const g = new THREE.Group(), white = mat(0xfffdf6), blue = mat(0x5aa9e6);
-  g.add(mesh(GEO.box, white, 0, 0.9, 0.6, 5, 1.9, 14), mesh(GEO.box, blue, 0, 0.25, 0.6, 5.06, 0.6, 14.06));
-  const bow = mesh(GEO.cone, white, 0, 0.9, -8.0, 2.5, 3.6, 0.95); bow.rotation.x = -Math.PI / 2; g.add(bow);
-  g.add(mesh(GEO.box, white, 0, 2.7, 1.2, 4.2, 1.7, 9.6), mesh(GEO.box, glass(), 0, 2.8, 1.2, 4.26, 0.7, 8.8), mesh(GEO.box, white, 0, 4.2, 0.2, 3.4, 1.3, 4.6), mesh(GEO.box, glass(), 0, 4.4, -2.12, 3.0, 0.7, 0.06));
-  g.add(mesh(GEO.box, mat(0xf2c65c), 0, 3.62, 1.2, 4.5, 0.14, 9.9), mesh(GEO.cyl, mat(0xf08a6c), 0, 5.6, 2.2, 0.6, 1.6, 0.6), mesh(GEO.cyl, mat(0x4a5160), 0, 6.45, 2.2, 0.62, 0.2, 0.62));
-  g.add(mesh(GEO.cyl, mat(0x9a7150), 0, 3.0, -5.9, 0.06, 2.6, 0.06), mesh(GEO.box, mat(0xe0342b), 0.5, 4.0, -5.9, 0.95, 0.6, 0.05), mesh(GEO.ball, mat(0xffd23f), 0.5, 4.0, -5.86, 0.15));
-  g.add(mesh(GEO.box, mat(DOOR), 0.6, 2.55, -3.62, 0.9, 1.4, 0.06));
-  for (const x of [-2.56, 2.56]) for (let i = 0; i < 4; i++) g.add(mesh(GEO.cyl, mat(0xf08a6c), x, 1.5, -2.8 + i * 2.6, 0.38, 0.14, 0.38));
+  const g = new THREE.Group(), white = mat(0xfffdf6), navy = mat(0x23507f), cream = mat(0xf6ead0), win = mat(0x2f5f86, { rough: 0.2 });
+  g.add(mesh(hullGeo(2.5, 9.4, 7.6, 1.9, 0.86), white, 0, 0, 0.6 - 0.6));
+  const band = mesh(hullGeo(2.53, 9.45, 7.63, 0.95, 0.9), navy, 0, -0.02, 0); g.add(band);
+  g.add(mesh(hullGeo(2.56, 9.48, 7.66, 0.16, 1), mat(0xd9482b), 0, 0.86, 0), mesh(hullGeo(2.42, 9.2, 7.5, 0.06, 1), mat(0xc9a877), 0, 1.86, 0));
+  // Ba tầng thượng tầng lùi dần, mái nhô ra che nắng
+  const deck = (y: number, z: number, w: number, h: number, len: number, roofOver = 0.3) => {
+    g.add(mesh(GEO.box, white, 0, y + h / 2, z, w, h, len), mesh(GEO.box, cream, 0, y + h + 0.06, z, w + roofOver * 2, 0.12, len + roofOver * 2));
+    for (const sx of [-1, 1]) { g.add(mesh(GEO.box, win, sx * (w / 2 + 0.01), y + h * 0.58, z, 0.05, h * 0.42, len - 0.9)); for (let k = -len / 2 + 0.9; k < len / 2 - 0.5; k += 1.1) g.add(mesh(GEO.box, white, sx * (w / 2 + 0.03), y + h * 0.58, z + k, 0.05, h * 0.46, 0.14)); }
+    g.add(mesh(GEO.box, win, 0, y + h * 0.6, z - len / 2 - 0.01, w - 0.7, h * 0.4, 0.05));
+  };
+  deck(1.9, 1.3, 4.2, 1.6, 9.6); deck(3.62, 1.7, 3.7, 1.45, 7.0); deck(5.2, -0.3, 3.2, 1.25, 3.0, 0.4);
+  g.add(mesh(GEO.box, mat(0x3f5566), 0.6, 2.6, -3.52, 0.9, 1.4, 0.06));
+  railing(g, [[2.3, -3.6], [2.2, -5.6], [1.2, -8.0], [0, -9.0], [-1.2, -8.0], [-2.2, -5.6], [-2.3, -3.6]], 1.9);
+  railing(g, [[2.3, 6.2], [2.3, 7.4], [-2.3, 7.4], [-2.3, 6.2]], 1.9);
+  railing(g, [[2.3, -3.4], [2.3, 6.2]], 3.62, 0.55); railing(g, [[-2.3, -3.4], [-2.3, 6.2]], 3.62, 0.55);
+  railing(g, [[1.95, -1.9], [1.95, 5.3], [-1.95, 5.3], [-1.95, -1.9]], 5.2, 0.5);
+  // Ống khói nghiêng, cột ra-đa, còi
+  const fun = mesh(GEO.cyl, mat(0xd9482b), 0, 6.5, 3.2, 0.62, 2.0, 0.78); fun.rotation.x = 0.16; g.add(fun);
+  const st = mesh(GEO.cyl, white, 0, 6.6, 3.22, 0.64, 0.34, 0.8); st.rotation.x = 0.16; const cap = mesh(GEO.cyl, mat(0x2e3440), 0, 7.45, 3.36, 0.64, 0.24, 0.8); cap.rotation.x = 0.16; g.add(st, cap);
+  g.add(mesh(GEO.cyl, mat(0xb9bfc9), 0, 7.4, -0.5, 0.06, 1.8, 0.06), mesh(GEO.box, mat(0xb9bfc9), 0, 7.9, -0.5, 1.5, 0.08, 0.14), mesh(GEO.box, white, 0, 8.25, -0.5, 0.9, 0.12, 0.3), mesh(GEO.ball, mat(0xfff3b0, { emissive: 0xffe08a }), 0, 8.4, -0.5, 0.1));
+  // Xuồng cứu sinh, phao tròn, mỏ neo, cột cờ mũi và đuôi
+  for (const sx of [-1, 1]) for (const z of [0.2, 3.4]) { g.add(mesh(GEO.ball, mat(0xf08a24), sx * 2.15, 4.25, z, 0.36, 0.3, 1.0), mesh(GEO.box, white, sx * 2.15, 4.42, z, 0.5, 0.06, 1.5), mesh(GEO.box, mat(0x8f97a3), sx * 2.1, 4.8, z - 0.7, 0.05, 0.9, 0.05), mesh(GEO.box, mat(0x8f97a3), sx * 2.1, 4.8, z + 0.7, 0.05, 0.9, 0.05)); }
+  for (const sx of [-1, 1]) for (const z of [-1.6, 1.2, 4.0]) { const ring = mesh(new THREE.TorusGeometry(0.26, 0.09, 6, 12), mat(0xf08a24), sx * 2.13, 2.5, z); ring.rotation.y = Math.PI / 2; g.add(ring); }
+  g.add(mesh(GEO.cyl, mat(0x9a7150), 0, 3.0, -8.4, 0.05, 2.2, 0.05), mesh(GEO.cyl, mat(0x9a7150), 0, 3.2, 7.2, 0.05, 2.6, 0.05));
+  g.add(mesh(GEO.box, mat(0xe0342b), 0.5, 4.1, 7.2, 0.95, 0.6, 0.05), mesh(GEO.ball, mat(0xffd23f), 0.5, 4.1, 7.24, 0.15), mesh(GEO.box, mat(0xfff3b0), 0.3, 3.9, -8.4, 0.55, 0.36, 0.04));
+  g.add(mesh(GEO.box, mat(0x2e3440), 2.3, 1.3, -6.6, 0.1, 0.5, 0.36), mesh(GEO.box, mat(0x2e3440), -2.3, 1.3, -6.6, 0.1, 0.5, 0.36));
+  // Ghế boong mũi
+  for (const x of [-1.1, 1.1]) g.add(mesh(GEO.box, mat(0x6fb7d9), x, 2.1, -5.4, 1.2, 0.12, 0.4), mesh(GEO.box, mat(0x6fb7d9), x, 2.35, -5.2, 1.2, 0.4, 0.08));
   return g;
 }
 /** Mặt boong tàu thuỷ (cao so với gốc mô hình) và vị trí cầu ván. */
@@ -272,5 +311,187 @@ export function tunnelHill(len: number, color: number, r: () => number): THREE.G
     const x = (r() - 0.5) * 24, z = (r() - 0.5) * (len - 6), y = 12.6 * (1 - (x / 16) ** 2) - 0.4;
     g.add(mesh(GEO.ball, mat(i % 2 ? 0x5cb85f : 0x79c96d), x, y + 0.6, z, 1.5 + r(), 1.2 + r() * 0.6, 1.5 + r()));
   }
+  return g;
+}
+
+// ---------------------------------------------------------------- mặt biển, vệt nước, khói, chim
+const SEA_VERT = `
+uniform float uTime; uniform float uScroll;
+varying vec3 vW; varying vec2 vP;
+#include <fog_pars_vertex>
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vec2 p = vec2(wp.x, wp.z - uScroll); vP = p;
+  wp.y += sin(p.x * 0.11 + uTime * 1.1) * 0.2 + sin(p.y * 0.16 - uTime * 1.4 + p.x * 0.05) * 0.17 + sin((p.x + p.y) * 0.31 + uTime * 2.0) * 0.06;
+  vW = wp.xyz;
+  vec4 mvPosition = viewMatrix * wp;
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`;
+const SEA_FRAG = `
+uniform float uTime; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSky; uniform vec3 uSunDir;
+varying vec3 vW; varying vec2 vP;
+#include <fog_pars_fragment>
+float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float nz(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hsh(i), hsh(i + vec2(1.0, 0.0)), f.x), mix(hsh(i + vec2(0.0, 1.0)), hsh(i + vec2(1.0, 1.0)), f.x), f.y); }
+void main() {
+  vec2 p = vP; float t = uTime;
+  float c2 = cos(p.y * 0.16 - t * 1.4 + p.x * 0.05), c3 = cos((p.x + p.y) * 0.31 + t * 2.0);
+  float dx = cos(p.x * 0.11 + t * 1.1) * 0.022 + c2 * 0.0085 + c3 * 0.0186;
+  float dz = c2 * 0.0272 + c3 * 0.0186;
+  float r1 = nz(p * 0.5 + vec2(t * 0.35, t * 0.2)), r2 = nz(p * 1.25 - vec2(t * 0.3, t * 0.45)), r3 = nz(p * 3.1 + vec2(-t * 0.5, t * 0.6));
+  vec3 N = normalize(vec3(-dx * 2.4 - (r1 - 0.5) * 0.42 - (r3 - 0.5) * 0.16, 1.0, -dz * 2.4 - (r2 - 0.5) * 0.42 - (r3 - 0.5) * 0.16));
+  vec3 V = normalize(cameraPosition - vW);
+  float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  vec3 col = mix(uDeep, uShallow, smoothstep(0.2, 0.85, r1 * 0.55 + r2 * 0.45));
+  col = mix(col, uSky, clamp(fres * 0.8 + 0.06, 0.0, 1.0));
+  vec3 H = normalize(V + normalize(uSunDir));
+  col += vec3(1.0, 0.96, 0.84) * pow(max(dot(N, H), 0.0), 90.0) * 0.8;
+  float foam = smoothstep(0.83, 0.93, nz(p * 0.2 + vec2(t * 0.1, 0.0)) * 0.55 + r2 * 0.5);
+  col = mix(col, vec3(1.0), foam * 0.6);
+  gl_FragColor = vec4(col, 1.0);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`;
+export interface Sea { mesh: THREE.Mesh; tick(time: number, scroll?: number): void }
+/** Mặt biển có sóng lăn tăn, phản chiếu trời và ánh nắng. `scroll` dịch hoạ tiết khi tàu đang chạy. */
+export function seaSurface(size = 1500, segs = 150): Sea {
+  const geo = new THREE.PlaneGeometry(size, size, segs, segs); geo.rotateX(-Math.PI / 2);
+  const material = new THREE.ShaderMaterial({
+    vertexShader: SEA_VERT, fragmentShader: SEA_FRAG, fog: true,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+      uTime: { value: 0 }, uScroll: { value: 0 }, uDeep: { value: new THREE.Color(0x1f7fb0) }, uShallow: { value: new THREE.Color(0x4fc3dc) },
+      uSky: { value: new THREE.Color(0xcfeefc) }, uSunDir: { value: new THREE.Vector3(18, 30, 12).normalize() },
+    }]),
+  });
+  const m = new THREE.Mesh(geo, material); m.userData.own = true; m.frustumCulled = false;
+  return { mesh: m, tick: (time, scroll = 0) => { material.uniforms.uTime.value = time; material.uniforms.uScroll.value = scroll; } };
+}
+
+/** Vệt nước trắng toả hình chữ V sau đuôi tàu và bọt rẽ ở mũi. */
+export class Wake {
+  readonly g = new THREE.Group();
+  private parts: THREE.Mesh[] = [];
+  private mats: THREE.MeshStandardMaterial[] = [];
+  private half: number; private len: number;
+  constructor(half: number, len: number, n = 30) {
+    this.half = half; this.len = len;
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4, transparent: true, opacity: 0.8, depthWrite: false });
+      const p = new THREE.Mesh(GEO.ball, m); p.userData.own = true; p.castShadow = false; p.receiveShadow = false; this.parts.push(p); this.mats.push(m); this.g.add(p);
+    }
+  }
+  /** (x, z) = tâm tàu; bow/stern = nửa chiều dài về mũi và đuôi; power 0..1 theo tốc độ. */
+  update(time: number, x: number, z: number, bow: number, stern: number, power: number) {
+    const n = this.parts.length; this.g.visible = power > 0.04;
+    this.parts.forEach((p, i) => {
+      const k = (time * 0.42 + i / n) % 1, side = i % 2 ? 1 : -1, lane = i % 6;
+      if (lane < 4) { // chữ V sau đuôi
+        p.position.set(x + side * (this.half * 0.5 + k * this.half * 2.6), 0.16, z + stern + k * this.len * power);
+        p.scale.set(0.9 + k * 3.2, 0.05, 1.4 + k * 3.4);
+      } else if (lane === 4) { // bọt chân vịt giữa đuôi
+        p.position.set(x + Math.sin(i * 3.1 + time * 5) * 0.7, 0.18, z + stern + k * this.len * 0.7 * power);
+        p.scale.set(1.6 + k * 2.2, 0.06, 1.5 + k * 2.6);
+      } else { // sóng rẽ mũi
+        p.position.set(x + side * (0.5 + k * this.half * 1.9), 0.18, z - bow * 0.82 + k * bow * 1.1);
+        p.scale.set(0.6 + k * 1.3, 0.07, 1.0 + k * 2.0);
+      }
+      this.mats[i].opacity = 0.82 * (1 - k) * Math.min(1, power * 1.6);
+    });
+  }
+}
+
+/** Cụm khói bay lên rồi tản theo gió (ống khói tàu, đầu máy). */
+export class Smoke {
+  readonly g = new THREE.Group();
+  private parts: THREE.Mesh[] = []; private mats: THREE.MeshStandardMaterial[] = [];
+  constructor(n = 8, color = 0xf2f2ee) {
+    for (let i = 0; i < n; i++) { const m = new THREE.MeshStandardMaterial({ color, roughness: 1, transparent: true, opacity: 0.7, depthWrite: false }); const p = new THREE.Mesh(GEO.ball, m); p.userData.own = true; p.castShadow = false; this.parts.push(p); this.mats.push(m); this.g.add(p); }
+  }
+  /** Khói phun từ (x, y, z), trôi về +z với lực drift. */
+  update(time: number, x: number, y: number, z: number, drift: number, size = 0.5) {
+    const n = this.parts.length;
+    this.parts.forEach((p, i) => { const k = (time * 0.45 + i / n) % 1; p.position.set(x + Math.sin(k * 5 + i) * 0.35 * k, y + k * (2.6 + size * 2), z + k * k * drift); p.scale.setScalar(size * (0.6 + k * 2.2)); this.mats[i].opacity = 0.75 * (1 - k); });
+  }
+}
+
+/** Đàn hải âu lượn vòng quanh một điểm. */
+export class Gulls {
+  readonly g = new THREE.Group();
+  private birds: THREE.Group[] = [];
+  constructor(n = 5) {
+    for (let i = 0; i < n; i++) {
+      const b = new THREE.Group();
+      for (const s of [-1, 1]) { const w = mesh(GEO.box, mat(0xffffff), s * 0.55, 0, 0, 1.1, 0.05, 0.34); w.castShadow = false; b.add(w); }
+      b.add(mesh(GEO.ball, mat(0xffffff), 0, 0, 0, 0.2, 0.16, 0.4), mesh(GEO.ball, mat(0xf2c65c), 0, 0, -0.42, 0.06, 0.05, 0.12)); this.birds.push(b); this.g.add(b);
+    }
+  }
+  update(time: number, x: number, y: number, z: number) {
+    this.birds.forEach((b, i) => {
+      const a = time * 0.5 + i * 1.4; b.position.set(x + Math.cos(a) * (7 + i * 1.8), y + Math.sin(time * 1.4 + i) * 0.8 + i * 0.5, z + Math.sin(a) * (6 + i * 1.2)); b.rotation.y = -a; b.rotation.z = 0.25;
+      const flap = Math.sin(time * 9 + i) * 0.55; b.children[0].rotation.z = flap; b.children[1].rotation.z = -flap;
+    });
+  }
+}
+
+// ---------------------------------------------------------------- người và đồ đạc ở bến
+const SHIRTS = [0xf08a6c, 0x6fb7d9, 0xf2c65c, 0x8fd67c, 0xa98bd6, 0xfffaf0, 0xe8457f];
+/** Người đứng chờ (tĩnh): i chọn màu áo, có người đội nón lá, có người xách túi. */
+export function person(i: number, size = 1.25): THREE.Group {
+  const g = new THREE.Group(), skin = mat(0xf6cfa8), shirt = mat(SHIRTS[i % SHIRTS.length]), pants = mat([0x4a5160, 0x6b5140, 0x3f5566][i % 3]);
+  g.add(mesh(GEO.cyl, shirt, 0, 1.08, 0, 0.3, 0.72, 0.23), mesh(GEO.ball, shirt, 0, 1.44, 0, 0.3, 0.16, 0.23), mesh(GEO.ball, skin, 0, 1.72, 0, 0.27));
+  if (i % 3 === 0) g.add(mesh(GEO.cone, mat(0xf3e2ae), 0, 2.02, 0, 0.6, 0.36, 0.6)); else g.add(mesh(GEO.ball, mat([0x3b2a17, 0x5a3d22][i % 2]), 0, 1.82, -0.04, 0.29, 0.22, 0.28));
+  for (const s of [-1, 1]) g.add(mesh(GEO.cyl, pants, s * 0.14, 0.4, 0, 0.11, 0.8, 0.11), mesh(GEO.cyl, shirt, s * 0.37, 1.14, 0, 0.085, 0.52, 0.085));
+  if (i % 2) g.add(mesh(GEO.box, mat(SHIRTS[(i + 3) % SHIRTS.length]), 0.5, 0.36, 0.1, 0.34, 0.5, 0.5));
+  g.scale.setScalar(size); return g;
+}
+/** Đồng hồ treo cột. */
+export function clockPost(h = 4.2): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(GEO.cyl, mat(0x3f5566), 0, h / 2, 0, 0.1, h, 0.1), mesh(GEO.box, mat(0x3f5566), 0, h + 0.5, 0, 0.36, 1.1, 1.1));
+  for (const sx of [-1, 1]) { const f = mesh(GEO.cyl, mat(0xfffdf6), sx * 0.19, h + 0.5, 0, 0.44, 0.04, 0.44); f.rotation.z = Math.PI / 2; g.add(f, mesh(GEO.box, mat(0x2e3440), sx * 0.22, h + 0.62, 0, 0.02, 0.3, 0.05), mesh(GEO.box, mat(0x2e3440), sx * 0.22, h + 0.5, 0.11, 0.02, 0.05, 0.24)); }
+  return g;
+}
+/** Bảng giờ tàu xe: khung tối, các dòng chữ sáng. Mặt bảng hướng +x. */
+export function timeBoard(w = 3.4, h = 1.9): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(GEO.box, mat(0x2e3440), 0, 0, 0, 0.14, h, w));
+  for (let i = 0; i < 4; i++) { g.add(mesh(GEO.box, mat(i === 0 ? 0xf2c65c : 0x9fe0a8, { emissive: i === 0 ? 0xf2c65c : 0x6fd08a }), 0.08, h / 2 - 0.3 - i * 0.42, -w * 0.14, 0.02, 0.14, w * 0.5), mesh(GEO.box, mat(0xfffdf6, { emissive: 0xffffff }), 0.08, h / 2 - 0.3 - i * 0.42, w * 0.33, 0.02, 0.14, w * 0.18)); }
+  return g;
+}
+/** Cột đèn sân bãi. */
+export function lampPost(h = 5): THREE.Group {
+  const g = new THREE.Group(); g.add(mesh(GEO.cyl, mat(0x4a5160), 0, h / 2, 0, 0.08, h, 0.08), mesh(GEO.box, mat(0x4a5160), -0.4, h, 0, 0.9, 0.08, 0.1), mesh(GEO.ball, mat(0xfff3b0, { emissive: 0xffe08a }), -0.8, h - 0.1, 0, 0.2, 0.12, 0.2)); return g;
+}
+/** Cần cẩu bờ ở cảng: tháp, cabin, cần vươn ra biển (về -x). */
+export function harbourCrane(h = 13): THREE.Group {
+  const g = new THREE.Group(), y = mat(0xf2c65c), d = mat(0x3f5566);
+  for (const x of [-1.4, 1.4]) for (const z of [-1.4, 1.4]) g.add(mesh(GEO.box, y, x, h / 2, z, 0.34, h, 0.34));
+  for (let k = 2; k < h; k += 3) for (const z of [-1.4, 1.4]) { const b = mesh(GEO.box, y, 0, k, z, 4.0, 0.16, 0.16); b.rotation.z = k % 2 ? 0.75 : -0.75; g.add(b); }
+  g.add(mesh(GEO.box, d, 0, h + 0.3, 0, 3.6, 0.6, 3.6), mesh(GEO.box, mat(0xfffaf0), 0.6, h + 1.5, 0, 2.2, 1.8, 2.4), mesh(GEO.box, mat(0x7fb9d9, { rough: 0.25 }), -0.52, h + 1.6, 0, 0.06, 1.0, 2.0));
+  const boom = mesh(GEO.box, y, -6.5, h + 4.2, 0, 14, 0.4, 0.5); boom.rotation.z = -0.3; g.add(boom, mesh(GEO.box, d, 3.0, h + 1.2, 0, 2.2, 1.6, 2.2));
+  g.add(mesh(GEO.box, d, -12.6, h + 2.6, 0, 0.06, 7.0, 0.06), mesh(GEO.box, d, -12.6, h - 1.0, 0, 0.5, 0.4, 0.5));
+  return g;
+}
+/** Nhà kho mái tôn lượn sóng, cửa cuốn. Mặt chính hướng +z. */
+export function warehouse(w = 14, d = 10, h = 5, roof = 0x6fb7d9): THREE.Group {
+  const g = new THREE.Group();
+  g.add(mesh(GEO.box, mat(0xf3ead2), 0, h / 2, 0, w, h, d));
+  const r = mesh(new THREE.CylinderGeometry(d * 0.62, d * 0.62, w + 0.8, 16, 1, false, 0, Math.PI), mat(roof), 0, h - d * 0.36, 0); r.rotation.z = Math.PI / 2; r.rotation.y = Math.PI / 2; g.add(r);
+  for (const x of [-w * 0.22, w * 0.22]) { g.add(mesh(GEO.box, mat(0xb9bfc9), x, h * 0.36, d / 2 + 0.02, w * 0.3, h * 0.72, 0.08)); for (let k = 0; k < 5; k++) g.add(mesh(GEO.box, mat(0x9aa1ab), x, 0.3 + k * h * 0.14, d / 2 + 0.07, w * 0.3, 0.05, 0.03)); }
+  g.add(mesh(GEO.box, mat(0x4a5160), 0, 0.2, d / 2 + 1.2, w, 0.4, 2.4));
+  return g;
+}
+/** Sọt, thùng hàng xếp chồng. */
+export function crateStack(n = 4, color = 0xc99a68): THREE.Group {
+  const g = new THREE.Group(), cols = [color, 0xb8875a, 0xd9b27c];
+  for (let i = 0; i < n; i++) { const lvl = Math.floor(i / 2); g.add(mesh(GEO.box, mat(cols[i % 3]), (i % 2) * 0.95 - 0.47 + lvl * 0.12, 0.42 + lvl * 0.84, (i % 3) * 0.08, 0.86, 0.8, 0.86), mesh(GEO.box, mat(0x8a6a4a), (i % 2) * 0.95 - 0.47 + lvl * 0.12, 0.42 + lvl * 0.84, (i % 3) * 0.08, 0.9, 0.08, 0.9)); }
+  return g;
+}
+/** Mây bông trên trời xa. */
+export function cloud(r: () => number): THREE.Group {
+  const g = new THREE.Group();
+  for (let k = 0; k < 5; k++) { const m = mesh(GEO.ball, mat(0xffffff, { rough: 1 }), k * 5 - 10 + r() * 2, r() * 2.4, r() * 3, 5 + r() * 3.4, 2.6 + r() * 1.6, 4.4); m.castShadow = false; m.receiveShadow = false; g.add(m); }
   return g;
 }
