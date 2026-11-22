@@ -221,6 +221,6 @@ export function borderGate(title: string, half = 6, face: 1 | -1 = 1): { g: THRE
   const arm = new THREE.Group(); arm.position.set(half - 1.5, 1.5, 4.4);
   for (let i = 0; i < 6; i++) arm.add(bx(i % 2 ? 0xffffff : 0xe0342b, -0.75 - i * 1.5, 0, 0, 1.5, 0.22, 0.16));
   g.add(arm);
-  const s1 = sign(title, '#d9482b', Math.min(15, half * 2 - 1), 0, 9.5, 2.8 * face); g.add(s1);
+  const s1 = sign(title, '#d9482b', Math.min(15, half * 2 - 1), 0, 9.5, 2.8 * face); // biển tên do cảnh tự gắn vào gốc để máy quay tính đúng vị trí
   return { g, arm, signs: [s1] };
 }

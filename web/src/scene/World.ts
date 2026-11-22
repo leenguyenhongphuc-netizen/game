@@ -44,6 +44,7 @@ function toLocal(slot: number, X: number, Z: number): { x: number; z: number } {
   return s === 1 ? { x: X - k * PITCH, z: Z } : { x: k * PITCH - X, z: 2 * ROAD_Z - Z };
 }
 
+const WHITE = new THREE.Color(1, 1, 1), VC_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0 });
 /** Gộp các khối tĩnh cùng chất liệu thành một lưới để giảm số lần vẽ. */
 export function bake(root: THREE.Object3D): THREE.Group {
   root.updateMatrixWorld(true);
@@ -57,7 +58,13 @@ export function bake(root: THREE.Object3D): THREE.Group {
     const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
     g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
     for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
-    const material = m.material as THREE.Material;
+    let material = m.material as THREE.Material;
+    const sm = material as THREE.MeshStandardMaterial;
+    // Khối màu trơn, nhám (phần lớn mô hình): ghi màu vào đỉnh rồi dùng chung MỘT chất liệu — mỗi cụm chỉ còn một lần vẽ.
+    const plain = sm.isMeshStandardMaterial && !sm.map && !sm.transparent && sm.roughness >= 0.7 && sm.emissive.getHex() === 0 && !sm.vertexColors;
+    const n = g.attributes.position.count, col = new Float32Array(n * 3), c = plain ? sm.color : WHITE;
+    for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    if (plain) { g.setAttribute('color', new THREE.BufferAttribute(col, 3)); material = VC_MAT; }
     if (!buckets.has(material)) buckets.set(material, []);
     buckets.get(material)!.push(g);
   });
@@ -583,15 +590,15 @@ export class World {
       for (let i = 0; i < SLOT_COUNT; i++) { const l = toLocal(i, x, z); if (Math.abs(l.x) < FENCE.x + 1.2 && l.z > FENCE.back - 1.2 && l.z < FENCE.front + 4) return false; }
       return true;
     };
-    let placed = 0, guard = 0; const grove = new THREE.Group(); // gộp cả rặng cây thành vài lưới: giảm mạnh số lần vẽ
+    let placed = 0, guard = 0; const groves = new Map<string, THREE.Group>(); // gộp cây theo cụm ~30 m: ít lần vẽ mà vẫn bỏ được cụm ngoài khung hình
     while (placed < (this.urban ? 22 : 70) && guard++ < 900) {
       const x = (r() * 2 - 1) * (WORLD.x + 40), z = WORLD.zMin - 34 + r() * (WORLD.zMax - WORLD.zMin + 70);
       const d = out(x, z); if (!free(x, z) || (th.sea && d > 3)) continue;
       if (z > ROAD_Z + ROAD_HALF && z < 2 * ROAD_Z + 6 && Math.abs(x) < 8 && r() < 0.7) continue;
       const k = d / 34, t = this.makeTree(th.trees, r); t.position.set(x, th.sea ? 0 : k * k * th.hill * 2.4, z); t.rotation.y = r() * 6; t.scale.setScalar(0.9 + r() * 0.7);
-      grove.add(t); placed++;
+      { const key = `${Math.round(x / 30)}|${z < ROAD_Z ? 0 : 1}`; if (!groves.has(key)) groves.set(key, new THREE.Group()); groves.get(key)!.add(t); } placed++;
     }
-    this.env.add(bake(grove));
+    for (const gv of groves.values()) this.env.add(bake(gv));
     for (let i = 0; i < 60; i++) { const x = (r() * 2 - 1) * WORLD.x, z = WORLD.zMin + r() * (WORLD.zMax - WORLD.zMin); if (free(x, z)) st.add(mesh(GEO.ball, mat(i % 3 ? 0x79c96d : 0x5cb85f), x, 0.2, z, 0.4 + r() * 0.3, 0.3, 0.4)); }
     for (let i = 0; i < th.mountains; i++) {
       const a = Math.PI * (1.05 + (i / Math.max(1, th.mountains - 1)) * 0.9) + r() * 0.15, dist = 150 + r() * 50, hh = 34 + r() * 36;

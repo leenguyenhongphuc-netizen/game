@@ -127,10 +127,10 @@ function driveToBorder(info: ExportInfo, v: Vehicle, highway: boolean): Act {
 function crossBorder(info: ExportInfo, v: Vehicle, icd: boolean): Act {
   const root = new THREE.Group(), S = new THREE.Group(), r = rng(hashOf(info.marketName + 'ck')), th = THEMES.bac;
   root.add(slab(th.ground)); road(S, 0x8f97a3, 11, 2); yard(S, 13, 8, 16, 30);
-  const gate = borderGate(icd ? 'Cửa khẩu quốc tế · Cảng cạn' : 'Cửa khẩu quốc tế', 6.6); gate.g.position.z = -6; root.add(gate.g);
-  if (icd) for (let i = 0; i < 9; i++) { const cn = container(CONTAINER_COLORS[i % CONTAINER_COLORS.length], 12, false); prop(S, cn, 16 + (i % 3) * 2.7, Math.floor(i / 6) * 2.75, 16 + (Math.floor(i / 3) % 2) * 13, 1, 0); }
+  const gate = borderGate(icd ? 'Cửa khẩu quốc tế · Cảng cạn' : 'Cửa khẩu quốc tế', 6.6); gate.g.position.z = -6; gate.signs[0].position.z -= 6; root.add(gate.g, gate.signs[0]);
+  if (icd) for (let i = 0; i < 9; i++) { const cn = container(CONTAINER_COLORS[i % CONTAINER_COLORS.length], 12, false); prop(S, cn, -24 + (i % 3) * 2.7, Math.floor(i / 6) * 2.75, 4 + (Math.floor(i / 3) % 2) * 13, 1, 0); }
   else { prop(S, crateStack(6), 15, 0, 12, 1.2, 0.3); prop(S, boxTruck(0xf2a53a).g, 15, 0, 22, 1, 0.12); }
-  prop(S, warehouse(12, 8, 4.4, 0xf2b25c), -14, 0, 10, 1, Math.PI / 2);
+  if (!icd) prop(S, warehouse(12, 8, 4.4, 0xf2b25c), -14, 0, 10, 1, Math.PI / 2);
   crowd(S, [[5.6, 0, -0.6, -1.7], [12.4, 0, 0.6, -1.4]], 4); prop(S, lampPost(7), -7, 0, 8, 1, 0);
   // Cột mốc biên giới và dãy núi đá vôi phía bên kia
   box(S, 0xe9edf2, -9.4, 1.0, -8.6, 0.9, 2.0, 0.6); box(S, 0xd9482b, -9.4, 2.2, -8.6, 1.0, 0.4, 0.7);
@@ -239,7 +239,7 @@ function trainBorder(info: ExportInfo, tr: ReturnType<typeof freightTrain>, smok
   for (const [x, z] of [[-36, -64], [28, -80]]) prop(S, karst(r), x, 0, z, 1.5);
   trees(S, 'bac', r, 22, -60, 60); backdrop(S, root, 'bac', r, 20);
   root.add(bake(S, true));
-  const gate = borderGate('Ga liên vận quốc tế', 4.4, -1); gate.g.position.z = -18; gate.arm.visible = false; root.add(gate.g, smoke.g);
+  const gate = borderGate('Ga liên vận quốc tế', 4.4, -1); gate.g.position.z = -18; gate.arm.visible = false; gate.signs[0].position.set(8, 7.6, -11); root.add(gate.g, smoke.g, gate.signs[0], mesh(GEO.cyl, mat(0x8f97a3), 8, 3.6, -11, 0.1, 5.4, 0.1));
   const ok = sign('Kiểm dịch đạt ✓', '#1f8a4c', 8, 2, 8, -8); ok.visible = false; root.add(ok);
   const pts: THREE.Vector3[] = [], D = 5.6; tr.g.position.set(0, 0.3, 70); root.add(tr.g); tr.door.position.z = BOXCAR_Z;
   return {
