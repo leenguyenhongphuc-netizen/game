@@ -715,7 +715,6 @@ export class DriveScene {
           cap = Math.min(cap, u > 70 ? 60 : u > 2.5 ? Math.max(9, u * 0.95) : 0);
           break;
         }
-        }
         // không cần ghé trạm: giữ làn giữa, gần nút giao thì sang đúng làn rẽ
         if (this.autoX === null && this.s > this.exS + 30) { const j = this.juncs.find((x) => !x.done && x.s > this.s); this.autoX = j && j.s - this.s < 190 ? j.dir * LW : this.exitDone && this.s > this.exitDone.s ? null : 0; }
       }
