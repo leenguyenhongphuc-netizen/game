@@ -13,6 +13,8 @@ import { RoleWheel } from './wheel.tsx';
 import { CustomizePanel } from './custom.tsx';
 import { DriveGame } from './drive/DriveGame.tsx';
 import type { DrivePlan, DriveResult } from './drive/DriveGame.tsx';
+import { Icon } from './icons.tsx';
+import type { IconName } from './icons.tsx';
 import { CropGuide, KIND_VERB, StageArt, stepIcon, stepKind } from './guide.tsx';
 import type { Friends, GiftInbox, Listing, LotView, Me, Planting, Prices, Village } from './api.ts';
 import { DEFAULT_STYLE } from '../../shared/custom.ts';
@@ -192,7 +194,7 @@ function Onboard({ me, onDone }: { me: Me; onDone: () => void }) {
 type Tab = 'vuon' | 'kho' | 'cho' | 'ban' | 'bando' | 'so' | 'sap' | 'toi' | 'trangtri' | 'trungbay';
 interface Trip { tripId: number; fromRegionId: string; toRegionId: string; plan: DrivePlan; fuelL: number; etc: number; cash: number; truck: { tankL: number; lPer100km: number; fuelPrice: number } }
 interface TripDone { regionId: string; fuelUsedL: number; fuelCost: number; rescueL: number; tollCost: number; tollFromEtc: number; fuelL: number; etc: number; cash: number }
-const TABS: [Tab, string, string][] = [['kho', '🧺', 'Kho'], ['cho', '🛒', 'Chợ'], ['ban', '🧑‍🤝‍🧑', 'Xóm'], ['bando', '🚌', 'Du lịch'], ['trangtri', '🎨', 'Trang trí']];
+const TABS: [Tab, IconName, string][] = [['kho', 'kho', 'Kho'], ['cho', 'cho', 'Chợ'], ['ban', 'xom', 'Xóm'], ['bando', 'dulich', 'Du lịch'], ['trangtri', 'trangtri', 'Trang trí']];
 const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho, đơn hàng, xưởng', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch và sổ tem', so: '', sap: 'Sạp hàng xóm', toi: 'Hồ sơ của tôi', trungbay: 'Quầy trưng bày đặc sản', trangtri: 'Trang trí nhà, sạp, nhân vật' };
 
 /** Vườn mẫu của một vùng: trồng đủ mọi đặc sản của vùng, cây đang ra trái, để khách tham quan. */
@@ -361,7 +363,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
           <span className="chip-avatar" aria-hidden="true">🧑‍🌾</span>
           <div className="chip-text"><strong>{me.user.displayName}</strong><small>{center ? (center.plot.wardName ? `${center.plot.wardName} · ${REGIONS[center.plot.regionId].name}` : regionLabel(center.plot.regionId)) : ''}</small></div>
         </button>
-        <div className="coin" title="Tiền mặt"><span aria-hidden="true">🪙</span>{fmtMoney(me.user.cash)}</div>
+        <div className="coin" title="Tiền mặt"><Icon name="xu" size={26} />{fmtMoney(me.user.cash)}</div>
         <button className="round" aria-label="Đăng xuất" title="Đăng xuất"
           onClick={async () => { if (confirm('Đăng xuất khỏi Vườn Việt?')) { await api('POST', '/api/auth/logout', {}); await refresh(); } }}>⏻</button>
       </header>
@@ -370,7 +372,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         {village?.weather?.hazard && <span className="wchip warn" title={village.weather.hazard.note}>{village.weather.hazard.icon} {village.weather.hazard.label}</span>}
         {(village?.events ?? []).map((ev) => <span key={ev.id} className={`wchip ${ev.active ? 'hot' : ''}`}>{ev.icon} {ev.active ? `${ev.name}: +${Math.round(ev.bonus * 100)}%` : `${ev.name} sau ${fmtDuration(ev.startsAt - now)}`}</span>)}
       </div>
-      <div className="quest"><span aria-hidden="true">{quest[0]}</span><p>{quest[1]}</p>{!atHome && <button onClick={goHome}>🏠 Về nhà</button>}</div>
+      <div className="quest"><span aria-hidden="true">{quest[0]}</span><p>{quest[1]}</p>{!atHome && <button onClick={goHome}><Icon name="nha" size={20} /> Về nhà</button>}</div>
       {me.plots.length > 1 && tab === 'vuon' && !tour && (
         <div className="plot-switch">
           {me.plots.map((p) => <button key={p.id} aria-pressed={p.id === plotId} onClick={() => visit(p.id)}>{p.isHome ? '🏠 ' : '🌾 '}{REGIONS[p.regionId].name}</button>)}
@@ -517,7 +519,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
 
       <nav className="dock">
         {TABS.map(([id, icon, label]) => (
-          <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(tab === id ? 'vuon' : id)}><span>{icon}</span>{label}{id === 'ban' && unseen > 0 && <b className="badge">{unseen}</b>}</button>
+          <button key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(tab === id ? 'vuon' : id)}><Icon name={icon} size={30} />{label}{id === 'ban' && unseen > 0 && <b className="badge">{unseen}</b>}</button>
         ))}
       </nav>
     </div>

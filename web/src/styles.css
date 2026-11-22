@@ -357,3 +357,6 @@ button.primary.spin-btn { width: min(240px, 70vw); font-size: 1.3rem; }
 /* Khi mở bảng: chỉ giữ hàng trên cùng, các dải bên dưới không ló ra sau bảng */
 .game.has-modal .chips, .game.has-modal .quest, .game.has-modal .plot-switch, .game.has-modal .act-card { display: none; }
 .modal-head .round { color: var(--wood-dark); font-weight: 800; font-size: 1.1rem; }
+.ico { display: block; flex-shrink: 0; }
+.dock button .ico { margin-bottom: 1px; }
+.quest button { display: inline-flex; align-items: center; gap: 4px; }
