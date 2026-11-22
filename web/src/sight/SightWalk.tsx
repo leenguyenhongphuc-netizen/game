@@ -3,13 +3,27 @@ import { useEffect, useRef, useState } from 'react';
 import type { JSX, PointerEvent as RPointerEvent } from 'react';
 import { sight as findSight } from '../../../shared/sights.ts';
 import { SightScene } from './SightScene.ts';
-import type { SightHud } from './SightScene.ts';
+import type { SightHud, SightShop } from './SightScene.ts';
 import './sight.css';
 
 interface TestHook { goto: (i: number) => void; snap: () => void; pos: () => unknown; info: () => unknown; close: () => void }
 type W = Window & { __sight?: TestHook; __sightAuto?: boolean; __rideStep?: number };
 
-export function SightWalk(props: { sightId: string; seen?: string[]; onExit: (r: { stops: string[]; toMarket: boolean }) => void }): JSX.Element {
+export interface SightWalkProps {
+  sightId: string; seen?: string[];
+  onExit: (r: { stops: string[]; toMarket: boolean }) => void;
+  /** Quầy hàng đặt dọc tuyến; tới gần hiện nút mở quầy. Bỏ trống thì cảnh vẫn có hai quầy trang trí. */
+  shops?: SightShop[]; onShop?: (shopId: string) => void;
+  /** Thể lực hiện trên thanh trên cùng. */
+  energy?: { value: number; max: number };
+  /** Điểm kinh nghiệm nhận cho mỗi con dấu (mặc định 10). */
+  xpPerStop?: number;
+}
+const today = () => { const d = new Date(), z = (n: number) => String(n).padStart(2, '0'); return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()}`; };
+/** Câu đầu của lời thuyết minh, dùng làm dòng tóm tắt. */
+const firstLine = (t: string) => { const m = t.match(/^.*?[.!?](\s|$)/); return (m ? m[0] : t).trim(); };
+
+export function SightWalk(props: SightWalkProps): JSX.Element {
   const s = findSight(props.sightId);
   const host = useRef<HTMLDivElement>(null), scene = useRef<SightScene | null>(null);
   const [seen, setSeen] = useState<string[]>(() => (props.seen ?? []).filter((id) => s?.stops.some((x) => x.id === id)));
@@ -17,6 +31,9 @@ export function SightWalk(props: { sightId: string; seen?: string[]; onExit: (r:
   const [near, setNear] = useState<number | null>(null);
   const [hud, setHud] = useState<SightHud | null>(null);
   const [flash, setFlash] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [shop, setShop] = useState<number | null>(null);
+  const [stamp, setStamp] = useState<{ k: number; name: string } | null>(null);
   const [hint, setHint] = useState(true);
   const [stick, setStick] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
   const ptr = useRef<{ move: number | null; look: number | null; lx: number; ly: number; ox: number; oy: number }>({ move: null, look: null, lx: 0, ly: 0, ox: 0, oy: 0 });
@@ -24,14 +41,14 @@ export function SightWalk(props: { sightId: string; seen?: string[]; onExit: (r:
 
   const snap = () => {
     const i = nearRef.current; if (i === null || !s) return; const id = s.stops[i].id;
-    if (!seenRef.current.includes(id)) { const next = [...seenRef.current, id]; seenRef.current = next; setSeen(next); scene.current?.markSeen(i); setFlash((f) => f + 1); }
+    if (!seenRef.current.includes(id)) { const next = [...seenRef.current, id]; seenRef.current = next; setSeen(next); scene.current?.markSeen(i); setFlash((f) => f + 1); setStamp({ k: Date.now(), name: s.stops[i].name }); }
   };
   const close = () => { scene.current?.dismiss(); };
 
   useEffect(() => {
     if (!s || !host.current) return;
     const w = window as W;
-    const sc = new SightScene(host.current, s, seenRef.current, { onNear: setNear, onHud: setHud });
+    const sc = new SightScene(host.current, s, seenRef.current, { onNear: (i) => { setNear(i); setOpen(false); }, onHud: setHud, onShop: setShop }, props.shops);
     sc.auto = !!w.__sightAuto; sc.speedMul = w.__sightAuto && w.__rideStep ? 6 : 1; scene.current = sc;
     w.__sight = { goto: (i) => sc.goto(i), snap, pos: () => sc.pos(), info: () => sc.info(), close };
     const t = window.setTimeout(() => setHint(false), 6000);
@@ -72,15 +89,17 @@ export function SightWalk(props: { sightId: string; seen?: string[]; onExit: (r:
   const stop = near !== null ? s.stops[near] : null, last = near === s.stops.length - 1, got = stop ? seen.includes(stop.id) : false;
   const next = hud ? s.stops[hud.next] : s.stops[0], allSeen = seen.length >= s.stops.length;
   const leave = (toMarket: boolean) => props.onExit({ stops: seenRef.current, toMarket });
+  const xp = props.xpPerStop ?? 10, en = props.energy, shopNear = shop !== null && props.shops ? props.shops[shop] : null;
   return (
     <div className="sw" data-stop={stop?.id ?? ''} data-seen={seen.length}>
       <div className="sw-scene" ref={host} onPointerDown={down} onPointerMove={moveP} onPointerUp={up} onPointerCancel={up} />
       <div className="sw-top">
         <div className="sw-bar">
-          <div className="sw-title"><b aria-hidden="true">{s.emoji}</b><span>{s.name}</span><small>{seen.length}/{s.stops.length} điểm</small></div>
+          <div className="sw-title"><b aria-hidden="true">{s.emoji}</b><span>{s.name}</span><small>{seen.length}/{s.stops.length} dấu</small></div>
           <ol className="sw-dots" aria-label="Các điểm dừng">
             {s.stops.map((x, i) => <li key={x.id} className={(seen.includes(x.id) ? 'done ' : '') + (hud?.next === i && !allSeen ? 'next' : '')} title={x.name}>{seen.includes(x.id) ? '✓' : i + 1}</li>)}
           </ol>
+          {en && <div className="sw-energy" role="img" aria-label={`Thể lực ${Math.round(en.value)} trên ${en.max}`}><span aria-hidden="true">⚡</span><div><i style={{ width: `${Math.max(0, Math.min(100, en.value / Math.max(1, en.max) * 100))}%` }} /></div><small>{Math.round(en.value)}/{en.max}</small></div>}
         </div>
         <button className="sw-leave" onClick={() => leave(false)}>Rời đi</button>
       </div>
@@ -94,19 +113,31 @@ export function SightWalk(props: { sightId: string; seen?: string[]; onExit: (r:
       {hint && !stop && <div className="sw-hint">Kéo nửa dưới màn hình để đi · kéo nửa trên để nhìn quanh</div>}
       {stick && <div className="sw-stick" style={{ left: stick.x, top: stick.y }}><i style={{ transform: `translate(${stick.dx}px, ${stick.dy}px)` }} /></div>}
       {flash > 0 && <div className="sw-flash" key={flash} />}
+      {stamp && (
+        <div className="sw-seal" key={stamp.k} aria-hidden="true">
+          <div className="sw-seal-ink"><small>VƯỜN VIỆT · HỘ CHIẾU</small><b>{stamp.name}</b><span>{s.name}</span><em>{today()}</em></div>
+          <strong className="sw-xp">+{xp} XP</strong>
+        </div>
+      )}
+      {shopNear && !stop && <button className="sw-shop" onClick={() => props.onShop?.(shopNear.id)}><span aria-hidden="true">🛒</span> {shopNear.emoji} {shopNear.name}</button>}
       {stop && (
-        <div className="sw-card" role="dialog" aria-label={stop.name}>
-          <div className="sw-card-head">
-            <span className="sw-num">{near! + 1}</span>
-            <h2>{stop.name}</h2>
-            {got && <span className="sw-stamp" key={flash}>Đã chụp ✓</span>}
+        <div className={`sw-card${open ? ' open' : ''}${got ? ' got' : ''}`} role="dialog" aria-label={stop.name}>
+          <div className="sw-card-row">
+            <button className="sw-card-main" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+              <span className="sw-num">{got ? '✓' : near! + 1}</span>
+              <span className="sw-card-text"><b>{stop.name}</b><small>{open ? 'Chạm để thu gọn' : firstLine(stop.fact)}</small></span>
+              <i aria-hidden="true">{open ? '▾' : '▴'}</i>
+            </button>
+            {!got && <button className="sw-snap" aria-label="Chụp ảnh lưu niệm, đóng dấu hộ chiếu" onClick={snap}><span aria-hidden="true">📸</span></button>}
+            {got && !last && <button className="sw-next" onClick={close}>Đi tiếp ›</button>}
           </div>
-          <p>{stop.fact}</p>
-          <div className="sw-actions">
-            {!got && <button className="sw-go" onClick={snap}>📸 Chụp ảnh lưu niệm</button>}
-            {got && last && <button className="sw-go" onClick={() => leave(true)}>Ra cổng → Siêu thị đặc sản</button>}
-            <button onClick={close}>{last ? 'Ở lại ngắm thêm' : got ? 'Đi tiếp' : 'Để sau'}</button>
-          </div>
+          {open && <p className="sw-fact">{stop.fact}</p>}
+          {(open || (got && last)) && (
+            <div className="sw-actions">
+              {got && last && <button className="sw-go" onClick={() => leave(true)}>Ra cổng → Siêu thị đặc sản</button>}
+              {(last || !got) && <button onClick={close}>{last ? 'Ở lại ngắm thêm' : 'Để sau'}</button>}
+            </div>
+          )}
         </div>
       )}
     </div>

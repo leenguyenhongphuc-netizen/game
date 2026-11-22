@@ -11,6 +11,8 @@ import type { Listing, Planting } from '../api.ts';
 import { GEO, buildPlant, fruitColor, mat, mesh, rng } from './plants.ts';
 import type { Stage } from './plants.ts';
 import { roadsideProp, zoneHouse, zoneScene } from './zones.ts';
+import { BASIC_FACTORY, LAMP_MATS, MACHINE_SPOTS, STEAM_MAT, buildBeltCrates, buildDoneCrate, buildFactoryYard, buildMachine, factoryColliders, machineState } from './factory.ts';
+import type { FactoryData, FactoryMachine, MachineState } from './factory.ts';
 import { blobTex, boardCanvas, edgeFade, grassTex, roadTex, softDot } from './tex.ts';
 
 // ---------------------------------------------------------------- bố cục xóm
@@ -122,8 +124,13 @@ export interface LotData {
   plotId: number; ownerName: string; mine: boolean; friend: boolean; kind?: 'ground' | 'rooftop'; plantings: Planting[]; stall: Listing[];
   /** undefined = chưa rõ (vườn mẫu) thì coi như nhà vườn; null = chủ vườn chưa quay vai. */
   ownerRole?: Role | null; style?: PlotStyle | null; decor?: DecorPlacement[] | null; avatar?: Avatar | null;
+  /** Máy của chủ xưởng (lấy từ `factory` của GET /api/plots/:id). Thiếu thì thửa của chủ xưởng vẫn hiện một máy cơ bản. */
+  factory?: FactoryData | null;
 }
-function lotTiles(d: LotData): number[] { return allowedTiles(d.kind ?? 'ground', d.ownerRole === undefined ? 'nong_dan' : d.ownerRole); }
+/** Thửa mặt đất của chủ xưởng là nhà xưởng, không có ô đất trồng. */
+function isFactory(d: LotData | null): boolean { return !!d && d.ownerRole === 'xuong' && d.kind !== 'rooftop'; }
+function machinesOf(d: LotData): FactoryMachine[] { return (d.factory?.machines?.length ? d.factory.machines : BASIC_FACTORY.machines).slice(0, MACHINE_SPOTS.length); }
+function lotTiles(d: LotData): number[] { return isFactory(d) ? [] : allowedTiles(d.kind ?? 'ground', d.ownerRole === undefined ? 'nong_dan' : d.ownerRole); }
 export type WeatherKind = 'nang' | 'may' | 'mua' | 'nang_gat' | 'bao';
 export interface WorldState { regionId: string; lots: (LotData | null)[]; clockOffset: number; weather?: WeatherKind }
 export type Context =
@@ -131,6 +138,8 @@ export type Context =
   | { kind: 'tile'; lot: number; tile: number }
   | { kind: 'stall'; lot: number }
   | { kind: 'truck' }
+  /** Đứng cạnh một trạm máy trong xưởng; machineId = null là chỗ còn trống để đặt máy mới. */
+  | { kind: 'machine'; lot: number; index: number; machineId: number | string | null }
   | { kind: 'empty-lot'; lot: number };
 export interface WorldOptions {
   hour?: number; demo?: boolean;
@@ -177,6 +186,10 @@ class Lot {
   private look = '';
   private signs: THREE.Sprite[] = [];
   markers = new Map<number, THREE.Mesh>();
+  /** Trạm máy đang hiện (chỉ khi lô là xưởng). */
+  fx: { m: FactoryMachine; group: THREE.Group; lamp: THREE.Mesh; done: THREE.Group; puffs: THREE.Mesh[]; x: number; z: number; state: MachineState | '' }[] = [];
+  private belt: THREE.Group | null = null;
+  private smoke: THREE.Mesh[] = [];
   npc: Body | null = null;
   private slot: number;
   private night: boolean;
@@ -192,7 +205,7 @@ class Lot {
 
   colliders(): [number, number, number, number][] {
     if (this.built !== 'farm' && this.built !== 'roof') return [];
-    const prop: [number, number, number, number][] = this.data?.ownerRole === 'xuong' ? [[-2.3, 2.3, 2.4, 5.0]] : [];
+    const prop: [number, number, number, number][] = isFactory(this.data) ? factoryColliders(this.fx.length) : this.data?.ownerRole === 'xuong' ? [[-2.3, 2.3, 2.4, 5.0]] : [];
     const local: [number, number, number, number][] = [...prop,
       [-FENCE.x, FENCE.x, FENCE.back - 0.15, FENCE.back + 0.15], [-FENCE.x - 0.15, -FENCE.x + 0.15, FENCE.back, FENCE.front],
       [FENCE.x - 0.15, FENCE.x + 0.15, FENCE.back, FENCE.front], [-FENCE.x, -FENCE.gate, FENCE.front - 0.15, FENCE.front + 0.15],
@@ -202,7 +215,7 @@ class Lot {
   }
 
   private rebuild(kind: 'empty' | 'farm' | 'roof') {
-    this.group.clear(); this.plants.clear(); this.markers.clear(); this.label = null; this.labelText = ''; this.npc = null; this.signs = [];
+    this.group.clear(); this.plants.clear(); this.markers.clear(); this.fx = []; this.belt = null; this.smoke = []; this.label = null; this.labelText = ''; this.npc = null; this.signs = [];
     const data = this.data, style = data?.style ?? null, tiles = data ? lotTiles(data) : [];
     const roofColor = hex(style?.roof, ROOFS[this.slot % 5]), wallColor = hex(style?.wall, [0xfff6e2, 0xffeceb, 0xeef6ff, 0xf1f9e4, 0xfff8d6][this.slot % 5]), awning = hex(style?.awning, ROOFS[this.slot % 5]);
     this.plantLayer = new THREE.Group(); this.goods = new THREE.Group();
@@ -236,6 +249,26 @@ class Lot {
     [0xf08a6c, 0x6fb7d9, 0xfdf6e6, 0xf2c65c, 0xa98bd6].forEach((c, i) => st.add(mesh(GEO.box, mat(c), -8.2, 1.6, -4 + i * 2, 0.06, 0.9, 1.1)));
     st.add(mesh(GEO.box, mat(0xf3f4f6), 8.4, 0.5, 6.4, 1.0, 0.9, 1.4));
     for (const [x, z] of [[8.5, -2], [8.5, 1.5], [-3.2, 7.6], [3.2, 7.6]]) st.add(mesh(GEO.cyl, mat(0xe0a070), x, 0.3, z, 0.36, 0.5, 0.36), mesh(GEO.ball, mat(0x5cb85f), x, 0.9, z, 0.5), mesh(GEO.ball, mat(0xf7a8c4), x + 0.2, 1.25, z + 0.1, 0.14));
+    } else if (isFactory(data)) {
+    // Nhà xưởng chế biến: nền bê tông, nhà xưởng mái tôn, bồn, khu nguyên liệu và thành phẩm; mỗi máy là một trạm riêng
+    const ms = machinesOf(data!);
+    st.add(buildFactoryYard(this.night, roofColor, ms.length));
+    buildFence(st, style?.fence ?? 'trang', FENCE, roofColor);
+    const h = buildHouse(style?.house ?? zoneHouse(this.zone), wallColor, roofColor, this.night); h.position.set(0, 0, -10.4); st.add(h);
+    ms.forEach((m, i) => {
+      const spot = MACHINE_SPOTS[i], model = buildMachine(m), group = bake(model.root);
+      group.position.set(spot.x, 0, spot.z);
+      const lamp = new THREE.Mesh(GEO.ball, LAMP_MATS.idle); lamp.scale.setScalar(0.13); lamp.position.copy(model.lamp).add(group.position);
+      const done = bake(buildDoneCrate()); done.position.set(spot.x - 0.2, 0.06, spot.z + 1.25); done.visible = false;
+      const puffs: THREE.Mesh[] = [];
+      if (model.steam) for (let k = 0; k < 2; k++) { const pf = new THREE.Mesh(GEO.sphere, STEAM_MAT); pf.userData.base = model.steam.clone().add(group.position); pf.userData.k = k / 2; pf.visible = false; puffs.push(pf); this.group.add(pf); }
+      this.group.add(group, lamp, done);
+      if (this.slot === 0) { const tag = makeLabel(m.name, 'paper', 0.46); tag.position.set(spot.x, model.h + 0.95, spot.z); this.group.add(tag); this.signs.push(tag); }
+      this.fx.push({ m, group, lamp, done, puffs, x: spot.x, z: spot.z, state: '' });
+    });
+    if (this.slot === 0 && ms.length < MACHINE_SPOTS.length) { const sp = MACHINE_SPOTS[ms.length], tag = makeLabel('Chỗ đặt máy', 'paper', 0.46); tag.position.set(sp.x, 1.3, sp.z); this.group.add(tag); this.signs.push(tag); }
+    this.belt = bake(buildBeltCrates()); this.belt.position.set(-5.4, 1.04, -4.9); this.group.add(this.belt);
+    for (let k = 0; k < 3; k++) { const pf = new THREE.Mesh(GEO.sphere, STEAM_MAT); pf.userData.k = k / 3; this.smoke.push(pf); this.group.add(pf); }
     } else {
     // Sân đất và các ô được trồng theo vai trò
     st.add(mesh(GEO.box, mat(0xefdcb4), 0, 0.03, 0.2, PLOT_COLS * TILE + 1.6, 0.06, PLOT_ROWS * TILE + 1.6));
@@ -258,7 +291,7 @@ class Lot {
     st.add(mesh(GEO.cone, mat(0xf6d77a), -7.4, 0.8, -10.6, 1.1, 1.6, 1.1), mesh(GEO.cyl, mat(0xbdb5a6), -7.3, 0.4, 6.9, 0.7, 0.8, 0.7), mesh(GEO.cyl, mat(0x4fb3e0, { rough: 0.2 }), -7.3, 0.81, 6.9, 0.56, 0.03, 0.56));
     }
     // Công trình theo vai trò (xưởng, bãi cân hàng) và đồ trang trí do chủ vườn đặt
-    const prop = buildRoleProp(data?.ownerRole); if (prop) { prop.position.set(0, 0, 3.7); st.add(prop); }
+    const prop = isFactory(data) ? null : buildRoleProp(data?.ownerRole); if (prop) { prop.position.set(0, 0, 3.7); st.add(prop); }
     for (const d of data?.decor ?? []) { const o = buildDecor(d.item); o.position.set(d.x, 0, d.z); o.rotation.y = d.rot; st.add(o); }
     {
     // Sạp bán hàng sát đường
@@ -286,10 +319,11 @@ class Lot {
     this.data = data;
     const want = data ? (data.kind === 'rooftop' ? 'roof' : 'farm') : this.slot === 0 ? 'none' : 'empty';
     if (want === 'none') { this.group.clear(); this.built = 'none'; return; }
-    const look = !data ? want : [want, this.zone, data.ownerRole, JSON.stringify(data.style ?? null), JSON.stringify(data.decor ?? null), JSON.stringify(data.avatar ?? null)].join('|');
+    const look = !data ? want : [want, this.zone, data.ownerRole, JSON.stringify(data.style ?? null), JSON.stringify(data.decor ?? null), JSON.stringify(data.avatar ?? null), isFactory(data) ? machinesOf(data).map((m) => `${m.id}:${m.kind}:${m.name}`).join(',') : ''].join('|');
     if (this.built !== want || this.look !== look) { this.rebuild(want); this.look = look; }
     if (!data) return;
-    const text = data.style?.gateName || (data.mine ? (data.kind === 'rooftop' ? 'Sân thượng nhà' : 'Vườn nhà') : `Vườn ${data.ownerName}`);
+    for (const f of this.fx) { const cur = machinesOf(data).find((m) => m.id === f.m.id); if (cur) f.m = cur; } // cập nhật mẻ đang chạy mà không dựng lại cảnh
+    const text = data.style?.gateName || (isFactory(data) ? (data.mine ? 'Xưởng nhà' : `Xưởng ${data.ownerName}`) : data.mine ? (data.kind === 'rooftop' ? 'Sân thượng nhà' : 'Vườn nhà') : `Vườn ${data.ownerName}`);
     if (text !== this.labelText) {
       if (this.label) this.group.remove(this.label);
       this.label = makeLabel(text, data.mine ? 'gold' : 'paper', data.mine ? 0.92 : 0.8); this.label.position.set(0, 4.25, FENCE.front); this.group.add(this.label); this.labelText = text;
@@ -334,6 +368,17 @@ class Lot {
       m.position.y = 2.7 + Math.sin(t * 3 + tile) * 0.2; m.rotation.y = t * 2.2;
     }
     for (const [tile, m] of this.markers) if (!ready.has(tile)) { this.group.remove(m); this.markers.delete(tile); }
+    for (const [i, f] of this.fx.entries()) { // máy đang chạy rung nhẹ, đèn xanh nhấp nháy, có hơi; mẻ xong đèn vàng và có thùng thành phẩm
+      const state = machineState(f.m, now);
+      if (state !== f.state) { f.state = state; f.lamp.material = LAMP_MATS[state]; f.done.visible = state === 'done'; for (const pf of f.puffs) pf.visible = state === 'run'; if (state !== 'run') f.group.position.set(f.x, 0, f.z); }
+      if (state === 'run') {
+        f.group.position.set(f.x + Math.sin(t * 31 + i) * 0.012, Math.abs(Math.sin(t * 23 + i)) * 0.014, f.z);
+        f.lamp.scale.setScalar(0.13 * (Math.sin(t * 7 + i) > 0 ? 1.25 : 0.8));
+        for (const pf of f.puffs) { const k = (t * 0.45 + pf.userData.k + i * 0.3) % 1, b = pf.userData.base as THREE.Vector3; pf.position.set(b.x + Math.sin(k * 5 + i) * 0.12, b.y + k * 1.5, b.z); pf.scale.setScalar(0.14 + k * 0.3); }
+      } else f.lamp.scale.setScalar(state === 'done' ? 0.15 + Math.sin(t * 4) * 0.02 : 0.13);
+    }
+    if (this.belt) this.belt.position.x = -5.4 + ((t * 0.5) % 1.65);
+    for (const pf of this.smoke) { const k = (t * 0.22 + pf.userData.k) % 1; pf.position.set(1.2 + k * 0.9, 5.4 + k * 2.4, -5.8 - k * 0.3); pf.scale.setScalar(0.22 + k * 0.55); }
     if (this.npc) { this.npc.armR.rotation.z = -2.4 + Math.sin(t * 5) * 0.35; this.npc.root.position.y = Math.abs(Math.sin(t * 2)) * 0.04; }
   }
 }
@@ -717,6 +762,8 @@ export class World {
   /** Cho nhân vật tự chạy tới một ô (dùng cho nút dẫn đường và kiểm thử). */
   goToTile(lot: number, tile: number) { this.walkTo = this.worldOfTile(lot, tile); }
   teleportToTile(lot: number, tile: number) { this.pos.copy(this.worldOfTile(lot, tile)); this.walkTo = null; this.vel.set(0, 0, 0); }
+  /** Đưa nhân vật tới trước trạm máy thứ `index` của xưởng (dùng cho nút dẫn đường và kiểm thử). */
+  teleportToMachine(lot: number, index: number) { const sp = MACHINE_SPOTS[Math.max(0, Math.min(MACHINE_SPOTS.length - 1, index))], w = flip(lot, sp.x, sp.z + 1.5); this.pos.set(w.x, 0, w.z); this.walkTo = null; this.vel.set(0, 0, 0); }
   goHome() { if (this.driving) this.exitTruck(); this.pos.set(0, 0, FENCE.front + 2.5); this.walkTo = null; this.camPos.copy(this.pos); }
   position() { return { x: this.pos.x, z: this.pos.z }; }
 
@@ -812,6 +859,11 @@ export class World {
         const planting = lot.data.plantings.find((p) => p.tile === tile);
         if (planting && now >= planting.stepReadyAt && !this.opts.demo && (this.readyAt.get(planting.id) ?? 0) < t) { this.readyAt.set(planting.id, t + 1.5); this.opts.onReady?.(i, planting); }
       } else if (Math.hypot(l.x - STALL.x, l.z - (STALL.z + 1.6)) < 2.4) ctx = { kind: 'stall', lot: i };
+      if (inside && isFactory(lot.data)) { // đứng cạnh trạm máy gần nhất (hoặc chỗ trống kế tiếp)
+        let best = -1, bd = 2.3;
+        for (let k = 0; k <= lot.fx.length && k < MACHINE_SPOTS.length; k++) { const d = Math.hypot(l.x - MACHINE_SPOTS[k].x, l.z - MACHINE_SPOTS[k].z); if (d < bd) { bd = d; best = k; } }
+        if (best >= 0) ctx = { kind: 'machine', lot: i, index: best, machineId: lot.fx[best]?.m.id ?? null };
+      }
     }
     if (ctx.kind === 'none' && this.truck && !this.driving && this.pos.distanceTo(this.truckPos) < 3) ctx = { kind: 'truck' };
     if (ctx.kind === 'tile') { const p = this.worldOfTile(ctx.lot, ctx.tile); this.ring.visible = true; this.ring.position.set(p.x, 0.17, p.z); this.ring.scale.setScalar(1 + Math.sin(t * 6) * 0.04); } else this.ring.visible = false;

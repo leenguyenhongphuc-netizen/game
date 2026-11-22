@@ -269,4 +269,28 @@ create table if not exists super_buys (
   created_at timestamptz not null default now()
 );
 create index if not exists super_buys_day_idx on super_buys (province, created_at);
+alter table users add column if not exists xp int not null default 0;
+alter table users add column if not exists energy int not null default 100;
+alter table users add column if not exists energy_at timestamptz not null default now();
+alter table sight_visits add column if not exists stop_at jsonb not null default '{}';
+alter table plots add column if not exists price_paid bigint;
+alter table plots add column if not exists fees_paid bigint;
+create table if not exists user_items (
+  user_id bigint not null references users(id) on delete cascade,
+  item_id text not null,
+  qty int not null check (qty >= 0),
+  primary key (user_id, item_id)
+);
+create table if not exists machines (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  kind text not null,
+  level int not null default 1,
+  created_at timestamptz not null default now()
+);
+create index if not exists machines_user_idx on machines (user_id, id);
+alter table process_jobs add column if not exists machine_id bigint;
+alter table super_shelves add column if not exists processed boolean not null default false;
+alter table super_buys add column if not exists processed boolean not null default false;
+alter table export_shipments add column if not exists processed boolean not null default false;
 `;

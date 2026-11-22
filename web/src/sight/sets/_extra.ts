@@ -90,3 +90,5 @@ export function basket(fill: number, s = 1): THREE.Group { return grp(0, 0, 0, 0
 /** Chim bồ câu trắng. */
 export function pigeon(c = 0xffffff): THREE.Group { return grp(0, 0, 0, 0, ball(c, 0, 0.16, 0, 0.12, 0.12, 0.2), bead(c, 0, 0.3, -0.14, 0.08), cone(0xf2a020, 0, 0.3, -0.24, 0.02, 0.07).rotateX(-Math.PI / 2)); }
 export { V, bead, cone };
+/** Gộp một nhóm động thành ít lần vẽ nhưng vẫn giữ vị trí để di chuyển cả nhóm. */
+export function baked(g: THREE.Group): THREE.Object3D { const p = g.position.clone(), ry = g.rotation.y; g.position.set(0, 0, 0); g.rotation.y = 0; const b = bake(g); b.position.copy(p); b.rotation.y = ry; return b; }

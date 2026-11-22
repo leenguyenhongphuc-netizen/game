@@ -20,11 +20,16 @@ import {
   exportModesFor, exportQuote, coopOrderRoute, LIMIT_REASONS, TRAVEL_VS_TRUCK, haversineKm, taxiFare,
   SIGHT_MIN_KM, SIGHT_REWARD, SIGHT_TAXI_SECONDS, SUPER_DAILY_KG, SUPER_FEE, SUPER_MAX_LOTS, SUPER_MAX_LOT_KG, SUPER_MIN_KG,
   SUPER_NPC_GUESTS, SUPER_NPC_KG, SUPER_NPC_RATIO, superPriceRange,
+  ENERGY_COST, ENERGY_REGEN_MINUTES, LEVELS, XP, energyAt, levelOf, levelPerks, tripEnergy, LAND_CERT_NAME, landFees,
+  MACHINES, MACHINE_MAX_LEVEL, WORKSHOP_MAX_MACHINES, WORKSHOP_MAX_PER_KIND, WORKSHOP_RUN_FEE_PER_KG, machineStats, machineUpgradeCost, machinesForRecipe, starterMachine,
+  exportDiscount, exportMaxActive,
 } from '../../shared/rules.ts';
-import type { ExportMarket, ExportMode, MarketDay, MarketEvent, PriceMods, Quality, Role, Weather } from '../../shared/rules.ts';
+import type { ExportMarket, ExportMode, MachineKind, MarketDay, MarketEvent, PriceMods, Quality, Role, Weather } from '../../shared/rules.ts';
+import { HOME_SHOP_ITEMS, ITEMS, ITEM_BAG_MAX, SHOP_KINDS, regionalItems } from '../../shared/items.ts';
+import type { ShopKind } from '../../shared/items.ts';
 import { DECOR_ITEMS, HOUSE_TYPES, validAvatar, validDecor, validStyle } from '../../shared/custom.ts';
 import type { DecorPlacement, PlotStyle } from '../../shared/custom.ts';
-import { SIGHT_PROVINCES, sight as findSight, sightsOfProvince } from '../../shared/sights.ts';
+import { SIGHTS, SIGHT_PROVINCES, sight as findSight, sightsOfProvince } from '../../shared/sights.ts';
 import type { Db, Q } from './db.ts';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
@@ -167,6 +172,36 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     await q.query('update users set cash = cash + $2 where id = $1', [userId, delta]);
     await q.query('insert into ledger (user_id, delta, reason) values ($1,$2,$3)', [userId, delta, reason]);
   }
+  /** Cộng điểm kinh nghiệm; trả về cấp sau khi cộng và có lên cấp không. */
+  async function addXp(q: Q, userId: number, n: number) {
+    const { rows } = await q.query('update users set xp = xp + $2 where id = $1 returning xp', [userId, n]);
+    const after = levelOf(rows[0].xp), before = levelOf(rows[0].xp - n);
+    return { xpGained: n, xp: after.xp, level: after.level, title: after.title, levelUp: after.level > before.level };
+  }
+  const regenMs = (ENERGY_REGEN_MINUTES * 60_000) / timeScale;
+  /** Thể lực hiện có (đã cộng phần hồi theo thời gian) và mốc tính hồi tiếp theo. */
+  async function energyState(q: Q, userId: number, lock = false) {
+    const { rows } = await q.query(`select xp, energy, energy_at from users where id = $1${lock ? ' for update' : ''}`, [userId]);
+    const now = Date.now(), atMs = new Date(rows[0].energy_at).getTime();
+    const max = levelPerks(levelOf(rows[0].xp).level).energyMax;
+    const cur = energyAt(rows[0].energy, atMs, now, max, timeScale);
+    // mốc mới: giữ lại phần thời gian lẻ đã trôi để không mất công hồi dở
+    const baseMs = cur >= max ? now : Math.min(now, atMs + Math.max(0, cur - Math.max(0, rows[0].energy)) * regenMs);
+    return { cur, max, baseMs, now };
+  }
+  type Energy = Awaited<ReturnType<typeof energyState>>;
+  const energyOut = (e: Energy, cur = e.cur) => ({ energy: cur, energyMax: e.max, energyFullAt: cur >= e.max ? null : Math.round(e.baseMs + (e.max - cur) * regenMs) });
+  async function setEnergy(q: Q, userId: number, e: Energy, value: number) {
+    const v = Math.max(0, Math.min(e.max, Math.round(value)));
+    await q.query('update users set energy = $2, energy_at = $3 where id = $1', [userId, v, new Date(v >= e.max ? e.now : e.baseMs)]);
+    return energyOut(e, v);
+  }
+  /** Trừ thể lực cho một việc tốn sức; không đủ thì từ chối với lời gợi ý ăn uống, nghỉ ngơi. */
+  async function spendEnergy(q: Q, userId: number, cost: number, what: string) {
+    const e = await energyState(q, userId, true);
+    if (e.cur < cost) throw bad('het_suc', `Bạn đã hết sức để ${what} (cần ${cost} thể lực, đang có ${e.cur}). Hãy ăn uống ở tiệm tạp hoá hay quầy hàng, hoặc nghỉ một lúc cho hồi sức.`, 409);
+    return setEnergy(q, userId, e, e.cur - cost);
+  }
   async function addInventory(q: Q, userId: number, specialtyId: string, ql: Quality, kg: number) {
     await q.query(
       `insert into inventory (user_id, specialty_id, quality, kg) values ($1,$2,$3,$4)
@@ -285,13 +320,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const userId = await requireUser(req);
     const walkin = await db.tx((q) => settleWalkIns(q, userId, Date.now()));
     const exportPaid = await db.tx((q) => settleExports(q, userId));
-    const [u, plots, inv, coop] = await Promise.all([
-      db.query('select id, username, display_name, cash, home_region_id, role, role_assigned_at, truck_region, tour_region, avatar, harvests, is_tester, fuel_l, etc, (select count(*)::int from sight_visits sv where sv.user_id = users.id and sv.done_at is not null) as sights_done from users where id = $1', [userId]),
+    const [u, plots, inv, coop, bag, en] = await Promise.all([
+      db.query('select id, username, display_name, cash, home_region_id, role, role_assigned_at, truck_region, tour_region, avatar, harvests, is_tester, fuel_l, etc, xp, (select count(*)::int from sight_visits sv where sv.user_id = users.id and sv.done_at is not null) as sights_done from users where id = $1', [userId]),
       db.query('select id, region_id, is_home, kind, ward_name from plots where user_id = $1 order by is_home desc, id', [userId]),
       db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]),
       db.query('select coop_id from coop_members where user_id = $1', [userId]),
+      db.query('select item_id, qty from user_items where user_id = $1 and qty > 0 order by item_id', [userId]),
+      energyState(db, userId),
     ]);
-    const user = u.rows[0];
+    const user = u.rows[0], lv = levelOf(user.xp);
     return {
       user: {
         id: user.id, username: user.username, displayName: user.display_name, cash: user.cash, homeRegionId: user.home_region_id,
@@ -299,7 +336,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         roleNextSpinAt: user.role && user.role_assigned_at ? new Date(user.role_assigned_at).getTime() + SEASON_MS : null,
         truckRegionId: user.truck_region ?? user.home_region_id ?? null, fuelL: Number(user.fuel_l), etc: user.etc, avatar: avatarOut(user.avatar),
         harvests: user.harvests, tester: !!user.is_tester, tourRegionId: user.tour_region ?? null, sightsDone: user.sights_done,
+        xp: lv.xp, level: lv.level, title: lv.title, nextXp: lv.nextXp, prevXp: lv.prevXp, ...energyOut(en),
       },
+      items: bag.rows.filter((r) => ITEMS[r.item_id]).map((r) => ({ itemId: r.item_id, qty: r.qty })),
       plots: plots.rows.map((p) => ({ id: p.id, regionId: p.region_id, isHome: p.is_home, kind: p.kind, wardName: p.ward_name })),
       inventory: inv.rows.map((i) => ({ specialtyId: i.specialty_id, quality: i.quality, kg: i.kg })),
       config: { timeScale, now: Date.now(), pace: paceOf(user.harvests) },
@@ -390,6 +429,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const role = pickRole(weights);
       if (!ROLES.includes(role)) throw new Error('pickRole trả về vai trò không hợp lệ');
       await q.query('update users set role = $2, role_assigned_at = $3, truck_region = home_region_id where id = $1', [userId, role, new Date(now)]);
+      await ensureStarter(q, userId);
       return { role, weights, nextSpinAt: now + SEASON_MS };
     });
   });
@@ -401,15 +441,18 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return db.tx(async (q) => {
       const { rows } = await q.query('select cash, home_region_id from users where id = $1 for update', [userId]);
       if (!rows[0].home_region_id) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
-      const price = landPrice(r.id);
-      if (rows[0].cash < price) throw bad('khong_du_tien', 'Bạn chưa đủ tiền mua đất.', 409);
+      const price = landPrice(r.id), fees = landFees(price);
+      if (rows[0].cash < price + fees.total) throw bad('khong_du_tien', `Bạn chưa đủ tiền mua đất (giá đất cộng lệ phí trước bạ và phí cấp giấy là ${(price + fees.total).toLocaleString('vi-VN')}đ).`, 409);
       const cell = snapCell(r.lat, r.lng);
       const plot = await q.query(
-        `insert into plots (user_id, region_id, cell_lat, cell_lng) values ($1,$2,$3,$4)
-         on conflict (user_id, region_id) do nothing returning id`, [userId, r.id, cell.lat, cell.lng]);
+        `insert into plots (user_id, region_id, cell_lat, cell_lng, price_paid, fees_paid) values ($1,$2,$3,$4,$5,$6)
+         on conflict (user_id, region_id) do nothing returning id`, [userId, r.id, cell.lat, cell.lng, price, fees.total]);
       if (!plot.rows[0]) throw bad('da_co_dat', 'Bạn đã có đất ở vùng này.', 409);
       await addCash(q, userId, -price, `mua_dat:${r.id}`);
-      return { plotId: plot.rows[0].id, price };
+      await addCash(q, userId, -fees.registration, `le_phi_truoc_ba:${r.id}`);
+      await addCash(q, userId, -fees.certificate, `phi_cap_giay:${r.id}`);
+      const xp = await addXp(q, userId, XP.land);
+      return { plotId: plot.rows[0].id, price, fees, total: price + fees.total, certificateNo: certNo(Number(plot.rows[0].id), r.id), ...xp };
     });
   });
 
@@ -421,11 +464,14 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
        from plots p join users u on u.id = p.user_id where p.id = $1`, [plotId]);
     const p = rows[0];
     if (!p) throw bad('khong_tim_thay', 'Không tìm thấy lô đất.', 404);
-    const [tiles, stall] = await Promise.all([
+    if (p.owner_role === 'xuong' && p.is_home) await db.tx((q) => ensureStarter(q, Number(p.user_id)));
+    const [tiles, stall, mach] = await Promise.all([
       db.query('select id, tile, specialty_id, step_index, step_ready_at, late_count from plantings where plot_id = $1 order by tile', [plotId]),
       db.query(`select id, specialty_id, quality, kg, price from listings where seller_id = $1 and status = 'open' order by id desc limit 50`, [p.user_id]),
+      p.owner_role === 'xuong' && p.is_home ? machinesOf(db, Number(p.user_id)) : Promise.resolve(null),
     ]);
     return {
+      ...(mach ? { factory: { machines: mach.map((m) => ({ id: m.id, kind: m.kind, name: m.name, emoji: m.emoji, level: m.level, slots: m.slots, busy: m.jobs.length, support: m.support })) } } : {}),
       plot: {
         id: p.id, regionId: p.region_id, isHome: p.is_home, kind: p.kind, wardName: p.ward_name, wardProvince: p.ward_province, ownerName: p.display_name, mine: p.user_id === userId,
         ownerRole: p.owner_role ?? null, style: styleOut(p.style), decor: decorOut(p.decor), ownerAvatar: avatarOut(p.owner_avatar),
@@ -437,6 +483,34 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       })),
       stall: stall.rows.map((l) => ({ id: l.id, specialtyId: l.specialty_id, quality: l.quality, kg: l.kg, price: l.price })),
       now: Date.now(),
+    };
+  });
+
+  /** Số vào sổ cấp giấy chứng nhận: ổn định theo mã thửa. */
+  const certNo = (plotId: number, regionId: string) => `CN ${String(plotId).padStart(6, '0')}/${regionId.split('_')[0].toUpperCase()}`;
+  app.get('/api/plots/:id/certificate', async (req) => {
+    const userId = await requireUser(req);
+    const plotId = idParam((req.params as any).id);
+    const { rows } = await db.query(
+      `select p.id, p.user_id, p.region_id, p.is_home, p.kind, p.ward_name, p.ward_province, p.created_at, p.price_paid, p.fees_paid, u.display_name, u.role
+       from plots p join users u on u.id = p.user_id where p.id = $1 and p.user_id = $2`, [plotId, userId]);
+    const p = rows[0];
+    if (!p) throw bad('khong_tim_thay', 'Không tìm thấy lô đất của bạn.', 404);
+    const r = REGIONS[p.region_id];
+    const factory = p.is_home && p.role === 'xuong', rooftop = p.kind === 'rooftop';
+    const perennial = specialtiesOfRegion(p.region_id).some((sp) => ['trai', 'cn'].includes(CROPS[sp.crop].kind));
+    const price = p.is_home ? 0 : Number(p.price_paid ?? landPrice(p.region_id));
+    const fees = p.is_home ? { registration: 0, certificate: 0, total: 0 } : landFees(price);
+    return {
+      title: LAND_CERT_NAME, no: certNo(Number(p.id), p.region_id), plotId: Number(p.id), owner: p.display_name,
+      province: p.ward_province ?? r.province, ward: p.ward_name ?? null, regionId: p.region_id, regionName: r.name,
+      tiles: rooftop ? 12 : TILE_COUNT, areaM2: (rooftop ? 12 : TILE_COUNT) * 25,
+      purpose: factory ? 'Đất cơ sở sản xuất phi nông nghiệp' : rooftop ? 'Đất ở tại đô thị (vườn sân thượng)' : perennial ? 'Đất trồng cây lâu năm' : 'Đất trồng cây hằng năm',
+      term: rooftop ? 'Lâu dài' : '50 năm', expiresAt: rooftop ? null : new Date(p.created_at).getTime() + 50 * 365.25 * DAY_MS,
+      issuedAt: new Date(p.created_at).getTime(),
+      origin: p.is_home ? 'Nhà nước giao đất không thu tiền sử dụng đất' : 'Nhận chuyển nhượng quyền sử dụng đất',
+      price, fees, issuer: `Văn phòng đăng ký đất đai ${r.province}`,
+      note: 'Theo Luật Đất đai 2024: đất nông nghiệp giao cho cá nhân có thời hạn 50 năm, hết hạn được tiếp tục sử dụng. Trong game đã đơn giản hoá: không có hạn mức, thuế sử dụng đất hay thủ tục công chứng.',
     };
   });
 
@@ -465,6 +539,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const p = await q.query('select region_id, kind from plots where id = $1 and user_id = $2', [plotId, userId]);
       if (!p.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy lô đất của bạn.', 404);
       if (!u.rows[0].role) throw bad('chua_co_vai', 'Hãy quay vòng quay để nhận vai trò trước khi trồng.', 409);
+      if (u.rows[0].role === 'xuong') throw bad('xuong_khong_trong', 'Chủ xưởng không trồng trọt: lô đất của bạn là nhà xưởng. Hãy mua nông sản ở sạp, chợ hoặc siêu thị về chế biến.', 409);
       if (!allowedTiles(p.rows[0].kind, u.rows[0].role).includes(tile)) {
         throw bad('o_bi_khoa', u.rows[0].role === 'nong_dan' ? 'Vườn sân thượng chỉ trồng được 12 ô ở giữa.' : 'Vai trò của bạn chỉ có vườn nhỏ 8 ô ở giữa.', 409);
       }
@@ -476,8 +551,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         `insert into plantings (plot_id, tile, specialty_id, step_index, step_ready_at) values ($1,$2,$3,1,$4)
          on conflict (plot_id, tile) do nothing returning id`, [plotId, tile, sp.id, ready]);
       if (!ins.rows[0]) throw bad('o_da_trong', 'Ô đất này đang có cây.', 409);
+      const en = await spendEnergy(q, userId, ENERGY_COST.plant, 'trồng cây');
       await addCash(q, userId, -cost, `giong:${sp.id}`);
-      return { plantingId: ins.rows[0].id, cost };
+      return { plantingId: ins.rows[0].id, cost, ...en };
     });
   });
 
@@ -497,17 +573,20 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (now < readyAt) throw bad('chua_den_luc', 'Chưa đến lúc làm bước này.', 409);
       const late = g.late_count + (now > readyAt + lateGraceMs ? 1 : 0);
       if (g.step_index >= stepCount(sp) - 1) {
+        const en = await spendEnergy(q, userId, ENERGY_COST.harvest, 'thu hoạch');
         const ql = qualityFromLate(late);
         const h = harvestKg(sp.crop, now);
         await q.query('delete from plantings where id = $1', [plantingId]);
         await addInventory(q, userId, sp.id, ql, h.kg);
         await collect(q, userId, sp.id);
         await q.query('update users set harvests = harvests + 1 where id = $1', [userId]);
-        return { harvested: { specialtyId: sp.id, quality: ql, kg: h.kg, inSeason: h.inSeason } };
+        const xp = await addXp(q, userId, XP.harvest);
+        return { harvested: { specialtyId: sp.id, quality: ql, kg: h.kg, inSeason: h.inSeason }, ...en, ...xp };
       }
+      const en = await spendEnergy(q, userId, ENERGY_COST.care, 'chăm cây');
       const next = new Date(now + waitMs(sp, g.region_id, now, g.harvests));
       await q.query('update plantings set step_index = step_index + 1, step_ready_at = $2, late_count = $3 where id = $1', [plantingId, next, late]);
-      return { stepIndex: g.step_index + 1, stepReadyAt: next.getTime(), lateCount: late };
+      return { stepIndex: g.step_index + 1, stepReadyAt: next.getTime(), lateCount: late, ...en };
     });
   });
 
@@ -536,6 +615,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const used = await q.query(
         `select count(*)::int as n from ledger where user_id = $1 and reason like 'cham_giup:%' and created_at >= date_trunc('day', now())`, [userId]);
       if (used.rows[0].n >= HELP_DAILY_LIMIT) throw bad('het_luot', `Hôm nay bạn đã chăm giúp đủ ${HELP_DAILY_LIMIT} lượt.`, 409);
+      await spendEnergy(q, userId, ENERGY_COST.help, 'chăm giúp');
+      await addXp(q, userId, XP.help);
       const late = g.late_count + (now > readyAt + lateGraceMs ? 1 : 0);
       if (isHarvest) {
         // Phụ thu hoạch: chủ vườn nhận phần lớn, người phụ được chia một phần làm quà vườn.
@@ -1043,7 +1124,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await q.query('insert into visits (user_id, region_id) values ($1,$2) on conflict do nothing', [userId, r.id]);
       await addCash(q, userId, -option.fare, `ve:${option.mode}:${r.id}`);
       await q.query('update users set tour_region = $2 where id = $1', [userId, r.id]);
-      return { cost: option.fare, isNew: !been.owns && !been.visited, mode: option.mode };
+      const isNew = !been.owns && !been.visited;
+      const xp = isNew ? await addXp(q, userId, XP.region) : null;
+      return { cost: option.fare, isNew, mode: option.mode, ...(xp ?? {}) };
     });
   });
   /** Về nhà sau chuyến tham quan bằng vé: người chơi không còn "đang ở" vùng kia nữa. */
@@ -1133,20 +1216,123 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   // ---------------------------------------------------------------- xưởng chế biến
-  const slotsOf = (role: string | null) => (role === 'xuong' ? PROCESS_SLOTS_XUONG : 0);
+  /** Tên thành phẩm: đặc sản kèm cách chế biến. */
+  const productName = (specialtyId: string) => `${SPECIALTIES[specialtyId].name} (${recipeOf(CROPS[SPECIALTIES[specialtyId].crop]).name.toLowerCase()})`;
+  /** Giá tham chiếu một kg thành phẩm = giá nông sản hiện hành × hệ số giá trị của công thức. */
+  const productRef = async (q: Q, specialtyId: string) => Math.round(((await currentPrice(q, specialtyId)) * recipeOf(CROPS[SPECIALTIES[specialtyId].crop]).value) / 100) * 100;
+  const isMachine = (k: unknown): k is MachineKind => typeof k === 'string' && Object.hasOwn(MACHINES, k);
+  /** Xưởng mới (hoặc xưởng có từ trước khi có máy) được cấp sẵn một máy hợp với đặc sản vùng nhà. */
+  async function ensureStarter(q: Q, userId: number) {
+    const u = await q.query('select role, home_region_id from users where id = $1 for update', [userId]);
+    if (u.rows[0]?.role !== 'xuong' || !u.rows[0].home_region_id) return;
+    const has = await q.query('select 1 from machines where user_id = $1 limit 1', [userId]);
+    if (!has.rows[0]) await q.query('insert into machines (user_id, kind) values ($1,$2)', [userId, starterMachine(u.rows[0].home_region_id)]);
+  }
+  /** Các máy của một xưởng kèm mẻ đang chạy trên từng máy. Mẻ cũ chưa gắn máy được xếp vào máy chế biến đầu tiên. */
+  async function machinesOf(q: Q, userId: number) {
+    const [m, j] = await Promise.all([
+      q.query('select id, kind, level from machines where user_id = $1 order by id', [userId]),
+      q.query('select id, machine_id, specialty_id, kg_in, kg_out, ready_at from process_jobs where user_id = $1 order by id', [userId]),
+    ]);
+    const list = m.rows.filter((r) => isMachine(r.kind)).map((r) => {
+      const kind = r.kind as MachineKind, info = MACHINES[kind], st = machineStats(kind, r.level);
+      return { id: Number(r.id), kind, name: info.name, emoji: info.emoji, level: r.level as number, slots: st.slots, time: st.time, recipes: info.recipes, support: info.slots === 0,
+        bonus: info.bonus ?? null, upgradeCost: r.level < MACHINE_MAX_LEVEL ? machineUpgradeCost(kind, r.level) : null, jobs: [] as ReturnType<typeof jobOut>[] };
+    });
+    const orphan: ReturnType<typeof jobOut>[] = [];
+    for (const r of j.rows) {
+      if (!SPECIALTIES[r.specialty_id]) continue;
+      const host = list.find((x) => x.id === Number(r.machine_id));
+      (host ? host.jobs : orphan).push(jobOut(r));
+    }
+    return Object.assign(list, { orphan });
+  }
+  const jobOut = (j: any) => ({ id: Number(j.id), machineId: j.machine_id === null || j.machine_id === undefined ? null : Number(j.machine_id), specialtyId: j.specialty_id as string,
+    recipeId: recipeOf(CROPS[SPECIALTIES[j.specialty_id].crop]).id, kgIn: j.kg_in as number, kgOut: j.kg_out as number, readyAt: new Date(j.ready_at).getTime() });
+  /** Cộng dồn tác dụng của các máy phụ trợ (mỗi loại chỉ tính một lần). */
+  function workshopBonus(machines: { kind: MachineKind }[]) {
+    const kinds = new Set(machines.map((m) => m.kind));
+    let y = 0, v = 0, g = 0;
+    for (const k of kinds) { const bn = MACHINES[k].bonus; if (bn) { y += bn.yield ?? 0; v += bn.value ?? 0; g = Math.max(g, bn.grade ?? 0); } }
+    return { yield: y, value: v, grade: g };
+  }
+  const valueBonusOf = async (q: Q, userId: number) => workshopBonus((await q.query('select kind from machines where user_id = $1', [userId])).rows.filter((r) => isMachine(r.kind)) as { kind: MachineKind }[]).value;
+  const RECIPE_LIST = [...new Map(Object.values(CROPS).map((c) => [recipeOf(c).id, recipeOf(c)])).values()];
 
   app.get('/api/workshop', async (req) => {
     const userId = await requireUser(req);
-    const [u, jobs, products] = await Promise.all([
-      db.query('select role from users where id = $1', [userId]),
-      db.query('select id, specialty_id, kg_in, kg_out, ready_at from process_jobs where user_id = $1 order by id', [userId]),
+    await db.tx((q) => ensureStarter(q, userId));
+    const [u, machines, products, inv] = await Promise.all([
+      db.query('select role, cash from users where id = $1', [userId]),
+      machinesOf(db, userId),
       db.query('select specialty_id, kg from products where user_id = $1 and kg > 0 order by specialty_id', [userId]),
+      db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]),
     ]);
+    const isXuong = u.rows[0].role === 'xuong';
+    const bonus = workshopBonus(machines);
+    const jobs = [...machines.flatMap((m) => m.jobs), ...machines.orphan].sort((x, y) => x.id - y.id);
+    const outProducts = [];
+    for (const p of products.rows) {
+      if (!SPECIALTIES[p.specialty_id]) continue;
+      const r = recipeOf(CROPS[SPECIALTIES[p.specialty_id].crop]);
+      outProducts.push({ specialtyId: p.specialty_id as string, kg: p.kg as number, name: productName(p.specialty_id), recipeId: r.id, refPrice: await productRef(db, p.specialty_id) });
+    }
+    const count = (k: MachineKind) => machines.filter((m) => m.kind === k).length;
     return {
-      slots: slotsOf(u.rows[0].role),
-      jobs: jobs.rows.filter((j) => SPECIALTIES[j.specialty_id]).map((j) => ({ id: j.id, specialtyId: j.specialty_id, kgIn: j.kg_in, kgOut: j.kg_out, readyAt: new Date(j.ready_at).getTime() })),
-      products: products.rows.filter((p) => SPECIALTIES[p.specialty_id]).map((p) => ({ specialtyId: p.specialty_id, kg: p.kg })),
+      slots: isXuong ? machines.reduce((sum, m) => sum + m.slots, 0) : 0,
+      jobs,
+      products: outProducts.map((p) => ({ specialtyId: p.specialtyId, kg: p.kg })),
+      productInfo: outProducts,
+      isWorkshop: isXuong,
+      machines: isXuong ? machines.map((m) => ({ ...m })) : [],
+      catalog: (Object.keys(MACHINES) as MachineKind[]).map((kind) => ({ kind, ...MACHINES[kind], owned: count(kind),
+        canBuy: isXuong && machines.length < WORKSHOP_MAX_MACHINES && count(kind) < (MACHINES[kind].slots ? WORKSHOP_MAX_PER_KIND : 1) && Number(u.rows[0].cash) >= MACHINES[kind].price })),
+      recipes: RECIPE_LIST.map((r) => ({ ...r, machines: machinesForRecipe(r.id) })),
+      stock: inv.rows.filter((i) => SPECIALTIES[i.specialty_id]).map((i) => {
+        const r = recipeOf(CROPS[SPECIALTIES[i.specialty_id].crop]), kinds = machinesForRecipe(r.id);
+        return { specialtyId: i.specialty_id as string, quality: i.quality as Quality, kg: i.kg as number, recipeId: r.id, machineKinds: kinds, canProcess: isXuong && machines.some((m) => kinds.includes(m.kind)) };
+      }),
+      bonus, runFeePerKg: WORKSHOP_RUN_FEE_PER_KG, energyCost: ENERGY_COST.process, maxMachines: WORKSHOP_MAX_MACHINES, maxPerKind: WORKSHOP_MAX_PER_KIND, maxLevel: MACHINE_MAX_LEVEL,
+      limits: { machines: LIMIT_REASONS.workshop_machines, tiles: LIMIT_REASONS.tiles_xuong },
     };
+  });
+
+  app.post('/api/workshop/machines/buy', async (req) => {
+    const userId = await requireUser(req);
+    const kind = ((req.body ?? {}) as Record<string, unknown>).kind;
+    if (!isMachine(kind)) throw bad('du_lieu_sai', 'Loại máy không tồn tại.');
+    return db.tx(async (q) => {
+      await ensureStarter(q, userId);
+      const u = await q.query('select role, cash from users where id = $1 for update', [userId]);
+      if (u.rows[0].role !== 'xuong') throw bad('chi_chu_xuong', 'Chỉ chủ xưởng mới mua máy chế biến được.', 403);
+      const have = await q.query('select kind from machines where user_id = $1', [userId]);
+      if (have.rows.length >= WORKSHOP_MAX_MACHINES) throw bad('het_cho_may', `Nhà xưởng chỉ đặt được ${WORKSHOP_MAX_MACHINES} máy.`, 409);
+      const cap = MACHINES[kind].slots ? WORKSHOP_MAX_PER_KIND : 1;
+      if (have.rows.filter((r) => r.kind === kind).length >= cap) throw bad('du_may', MACHINES[kind].slots ? `Mỗi loại máy chế biến chỉ đặt được ${cap} cái; hãy nâng cấp máy đang có.` : 'Máy phụ trợ chỉ cần một cái.', 409);
+      if (Number(u.rows[0].cash) < MACHINES[kind].price) throw bad('khong_du_tien', 'Bạn không đủ tiền mua máy.', 409);
+      await addCash(q, userId, -MACHINES[kind].price, `mua_may:${kind}`);
+      const ins = await q.query('insert into machines (user_id, kind) values ($1,$2) returning id', [userId, kind]);
+      return { ok: true, machineId: Number(ins.rows[0].id), kind, price: MACHINES[kind].price, cash: Number(u.rows[0].cash) - MACHINES[kind].price };
+    });
+  });
+
+  app.post('/api/workshop/machines/:id/upgrade', async (req) => {
+    const userId = await requireUser(req);
+    const id = idParam((req.params as any).id);
+    return db.tx(async (q) => {
+      const u = await q.query('select role, cash from users where id = $1 for update', [userId]);
+      if (u.rows[0].role !== 'xuong') throw bad('chi_chu_xuong', 'Chỉ chủ xưởng mới nâng cấp máy được.', 403);
+      const m = await q.query('select kind, level from machines where id = $1 and user_id = $2 for update', [id, userId]);
+      if (!m.rows[0] || !isMachine(m.rows[0].kind)) throw bad('khong_tim_thay', 'Không tìm thấy máy.', 404);
+      const kind = m.rows[0].kind as MachineKind;
+      if (!MACHINES[kind].slots) throw bad('khong_nang_duoc', 'Máy phụ trợ không có cấp nâng.', 409);
+      if (m.rows[0].level >= MACHINE_MAX_LEVEL) throw bad('cap_toi_da', 'Máy đã ở cấp cao nhất.', 409);
+      const cost = machineUpgradeCost(kind, m.rows[0].level);
+      if (Number(u.rows[0].cash) < cost) throw bad('khong_du_tien', 'Bạn không đủ tiền nâng cấp máy.', 409);
+      await addCash(q, userId, -cost, `nang_may:${kind}`);
+      await q.query('update machines set level = level + 1 where id = $1', [id]);
+      return { ok: true, machineId: id, level: m.rows[0].level + 1, cost, ...machineStats(kind, m.rows[0].level + 1), cash: Number(u.rows[0].cash) - cost };
+    });
   });
 
   app.post('/api/workshop/start', async (req) => {
@@ -1154,23 +1340,40 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const b = (req.body ?? {}) as Record<string, unknown>;
     const sp = findSpecialty(String(b.specialtyId ?? ''));
     if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
-    const ql = quality(b.quality);
+    const ql = quality(b.quality ?? b.grade);
     const kg = int(b.kg, 1, 1_000_000, 'kg');
     return db.tx(async (q) => {
-      const u = await q.query('select role from users where id = $1 for update', [userId]);
+      await ensureStarter(q, userId);
+      const u = await q.query('select role, cash from users where id = $1 for update', [userId]);
       if (u.rows[0].role !== 'xuong') throw bad('chi_chu_xuong', 'Chỉ chủ xưởng mới chế biến được. Hãy bán nông sản cho chủ xưởng qua sạp.', 403);
-      const running = await q.query('select count(*)::int as n from process_jobs where user_id = $1', [userId]);
-      if (running.rows[0].n >= slotsOf(u.rows[0].role)) throw bad('het_cho', 'Xưởng đã kín dây chuyền, hãy nhận hàng xong rồi làm mẻ mới.', 409);
-      await takeInventory(q, userId, sp.id, ql, kg);
       const recipe = recipeOf(CROPS[sp.crop]);
+      const machines = await machinesOf(q, userId);
+      const able = machines.filter((m) => m.recipes.includes(recipe.id));
+      if (!able.length) throw bad('thieu_may', `Xưởng chưa có máy làm "${recipe.name}". Cần mua ${machinesForRecipe(recipe.id).map((k) => MACHINES[k].name).join(' hoặc ')}.`, 409);
+      let host = able.find((m) => m.jobs.length < m.slots);
+      if (b.machineId !== undefined && b.machineId !== null) {
+        const want = machines.find((m) => m.id === idParam(b.machineId));
+        if (!want) throw bad('khong_tim_thay', 'Không tìm thấy máy.', 404);
+        if (!want.recipes.includes(recipe.id)) throw bad('may_khong_hop', `${want.name} không làm được "${recipe.name}".`, 409);
+        host = want.jobs.length < want.slots ? want : undefined;
+      }
+      if (!host) throw bad('het_cho', 'Máy đã kín mẻ, hãy nhận hàng xong rồi làm mẻ mới (hoặc nâng cấp, mua thêm máy).', 409);
+      const bonus = workshopBonus(machines);
+      // hàng loại thấp ra ít thành phẩm hơn; có kho lạnh thì thiệt ít đi
+      const gradeMult = 1 - (1 - QUALITY_MULT[ql]) * (1 - bonus.grade);
       // Làm tròn xuống để chia nhỏ mẻ không được lợi; mẻ quá ít thì từ chối.
-      const kgOut = Math.floor(kg * recipe.ratio * QUALITY_MULT[ql] + 1e-9);
-      if (kgOut < 1) throw bad('qua_it', `Cần ít nhất ${Math.ceil(1 / (recipe.ratio * QUALITY_MULT[ql]))} kg để chế biến một mẻ.`, 409);
-      const ms = (recipe.hours * 3600_000) / timeScale;
+      const kgOut = Math.floor(kg * recipe.ratio * gradeMult * (1 + bonus.yield) + 1e-9);
+      if (kgOut < 1) throw bad('qua_it', `Cần ít nhất ${Math.ceil(1 / (recipe.ratio * gradeMult * (1 + bonus.yield)))} kg để chế biến một mẻ.`, 409);
+      const fee = WORKSHOP_RUN_FEE_PER_KG * kg;
+      if (Number(u.rows[0].cash) < fee) throw bad('khong_du_tien', 'Bạn không đủ tiền điện và bảo trì cho mẻ này.', 409);
+      await takeInventory(q, userId, sp.id, ql, kg);
+      const en = await spendEnergy(q, userId, ENERGY_COST.process, 'đứng máy');
+      await addCash(q, userId, -fee, `dien_bao_tri:${sp.id}`);
+      const ms = ((recipe.hours * 3600_000) / timeScale) * host.time;
       const readyAt = new Date(Date.now() + Math.round(ms));
       const ins = await q.query(
-        'insert into process_jobs (user_id, specialty_id, kg_in, kg_out, ready_at) values ($1,$2,$3,$4,$5) returning id', [userId, sp.id, kg, kgOut, readyAt]);
-      return { jobId: ins.rows[0].id, kgOut, readyAt: readyAt.getTime() };
+        'insert into process_jobs (user_id, specialty_id, kg_in, kg_out, ready_at, machine_id) values ($1,$2,$3,$4,$5,$6) returning id', [userId, sp.id, kg, kgOut, readyAt, host.id]);
+      return { jobId: ins.rows[0].id, machineId: host.id, recipeId: recipe.id, kgOut, fee, readyAt: readyAt.getTime(), ...en };
     });
   });
 
@@ -1183,10 +1386,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (!j) throw bad('khong_tim_thay', 'Không tìm thấy mẻ hàng.', 404);
       if (Date.now() < new Date(j.ready_at).getTime()) throw bad('chua_xong', 'Mẻ hàng chưa chế biến xong.', 409);
       await q.query('delete from process_jobs where id = $1', [jobId]);
-      await q.query(
-        `insert into products (user_id, specialty_id, kg) values ($1,$2,$3)
-         on conflict (user_id, specialty_id) do update set kg = products.kg + excluded.kg`, [userId, j.specialty_id, j.kg_out]);
-      return { specialtyId: j.specialty_id, kg: j.kg_out };
+      await addProduct(q, userId, j.specialty_id, j.kg_out);
+      const xp = await addXp(q, userId, XP.process);
+      return { specialtyId: j.specialty_id, kg: j.kg_out, name: productName(j.specialty_id), ...xp };
     });
   });
 
@@ -1198,15 +1400,24 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const kg = int(b.kg, 1, 1_000_000, 'kg');
     return db.tx(async (q) => {
       const u = await q.query('select home_region_id from users where id = $1 for update', [userId]);
-      const { rowCount } = await q.query('update products set kg = kg - $3 where user_id = $1 and specialty_id = $2 and kg >= $3', [userId, sp.id, kg]);
-      if (!rowCount) throw bad('khong_du_hang', 'Không đủ thành phẩm.', 409);
+      await takeProduct(q, userId, sp.id, kg);
       const now = Date.now();
       const bonus = (marketDayOf(now).active ? MARKET_DAY_BONUS : 0) + (floatingAt(u.rows[0].home_region_id, now) ? FLOATING_BONUS : 0);
-      const unit = Math.round(((await currentPrice(q, sp.id)) * recipeOf(CROPS[sp.crop]).value * (1 + bonus)) / 100) * 100;
+      const pack = await valueBonusOf(q, userId);
+      const unit = Math.round(((await currentPrice(q, sp.id)) * recipeOf(CROPS[sp.crop]).value * (1 + bonus) * (1 + pack)) / 100) * 100;
       await addCash(q, userId, unit * kg, `ban_che_bien:${sp.id}`);
       return { unitPrice: unit, total: unit * kg, npcId: npcOf('che_bien').id };
     });
   });
+  async function addProduct(q: Q, userId: number, specialtyId: string, kg: number) {
+    await q.query(
+      `insert into products (user_id, specialty_id, kg) values ($1,$2,$3)
+       on conflict (user_id, specialty_id) do update set kg = products.kg + excluded.kg`, [userId, specialtyId, kg]);
+  }
+  async function takeProduct(q: Q, userId: number, specialtyId: string, kg: number) {
+    const { rowCount } = await q.query('update products set kg = kg - $3 where user_id = $1 and specialty_id = $2 and kg >= $3', [userId, specialtyId, kg]);
+    if (!rowCount) throw bad('khong_du_hang', 'Không đủ thành phẩm.', 409);
+  }
 
   // ---------------------------------------------------------------- đơn hàng cá nhân theo ngày
   const vnDay = (now: number) => Math.floor((now + VN_TZ_MS) / DAY_MS);
@@ -1281,7 +1492,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       }
       const reward = await orderReward(q, order.items);
       await addCash(q, userId, reward, `don_hang:${slot}`);
-      return { reward };
+      const xp = await addXp(q, userId, XP.order);
+      return { reward, ...xp };
     });
   });
 
@@ -1337,9 +1549,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (from === to.id) throw bad('du_lieu_sai', 'Xe của bạn đang ở vùng này rồi.');
       if (!(Number(u.rows[0].fuel_l) > 0)) throw bad('het_xang', 'Xe đã hết xăng, hãy đổ xăng trước khi đi.', 409);
       const plan = tripPlan(from, to.id);
+      const en = await spendEnergy(q, userId, tripEnergy(plan.km), 'lái chuyến xe này');
       const ins = await q.query(
         'insert into trips (user_id, from_region, to_region, min_seconds) values ($1,$2,$3,$4) returning id', [userId, from, to.id, plan.seconds]);
-      return { tripId: ins.rows[0].id, fromRegionId: from, toRegionId: to.id, plan, fuelL: Number(u.rows[0].fuel_l), etc: u.rows[0].etc, cash: u.rows[0].cash, truck: TRUCK };
+      return { tripId: ins.rows[0].id, fromRegionId: from, toRegionId: to.id, plan, fuelL: Number(u.rows[0].fuel_l), etc: u.rows[0].etc, cash: u.rows[0].cash, truck: TRUCK, energyCost: tripEnergy(plan.km), ...en };
     });
   });
 
@@ -1379,7 +1592,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const fuelL = round1(Math.min(TRUCK.tankL, Math.max(0, have + refuelL + rescueL - used)));
       await q.query('update trips set finished_at = now() where id = $1', [tripId]);
       await q.query('update users set truck_region = $2, fuel_l = $3, etc = $4, cargo_used = 0 where id = $1', [userId, t.to_region, fuelL, etc]);
-      await q.query('insert into visits (user_id, region_id) values ($1,$2) on conflict do nothing', [userId, t.to_region]);
+      const firstVisit = await q.query('insert into visits (user_id, region_id) values ($1,$2) on conflict do nothing', [userId, t.to_region]);
+      if (firstVisit.rowCount && !(await q.query('select 1 from plots where user_id = $1 and region_id = $2', [userId, t.to_region])).rows[0]) await addXp(q, userId, XP.region);
       return { regionId: t.to_region, fuelUsedL: round1(used), fuelCost, rescueL: round1(rescueL), tollCost: tollFromEtc + tollCash, tollFromEtc, fuelL, etc, cash, fineCost, fines };
     });
   });
@@ -1854,6 +2068,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const role = (req.body as any)?.role;
     if (typeof role !== 'string' || !ROLES.includes(role as Role)) throw bad('du_lieu_sai', 'Vai trò không hợp lệ.');
     await db.query('update users set role = $2, role_assigned_at = now(), truck_region = home_region_id where id = $1', [userId, role]);
+    await db.tx((q) => ensureStarter(q, userId));
     return { role };
   });
 

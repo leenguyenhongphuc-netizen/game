@@ -3,13 +3,16 @@
 import * as THREE from 'three';
 import { bake } from '../scene/World.ts';
 import { gradient } from '../drive/RideKit.ts';
-import { Kit, V, ball, box, cyl, cone, person, glow, dot } from './SightKit.ts';
-import type { PlayerState, SightSet } from './SightKit.ts';
+import { Kit, V, ball, box, cyl, cone, glow, dot, walker, shopModel, cloud, label } from './SightKit.ts';
+import type { PlayerState, SightSet, ShopSpot } from './SightKit.ts';
 import { SETS } from './sets/index.ts';
 import type { Sight } from '../../../shared/sights.ts';
 
 export interface SightHud { near: number | null; next: number; dist: number; bearing: number; yaw: number }
-export interface SightCallbacks { onNear: (index: number | null) => void; onHud: (h: SightHud) => void }
+export interface SightCallbacks { onNear: (index: number | null) => void; onHud: (h: SightHud) => void; onShop?: (index: number | null) => void }
+export interface SightShop { id: string; name: string; kind: string; emoji: string }
+/** Hộp chắn máy ảnh: [minX, minY, minZ, maxX, maxY, maxZ]. */
+type Blocker = [number, number, number, number, number, number];
 
 const SPEED = 4.6, RADIUS = 3.4;
 
@@ -21,12 +24,14 @@ export class SightScene {
   private move = new THREE.Vector2(); private keys = new Set<string>();
   private cum: number[] = []; private total = 0;
   private markers: { ring: THREE.Mesh; beam: THREE.Mesh; num: THREE.Sprite; s: number }[] = [];
-  private npcs: { g: THREE.Group; s: number; dir: number; off: number; a: number; b: number; sp: number }[] = [];
+  private npcs: { g: THREE.Group; legs: THREE.Object3D[]; arms: THREE.Object3D[]; s: number; dir: number; off: number; want: number; a: number; b: number; sp: number; ph: number }[] = [];
+  private blockers: Blocker[] = []; private camDist = 8; private shopAt: THREE.Vector3[] = []; private shopIdx: number | null = null;
+  private postcard: { pos: THREE.Vector3; look: THREE.Vector3 } | null = null; private userLook = 0; private skyTicks: ((t: number, dt: number) => void)[] = [];
   private nearIdx: number | null = null; private dismissed: number | null = null; private lookAt: THREE.Vector3 | null = null;
   private seen: Set<string>; private autoWait = 0; private hudT = 0; private disposed = false;
   auto = false; speedMul = 1;
 
-  constructor(private host: HTMLElement, private sight: Sight, seen: string[], private cb: SightCallbacks) {
+  constructor(private host: HTMLElement, private sight: Sight, seen: string[], private cb: SightCallbacks, private shops?: SightShop[]) {
     this.seen = new Set(seen);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1)); this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -38,10 +43,14 @@ export class SightScene {
     this.scene.background = gradient(s.sky[0], s.sky[1]); this.scene.fog = new THREE.Fog(s.fog[0], s.fog[1], s.fog[2]);
     this.scene.add(new THREE.HemisphereLight(s.light.ambientColor ?? 0xffffff, 0x8a7a66, s.light.ambient));
     const sun = new THREE.DirectionalLight(s.light.sunColor ?? 0xfff2d6, s.light.sun); sun.position.set(...(s.light.sunDir ?? [0.5, 1, 0.35])); this.scene.add(sun);
+    const sd = s.light.sunDir ?? [0.5, 1, 0.35];
+    const fill = new THREE.DirectionalLight(s.light.ambientColor ?? 0xffffff, s.fill ?? 0.45); fill.position.set(-sd[0], 0.5, -sd[2]); this.scene.add(fill);
+    this.collectBlockers();
     this.scene.add(bake(this.kit.stat), this.kit.dyn);
+    this.buildSky();
     // chiều dài cộng dồn của lối đi
     this.cum = [0]; for (let i = 1; i < s.path.length; i++) this.cum.push(this.cum[i - 1] + s.path[i].distanceTo(s.path[i - 1])); this.total = this.cum[this.cum.length - 1];
-    this.buildPlayer(); this.buildMarkers(); this.buildNpcs(s.npcs ?? 8);
+    this.buildPlayer(); this.buildMarkers(); this.buildNpcs(s.npcs ?? 8); this.buildShops();
     const p0 = s.path[0].clone();
     this.state = { pos: p0, s: 0, seg: 0, near: null };
     const d0 = s.path[1].clone().sub(s.path[0]); this.heading = Math.atan2(d0.x, -d0.z); this.yaw = s.startYaw ?? this.heading;
@@ -75,9 +84,82 @@ export class SightScene {
   private buildNpcs(n: number) {
     const r = this.kit.r;
     for (let i = 0; i < n; i++) {
-      const g = bake(person(i + 1)); const a = r() * this.total * 0.9, b = Math.min(this.total, a + 14 + r() * 30);
-      this.npcs.push({ g, s: a + r() * (b - a), dir: r() < 0.5 ? 1 : -1, off: (r() - 0.5) * 2 * (this.set.half - 0.6), a, b, sp: 0.9 + r() * 0.8 }); this.scene.add(g);
+      const w = walker(i + 1), g = new THREE.Group(), body = w.g.children[0]; g.add(bake(body));
+      const legs = w.legs.map((l) => { const h = new THREE.Group(); h.position.copy(l.position); l.position.set(0, 0, 0); h.add(bake(l)); g.add(h); return h; });
+      const arms = w.arms.map((l) => { const h = new THREE.Group(); h.position.copy(l.position); l.position.set(0, 0, 0); h.add(bake(l)); g.add(h); return h; });
+      const a = r() * this.total * 0.9, b = Math.min(this.total, a + 14 + r() * 30), off = (r() - 0.5) * 2 * (this.set.half - 0.6);
+      this.npcs.push({ g, legs, arms, s: a + r() * (b - a), dir: r() < 0.5 ? 1 : -1, off, want: off, a, b, sp: 0.9 + r() * 0.8, ph: r() * 6 }); this.scene.add(g);
     }
+  }
+  /** Gom hộp bao của các khối tĩnh cao, đủ dày và nằm gần lối đi để chặn máy ảnh chui vào. */
+  private collectBlockers() {
+    const path = this.set.path, b = new THREE.Box3(), sz = new THREE.Vector3(), c = new THREE.Vector3();
+    this.kit.stat.updateMatrixWorld(true);
+    this.kit.stat.traverse((o) => {
+      const m = o as THREE.Mesh; if (!m.isMesh) return;
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      b.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); b.getSize(sz); b.getCenter(c);
+      if (sz.y < 1.4 || Math.min(sz.x, sz.z) < 0.45 || Math.max(sz.x, sz.z) > 70) return;
+      let near = false; for (let i = 0; i < path.length && !near; i++) { const p = path[i]; if (Math.abs(p.x - c.x) < sz.x / 2 + 16 && Math.abs(p.z - c.z) < sz.z / 2 + 16 && b.max.y > p.y + 1.2 && b.min.y < p.y + 9) near = true; }
+      if (!near) { for (let i = 0; i < path.length - 1 && !near; i++) { const mx = (path[i].x + path[i + 1].x) / 2, mz = (path[i].z + path[i + 1].z) / 2, my = (path[i].y + path[i + 1].y) / 2; if (Math.abs(mx - c.x) < sz.x / 2 + 16 && Math.abs(mz - c.z) < sz.z / 2 + 16 && b.max.y > my + 1.2 && b.min.y < my + 9) near = true; } }
+      if (near) this.blockers.push([b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z]);
+    });
+  }
+  /** Tỉ lệ (0..1) của đoạn từ a tới b còn thông trước khi chạm hộp chắn đầu tiên; bỏ qua hộp đang chứa a. */
+  private clear(a: THREE.Vector3, b: THREE.Vector3): number {
+    let best = 1; const d = [b.x - a.x, b.y - a.y, b.z - a.z], o = [a.x, a.y, a.z];
+    for (const k of this.blockers) {
+      let t0 = 0, t1 = best, hit = true;
+      for (let i = 0; i < 3; i++) {
+        if (Math.abs(d[i]) < 1e-6) { if (o[i] < k[i] || o[i] > k[i + 3]) { hit = false; break; } continue; }
+        let u = (k[i] - o[i]) / d[i], v = (k[i + 3] - o[i]) / d[i]; if (u > v) { const w = u; u = v; v = w; }
+        if (u > t0) t0 = u; if (v < t1) t1 = v; if (t0 > t1) { hit = false; break; }
+      }
+      if (hit && t0 > 0.001 && t0 < best) best = t0;
+    }
+    return best;
+  }
+  private buildSky() {
+    const s = this.set; if (s.skyDecor === 'none') return;
+    const c = new THREE.Color(s.sky[0]), lum = c.r * 0.3 + c.g * 0.6 + c.b * 0.1, r = this.kit.r, mid = s.path[Math.floor(s.path.length / 2)];
+    if (lum < 0.3) {
+      // trời tối: sao và trăng
+      const n = 260, pos = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { const a = r() * 6.283, e = 0.12 + r() * 1.3, R = 620; pos.set([mid.x + Math.cos(a) * Math.cos(e) * R, Math.sin(e) * R, mid.z + Math.sin(a) * Math.cos(e) * R], i * 3); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const stars = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xfff6d8, size: 2.2, sizeAttenuation: false, map: dot(), transparent: true, depthWrite: false, fog: false })); stars.frustumCulled = false; this.scene.add(stars);
+      const moon = new THREE.Sprite(new THREE.SpriteMaterial({ map: dot(), color: 0xfff3c4, transparent: true, depthWrite: false, fog: false })); moon.scale.setScalar(70); moon.position.set(mid.x - 260, 330, mid.z - 420); this.scene.add(moon);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(15, 20), new THREE.MeshBasicMaterial({ color: 0xfffbe6, fog: false })); disc.position.copy(moon.position); disc.lookAt(mid.x, 0, mid.z); this.scene.add(disc);
+    }
+    if (lum >= 0.18) {
+      // trời còn sáng: mây trôi chậm và vài cánh chim
+      const tint = lum < 0.4 ? 0xf6b8a0 : 0xffffff, clouds: THREE.Object3D[] = [], holder = new THREE.Group();
+      for (let i = 0; i < 9; i++) { const cl = cloud(2.2 + r() * 2.6, tint); cl.position.set(mid.x + (r() - 0.5) * 760, 95 + r() * 70, mid.z + (r() - 0.5) * 760); holder.add(cl); }
+      const baked = bake(holder); baked.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.material = new THREE.MeshBasicMaterial({ color: tint, fog: false, transparent: true, opacity: 0.86 }); } }); this.scene.add(baked); clouds.push(baked);
+      const birds: THREE.Group[] = [];
+      for (let i = 0; i < 5; i++) { const b = new THREE.Group(), wl = box(0x2a2a2a, -0.5, 0, 0, 1, 0.05, 0.3), wr = box(0x2a2a2a, 0.5, 0, 0, 1, 0.05, 0.3); b.add(wl, wr); b.userData = { a: r() * 6.28, R: 30 + r() * 50, h: 22 + r() * 16, sp: 0.12 + r() * 0.1, wl, wr }; birds.push(b); this.scene.add(b); }
+      this.skyTicks.push((t) => { baked.position.x = Math.sin(t * 0.01) * 40; for (const b of birds) { const u = b.userData as { a: number; R: number; h: number; sp: number; wl: THREE.Mesh; wr: THREE.Mesh }, a = u.a + t * u.sp; b.position.set(mid.x + Math.cos(a) * u.R, mid.y + u.h, mid.z + Math.sin(a) * u.R); b.rotation.y = -a; const f = Math.sin(t * 7 + u.a) * 0.6; u.wl.rotation.z = -f; u.wr.rotation.z = f; } });
+    }
+  }
+  /** Quầy chỉ khai báo vị trí: tự quay mặt về phía lối đi. */
+  private faceLane(at: THREE.Vector3): ShopSpot { const q = this.project(at).q; return { at, ry: Math.atan2(q.x - at.x, q.z - at.z) }; }
+  /** Đặt quầy hàng: theo chỗ bộ cảnh khai báo, thiếu thì rải ở mép lối đi. */
+  private buildShops() {
+    const s = this.set, list: SightShop[] = this.shops && this.shops.length ? this.shops : [{ id: '', name: 'Nước mía', kind: 'nuoc_mia', emoji: '🥤' }, { id: '', name: 'Hàng rong', kind: 'hang_rong', emoji: '🧺' }];
+    const spots: ShopSpot[] = (s.shopSpots ?? []).map((q) => (q as THREE.Vector3).isVector3 ? this.faceLane(q as THREE.Vector3) : q as ShopSpot);
+    for (let i = spots.length; i < list.length; i++) {
+      // tự rải: tránh sát điểm dừng, đặt ở mép lối đi, quay mặt vào lối
+      let sAt = this.total * ((i + 0.5) / list.length) * 0.86 + 6; for (let k = 0; k < 8 && this.markers.some((m) => Math.abs(m.s - sAt) < 7); k++) sAt += 5;
+      const a = this.at(sAt), side = i % 2 ? 1 : -1, nx = -a.dir.z, nz = a.dir.x, off = s.half + 0.9;
+      spots.push({ at: new THREE.Vector3(a.p.x + nx * off * side, a.p.y, a.p.z + nz * off * side), ry: Math.atan2(-nx * side, -nz * side) });
+    }
+    list.forEach((sh, i) => {
+      const sp = spots[i]; if (!sp) return;
+      const g = bake(shopModel(sh.kind, this.kit.r)); g.position.copy(sp.at); g.rotation.y = sp.ry ?? 0; this.scene.add(g);
+      const lb = label(`${sh.name}`, sp.at.x, sp.at.y + 3.3, sp.at.z, '#2f7d26', 0.42); this.scene.add(lb);
+      this.shopAt.push(sp.at.clone());
+    });
+    if (!(this.shops && this.shops.length)) this.shopAt = [];
   }
   /** Điểm trên lối đi ứng với quãng s. */
   private at(s: number, out = new THREE.Vector3()): { p: THREE.Vector3; dir: THREE.Vector3; seg: number } {
@@ -98,7 +180,7 @@ export class SightScene {
   }
 
   setMove(x: number, y: number) { this.move.set(x, y); }
-  look(dx: number, dy: number) { this.yaw += dx; this.pitch = Math.min(0.75, Math.max(-0.45, this.pitch + dy)); this.lookAt = null; }
+  look(dx: number, dy: number) { this.yaw += dx; this.pitch = Math.min(0.75, Math.max(-0.45, this.pitch + dy)); this.lookAt = null; this.postcard = null; }
   private onKey = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (e.type === 'keydown') this.keys.add(k); else this.keys.delete(k); };
   private keyMove(): THREE.Vector2 {
     const k = this.keys, v = new THREE.Vector2((k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0), (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0));
@@ -109,7 +191,7 @@ export class SightScene {
     const m = this.markers[index]; (m.ring.material as THREE.MeshBasicMaterial).color.set(0x7ccf4f); (m.beam.material as THREE.MeshBasicMaterial).color.set(0x9be07a);
   }
   /** Đóng thẻ thuyết minh: không mở lại cho tới khi đi ra xa rồi quay lại. */
-  dismiss() { this.dismissed = this.nearIdx; this.lookAt = null; }
+  dismiss() { this.dismissed = this.nearIdx; this.lookAt = null; this.postcard = null; }
   /** Đưa nhân vật tới sát một điểm dừng (dùng cho thử nghiệm). */
   goto(index: number) {
     const st = this.set.stops[Math.max(0, Math.min(this.set.stops.length - 1, index))]; const pr = this.project(st.at), back = this.at(Math.max(0, pr.s - 1.6));
@@ -144,24 +226,46 @@ export class SightScene {
     const open = near !== null && near !== this.dismissed ? near : null;
     if (open !== this.nearIdx) {
       this.nearIdx = open; st.near = open === null ? null : s.stops[open].id; this.cb.onNear(open);
-      if (open !== null) { this.lookAt = s.stops[open].look ?? null; s.onStop?.(s.stops[open].id); this.autoWait = 0; } else this.lookAt = null;
+      if (open !== null) { this.lookAt = s.stops[open].look ?? null; this.postcard = this.postcardOf(open); s.onStop?.(s.stops[open].id); this.autoWait = 0; } else { this.lookAt = null; this.postcard = null; }
     }
     if (this.lookAt) { const want = Math.atan2(this.lookAt.x - st.pos.x, -(this.lookAt.z - st.pos.z)); let dy = want - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); this.yaw += dy * Math.min(1, dt * 3); const wp = Math.max(-0.45, Math.min(0.55, 0.16 - Math.atan2(this.lookAt.y - st.pos.y - 2, Math.hypot(this.lookAt.x - st.pos.x, this.lookAt.z - st.pos.z)) * 0.9)); this.pitch += (wp - this.pitch) * Math.min(1, dt * 3); }
+  }
+  /** Góc máy "bưu thiếp" của một điểm dừng: chỗ bộ cảnh khai báo, hoặc lùi sau lưng nhân vật theo hướng nhìn công trình. */
+  private postcardOf(i: number): { pos: THREE.Vector3; look: THREE.Vector3 } | null {
+    const st = this.set.stops[i]; if (!st.look) return null;
+    if (st.cam) return { pos: st.cam.clone(), look: st.look.clone() };
+    const p = this.state.pos, dx = p.x - st.look.x, dz = p.z - st.look.z, l = Math.hypot(dx, dz) || 1, back = this.camera.aspect < 1 ? 6.5 : 5.5;
+    const head = new THREE.Vector3(p.x, p.y + 1.7, p.z), want = new THREE.Vector3(p.x + dx / l * back + (-dz / l) * 1.6, p.y + 3.0, p.z + dz / l * back + (dx / l) * 1.6);
+    const k = this.clear(head, want); if (k < 1) want.lerpVectors(head, want, Math.max(0.25, k - 0.08));
+    return { pos: want, look: st.look.clone() };
   }
   /** Khi thẻ thuyết minh đang mở ở chế độ tự đi thì đứng yên chờ chụp. */
   private nearIdxBlocking(): boolean { return this.auto && this.nearIdx !== null; }
 
   private placeCamera(snap = false) {
-    const p = this.state.pos, portrait = this.camera.aspect < 1, dist = portrait ? 6.4 : 5.6, h = Math.max(1.0, 2.3 + this.pitch * 5);
-    const cx = p.x - Math.sin(this.yaw) * dist * Math.cos(this.pitch * 0.6), cz = p.z + Math.cos(this.yaw) * dist * Math.cos(this.pitch * 0.6);
-    const want = new THREE.Vector3(cx, p.y + h, cz);
-    // giữ camera trong hành lang lối đi để không chui vào nhà hai bên; bị ép lại gần thì nâng cao lên
-    const pr = this.project(want, this.state.seg), lim = this.set.half + 0.7;
-    if (pr.d > lim) { const k = lim / pr.d; want.x = pr.q.x + (want.x - pr.q.x) * k; want.z = pr.q.z + (want.z - pr.q.z) * k; want.y += (dist - Math.hypot(want.x - p.x, want.z - p.z)) * 0.3; }
-    if (snap) this.camera.position.copy(want); else this.camera.position.lerp(want, 0.18);
-    const ahead = 9, ly = p.y + 2.5 - this.pitch * (this.pitch < 0 ? 14 : 3.2) + (portrait ? 1.3 : 0.5);
-    this.camera.lookAt(p.x + Math.sin(this.yaw) * ahead, ly, p.z - Math.cos(this.yaw) * ahead);
+    const p = this.state.pos, portrait = this.camera.aspect < 1;
+    if (this.postcard) {
+      // đang xem thuyết minh: máy ảnh lướt tới góc ngắm đẹp, đẩy công trình lên phần màn không bị thẻ che
+      if (snap) this.camera.position.copy(this.postcard.pos); else this.camera.position.lerp(this.postcard.pos, 0.07);
+      this.camLook.lerp(this.postcard.look, snap ? 1 : 0.09); this.camera.lookAt(this.camLook); this.camera.rotateX(-(portrait ? 0.13 : 0.03));
+      return;
+    }
+    const distMax = portrait ? 8.6 : 7.4, h = Math.max(1.3, 3.1 + this.pitch * 5.5);
+    const head = new THREE.Vector3(p.x, p.y + 1.75, p.z);
+    const dirx = -Math.sin(this.yaw) * Math.cos(this.pitch * 0.6), dirz = Math.cos(this.yaw) * Math.cos(this.pitch * 0.6);
+    const far = new THREE.Vector3(p.x + dirx * distMax, p.y + h, p.z + dirz * distMax);
+    // hành lang rộng quanh lối đi + hộp chắn: không chui vào nhà, cột, vách
+    const pr = this.project(far, this.state.seg), lim = this.set.half + 4.5;
+    if (pr.d > lim) { const k = lim / pr.d; far.x = pr.q.x + (far.x - pr.q.x) * k; far.z = pr.q.z + (far.z - pr.q.z) * k; }
+    const k = this.clear(head, far), wantDist = Math.max(1.6, distMax * Math.max(0.2, k - 0.06));
+    this.camDist += (wantDist - this.camDist) * (wantDist < this.camDist ? 0.5 : 0.06); if (snap) this.camDist = wantDist;
+    const t = this.camDist / distMax, want = new THREE.Vector3().lerpVectors(head, far, t); want.y += (1 - t) * 1.1;
+    if (snap) this.camera.position.copy(want); else this.camera.position.lerp(want, 0.22);
+    const ahead = 9, ly = p.y + 2.6 - this.pitch * (this.pitch < 0 ? 14 : 3.2) + (portrait ? 1.6 : 0.7);
+    this.camLook.set(p.x + Math.sin(this.yaw) * ahead, ly, p.z - Math.cos(this.yaw) * ahead);
+    this.camera.lookAt(this.camLook);
   }
+  private camLook = new THREE.Vector3();
   private frame = (now: number) => {
     if (this.disposed) return; this.raf = requestAnimationFrame(this.frame);
     const dt = Math.min(0.05, (now - this.last) / 1000); this.last = now; this.time += dt;
@@ -170,11 +274,22 @@ export class SightScene {
     this.player.position.copy(st.pos); this.player.position.y += Math.abs(Math.sin(this.time * 9)) * 0.05 * this.moving; this.player.rotation.y = -this.heading;
     this.legs[0].rotation.x = sw; this.legs[1].rotation.x = -sw; this.arms[0].rotation.x = -sw * 0.8; this.arms[1].rotation.x = sw * 0.8;
     this.blob.position.set(st.pos.x, st.pos.y + 0.06, st.pos.z);
-    for (const n of this.npcs) {
+    for (let i = 0; i < this.npcs.length; i++) {
+      const n = this.npcs[i];
       n.s += n.dir * n.sp * dt; if (n.s > n.b) { n.s = n.b; n.dir = -1; } if (n.s < n.a) { n.s = n.a; n.dir = 1; }
-      const a = this.at(n.s, n.g.position); n.g.position.x += -a.dir.z * n.off; n.g.position.z += a.dir.x * n.off; n.g.position.y += Math.abs(Math.sin(this.time * 6 + n.off * 9)) * 0.04;
+      // tránh nhau và tránh người chơi: lệch sang bên khi sắp chạm
+      let want = n.want; const lim = this.set.half - 0.5;
+      for (let j = 0; j < this.npcs.length; j++) { const m = this.npcs[j]; if (j !== i && Math.abs(m.s - n.s) < 1.6 && Math.abs(m.off - n.off) < 0.9) want = n.off + (n.off >= m.off && i > j || n.off > m.off ? 0.9 : -0.9); }
+      const a = this.at(n.s, n.g.position), nx = -a.dir.z, nz = a.dir.x;
+      const pd = (st.pos.x - a.p.x) * nx + (st.pos.z - a.p.z) * nz; if (Math.abs(st.s - n.s) < 2.2 && Math.abs(pd - n.off) < 1.1) want = n.off + (n.off >= pd ? 1.1 : -1.1);
+      n.off += (Math.max(-lim, Math.min(lim, want)) - n.off) * Math.min(1, dt * 2.5);
+      n.g.position.x += nx * n.off; n.g.position.z += nz * n.off; n.g.position.y += Math.abs(Math.sin(this.time * n.sp * 5.2 + n.ph)) * 0.04;
       n.g.rotation.y = -Math.atan2(a.dir.x * n.dir, -a.dir.z * n.dir);
+      const swing = Math.sin(this.time * n.sp * 5.2 + n.ph) * 0.6; n.legs[0].rotation.x = swing; n.legs[1].rotation.x = -swing; n.arms[0].rotation.x = -swing * 0.7; n.arms[1].rotation.x = swing * 0.7;
     }
+    for (const f of this.skyTicks) f(this.time, dt);
+    // quầy hàng gần nhất
+    if (this.shopAt.length) { let near: number | null = null; this.shopAt.forEach((q, i) => { if (Math.hypot(q.x - st.pos.x, q.z - st.pos.z) < 4.2 && Math.abs(q.y - st.pos.y) < 3) near = i; }); if (near !== this.shopIdx) { this.shopIdx = near; this.cb.onShop?.(near); } }
     this.markers.forEach((m, i) => { m.beam.visible = m.num.visible = this.nearIdx !== i; const k = 1 + Math.sin(this.time * 3 + i) * 0.08; m.ring.scale.set(k, 1, k); m.beam.rotation.y = this.time * 0.6; });
     for (const t of this.kit.ticks) t(this.time, dt, st);
     this.placeCamera();
@@ -202,4 +317,4 @@ function numberSprite(n: number, done: boolean): THREE.Sprite {
   g.fillStyle = '#3b2a17'; g.font = '800 52px "Baloo 2", "Be Vietnam Pro", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), 48, 52);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false })); sp.scale.setScalar(1.1); return sp;
 }
-void glow; void dot; void V; void box;
+void glow; void V; void ball; void cyl; void cone;

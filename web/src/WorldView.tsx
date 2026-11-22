@@ -3,6 +3,8 @@ import type { MutableRefObject } from 'react';
 import { World } from './scene/World.ts';
 import type { Context, WorldState } from './scene/World.ts';
 import type { Planting } from './api.ts';
+import { sampleFactory } from './scene/factory.ts';
+import type { FactoryData } from './scene/factory.ts';
 
 /** Khung chứa thế giới 3D phủ kín màn hình. Thêm ?gio=12 vào địa chỉ để ép giờ trong ngày khi thử. */
 export function WorldView(props: {
@@ -14,6 +16,7 @@ export function WorldView(props: {
   const cb = useRef(props);
   cb.current = props;
   const [failed, setFailed] = useState(false);
+  const sample = useRef<FactoryData | null>(null);
 
   useEffect(() => {
     const hour = new URLSearchParams(location.search).get('gio');
@@ -33,9 +36,10 @@ export function WorldView(props: {
   }, []);
 
   useEffect(() => {
-    // Tham số thử hình: ?thoitiet=mua|bao|may|nang_gat và ?santhuong=1
-    const q = new URLSearchParams(location.search), w = q.get('thoitiet') as WorldState['weather'] | null, roof = q.get('santhuong');
-    const state = w || roof ? { ...props.state, weather: w ?? props.state.weather, lots: props.state.lots.map((l, i) => (l && roof && i === 0 ? { ...l, kind: 'rooftop' as const } : l)) } : props.state;
+    // Tham số thử hình: ?thoitiet=mua|bao|may|nang_gat, ?santhuong=1 và ?xuong=1 (ép vườn đang xem thành xưởng có 5 máy mẫu)
+    const q = new URLSearchParams(location.search), w = q.get('thoitiet') as WorldState['weather'] | null, roof = q.get('santhuong'), fac = q.get('xuong');
+    if (fac && !sample.current) sample.current = sampleFactory(Date.now() + props.state.clockOffset);
+    const state = fac ? { ...props.state, weather: w ?? props.state.weather, lots: props.state.lots.map((l, i) => (l && i === 0 ? { ...l, ownerRole: 'xuong' as const, kind: 'ground' as const, factory: sample.current } : l)) } : w || roof ? { ...props.state, weather: w ?? props.state.weather, lots: props.state.lots.map((l, i) => (l && roof && i === 0 ? { ...l, kind: 'rooftop' as const } : l)) } : props.state;
     world.current?.setState(state);
   }, [props.state]);
   useEffect(() => { if (world.current) world.current.paused = !!props.paused; }, [props.paused]);

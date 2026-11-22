@@ -1,5 +1,5 @@
 // Luật chơi thuần tuý, dùng chung cho máy chủ và giao diện.
-import { CROPS, REGIONS, SPECIALTIES, processOf } from './catalog.ts';
+import { CROPS, REGIONS, SPECIALTIES, processOf, recipeOf } from './catalog.ts';
 import type { Region, Specialty } from './catalog.ts';
 
 export const PLOT_COLS = 6;
@@ -199,7 +199,7 @@ export function marketEventsAt(regionId: string, nowMs: number): MarketEvent[] {
 export type Role = 'nong_dan' | 'xuong' | 'thuong_lai';
 export const ROLE_INFO: Record<Role, { name: string; icon: string; desc: string }> = {
   nong_dan: { name: 'Nhà vườn', icon: '🧑‍🌾', desc: 'Vườn lớn 30 ô và được thưởng sản lượng khi thu đúng chính vụ. Bán hàng qua sạp cho thương lái và chủ xưởng.' },
-  xuong: { name: 'Chủ xưởng', icon: '🏭', desc: 'Chỉ chủ xưởng mới chế biến được nông sản, xưởng có 4 chỗ làm. Vườn nhỏ 8 ô.' },
+  xuong: { name: 'Chủ xưởng', icon: '🏭', desc: 'Không trồng trọt: lô đất là nhà xưởng với các máy chế biến. Mua nông sản về làm trái sấy, nước ép, mứt, cà phê rang… rồi bán cho siêu thị, doanh nghiệp hoặc xuất khẩu.' },
   thuong_lai: { name: 'Thương lái', icon: '🚚', desc: 'Chỉ thương lái mới bán cho doanh nghiệp được giá đầy đủ, và lái xe chở hàng sang vùng khác. Vườn nhỏ 8 ô.' },
 };
 export const ROLES = Object.keys(ROLE_INFO) as Role[];
@@ -222,11 +222,11 @@ export function spinWeights(targets: Record<Role, number>, counts: Record<Role, 
   for (const r of ROLES) raw[r] /= sum;
   return raw;
 }
-/** Vườn nhỏ của chủ xưởng và thương lái: 8 ô, hàng 1..2 × cột 1..4. */
+/** Vườn nhỏ của thương lái: 8 ô, hàng 1..2 × cột 1..4. Chủ xưởng không có ô trồng: lô của họ là nhà xưởng. */
 export const SMALL_TILES: number[] = [1, 2].flatMap((row) => [1, 2, 3, 4].map((col) => row * PLOT_COLS + col));
 /** Các ô được trồng của một lô, theo kiểu lô và vai trò của chủ lô. */
 export function allowedTiles(kind: 'ground' | 'rooftop', role: Role | null): number[] {
-  if (!role) return [];
+  if (!role || role === 'xuong') return [];
   if (role !== 'nong_dan') return SMALL_TILES;
   return kind === 'rooftop' ? ROOFTOP_TILES : Array.from({ length: TILE_COUNT }, (_, i) => i);
 }
@@ -468,48 +468,67 @@ export interface ExportModeInfo {
   note: string;
 }
 export const EXPORT_MODES: Record<ExportMode, ExportModeInfo> = {
-  xe_tai: { name: 'Xe tải biên mậu', icon: '🚚', minKg: 50, maxKg: 500, baseFee: 300_000, perKgFee: 1_500, minutes: 20, spoil: 0.03, gate: 'cua_khau', note: 'Lô nhỏ, đi nhanh qua cửa khẩu; cước mỗi kg cao hơn container.' },
-  container: { name: 'Xe container lạnh', icon: '🚛', minKg: 500, maxKg: 5_000, baseFee: 2_500_000, perKgFee: 900, minutes: 30, spoil: 0.01, gate: 'cua_khau', note: 'Giữ lạnh nên hao ít nhất trong đường bộ; phải đủ nửa tấn mới chạy.' },
-  tau_hoa: { name: 'Tàu hoả liên vận', icon: '🚂', minKg: 300, maxKg: 8_000, baseFee: 1_500_000, perKgFee: 600, minutes: 45, spoil: 0.04, gate: 'ga', note: 'Rẻ hơn đường bộ khi hàng nhiều, nhưng chậm và chỉ đi được sang Trung Quốc.' },
-  hang_khong: { name: 'Máy bay chở hàng', icon: '✈️', minKg: 20, maxKg: 1_000, baseFee: 800_000, perKgFee: 12_000, minutes: 10, spoil: 0, gate: 'san_bay', note: 'Nhanh nhất, không hao hụt, cước rất đắt: chỉ hợp hàng giá trị cao.' },
-  tau_nho: { name: 'Tàu biển nhỏ', icon: '⛴️', minKg: 200, maxKg: 3_000, baseFee: 1_000_000, perKgFee: 500, minutes: 60, spoil: 0.06, gate: 'cang', note: 'Chạy tuyến gần trong Đông Nam Á; rẻ nhưng hàng tươi hao khá nhiều.' },
-  tau_lon: { name: 'Tàu container viễn dương', icon: '🚢', minKg: 2_000, maxKg: 50_000, baseFee: 6_000_000, perKgFee: 250, minutes: 120, spoil: 0.1, gate: 'cang', note: 'Cước mỗi kg rẻ nhất, đi rất lâu: hợp hàng khô số lượng lớn.' },
+  xe_tai: { name: 'Xe tải biên mậu', icon: '🚚', minKg: 30, maxKg: 500, baseFee: 300_000, perKgFee: 1_500, minutes: 20, spoil: 0.03, gate: 'cua_khau', note: 'Lô nhỏ, đi nhanh qua cửa khẩu; cước mỗi kg cao hơn container.' },
+  container: { name: 'Xe container lạnh', icon: '🚛', minKg: 200, maxKg: 5_000, baseFee: 2_500_000, perKgFee: 900, minutes: 30, spoil: 0.01, gate: 'cua_khau', note: 'Giữ lạnh nên hao ít nhất trong đường bộ; lô dưới nửa tấn đi ghép chung container (hàng lẻ).' },
+  tau_hoa: { name: 'Tàu hoả liên vận', icon: '🚂', minKg: 100, maxKg: 8_000, baseFee: 1_500_000, perKgFee: 600, minutes: 45, spoil: 0.04, gate: 'ga', note: 'Rẻ hơn đường bộ khi hàng nhiều, chậm hơn; đi Trung Quốc và nối tuyến sang Nga – Á Âu.' },
+  hang_khong: { name: 'Máy bay chở hàng', icon: '✈️', minKg: 10, maxKg: 1_000, baseFee: 800_000, perKgFee: 12_000, minutes: 10, spoil: 0, gate: 'san_bay', note: 'Nhanh nhất, không hao hụt, cước rất đắt: chỉ hợp hàng giá trị cao.' },
+  tau_nho: { name: 'Tàu biển nhỏ', icon: '⛴️', minKg: 100, maxKg: 3_000, baseFee: 1_000_000, perKgFee: 500, minutes: 60, spoil: 0.06, gate: 'cang', note: 'Chạy tuyến gần trong châu Á; rẻ nhưng hàng tươi hao khá nhiều.' },
+  tau_lon: { name: 'Tàu container viễn dương', icon: '🚢', minKg: 500, maxKg: 50_000, baseFee: 6_000_000, perKgFee: 250, minutes: 120, spoil: 0.1, gate: 'cang', note: 'Cước mỗi kg rẻ nhất, đi rất lâu: hợp hàng khô, hàng chế biến số lượng lớn; lô nhỏ đi ghép container.' },
 };
-export type ExportMarket = 'trung_quoc' | 'lao_cam' | 'asean' | 'nhat_han' | 'au_my';
-export const EXPORT_MARKETS: Record<ExportMarket, { name: string; icon: string; priceMult: number; modes: ExportMode[]; gradeA: boolean; note: string }> = {
-  trung_quoc: { name: 'Trung Quốc', icon: '🇨🇳', priceMult: 1.25, modes: ['xe_tai', 'container', 'tau_hoa'], gradeA: false, note: 'Chợ biên mậu gần, mua số lượng lớn, giá vừa phải.' },
+export type ExportMarket = 'trung_quoc' | 'lao_cam' | 'asean' | 'nhat_han' | 'au_my' | 'an_do' | 'trung_dong' | 'uc_nz' | 'nga';
+export interface ExportMarketInfo {
+  name: string; icon: string; priceMult: number; modes: ExportMode[]; gradeA: boolean; note: string;
+  /** Phí xử lý kiểm dịch mỗi kg hàng tươi (chiếu xạ, xử lý hơi nước nóng) và thời gian thêm (phút khi TIME_SCALE = 1). Hàng chế biến được miễn. */
+  treatFee?: number; treatMinutes?: number; treat?: string;
+  /** Thị trường quá xa cho hàng tươi: chỉ nhận hàng chế biến và hàng khô. */
+  processedOnly?: boolean;
+}
+export const EXPORT_MARKETS: Record<ExportMarket, ExportMarketInfo> = {
+  trung_quoc: { name: 'Trung Quốc', icon: '🇨🇳', priceMult: 1.25, modes: ['xe_tai', 'container', 'tau_hoa'], gradeA: false, note: 'Chợ biên mậu gần, mua số lượng lớn, giá vừa phải. Cần mã số vùng trồng (đã gồm trong cước).' },
   lao_cam: { name: 'Lào – Campuchia', icon: '🇱🇦', priceMult: 1.15, modes: ['xe_tai', 'container'], gradeA: false, note: 'Gần và dễ tính, giá chỉ nhỉnh hơn trong nước.' },
   asean: { name: 'Thái Lan – Singapore', icon: '🌏', priceMult: 1.3, modes: ['tau_nho', 'hang_khong'], gradeA: false, note: 'Đi tàu nhỏ hoặc máy bay, giá khá.' },
-  nhat_han: { name: 'Nhật Bản – Hàn Quốc', icon: '🇯🇵', priceMult: 1.6, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao nhưng chỉ nhận hàng Loại 1.' },
-  au_my: { name: 'Châu Âu – Mỹ', icon: '🌍', priceMult: 1.9, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao nhất, xa nhất, chỉ nhận hàng Loại 1.' },
+  an_do: { name: 'Ấn Độ', icon: '🇮🇳', priceMult: 1.35, modes: ['tau_nho', 'tau_lon', 'hang_khong'], gradeA: false, note: 'Thị trường đông dân, chuộng hồ tiêu, quế, hạt điều và trái cây sấy.' },
+  trung_dong: { name: 'Trung Đông', icon: '🇦🇪', priceMult: 1.5, modes: ['hang_khong', 'tau_lon'], gradeA: false, note: 'Mua trái cây nhiệt đới và hàng chế biến giá tốt; đi máy bay hoặc tàu lớn.' },
+  nhat_han: { name: 'Nhật Bản – Hàn Quốc', icon: '🇯🇵', priceMult: 1.6, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao nhưng chỉ nhận hàng Loại 1; trái tươi phải xử lý hơi nước nóng.', treatFee: 2_500, treatMinutes: 5, treat: 'Xử lý hơi nước nóng' },
+  nga: { name: 'Nga – Á Âu', icon: '🇷🇺', priceMult: 1.45, modes: ['tau_hoa', 'tau_lon'], gradeA: false, note: 'Đường quá dài cho hàng tươi: chỉ nhận hàng chế biến và hàng khô (cà phê, tiêu, chè, trái sấy).', processedOnly: true },
+  uc_nz: { name: 'Úc – New Zealand', icon: '🇦🇺', priceMult: 1.75, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao, kiểm dịch rất chặt: trái tươi phải chiếu xạ trước khi đi.', treatFee: 4_000, treatMinutes: 10, treat: 'Chiếu xạ' },
+  au_my: { name: 'Châu Âu – Mỹ', icon: '🌍', priceMult: 1.9, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao nhất, xa nhất, chỉ nhận hàng Loại 1; trái tươi đi Mỹ phải chiếu xạ.', treatFee: 4_000, treatMinutes: 10, treat: 'Chiếu xạ' },
 };
 /** Cửa ngõ xuất khẩu thật: hàng phải chở nội địa tới đó trước, càng xa càng tốn. */
+const FAR: ExportMarket[] = ['asean', 'nhat_han', 'au_my', 'an_do', 'trung_dong', 'uc_nz'];
 export const EXPORT_GATEWAYS: { id: string; name: string; gate: ExportModeInfo['gate']; lat: number; lng: number; markets: ExportMarket[] }[] = [
   { id: 'huu_nghi', name: 'Cửa khẩu Hữu Nghị (Lạng Sơn)', gate: 'cua_khau', lat: 21.97, lng: 106.71, markets: ['trung_quoc'] },
   { id: 'kim_thanh', name: 'Cửa khẩu Kim Thành (Lào Cai)', gate: 'cua_khau', lat: 22.5, lng: 103.96, markets: ['trung_quoc'] },
   { id: 'mong_cai', name: 'Cửa khẩu Móng Cái (Quảng Ninh)', gate: 'cua_khau', lat: 21.53, lng: 107.97, markets: ['trung_quoc'] },
   { id: 'lao_bao', name: 'Cửa khẩu Lao Bảo (Quảng Trị)', gate: 'cua_khau', lat: 16.62, lng: 106.6, markets: ['lao_cam'] },
   { id: 'moc_bai', name: 'Cửa khẩu Mộc Bài (Tây Ninh)', gate: 'cua_khau', lat: 11.08, lng: 106.18, markets: ['lao_cam'] },
-  { id: 'ga_dong_dang', name: 'Ga liên vận Đồng Đăng (Lạng Sơn)', gate: 'ga', lat: 21.95, lng: 106.7, markets: ['trung_quoc'] },
+  { id: 'ga_dong_dang', name: 'Ga liên vận Đồng Đăng (Lạng Sơn)', gate: 'ga', lat: 21.95, lng: 106.7, markets: ['trung_quoc', 'nga'] },
   { id: 'ga_lao_cai', name: 'Ga liên vận Lào Cai', gate: 'ga', lat: 22.5, lng: 103.97, markets: ['trung_quoc'] },
-  { id: 'noi_bai', name: 'Sân bay Nội Bài (Hà Nội)', gate: 'san_bay', lat: 21.22, lng: 105.8, markets: ['asean', 'nhat_han', 'au_my'] },
-  { id: 'da_nang_bay', name: 'Sân bay Đà Nẵng', gate: 'san_bay', lat: 16.04, lng: 108.2, markets: ['asean', 'nhat_han', 'au_my'] },
-  { id: 'tan_son_nhat', name: 'Sân bay Tân Sơn Nhất (TP. Hồ Chí Minh)', gate: 'san_bay', lat: 10.82, lng: 106.65, markets: ['asean', 'nhat_han', 'au_my'] },
-  { id: 'hai_phong', name: 'Cảng Hải Phòng', gate: 'cang', lat: 20.86, lng: 106.68, markets: ['asean', 'nhat_han', 'au_my'] },
-  { id: 'tien_sa', name: 'Cảng Tiên Sa (Đà Nẵng)', gate: 'cang', lat: 16.12, lng: 108.21, markets: ['asean', 'nhat_han', 'au_my'] },
-  { id: 'cai_mep', name: 'Cảng Cái Mép (TP. Hồ Chí Minh)', gate: 'cang', lat: 10.5, lng: 107.02, markets: ['asean', 'nhat_han', 'au_my'] },
+  { id: 'noi_bai', name: 'Sân bay Nội Bài (Hà Nội)', gate: 'san_bay', lat: 21.22, lng: 105.8, markets: FAR },
+  { id: 'da_nang_bay', name: 'Sân bay Đà Nẵng', gate: 'san_bay', lat: 16.04, lng: 108.2, markets: FAR },
+  { id: 'tan_son_nhat', name: 'Sân bay Tân Sơn Nhất (TP. Hồ Chí Minh)', gate: 'san_bay', lat: 10.82, lng: 106.65, markets: FAR },
+  { id: 'hai_phong', name: 'Cảng Hải Phòng', gate: 'cang', lat: 20.86, lng: 106.68, markets: [...FAR, 'nga'] },
+  { id: 'tien_sa', name: 'Cảng Tiên Sa (Đà Nẵng)', gate: 'cang', lat: 16.12, lng: 108.21, markets: [...FAR, 'nga'] },
+  { id: 'cai_mep', name: 'Cảng Cái Mép (TP. Hồ Chí Minh)', gate: 'cang', lat: 10.5, lng: 107.02, markets: [...FAR, 'nga'] },
 ];
 /** Cước chở nội địa tới cửa ngõ: đồng cho mỗi kg mỗi km. */
 export const EXPORT_INLAND_PER_KG_KM = 1.2;
-/** Số lô hàng xuất khẩu đang trên đường tối đa của một người. */
-export const EXPORT_MAX_ACTIVE = 3;
+/** Số lô hàng xuất khẩu đang trên đường của người mới (cấp 1); lên cấp được thêm, xem exportMaxActive. */
+export const EXPORT_MAX_ACTIVE = 4, EXPORT_MAX_ACTIVE_TOP = 10;
+export function exportMaxActive(level: number): number { return Math.min(EXPORT_MAX_ACTIVE_TOP, EXPORT_MAX_ACTIVE + Math.max(0, level - 1)); }
 const DRY_KINDS = new Set(['cn', 'lua']);
-/** Ai được đi đường nào: thương lái đi mọi đường; người khác chỉ gửi lô nhỏ, vào hợp tác xã thì thêm đường gom hàng. */
-export function exportModesFor(role: Role | null, inCoop: boolean): ExportMode[] {
-  if (role === 'thuong_lai') return ['xe_tai', 'container', 'tau_hoa', 'hang_khong', 'tau_nho', 'tau_lon'];
-  if (!role) return [];
-  return inCoop ? ['xe_tai', 'hang_khong', 'container', 'tau_hoa', 'tau_nho'] : ['xe_tai', 'hang_khong'];
+/** Mọi vai đều đi được mọi đường xuất khẩu; thương lái và hợp tác xã được giảm cước thay vì độc quyền. */
+export function exportModesFor(role: Role | null, _inCoop = false): ExportMode[] {
+  return role ? (Object.keys(EXPORT_MODES) as ExportMode[]) : [];
 }
+export const EXPORT_DISCOUNT_TRADER = 0.15, EXPORT_DISCOUNT_COOP = 0.1;
+/** Phần cước được giảm: thương lái có mối vận tải, hợp tác xã gom hàng chung. */
+export function exportDiscount(role: Role | null, inCoop: boolean): number {
+  return (role === 'thuong_lai' ? EXPORT_DISCOUNT_TRADER : 0) + (inCoop ? EXPORT_DISCOUNT_COOP : 0);
+}
+/** Hàng chế biến hao hụt chỉ bằng một phần mười hàng tươi. */
+export const EXPORT_PROCESSED_SPOIL = 0.1;
+export interface ExportOpts { /** Hàng đã chế biến ở xưởng (không xét loại, giá theo công thức chế biến). */ processed?: boolean; /** Phần cước được giảm (0–1). */ discount?: number; /** Hệ số giá thêm của thành phẩm (máy đóng gói). */ valueBonus?: number }
 export interface ExportQuote {
   ok: boolean;
   /** Lý do không gửi được (khi ok = false). */
@@ -526,7 +545,7 @@ export interface ExportQuote {
   minutes: number;
 }
 /** Báo giá một lô xuất khẩu. `refPrice` mặc định là giá tham chiếu trong danh mục; máy chủ truyền giá hiện hành. */
-export function exportQuote(specialtyId: string, grade: Quality, kg: number, mode: ExportMode, market: ExportMarket, fromRegionId: string, refPrice?: number): ExportQuote {
+export function exportQuote(specialtyId: string, grade: Quality, kg: number, mode: ExportMode, market: ExportMarket, fromRegionId: string, refPrice?: number, opts: ExportOpts = {}): ExportQuote {
   const sp = SPECIALTIES[specialtyId], m = EXPORT_MODES[mode], mk = EXPORT_MARKETS[market], from = REGIONS[fromRegionId];
   const base: ExportQuote = { ok: false, mode, market, kg, gatewayId: '', gatewayName: '', inlandKm: 0, freight: 0, spoilKg: 0, arriveKg: 0, unitPrice: 0, payout: 0, net: 0, minutes: m?.minutes ?? 0 };
   if (!sp || !m || !mk || !from) return { ...base, reason: 'Thông tin lô hàng không hợp lệ.' };
@@ -534,15 +553,23 @@ export function exportQuote(specialtyId: string, grade: Quality, kg: number, mod
     .map((g) => ({ g, km: Math.round(haversineKm(from.lat, from.lng, g.lat, g.lng)) })).sort((a, b) => a.km - b.km);
   if (!mk.modes.includes(mode) || !gates.length) return { ...base, reason: `${m.name} không đi tới ${mk.name}.` };
   const { g, km } = gates[0];
-  const dry = DRY_KINDS.has(CROPS[sp.crop].kind);
-  const spoilKg = Math.floor(kg * m.spoil * (dry ? 0.2 : 1)), arriveKg = kg - spoilKg;
-  const freight = Math.round((m.baseFee + m.perKgFee * kg + EXPORT_INLAND_PER_KG_KM * km * kg) / 1000) * 1000;
-  const unitPrice = Math.round(((refPrice ?? sp.refPrice) * mk.priceMult * QUALITY_MULT[grade]) / 100) * 100;
+  const processed = !!opts.processed, dry = DRY_KINDS.has(CROPS[sp.crop].kind);
+  const spoilKg = Math.floor(kg * m.spoil * (processed ? EXPORT_PROCESSED_SPOIL : dry ? 0.2 : 1)), arriveKg = kg - spoilKg;
+  // hàng tươi vào thị trường kiểm dịch chặt phải qua xử lý: thêm phí và thời gian
+  const treat = !processed && !dry && mk.treatFee ? mk.treatFee : 0;
+  const minutes = m.minutes + (treat ? mk.treatMinutes ?? 0 : 0);
+  const gross = m.baseFee + m.perKgFee * kg + EXPORT_INLAND_PER_KG_KM * km * kg;
+  const freight = Math.round((gross * (1 - Math.min(0.5, Math.max(0, opts.discount ?? 0))) + treat * kg) / 1000) * 1000;
+  const ref = refPrice ?? sp.refPrice;
+  const unitPrice = processed
+    ? Math.round((ref * recipeOf(CROPS[sp.crop]).value * (1 + (opts.valueBonus ?? 0)) * mk.priceMult) / 100) * 100
+    : Math.round((ref * mk.priceMult * QUALITY_MULT[grade]) / 100) * 100;
   const payout = unitPrice * arriveKg;
-  const q: ExportQuote = { ...base, gatewayId: g.id, gatewayName: g.name, inlandKm: km, freight, spoilKg, arriveKg, unitPrice, payout, net: payout - freight };
+  const q: ExportQuote = { ...base, gatewayId: g.id, gatewayName: g.name, inlandKm: km, freight, spoilKg, arriveKg, unitPrice, payout, net: payout - freight, minutes };
   if (kg < m.minKg) return { ...q, reason: `${m.name} nhận lô từ ${m.minKg} kg.` };
   if (kg > m.maxKg) return { ...q, reason: `${m.name} chỉ chở tối đa ${m.maxKg} kg một lô.` };
-  if (mk.gradeA && grade !== 'A') return { ...q, reason: `${mk.name} chỉ nhận hàng Loại 1.` };
+  if (mk.processedOnly && !processed && !dry) return { ...q, reason: `${mk.name} chỉ nhận hàng chế biến và hàng khô.` };
+  if (mk.gradeA && !processed && grade !== 'A') return { ...q, reason: `${mk.name} chỉ nhận hàng Loại 1.` };
   return { ...q, ok: true };
 }
 /** Đường và thị trường của một đơn lớn hợp tác xã, tất định theo mã đơn (dùng cho đơn cũ chưa ghi sẵn). */
@@ -552,6 +579,84 @@ export function coopOrderRoute(orderId: number, kgTarget: number): { exportMode:
   const fit = EXPORT_MARKETS[market].modes.filter((mo) => kgTarget >= EXPORT_MODES[mo].minKg && kgTarget <= EXPORT_MODES[mo].maxKg);
   const pool = fit.length ? fit : EXPORT_MARKETS[market].modes;
   return { exportMode: pool[orderId % pool.length], market };
+}
+
+// ---------------------------------------------------------------- hộ chiếu du lịch, điểm kinh nghiệm, cấp bậc
+export const LEVELS: { level: number; xp: number; title: string }[] = [
+  { level: 1, xp: 0, title: 'Tập sự' }, { level: 2, xp: 100, title: 'Lữ khách' }, { level: 3, xp: 300, title: 'Người ham đi' },
+  { level: 4, xp: 600, title: 'Thổ địa' }, { level: 5, xp: 1_000, title: 'Nhà thám hiểm' }, { level: 6, xp: 1_600, title: 'Người kể chuyện vùng miền' },
+  { level: 7, xp: 2_400, title: 'Hướng dẫn viên' }, { level: 8, xp: 3_500, title: 'Chuyên gia đặc sản' }, { level: 9, xp: 5_000, title: 'Sứ giả miền quê' },
+  { level: 10, xp: 7_000, title: 'Đại sứ Vườn Việt' },
+];
+export interface LevelInfo { level: number; title: string; xp: number; /** Ngưỡng của cấp kế; null khi đã ở cấp cao nhất. */ nextXp: number | null; prevXp: number }
+export function levelOf(xp: number): LevelInfo {
+  const x = Math.max(0, Math.floor(xp || 0));
+  let i = 0;
+  while (i + 1 < LEVELS.length && x >= LEVELS[i + 1].xp) i++;
+  return { level: LEVELS[i].level, title: LEVELS[i].title, xp: x, nextXp: LEVELS[i + 1]?.xp ?? null, prevXp: LEVELS[i].xp };
+}
+/** Điểm kinh nghiệm cho từng việc. */
+export const XP = { stop: 10, sight: 50, region: 30, harvest: 5, order: 15, export: 40, process: 8, land: 100, consignSold: 5, help: 2 } as const;
+export interface LevelPerks { energyMax: number; exportActive: number; superDailyKg: number }
+export const ENERGY_MAX = 100, ENERGY_PER_LEVEL = 10, ENERGY_REGEN_MINUTES = 3;
+export function levelPerks(level: number): LevelPerks {
+  const l = Math.max(1, Math.min(LEVELS.length, level));
+  return { energyMax: ENERGY_MAX + ENERGY_PER_LEVEL * (l - 1), exportActive: exportMaxActive(l), superDailyKg: SUPER_DAILY_KG + 5 * (l - 1) };
+}
+/** Thể lực tốn cho từng việc. Mua bán, xem bảng, đi vé (ngồi xe), ăn uống không tốn. */
+export const ENERGY_COST = { plant: 1, care: 1, harvest: 2, help: 1, stop: 2, process: 3, tripPer100Km: 2, tripMax: 12 } as const;
+export function tripEnergy(km: number): number { return Math.min(ENERGY_COST.tripMax, Math.max(1, Math.round((km / 100) * ENERGY_COST.tripPer100Km))); }
+/** Thể lực hiện có, tính cả phần hồi theo thời gian kể từ lần ghi gần nhất. */
+export function energyAt(stored: number, storedAtMs: number, nowMs: number, max: number, timeScale = 1): number {
+  const gained = Math.floor(((nowMs - storedAtMs) * timeScale) / (ENERGY_REGEN_MINUTES * 60_000));
+  return Math.min(max, Math.max(0, stored) + Math.max(0, gained));
+}
+
+// ---------------------------------------------------------------- giấy chứng nhận quyền sử dụng đất
+export const LAND_CERT_NAME = 'Giấy chứng nhận quyền sử dụng đất, quyền sở hữu tài sản gắn liền với đất';
+/** Lệ phí trước bạ nhà đất 0,5% giá trị và lệ phí cấp giấy cố định. */
+export const LAND_REG_FEE_RATIO = 0.005, LAND_CERT_FEE = 100_000;
+export function landFees(price: number): { registration: number; certificate: number; total: number } {
+  const registration = Math.round((price * LAND_REG_FEE_RATIO) / 1000) * 1000;
+  return { registration, certificate: LAND_CERT_FEE, total: registration + LAND_CERT_FEE };
+}
+
+// ---------------------------------------------------------------- xưởng chế biến: máy móc
+export type MachineKind = 'may_say' | 'may_ep' | 'day_chuyen_mut' | 'may_rang_xay' | 'may_rua' | 'may_dong_goi' | 'kho_lanh';
+export interface MachineInfo {
+  name: string; emoji: string; price: number;
+  /** Số mẻ chạy song song ở cấp 1 (máy phụ trợ: 0). */
+  slots: number;
+  /** Công thức (Recipe.id) máy làm được; rỗng với máy phụ trợ. */
+  recipes: string[];
+  /** Máy phụ trợ: cộng sản lượng mẻ, cộng giá thành phẩm, hoặc giảm thiệt do nguyên liệu loại thấp. */
+  bonus?: { yield?: number; value?: number; grade?: number };
+  note: string;
+}
+export const MACHINES: Record<MachineKind, MachineInfo> = {
+  may_say: { name: 'Máy sấy', emoji: '♨️', price: 6_000_000, slots: 2, recipes: ['say_deo', 'say_kho', 'hoa_kho'], note: 'Sấy dẻo trái cây, sấy khô củ, làm hoa khô.' },
+  may_ep: { name: 'Máy ép – cô đặc', emoji: '🧃', price: 5_000_000, slots: 2, recipes: ['nuoc_ep'], note: 'Ép nước và cô đặc các loại trái dây leo.' },
+  day_chuyen_mut: { name: 'Dây chuyền mứt – đóng hũ', emoji: '🍯', price: 7_000_000, slots: 2, recipes: ['mut'], note: 'Nấu mứt, đóng hũ thanh trùng.' },
+  may_rang_xay: { name: 'Máy rang xay – xay xát', emoji: '🔥', price: 8_000_000, slots: 2, recipes: ['rang_sao', 'xay_xat'], note: 'Rang cà phê, sao chè, xay tiêu, xay xát lúa gạo.' },
+  may_rua: { name: 'Máy rửa – phân loại', emoji: '🚿', price: 3_000_000, slots: 0, recipes: [], bonus: { yield: 0.05 }, note: 'Phụ trợ: nguyên liệu sạch và đều nên mỗi mẻ ra thêm 5% thành phẩm.' },
+  may_dong_goi: { name: 'Máy đóng gói hút chân không', emoji: '📦', price: 4_000_000, slots: 0, recipes: [], bonus: { value: 0.08 }, note: 'Phụ trợ: bao bì đẹp, để được lâu nên thành phẩm bán được thêm 8%.' },
+  kho_lanh: { name: 'Kho lạnh', emoji: '❄️', price: 5_000_000, slots: 0, recipes: [], bonus: { grade: 0.5 }, note: 'Phụ trợ: giữ nguyên liệu tươi nên hàng Loại 2, Loại 3 chỉ thiệt một nửa so với bình thường.' },
+};
+export const WORKSHOP_MAX_MACHINES = 8, WORKSHOP_MAX_PER_KIND = 2, MACHINE_MAX_LEVEL = 3;
+/** Tiền điện và bảo trì cho mỗi kg nguyên liệu đưa vào máy. */
+export const WORKSHOP_RUN_FEE_PER_KG = 200;
+/** Số mẻ song song và hệ số thời gian của một máy theo cấp. */
+export function machineStats(kind: MachineKind, level: number): { slots: number; time: number } {
+  const m = MACHINES[kind], l = Math.max(1, Math.min(MACHINE_MAX_LEVEL, level));
+  return { slots: m.slots ? m.slots + (l - 1) : 0, time: 1 - 0.1 * (l - 1) };
+}
+export function machineUpgradeCost(kind: MachineKind, level: number): number { return Math.round((MACHINES[kind].price * 0.5 * level) / 100_000) * 100_000; }
+/** Máy chế biến nào làm được công thức này. */
+export function machinesForRecipe(recipeId: string): MachineKind[] { return (Object.keys(MACHINES) as MachineKind[]).filter((k) => MACHINES[k].recipes.includes(recipeId)); }
+/** Máy cấp sẵn cho xưởng mới: máy hợp với đặc sản đầu tiên của vùng nhà. */
+export function starterMachine(homeRegionId: string): MachineKind {
+  const sp = Object.values(SPECIALTIES).find((x) => x.regionId === homeRegionId);
+  return (sp && machinesForRecipe(recipeOf(CROPS[sp.crop]).id)[0]) || 'may_say';
 }
 
 // ---------------------------------------------------------------- vì sao có giới hạn
@@ -569,7 +674,7 @@ export const LIMIT_REASONS: Record<string, { title: string; limit: string; reaso
     reason: 'Để quà là quà, không thành đường chuyển hàng và tiền giữa các tài khoản phụ.' },
   orders: { title: 'Đơn hàng mỗi ngày', limit: `${ORDERS_PER_DAY} đơn mỗi ngày, trả ${Math.round(ORDER_PREMIUM * 100)}% giá tham chiếu`,
     reason: 'Đơn trả giá cao hơn thị trường nên chỉ có vài đơn, đủ để mỗi ngày có việc mà không thay thế việc buôn bán.' },
-  tiles: { title: 'Số ô trồng theo vai', limit: `Nhà vườn trồng cả ${TILE_COUNT} ô; thương lái và chủ xưởng ${SMALL_TILES.length} ô`,
+  tiles: { title: 'Số ô trồng theo vai', limit: `Nhà vườn trồng cả ${TILE_COUNT} ô; thương lái ${SMALL_TILES.length} ô; chủ xưởng không trồng`,
     reason: 'Mỗi vai mạnh một khâu: nhà vườn trồng nhiều, chủ xưởng chế biến, thương lái buôn xa. Vườn nhỏ để thương lái phải mua hàng của người khác.' },
   dump: { title: 'Bán tháo', limit: `Người không phải thương lái chỉ bán cho doanh nghiệp ở ${Math.round(DUMP_RATIO * 100)}% giá tham chiếu`,
     reason: 'Để nhà vườn có lý do bán qua chợ, sạp hoặc thương lái thay vì bấm bán ngay.' },
@@ -577,14 +682,22 @@ export const LIMIT_REASONS: Record<string, { title: string; limit: string; reaso
     reason: 'Hợp tác xã là xóm cùng trồng một loại đặc sản; nhỏ vừa đủ để ai cũng thấy phần mình góp.' },
   coop_order: { title: 'Đơn lớn của hợp tác xã', limit: `${COOP_ORDER_KG_PER_MEMBER} kg mỗi thành viên, hạn ${COOP_ORDER_DAYS} ngày, thưởng ${Math.round(COOP_ORDER_BONUS * 100)}%`,
     reason: 'Đơn xuất khẩu cần gom đủ hàng mới đi được một chuyến; chia theo đầu người để hợp tác xã đông hay ít đều làm nổi.' },
-  export_role: { title: 'Ai xuất khẩu được đường nào', limit: 'Thương lái: mọi đường. Vai khác: xe tải biên mậu và máy bay; vào hợp tác xã thì thêm container, tàu hoả, tàu nhỏ',
-    reason: 'Thuê nguyên chuyến container hay tàu cần đầu mối gom hàng. Một nhà vườn riêng lẻ chỉ gửi được lô nhỏ.' },
+  export_role: { title: 'Ai xuất khẩu được đường nào', limit: `Mọi vai đi được mọi đường. Thương lái được giảm ${Math.round(EXPORT_DISCOUNT_TRADER * 100)}% cước, thành viên hợp tác xã giảm thêm ${Math.round(EXPORT_DISCOUNT_COOP * 100)}%`,
+    reason: 'Ai có hàng cũng xuất được; người có mối vận tải (thương lái) và người gom hàng chung (hợp tác xã) thì được cước rẻ hơn, giống ngoài đời.' },
   export_min: { title: 'Khối lượng tối thiểu mỗi lô', limit: (Object.keys(EXPORT_MODES) as ExportMode[]).map((k) => `${EXPORT_MODES[k].name} từ ${EXPORT_MODES[k].minKg} kg`).join('; '),
     reason: 'Xe, tàu càng lớn thì cước mỗi kg càng rẻ nhưng phải đủ hàng mới chạy. Vì vậy mới cần gom hàng và chọn đường cho hợp.' },
-  export_active: { title: 'Lô hàng đang trên đường', limit: `Tối đa ${EXPORT_MAX_ACTIVE} lô cùng lúc`,
-    reason: 'Để mỗi lô là một quyết định có cân nhắc, không phải bấm liên tục.' },
-  export_grade: { title: 'Thị trường khó tính', limit: 'Nhật – Hàn và Âu – Mỹ chỉ nhận hàng Loại 1',
-    reason: 'Giống ngoài đời: thị trường trả giá cao thì đòi chất lượng cao. Chăm cây đúng giờ mới có hàng Loại 1.' },
+  export_active: { title: 'Lô hàng đang trên đường', limit: `${EXPORT_MAX_ACTIVE} lô cùng lúc ở cấp 1, mỗi cấp thêm 1 lô, tối đa ${EXPORT_MAX_ACTIVE_TOP}`,
+    reason: 'Người mới làm quen với vài lô; càng có kinh nghiệm (lên cấp) càng quản được nhiều lô cùng lúc.' },
+  export_grade: { title: 'Thị trường khó tính', limit: 'Nhật – Hàn, Úc – New Zealand và Âu – Mỹ chỉ nhận trái tươi Loại 1 và thu thêm phí xử lý kiểm dịch; Nga – Á Âu chỉ nhận hàng chế biến, hàng khô',
+    reason: 'Giống ngoài đời: thị trường trả giá cao thì đòi chất lượng và kiểm dịch (chiếu xạ, xử lý hơi nước nóng). Hàng chế biến được miễn các yêu cầu này nên xưởng có lợi thế.' },
+  export_processed: { title: 'Hàng chế biến xuất khẩu', limit: 'Giá theo công thức chế biến, hao hụt bằng một phần mười hàng tươi, không xét loại, miễn phí kiểm dịch',
+    reason: 'Trái sấy, mứt, cà phê rang để được lâu và nhẹ hơn nên đi xa được; đây là đầu ra chính của chủ xưởng.' },
+  tiles_xuong: { title: 'Chủ xưởng không trồng trọt', limit: 'Lô của chủ xưởng là nhà xưởng với các máy, không có ô trồng',
+    reason: 'Xưởng mạnh ở khâu chế biến: mua nông sản của nhà vườn và thương lái về làm thành phẩm. Nhờ vậy ba vai cần nhau.' },
+  energy: { title: 'Thể lực', limit: `Tối đa ${ENERGY_MAX} điểm ở cấp 1, hồi 1 điểm mỗi ${ENERGY_REGEN_MINUTES} phút; ăn uống hồi ngay`,
+    reason: 'Làm vườn, lái xe, đi bộ tham quan đều tốn sức như ngoài đời. Ăn uống ở quầy hàng là cách hồi sức nhanh, cũng là lý do ghé các quầy khi đi du lịch.' },
+  workshop_machines: { title: 'Máy trong xưởng', limit: `Tối đa ${WORKSHOP_MAX_MACHINES} máy, mỗi loại ${WORKSHOP_MAX_PER_KIND} cái, nâng tới cấp ${MACHINE_MAX_LEVEL}`,
+    reason: 'Nhà xưởng có diện tích hữu hạn. Muốn làm nhiều thì chọn máy cho hợp nguồn nguyên liệu và nâng cấp máy.' },
   super_buy: { title: 'Mua ở siêu thị đặc sản', limit: `Mỗi người ${SUPER_DAILY_KG} kg mỗi ngày ở mỗi siêu thị`,
     reason: 'Siêu thị là nơi khách du lịch mua đặc sản mang về, không phải kho sỉ. Nếu mua thoải mái thì một người vét sạch kệ rồi bán lại, khách tới sau không còn gì.' },
   super_consign: { title: 'Ký gửi hàng lên kệ', limit: `Mỗi lô ${SUPER_MIN_KG}–${SUPER_MAX_LOT_KG} kg, mỗi người tối đa ${SUPER_MAX_LOTS} lô đang bày, phải đang ở tỉnh đó`,

@@ -26,7 +26,7 @@ export interface SightSet {
   onStop?: (id: string) => void;
   npcs?: number;
   /** Các chỗ đặt quầy hàng (xe nước, gánh hàng rong…) theo thứ tự ưu tiên; bỏ trống thì tự rải dọc lối đi. */
-  shopSpots?: ShopSpot[];
+  shopSpots?: (ShopSpot | THREE.Vector3)[];
   /** Trang trí bầu trời: tự chọn theo độ sáng của trời (sao, trăng khi tối; mây, chim khi sáng) hoặc tắt. */
   skyDecor?: 'auto' | 'none';
   /** Cường độ đèn hắt ngược hướng nắng để mặt khuất của công trình không tối sầm (mặc định 0.45). */
