@@ -1,0 +1,5 @@
+.painted-tools { position: absolute; right: max(8px, env(safe-area-inset-right)); top: 50%; transform: translateY(-50%); display: grid; gap: 8px; z-index: 2; pointer-events: none; }
+.painted-tools button { pointer-events: auto; width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 1.05rem; line-height: 1; display: grid; place-items: center; background: var(--paper, #fff6dc); border: 3px solid var(--wood, #7a4a1e); box-shadow: 0 3px 0 var(--wood-dark, #56310f); }
+.painted-tools button.mode { font-size: 0.7rem; font-weight: 700; }
+.has-modal .painted-tools, .build ~ .painted-tools { display: none; }
+@media (max-height: 430px) { .painted-tools { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); transform: none; grid-auto-flow: column; } }

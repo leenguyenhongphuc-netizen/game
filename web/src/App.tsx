@@ -28,6 +28,11 @@ import type { SightTrip } from './sights.tsx';
 import { SightWalk } from './sight/SightWalk.tsx';
 import { BuildMode } from './build.tsx';
 import { LandCertificate, PassportPanel } from './passport.tsx';
+import { ProgressPanel } from './progress.tsx';
+import { FusionPanel } from './fusion.tsx';
+import { LandUpgrades } from './upgrades.tsx';
+import { ImportRide } from './drive/ImportRide.tsx';
+import type { ImportOrder } from './workshop.tsx';
 import { BagPanel, EnergyBar, LevelBadge, ShopSheet, describeProgress } from './vital.tsx';
 import type { RideMode } from './drive/TravelRide.tsx';
 import { WorldView } from './WorldView.tsx';
@@ -247,7 +252,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [seedOpen, setSeedOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [trip, setTrip] = useState<Trip | null>(null);
-  const [travelTab, setTravelTab] = useState<'di' | 'thamquan' | 'sieuthi' | 'hochieu' | 'so'>('di');
+  const [travelTab, setTravelTab] = useState<'di' | 'thamquan' | 'sieuthi' | 'hochieu' | 'tientrinh' | 'so'>('di');
+  const [importRide, setImportRide] = useState<ImportOrder | null>(null);
   const [cert, setCert] = useState<number | null>(null);
   const [sightShops, setSightShops] = useState<{ id: string; name: string; kind: string; emoji: string }[]>([]);
   const [shopOpen, setShopOpen] = useState<string | null>(null);
@@ -256,7 +262,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [sightWalk, setSightWalk] = useState<SightTrip | null>(null);
   const [marketTab, setMarketTab] = useState<'cho' | 'gia'>('cho');
   const [xomTab, setXomTab] = useState<'ban' | 'htx' | 'qua'>('ban');
-  const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua' | 'tui'>('kho');
+  const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua' | 'tui' | 'dunghop'>('kho');
   type FactoryView = { machines: { id: number | string; kind: string; name: string; level?: number; slots?: number; jobs?: { recipeId?: string; doneAt?: number; done?: boolean }[] }[] };
   const [factory, setFactory] = useState<FactoryView | null>(null);
   const isWorkshop = me?.user.role === 'xuong';
@@ -400,7 +406,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
           onClick={async () => { if (confirm('Đăng xuất khỏi Vườn Việt?')) { await api('POST', '/api/auth/logout', {}); await refresh(); } }}>⏻</button>
       </header>
       <div className="chips">
-        <LevelBadge me={me} onClick={() => { setTravelTab('hochieu'); setTab('bando'); }} /><EnergyBar me={me} onClick={() => { setKhoTab('tui'); setTab('kho'); }} />
+        <LevelBadge me={me} onClick={() => { setTravelTab('tientrinh'); setTab('bando'); }} /><EnergyBar me={me} onClick={() => { setKhoTab('tui'); setTab('kho'); }} />
         {village?.weather && <span className="wchip" title={village.weather.growth < 1 ? 'Cây lớn nhanh hơn' : village.weather.growth > 1 ? 'Cây lớn chậm hơn' : 'Thời tiết thuận'}>{village.weather.icon} {village.weather.label}{village.weather.growth !== 1 && <b> {village.weather.growth < 1 ? '▲ nhanh' : '▼ chậm'}</b>}</span>}
         {village?.weather?.hazard && <span className="wchip warn" title={village.weather.hazard.note}>{village.weather.hazard.icon} {village.weather.hazard.label}</span>}
         {(village?.events ?? []).map((ev) => <span key={ev.id} className={`wchip ${ev.active ? 'hot' : ''}`}>{ev.icon} {ev.active ? `${ev.name}: +${Math.round(ev.bonus * 100)}%` : `${ev.name} sau ${fmtDuration(ev.startsAt - now)}`}</span>)}
@@ -526,6 +532,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         setTravelTab(r.toMarket ? 'sieuthi' : 'thamquan'); setTab('bando');
       }} />}
       {sightWalk && shopOpen && <ShopSheet sightId={sightWalk.sight.id} shopId={shopOpen} onClose={() => setShopOpen(null)} onChanged={() => { void refresh(); }} />}
+      {importRide && <ImportRide order={importRide} onDone={() => { setImportRide(null); setKhoTab('xuong'); setTab('kho'); }} />}
       {cert !== null && <LandCertificate plotId={cert} onClose={() => setCert(null)} />}
       {building && atHome && center && tab === 'vuon' && <BuildMode me={me} home={center} worldRef={worldRef} onChanged={reload} onClose={() => setBuilding(false)} />}
       {ride && <TravelRide mode={ride.mode} fromRegionId={me.user.homeRegionId!} toRegionId={ride.to} km={ride.km} seconds={TRAVEL_MODES[ride.mode].seconds} onFinish={() => { setTour(ride.to); setRide(null); worldRef.current?.goHome(); }} />}
@@ -543,17 +550,20 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                   <button aria-selected={khoTab === 'xuong'} onClick={() => setKhoTab('xuong')}>Xưởng</button>
                   <button aria-selected={khoTab === 'xuat'} onClick={() => setKhoTab('xuat')}>Xuất khẩu</button>
                   <button aria-selected={khoTab === 'tui'} onClick={() => setKhoTab('tui')}>Túi đồ</button>
+                  <button aria-selected={khoTab === 'dunghop'} onClick={() => setKhoTab('dunghop')}>Dung hợp</button>
                   {isTrader && atHome && <button aria-selected={khoTab === 'mua'} onClick={() => setKhoTab('mua')}>Thu mua</button>}
                 </div>
                 {khoTab === 'kho' && <Stock me={me} prices={prices} marketDay={!!village?.events?.some((e) => e.id === 'cho_phien' && e.active)} floating={!!village?.events?.some((e) => e.id === 'cho_noi' && e.active) && atHome} friends={friendList} refresh={reload} />}
                 {khoTab === 'tui' && <BagPanel me={me} refresh={reload} />}
+                {khoTab === 'dunghop' && <FusionPanel me={me} refresh={reload} />}
                 {khoTab === 'don' && <OrdersPanel me={me} onChanged={reload} />}
                 {khoTab === 'xuat' && <ExportPanel me={me} refresh={reload} onSent={(x) => { setTab('vuon'); setExportRide(x); }} />}
                 {khoTab === 'mua' && <TradePanel me={me} regionId={me.user.homeRegionId!} refresh={reload} openStock={() => setKhoTab('kho')} />}
-                {khoTab === 'xuong' && (me.user.role === 'xuong' ? <WorkshopPanel me={me} priceOf={priceOf} onChanged={reload} onOpen={(w) => { if (w === 'cho') setTab('cho'); else if (w === 'xuatkhau') setKhoTab('xuat'); else { setTravelTab('sieuthi'); setTab('bando'); } }} /> : <p className="hint">Chỉ Chủ xưởng mới chế biến được. Bạn là {ROLE_INFO[me.user.role!].name}: hãy bán nông sản tươi cho chủ xưởng qua sạp, hoặc chờ mùa sau quay lại vai trò.</p>)}
+                {khoTab === 'xuong' && (me.user.role === 'xuong' ? <WorkshopPanel me={me} priceOf={priceOf} onChanged={reload} onImport={(o) => { setTab('vuon'); setImportRide(o); }} onOpen={(w) => { if (w === 'cho') setTab('cho'); else if (w === 'xuatkhau') setKhoTab('xuat'); else if (w === 'dunghop') setKhoTab('dunghop'); else { setTravelTab('sieuthi'); setTab('bando'); } }} /> : <p className="hint">Chỉ Chủ xưởng mới chế biến được. Bạn là {ROLE_INFO[me.user.role!].name}: hãy bán nông sản tươi cho chủ xưởng qua sạp, hoặc chờ mùa sau quay lại vai trò.</p>)}
               </>
             )}
             {tab === 'toi' && <div className="cert-list"><h3>Giấy chứng nhận quyền sử dụng đất</h3>{me.plots.map((p) => <button key={p.id} onClick={() => setCert(p.id)}>📜 {p.isHome ? 'Thửa nhà' : 'Thửa'} ở {REGIONS[p.regionId].name}{p.wardName ? ` · ${p.wardName}` : ''}</button>)}</div>}
+            {tab === 'toi' && mine && center && !(isWorkshop && center.plot.isHome) && <div className="cert-list"><h3>Nâng cấp thửa đang xem</h3><LandUpgrades plotId={center.plot.id} me={me} onChanged={reload} /></div>}
             {tab === 'toi' && <ProfilePanel onRespin={() => { setTab('vuon'); setRespin(true); }} me={me} homePlotId={homePlotId} wardProvince={(atHome ? center?.plot.wardProvince : null) ?? null} wardName={me.plots.find((p) => p.isHome)?.wardName ?? null} onChanged={reload} />}
             {tab === 'cho' && (
               <>
@@ -575,11 +585,12 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
             )}
             {tab === 'bando' && (
               <>
-                <div className="tabs"><button aria-selected={travelTab === 'di'} onClick={() => setTravelTab('di')}>Bản đồ</button><button aria-selected={travelTab === 'thamquan'} onClick={() => setTravelTab('thamquan')}>Tham quan</button><button aria-selected={travelTab === 'sieuthi'} onClick={() => setTravelTab('sieuthi')}>Siêu thị</button><button aria-selected={travelTab === 'hochieu'} onClick={() => setTravelTab('hochieu')}>Hộ chiếu</button><button aria-selected={travelTab === 'so'} onClick={() => setTravelTab('so')}>Sổ tem</button></div>
+                <div className="tabs"><button aria-selected={travelTab === 'di'} onClick={() => setTravelTab('di')}>Bản đồ</button><button aria-selected={travelTab === 'thamquan'} onClick={() => setTravelTab('thamquan')}>Tham quan</button><button aria-selected={travelTab === 'sieuthi'} onClick={() => setTravelTab('sieuthi')}>Siêu thị</button><button aria-selected={travelTab === 'hochieu'} onClick={() => setTravelTab('hochieu')}>Hộ chiếu</button><button aria-selected={travelTab === 'tientrinh'} onClick={() => setTravelTab('tientrinh')}>Thăng hạng</button><button aria-selected={travelTab === 'so'} onClick={() => setTravelTab('so')}>Sổ tem</button></div>
                 {travelTab === 'di' && <TravelPanel me={me} startRide={startRide} startTrip={isTrader ? startTrip : undefined} touring={tour} />}
                 {travelTab === 'thamquan' && <SightsPanel me={me} refresh={reload} onGo={(t) => { setTab('vuon'); setSightTrip(t); }} />}
                 {travelTab === 'sieuthi' && <SupermarketPanel me={me} province={REGIONS[tour ?? me.user.homeRegionId!].province} refresh={reload} />}
                 {travelTab === 'hochieu' && <PassportPanel me={me} refresh={reload} />}
+                {travelTab === 'tientrinh' && <ProgressPanel me={me} refresh={reload} />}
                 {travelTab === 'so' && <AlbumPanel />}
               </>
             )}

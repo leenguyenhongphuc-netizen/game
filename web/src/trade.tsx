@@ -168,7 +168,7 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
     <div className="export">
       <p className="muted">Bán ra nước ngoài được giá hơn trong nước và không bị "được mùa mất giá". Chọn hàng, chọn nước mua, rồi chọn đường đi: mỗi đường có cước, thời gian và hao hụt riêng. Tiền về khi lô hàng tới nơi.</p>
       <div className="ex-status">
-        <span><b>Cấp {opt.level ?? 1}</b>: tối đa {opt.maxActive} lô cùng lúc, đang đi {opt.active}. Lên cấp để mở thêm.</span>
+        <span>Đang có <b>{opt.active}</b> lô trên đường. Gửi bao nhiêu lô tuỳ lượng hàng trong kho và mức tối thiểu của từng đường.</span>
         {discount > 0 && <span className="tag">Bạn được giảm {Math.round(discount * 100)}% cước</span>}
       </div>
       {act.error && <p className="error" role="alert">{act.error}</p>}
@@ -223,6 +223,7 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
                   {q.ok ? (
                     <div className="route-facts">
                       <span>📦 {q.kg} kg</span>
+                      {q.lcl && <span className="tag lcl">Gom hàng lẻ (LCL)</span>}
                       <span>🧾 cước {fmtMoney(q.freight)}</span>
                       <span>⏱️ {fmtDuration((q.minutes * 60_000) / scale)}</span>
                       <span>{q.spoilKg > 0 ? `🥀 hao ${q.spoilKg} kg` : '✨ không hao'}</span>
@@ -241,11 +242,11 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
             );
           })}
           {here.length === 0 && <p className="hint">Chưa có đường nào tới thị trường này.</p>}
-          {full && <p className="notice">Bạn đang có {opt.active}/{opt.maxActive} lô trên đường. Chờ một lô tới nơi rồi gửi tiếp, hoặc lên cấp để mở thêm chỗ.</p>}
+          {full && <p className="notice">Bạn đang có {opt.active} lô trên đường, đã chạm mức tối đa {opt.maxActive} lô. Chờ một lô tới nơi rồi gửi tiếp.</p>}
         </>
       )}
 
-      <h3>Lô hàng đang đi ({going.length}/{opt.maxActive})</h3>
+      <h3>Lô hàng đang đi ({going.length})</h3>
       {going.length === 0 ? <p className="hint">Chưa có lô nào trên đường.</p> : going.map((s) => {
         const total = Math.max(1, s.arrivesAt - s.createdAt), p = Math.min(1, Math.max(0, (now - s.createdAt) / total));
         return (

@@ -207,3 +207,85 @@ export const MORE: Record<string, () => THREE.Group> = {
   // Ruộng lúa có bờ và người nông dân
   paddy: () => { const g = new THREE.Group(), gold = Math.random() < 0.35; g.add(box(gold ? 0xe2c95f : 0x7fcf6c, 0, 0.05, 0, 12, 0.1, 8), box(0x8fd8ea, 0, 0.02, 0, 12.6, 0.04, 8.6, { rough: 0.25 })); for (let i = 0; i < 9; i++) g.add(box(gold ? 0xd1b445 : 0x63b85a, -5 + i * 1.25, 0.14, 0, 0.36, 0.14, 7.4)); g.add(cyl(0x7a5c8f, 2, 0.6, 1.5, 0.2, 0.9), mesh(GEO.ball, mat(0xf2cfa5), 2, 1.2, 1.5, 0.18), mesh(new THREE.ConeGeometry(0.42, 0.22, 10), mat(0xf2dc9a), 2, 1.42, 1.5)); return g; },
 };
+
+// ---------------------------------------------------------------- xe của người chơi theo loại, trạm sạc
+export type VehGroup = 'ba_gac' | 'ban_tai' | 'tai_nhe' | 'tai_trung' | 'tai_nang' | 'dau_keo';
+const wheelZ = (x: number, z: number, r = 0.42, w = 0.3) => { const m = mesh(GEO.cyl, mat(0x3a3f4a), x, r, z, r, w, r); m.rotation.z = Math.PI / 2; return m; };
+const FRUIT = [0xe8457f, 0xf4c430, 0xf08a24, 0x9bd64a, 0x6a3d9a, 0xdc342b];
+/**
+ * Mô hình xe người chơi lái (đầu xe hướng -z, gốc toạ độ gần trục giữa như buildTruck cũ).
+ * `rearZ`: vị trí đèn hậu; `back`: máy quay cần lùi thêm bấy nhiêu vì xe dài.
+ */
+export function playerVehicle(group: VehGroup, color: number, o: { electric?: boolean; cold?: boolean } = {}): { root: THREE.Group; rearZ: number; back: number; halfW: number } {
+  const g = new THREE.Group(), dark = 0x4a5160, glass = 0xbfe6f7;
+  const boxC = o.cold ? 0xf4f7fa : 0xe9d2a6, topC = o.cold ? 0x8fc4e8 : 0xc9a877;
+  const lamps = (y: number, z: number, x = 0.6) => g.add(mesh(GEO.ball, mat(0xfff3b0, { emissive: 0xffe08a }), -x, y, z, 0.14), mesh(GEO.ball, mat(0xfff3b0, { emissive: 0xffe08a }), x, y, z, 0.14));
+  const tails = (y: number, z: number, x = 0.7) => g.add(box(0xe0342b, -x, y, z, 0.3, 0.16, 0.06), box(0xe0342b, x, y, z, 0.3, 0.16, 0.06));
+  const fruit = (x0: number, z0: number, nx: number, nz: number, y: number, step = 0.6) => { for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) g.add(mesh(GEO.ball, mat(FRUIT[(i + j) % FRUIT.length], { rough: 0.5 }), x0 + i * step, y + ((i + j) % 2) * 0.12, z0 + j * step, 0.3)); };
+  let rearZ = 2.34, back = 0, halfW = 1.0;
+  if (group === 'ba_gac') {
+    // đầu xe máy kéo thùng hai bánh
+    g.add(box(color, 0, 0.78, -1.5, 0.46, 0.5, 1.5), box(0x2b2f36, 0, 1.08, -1.1, 0.5, 0.14, 0.8), box(dark, 0, 1.3, -2.0, 1.0, 0.08, 0.1), box(color, 0, 1.05, -2.15, 0.34, 0.5, 0.2));
+    g.add(wheelZ(0, -2.2, 0.4, 0.2), wheelZ(-0.78, 0.75, 0.38), wheelZ(0.78, 0.75, 0.38));
+    g.add(box(dark, 0, 0.56, 0.55, 1.5, 0.14, 2.5), box(boxC, 0, 0.95, 0.55, 1.6, 0.6, 2.5), box(topC, 0, 1.28, 0.55, 1.7, 0.1, 2.6));
+    fruit(-0.45, -0.2, 2, 3, 1.5, 0.6);
+    g.add(mesh(GEO.ball, mat(0xfff3b0, { emissive: 0xffe08a }), 0, 1.0, -2.3, 0.14)); tails(0.9, 1.84, 0.6); rearZ = 1.86; halfW = 0.85;
+  } else if (group === 'ban_tai') {
+    g.add(box(dark, 0, 0.55, 0.1, 1.9, 0.3, 4.6), box(color, 0, 0.95, -1.75, 1.9, 0.55, 1.2), box(color, 0, 1.2, -0.35, 1.9, 1.05, 1.9), box(glass, 0, 1.5, -1.32, 1.6, 0.5, 0.06, { rough: 0.3 }), box(0xfff6dc, 0, 1.76, -0.35, 1.7, 0.08, 1.7));
+    g.add(box(color, 0, 0.95, 1.55, 1.9, 0.6, 1.9), box(dark, 0, 1.0, 1.55, 1.6, 0.4, 1.6));
+    fruit(-0.45, 1.05, 2, 2, 1.32, 0.9);
+    for (const [x, z] of [[-0.95, -1.55], [0.95, -1.55], [-0.95, 1.5], [0.95, 1.5]]) g.add(wheelZ(x, z));
+    lamps(0.95, -2.37); tails(0.95, 2.52); rearZ = 2.54;
+  } else if (group === 'tai_trung' || group === 'tai_nang') {
+    const heavy = group === 'tai_nang', L = heavy ? 6.6 : 4.6, W = heavy ? 2.3 : 2.15, H = heavy ? 2.3 : 1.9, z0 = -0.4 + L / 2;
+    g.add(box(dark, 0, 0.7, z0 - 0.9, W - 0.2, 0.3, L + 2.2), box(color, 0, 1.65, -1.55, W, 1.7, 1.5), box(color, 0, 1.05, -2.36, W, 0.5, 0.3), box(glass, 0, 2.0, -2.32, W - 0.3, 0.7, 0.06, { rough: 0.3 }), box(0xfff6dc, 0, 2.55, -1.55, W - 0.2, 0.1, 1.3));
+    g.add(box(boxC, 0, 0.95 + H / 2, z0, W, H, L), box(topC, 0, 0.95 + H + 0.05, z0, W + 0.1, 0.12, L + 0.1));
+    if (!o.cold) for (let i = 0; i < Math.round(L / 1.1); i++) g.add(box(0xb8956a, W / 2 + 0.01, 0.95 + H / 2, z0 - L / 2 + 0.55 + i * 1.1, 0.04, H - 0.2, 0.1), box(0xb8956a, -W / 2 - 0.01, 0.95 + H / 2, z0 - L / 2 + 0.55 + i * 1.1, 0.04, H - 0.2, 0.1));
+    else g.add(box(0x3f8fd6, W / 2 + 0.01, 1.6, z0, 0.04, 0.3, L - 0.4), box(0x3f8fd6, -W / 2 - 0.01, 1.6, z0, 0.04, 0.3, L - 0.4), box(0xd9dee4, 0, 2.0 + H, z0 - L / 2 + 0.5, 1.3, 0.5, 0.7));
+    const rear = z0 + L / 2, ax = heavy ? [rear - 0.9, rear - 2.0] : [rear - 1.1];
+    for (const x of [-(W / 2 - 0.1), W / 2 - 0.1]) { g.add(wheelZ(x, -1.6, 0.48, 0.34)); for (const z of ax) g.add(wheelZ(x, z, 0.48, 0.4)); }
+    lamps(1.05, -2.53, 0.75); tails(1.0, rear + 0.02, 0.8); rearZ = rear + 0.04; back = heavy ? 4.2 : 2.0; halfW = W / 2;
+  } else if (group === 'dau_keo') {
+    // đầu kéo ba trục + sơ mi rơ moóc chở container 40 feet
+    const W = 2.4, L = 9.6, z0 = 0.9 + L / 2, cc = o.cold ? 0xf4f7fa : 0x2e7d6b;
+    g.add(box(dark, 0, 0.75, -0.6, 2.0, 0.3, 4.4), box(color, 0, 1.85, -1.75, W, 2.1, 1.7), box(color, 0, 1.05, -2.66, W, 0.6, 0.3), box(glass, 0, 2.3, -2.62, W - 0.3, 0.8, 0.06, { rough: 0.3 }), box(0xfff6dc, 0, 3.0, -1.6, W - 0.2, 0.25, 1.4));
+    g.add(cyl(0x8f97a3, -0.95, 2.4, -0.75, 0.09, 2.6), cyl(0x8f97a3, 0.95, 2.4, -0.75, 0.09, 2.6));
+    g.add(box(0x3a3f4a, 0, 0.95, z0, 2.1, 0.22, L), box(cc, 0, 2.35, z0, W, 2.6, L));
+    for (let i = 0; i < 16; i++) g.add(box(o.cold ? 0xd5dbe2 : 0x25665a, W / 2 + 0.01, 2.35, z0 - L / 2 + 0.3 + i * 0.6, 0.04, 2.4, 0.12), box(o.cold ? 0xd5dbe2 : 0x25665a, -W / 2 - 0.01, 2.35, z0 - L / 2 + 0.3 + i * 0.6, 0.04, 2.4, 0.12));
+    g.add(box(0xfff6dc, 0, 2.35, z0 + L / 2 + 0.01, W - 0.3, 2.3, 0.04));
+    const rear = z0 + L / 2;
+    for (const x of [-1.05, 1.05]) { g.add(wheelZ(x, -1.9, 0.5, 0.34)); for (const z of [-0.2, 0.75, rear - 0.8, rear - 1.8, rear - 2.8]) g.add(wheelZ(x, z, 0.5, 0.42)); }
+    lamps(1.1, -2.83, 0.8); tails(1.1, rear + 0.05, 0.9); rearZ = rear + 0.07; back = 9.5; halfW = 1.2;
+  } else {
+    // tải nhẹ: như xe cũ, thùng hở chở trái cây (thùng lạnh thì kín)
+    g.add(box(dark, 0, 0.62, 0.3, 1.9, 0.3, 4.1), box(color, 0, 1.45, -1.35, 1.9, 1.4, 1.3), box(color, 0, 1.0, -2.1, 1.9, 0.6, 0.5), box(glass, 0, 1.75, -2.02, 1.6, 0.6, 0.06, { rough: 0.3 }), box(0xfff6dc, 0, 2.2, -1.35, 1.7, 0.1, 1.1));
+    if (o.cold) g.add(box(boxC, 0, 1.75, 0.95, 2.05, 2.0, 2.75), box(0x3f8fd6, 1.04, 1.5, 0.95, 0.04, 0.3, 2.4), box(0x3f8fd6, -1.04, 1.5, 0.95, 0.04, 0.3, 2.4), box(0xd9dee4, 0, 2.95, 0, 1.2, 0.4, 0.6));
+    else { g.add(box(boxC, 0, 1.15, 0.95, 2.0, 0.8, 2.7), box(topC, 0, 1.6, 0.95, 2.1, 0.12, 2.8)); fruit(-0.6, 0, 3, 4, 1.85, 0.6); }
+    for (const [x, z] of [[-0.95, -1.5], [0.95, -1.5], [-0.95, 1.4], [0.95, 1.4]]) g.add(wheelZ(x, z));
+    lamps(0.95, -2.37); tails(0.95, 2.32);
+  }
+  if (o.electric) {
+    // xe điện: dải xanh lá phát sáng quanh ca-bin và nắp cổng sạc
+    const zc = group === 'ba_gac' ? -1.5 : group === 'dau_keo' ? -1.75 : group === 'ban_tai' ? -0.35 : -1.45, w = halfW + 0.02, y = group === 'ba_gac' ? 0.7 : 1.05;
+    g.add(box(0x35d07f, w, y, zc, 0.05, 0.16, 1.3, { emissive: 0x1e9a58 }), box(0x35d07f, -w, y, zc, 0.05, 0.16, 1.3, { emissive: 0x1e9a58 }), box(0x35d07f, 0, y, zc - (group === 'ba_gac' ? 0.78 : group === 'dau_keo' ? 1.08 : group === 'ban_tai' ? 2.02 : 0.92), halfW * 1.6, 0.12, 0.05, { emissive: 0x1e9a58 }));
+  }
+  return { root: g, rearZ, back, halfW };
+}
+
+/** Trạm sạc nhanh: mái che xanh lá, bốn trụ sạc có đèn, tủ điện. Gốc toạ độ ở mép làn phụ (như trạm xăng). */
+export function chargerStation(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(box(0xb8bec6, 4.5, 0.02, 0, 11, 0.04, 16, { rough: 1 }), box(0x2fbf71, 4.2, 5.3, 0, 8.4, 0.45, 9), box(0xffffff, 4.2, 5.0, 0, 8.6, 0.16, 9.2));
+  for (const [x, z] of [[0.8, -3.6], [0.8, 3.6], [7.6, -3.6], [7.6, 3.6]]) g.add(cyl(0xf3f4f6, x, 2.6, z, 0.2, 5.2));
+  for (const z of [-3, -1, 1, 3]) g.add(box(0x9aa1ab, 1.5, 0.12, z, 0.9, 0.24, 0.9), box(0xf6f8fa, 1.5, 1.1, z, 0.5, 1.9, 0.6), box(0x35d07f, 1.24, 1.5, z, 0.03, 0.5, 0.4, { emissive: 0x1e9a58 }), box(0x22262c, 1.2, 0.8, z + 0.36, 0.1, 0.5, 0.08));
+  g.add(box(0xe9eef2, 11, 1.3, 0, 3, 2.6, 5), box(0x2fbf71, 11, 2.75, 0, 3.3, 0.3, 5.3), box(0xf4c430, 9.48, 1.6, 0, 0.04, 0.6, 0.6));
+  // tấm pin mặt trời trên mái
+  for (const z of [-3, 0, 3]) g.add(box(0x23406e, 4.2, 5.62, z, 7.2, 0.06, 2.4, { rough: 0.3 }));
+  return g;
+}
+/** Trụ sạc lẻ đặt ở trạm dừng nghỉ. */
+export function chargerPosts(): THREE.Group {
+  const g = new THREE.Group();
+  for (const z of [-1.2, 1.2]) g.add(box(0xf6f8fa, 0, 1.0, z, 0.5, 1.8, 0.6), box(0x35d07f, -0.27, 1.4, z, 0.03, 0.5, 0.4, { emissive: 0x1e9a58 }));
+  return g;
+}

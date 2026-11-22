@@ -2,12 +2,22 @@
 import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { REGIONS } from '../../../shared/catalog.ts';
+import { ITEMS } from '../../../shared/items.ts';
+import { DRIVE_RULES, VEHICLES, restStopItems } from '../../../shared/vehicles.ts';
 import { DriveScene } from './DriveScene.ts';
-import type { DriveHud, DriveSummary, DriveTicket, View } from './DriveScene.ts';
+import type { DriveHud, DriveRest, DriveSummary, DriveTicket, View } from './DriveScene.ts';
 
-export interface DrivePlan { km: number; needsBoat: boolean; seconds: number; tolls: number; tollFee: number; fuelNeededL: number; junctions: { atKm: number; dir: 'L' | 'R'; name: string }[]; stationsAtKm: number[] }
+export interface DrivePlan { km: number; needsBoat: boolean; seconds: number; tolls: number; tollFee: number; fuelNeededL: number; junctions: { atKm: number; dir: 'L' | 'R'; name: string }[]; stationsAtKm: number[];
+  /** Theo xe đang lái (máy chủ trả kèm trong plan của /api/trips/start). */
+  power?: string; unit?: string; chargersAtKm?: number[]; restStops?: { atKm: number; name: string; hasFuel?: boolean; hasCharger?: boolean; province?: string | null }[]; restsNeeded?: number; maxKmh?: number; upkeepCost?: number; driveHours?: number }
+/** Một lần ghé trạm dừng nghỉ: gửi nguyên cho máy chủ trong `rests` lúc kết thúc chuyến. */
+export interface DriveRestLog { atKm: number; wc?: boolean; items?: { itemId: string; qty: number; use: boolean }[] }
 /** `speeding`: số km/h vượt quá ở mỗi lần bị CSGT lập biên bản (máy chủ tự tính tiền phạt theo luật). */
-export interface DriveResult { refuelL: number; detourKm: number; speeding?: number[] }
+export interface DriveResult { refuelL: number; detourKm: number; speeding?: number[];
+  /** Xe điện: các lần sạc dọc đường (khi đó refuelL = 0 để máy chủ không tính hai lần). */
+  charges?: { atKm: number; kwh: number }[];
+  /** Các trạm dừng nghỉ đã ghé, đồ đã mua, có đi vệ sinh không. */
+  rests?: DriveRestLog[] }
 
 const CSS = `
 .dg { position: fixed; left: var(--vx, 0px); top: var(--vy, 0px); width: var(--vw, 100%); height: var(--vh, 100%); z-index: 1000; background: #dff3fb; overflow: hidden; font-family: 'Be Vietnam Pro', system-ui, sans-serif; color: #3b2a17; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; font-size: 14px; line-height: 1.25; }
@@ -68,6 +78,25 @@ const CSS = `
 .dg-ticket h2 { text-align: center; color: #1f4fa8; font-size: 1.25rem; }
 .dg-ticket .big { text-align: center; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 1.7rem; color: #c0281e; line-height: 1.1; }
 .dg-ticket small { color: #7a6547; display: block; line-height: 1.3; }
+.dg-chip { display: inline-flex; align-items: center; gap: 4px; background: #2f6fd0; color: #fff; border-radius: 999px; padding: 0 8px; font-size: 0.74rem; font-weight: 800; }
+.dg-chip.ok { background: #2f9d46; } .dg-chip.due { background: #c0281e; }
+.dg-gauge.ev u { background: linear-gradient(#5fe39a, #1f9d5a); }
+.dg-rest { text-align: left; width: min(420px, 100%); gap: 8px; padding: 12px 14px; }
+.dg-rest h2 { font-size: 1.2rem; text-align: center; } .dg-rest h3 { margin: 2px 0 0; font-family: 'Baloo 2', sans-serif; font-size: 0.98rem; }
+.dg-rest .law { background: #eaf3ff; border: 2px solid #9cc3f2; border-radius: 12px; padding: 5px 9px; font-size: 0.8rem; color: #24456f; line-height: 1.3; }
+.dg-svc { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dg-svc button, .dg-food button { font: inherit; font-family: 'Baloo 2', sans-serif; font-weight: 700; min-height: 46px; border-radius: 12px; border: 2px solid #7a4a22; background: #f6e7bd; box-shadow: 0 3px 0 #7a4a22; cursor: pointer; color: inherit; padding: 2px 8px; line-height: 1.1; }
+.dg-svc button small, .dg-food small { display: block; font-family: 'Be Vietnam Pro', sans-serif; font-weight: 600; font-size: 0.72rem; color: #7a6547; }
+.dg-svc button:disabled, .dg-food button:disabled { opacity: 0.5; }
+.dg-svc button.done { background: #dff3d6; border-color: #2f7d26; box-shadow: 0 3px 0 #2f7d26; }
+.dg-foods { display: grid; gap: 5px; max-height: 34vh; overflow: auto; -webkit-overflow-scrolling: touch; padding-right: 2px; }
+.dg-food { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 6px; align-items: center; background: #fffdf4; border: 2px solid #e3cf9a; border-radius: 12px; padding: 4px 6px 4px 8px; }
+.dg-food b { font-size: 1.5rem; line-height: 1; } .dg-food span { font-weight: 700; font-size: 0.86rem; min-width: 0; }
+.dg-food button { min-width: 58px; font-size: 0.8rem; } .dg-food button.eat { background: linear-gradient(#6fd45c, #4caf3f); border-color: #2f7d26; box-shadow: 0 3px 0 #2f7d26; color: #fff; }
+.dg-rest .tot { display: flex; justify-content: space-between; font-weight: 700; font-size: 0.86rem; border-top: 1.5px dashed #e3cf9a; padding-top: 5px; }
+.dg-wc { position: absolute; inset: 0; background: #ffffffee; display: grid; place-items: center; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 1.5rem; color: #2f6fd0; text-align: center; animation: dg-flash 1.8s ease-in-out forwards; pointer-events: none; }
+.dg-wc b { display: block; font-size: 3.2rem; animation: dg-pop 0.5s ease-out; }
+@media (max-height: 480px) { .dg-rest { width: min(640px, 100%); grid-template-columns: 1fr 1fr; column-gap: 12px; padding: 8px 12px; } .dg-rest h2, .dg-rest .law, .dg-rest .dg-row { grid-column: 1 / -1; } .dg-foods { max-height: 46vh; } .dg-rest .law { font-size: 0.74rem; } }
 .dg-center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; padding: 12px; }
 .dg-count { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 7rem; color: #fff3b0; -webkit-text-stroke: 4px #56310f; paint-order: stroke fill; animation: dg-pop 0.9s ease-out; }
 .dg-bump { position: absolute; left: 50%; top: 46%; transform: translateX(-50%); font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 1.45rem; color: #fff; background: #c0391f; border: 3px solid #fff; border-radius: 16px; padding: 2px 14px; animation: dg-float 1.9s ease-out forwards; text-align: center; max-width: calc(100% - 28px); width: max-content; pointer-events: none; box-shadow: 0 4px 0 #0003; }
@@ -116,7 +145,9 @@ export function DriveGame(props: {
   fromRegionId: string; toRegionId: string;
   plan: DrivePlan;
   fuelL: number;
-  truck: { tankL: number; lPer100km: number; fuelPrice: number };
+  truck: { tankL: number; lPer100km: number; fuelPrice: number; kind?: string; name?: string; power?: string; unit?: string; maxKmh?: number; cold?: boolean };
+  /** Mã chuyến trên máy chủ (không bắt buộc: danh sách món ở trạm dừng lấy từ luật chơi dùng chung). */
+  tripId?: number;
   etc: number;
   cash: number;
   truckColor: string;
@@ -138,6 +169,12 @@ export function DriveGame(props: {
   const [steer, setSteer] = useState(0);
   const [pedal, setPedal] = useState<'' | 'gas' | 'brake'>('');
   const [ticket, setTicket] = useState<DriveTicket | null>(null);
+  const [rest, setRest] = useState<DriveRest | null>(null);
+  const [restLog, setRestLog] = useState<DriveRestLog[]>([]);
+  const [wc, setWc] = useState(0);
+  const [fillMsg, setFillMsg] = useState<string | null>(null);
+  const logRef = useRef<DriveRestLog[]>([]); logRef.current = restLog;
+  const auto = (window as unknown as { __driveAuto?: boolean }).__driveAuto === true;
   const from = REGIONS[props.fromRegionId]?.name ?? 'Nơi đi', to = REGIONS[props.toRegionId]?.name ?? 'Nơi đến';
 
   useEffect(() => {
@@ -147,6 +184,7 @@ export function DriveGame(props: {
         fromRegionId: props.fromRegionId, toRegionId: props.toRegionId, plan: props.plan, fuelL: props.fuelL, truck: props.truck, etc: props.etc, truckColor: props.truckColor,
         view: readView(), cruise: (window as unknown as { __driveAuto?: boolean }).__driveAuto === true,
         onPolice: setTicket,
+        onRest: (r) => { setFillMsg(null); setRest(r); setRestLog((l) => (l.some((x) => x.atKm === r.atKm) ? l : [...l, { atKm: r.atKm }])); },
         onTick: setHud,
         onBump: (text, kind) => setBump({ id: ++id, text, kind }),
         onFlash: (text) => setFlash({ id: ++id, text }),
@@ -172,10 +210,19 @@ export function DriveGame(props: {
   // Tới nơi: hiện bảng tổng kết rồi báo ra ngoài đúng một lần
   useEffect(() => {
     if (!sum) return;
-    const t = setTimeout(() => { if (!finished.current) { finished.current = true; cb.current.onFinish({ refuelL: sum.refuelL, detourKm: sum.detourKm, speeding: sum.speeding }); } }, sum.speeding.length ? 4200 : 2600);
+    const t = setTimeout(() => { if (!finished.current) { finished.current = true; const seen = new Map(logRef.current.map((r) => [r.atKm, r])); for (const k of sum.restsAt) if (!seen.has(k)) seen.set(k, { atKm: k });
+      cb.current.onFinish({ refuelL: sum.electric ? 0 : sum.refuelL, detourKm: sum.detourKm, speeding: sum.speeding, ...(sum.electric ? { charges: sum.charges } : {}), rests: [...seen.values()] }); } }, sum.speeding.length ? 4200 : 2600);
     return () => clearTimeout(t);
   }, [sum]);
 
+  // Tự lái thử: tới trạm dừng nghỉ thì đi vệ sinh rồi chạy tiếp, để bộ kiểm đi hết chuyến
+  useEffect(() => {
+    if (!rest || !auto) return;
+    setRestLog((l) => l.map((x) => (x.atKm === rest.atKm ? { ...x, wc: true } : x)));
+    const t = setTimeout(() => { scene.current?.resume(); setRest(null); }, 2600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rest?.atKm]);
   // Bản đồ nhỏ
   useEffect(() => {
     const c = mapRef.current, s = scene.current; if (!c || !s) return;
@@ -206,7 +253,18 @@ export function DriveGame(props: {
   const speedNow = boat ? Math.round((hud?.knots ?? 0) * 10) / 10 : hud?.kmh ?? 0, dialMax = boat ? 16 : 160, sweep = Math.min(1, speedNow / dialMax);
   const pct = Math.min(100, Math.max(0, (hud?.progress ?? 0) * 100));
   const fuel = hud?.fuel ?? props.fuelL, tank = Math.max(1, props.truck.tankL), low = fuel / tank < 0.15;
-  const etcLeft = hud?.etcLeft ?? props.etc, cashLeft = props.cash - (hud?.spent ?? 0);
+  const ev = (props.truck.power ?? props.plan.power ?? VEHICLES[props.truck.kind ?? '']?.power) === 'dien', unit = ev ? 'kWh' : 'lít', eWord = ev ? 'Pin' : props.truck.power === 'dau' ? 'Dầu' : 'Xăng';
+  const vehName = props.truck.name ?? VEHICLES[props.truck.kind ?? '']?.name ?? 'Xe tải';
+  const restSpent = restLog.reduce((t, r) => t + (r.items ?? []).reduce((a, it) => a + (ITEMS[it.itemId]?.price ?? 0) * it.qty, 0), 0);
+  const etcLeft = hud?.etcLeft ?? props.etc, cashLeft = props.cash - (hud?.spent ?? 0) - restSpent;
+  const restsNeeded = props.plan.restsNeeded ?? 0, restsDone = hud?.rests ?? 0;
+  const stopMeta = rest ? props.plan.restStops?.find((r) => r.atKm === rest.atKm) : undefined;
+  const menu = rest ? restStopItems(stopMeta?.province ?? null).map((id) => ITEMS[id]).filter(Boolean) : [];
+  const cur = rest ? restLog.find((r) => r.atKm === rest.atKm) : undefined;
+  const gained = (cur?.items ?? []).reduce((a, it) => a + (it.use ? (ITEMS[it.itemId]?.energy ?? 0) * it.qty : 0), 0) + (cur?.wc ? DRIVE_RULES.wcEnergy : 0);
+  const buy = (itemId: string, use: boolean) => { if (!rest) return; setRestLog((l) => l.map((x) => { if (x.atKm !== rest.atKm) return x; const items = [...(x.items ?? [])], i = items.findIndex((it) => it.itemId === itemId && it.use === use); if (i >= 0) items[i] = { ...items[i], qty: Math.min(10, items[i].qty + 1) }; else if (items.length < 6) items.push({ itemId, qty: 1, use }); return { ...x, items }; })); };
+  const goWc = () => { if (!rest || cur?.wc) return; setWc((n) => n + 1); setRestLog((l) => l.map((x) => (x.atKm === rest.atKm ? { ...x, wc: true } : x))); };
+  const topUp = () => { const r = scene.current?.refuelHere(); setFillMsg(r ? `${ev ? '⚡ Đang sạc nhanh' : '⛽ Đã đổ'} +${num(r.added, 1)} ${unit} · ${vnd(r.cost)}${ev ? ' (ngoài đời mất khoảng 35 phút)' : ''}` : `${ev ? 'Pin' : 'Bình'} còn đầy`); };
   return (
     <div className="dg" role="application" aria-label={`Lái ${boat ? 'phà' : 'xe'} từ ${from} tới ${to}`}>
       <style>{CSS}</style>
@@ -215,14 +273,15 @@ export function DriveGame(props: {
       <div className="dg-top">
         <div className="dg-bar">
           <div className="dg-names"><span>{from}</span><small>còn {num(Math.max(0, hud?.kmLeft ?? props.plan.km))} km</small><span>{to}</span></div>
-          <div className="dg-track"><div className="dg-fill" style={{ width: `${pct}%` }} /><span className="dg-icon" style={{ left: `${pct}%` }} aria-hidden="true">{boat ? '⛴' : '🚚'}</span></div>
+          <div className="dg-track"><div className="dg-fill" style={{ width: `${pct}%` }} /><span className="dg-icon" style={{ left: `${pct}%` }} aria-hidden="true">{boat ? '⛴' : ev ? '⚡' : '🚚'}</span></div>
         </div>
         <button className="dg-cancel" onClick={() => setAsking(true)} disabled={arrived}>Huỷ chuyến</button>
         {hud && !arrived && <div className={`dg-nav ${hud.nav.urgent ? 'urgent' : ''}`} role="status"><b aria-hidden="true">{hud.nav.icon}</b><span>{hud.nav.text}</span></div>}
         <div className="dg-side">
-          <div className="dg-stat" aria-label="Xăng, ETC và tiền mặt">
-            <div className={low ? 'low' : ''}><i aria-hidden="true">⛽</i><span className={`dg-gauge ${low ? 'low' : ''}`}><u style={{ width: `${Math.min(100, (fuel / tank) * 100)}%` }} /></span></div>
-            <div className={low ? 'low' : ''}><i /> {num(fuel, 1)} lít · ~{num(hud?.range ?? (fuel / Math.max(1, props.truck.lPer100km)) * 100)} km</div>
+          <div className="dg-stat" aria-label={`${vehName}: ${eWord}, ETC và tiền mặt`}>
+            <div className={low ? 'low' : ''}><i aria-hidden="true">{ev ? '⚡' : '⛽'}</i><span className={`dg-gauge ${low ? 'low' : ''} ${ev ? 'ev' : ''}`}><u style={{ width: `${Math.min(100, (fuel / tank) * 100)}%` }} /></span>{ev && <small>{Math.round((fuel / tank) * 100)}%</small>}</div>
+            <div className={low ? 'low' : ''}><i /> {num(fuel, 1)} {unit} · ~{num(hud?.range ?? (fuel / Math.max(1, props.truck.lPer100km)) * 100)} km</div>
+            {restsNeeded > 0 && <div><i aria-hidden="true">☕</i><span className={`dg-chip ${restsDone >= restsNeeded ? 'ok' : ''}`}>Nghỉ {Math.min(restsDone, restsNeeded)}/{restsNeeded}</span></div>}
             <div><i aria-hidden="true">🎫</i> ETC {vnd(etcLeft)}</div>
             <div><i aria-hidden="true">💵</i> {vnd(cashLeft)}</div>
           </div>
@@ -276,12 +335,15 @@ export function DriveGame(props: {
             <ul className="dg-sum">
               <li><span>Quãng đường</span><b>{num(sum.km)} km</b></li>
               <li className={sum.detourKm > 0 ? 'bad' : ''}><span>Đi lố, vòng lại</span><b>{sum.detourKm > 0 ? `+${num(sum.detourKm)} km` : 'Không'}</b></li>
-              <li><span>Xăng đã dùng</span><b>{num(sum.fuelUsed, 1)} lít</b></li>
-              <li><span>Đổ thêm dọc đường</span><b>{sum.refuelL > 0 ? `${num(sum.refuelL, 1)} lít · ${vnd(sum.refuelCost)}` : 'Không'}</b></li>
+              <li><span>{sum.electric ? 'Điện' : eWord} đã dùng</span><b>{num(sum.fuelUsed, 1)} {sum.unit}</b></li>
+              <li><span>{sum.electric ? `Sạc dọc đường (${sum.charges.length} lần)` : 'Đổ thêm dọc đường'}</span><b>{sum.refuelL > 0 ? `${num(sum.refuelL, 1)} ${sum.unit} · ${vnd(sum.refuelCost)}` : 'Không'}</b></li>
               <li><span>Phí đường bộ ({sum.tollCount} trạm)</span><b>{vnd(sum.tollEtc + sum.tollCash)}</b></li>
               {sum.tollCash > 0 && <li className="bad"><span>Trong đó trả tiền mặt +20%</span><b>{vnd(sum.tollCash)}</b></li>}
-              {sum.ranDry && <li className="bad"><span>Hết xăng giữa đường</span><b>Tốn phí cứu hộ</b></li>}
-              {sum.rests > 0 && <li><span>Ghé trạm dừng nghỉ</span><b>{sum.rests} lần</b></li>}
+              {sum.ranDry && <li className="bad"><span>Hết {sum.electric ? 'pin' : 'nhiên liệu'} giữa đường</span><b>Tốn phí cứu hộ</b></li>}
+              {(sum.rests > 0 || sum.restsNeeded > 0) && <li className={sum.rests < sum.restsNeeded ? 'bad' : ''}><span>Ghé trạm dừng nghỉ</span><b>{sum.rests}{sum.restsNeeded > 0 ? `/${sum.restsNeeded} lần cần nghỉ` : ' lần'}</b></li>}
+              {sum.rests < sum.restsNeeded && <li className="bad"><span>Lái quá 4 giờ không nghỉ</span><b>Sẽ mệt, mất thể lực</b></li>}
+              {restSpent > 0 && <li><span>Ăn uống ở trạm dừng</span><b>{vnd(restSpent)}</b></li>}
+              {(props.plan.upkeepCost ?? 0) > 0 && <li><span>Đăng kiểm, bảo hiểm, bảo dưỡng</span><b>{vnd(props.plan.upkeepCost!)}</b></li>}
               <li className={sum.speeding.length ? 'bad' : ''}><span>Phạt quá tốc độ{sum.speeding.length ? ` (${sum.speeding.length} lần)` : ''}</span><b>{sum.speeding.length ? vnd(sum.fineTotal) : 'Không vi phạm 👍'}</b></li>
             </ul>
           </div>
@@ -300,6 +362,37 @@ export function DriveGame(props: {
             <div className="dg-row"><button className="go" onClick={() => { scene.current?.resume(); setTicket(null); }}>Đã hiểu, chạy đúng tốc độ</button></div>
           </div>
         )}
+        {rest && !arrived && !auto && (
+          <div className="dg-card dg-rest" role="dialog" aria-label={rest.name}>
+            <h2>☕ {rest.name}</h2>
+            <p className="law">Luật giao thông: không lái xe liên tục quá {DRIVE_RULES.continuousHours} giờ, không quá {DRIVE_RULES.dailyHours} giờ một ngày. Nghỉ ít nhất 15 phút rồi mới đi tiếp.{restsNeeded > 0 ? ` Chuyến này cần nghỉ ${restsNeeded} lần.` : ''}</p>
+            <div>
+              <h3>Dịch vụ</h3>
+              <div className="dg-svc">
+                <button className={cur?.wc ? 'done' : ''} disabled={!!cur?.wc} onClick={goWc}>🚻 {cur?.wc ? 'Đã đi vệ sinh' : 'Đi vệ sinh'}<small>miễn phí · +{DRIVE_RULES.wcEnergy} thể lực</small></button>
+                {(rest.hasFuel || rest.hasCharger) && <button onClick={topUp} disabled={!!fillMsg}>{ev ? '⚡ Sạc đầy pin' : '⛽ Đổ đầy bình'}<small>{vnd(rest.price)}/{unit} · đang có {num(hud?.fuel ?? rest.energy, 0)}/{num(rest.tank, 0)}</small></button>}
+              </div>
+              {fillMsg && <p role="status" style={{ marginTop: 4, fontSize: '0.8rem' }}>{fillMsg}</p>}
+              {hud && hud.charging >= 0 && <div className="dg-gauge ev" style={{ height: 12, marginTop: 4 }} aria-label="Đang sạc"><u style={{ width: `${hud.charging * 100}%` }} /></div>}
+            </div>
+            <div>
+              <h3>Quán ăn, cửa hàng tiện lợi</h3>
+              <div className="dg-foods">
+                {menu.map((it) => (
+                  <div className="dg-food" key={it.id}>
+                    <b aria-hidden="true">{it.emoji}</b>
+                    <span>{it.name}{it.regional ? <small>Đặc sản {it.regional}</small> : null}<small>+{it.energy} thể lực · {vnd(it.price)}</small></span>
+                    <button className="eat" disabled={cashLeft < it.price} aria-label={`${it.kind === 'uong' ? 'Uống' : 'Ăn'} ngay ${it.name}`} onClick={() => buy(it.id, true)}>{it.kind === 'uong' ? 'Uống' : 'Ăn'}</button>
+                    <button disabled={cashLeft < it.price} aria-label={`Mua ${it.name} bỏ túi`} onClick={() => buy(it.id, false)}>Bỏ túi</button>
+                  </div>
+                ))}
+              </div>
+              <div className="tot"><span>Đã mua {(cur?.items ?? []).reduce((a, it) => a + it.qty, 0)} món{gained > 0 ? ` · +${gained} thể lực` : ''}</span><b>{vnd((cur?.items ?? []).reduce((a, it) => a + (ITEMS[it.itemId]?.price ?? 0) * it.qty, 0))}</b></div>
+            </div>
+            <div className="dg-row"><button className="go" disabled={!!hud && hud.charging >= 0} onClick={() => { scene.current?.resume(); setRest(null); }}>{hud && hud.charging >= 0 ? 'Đang sạc…' : 'Nghỉ xong, lái tiếp'}</button></div>
+          </div>
+        )}
+        {wc > 0 && <div key={wc} className="dg-wc"><span><b>🚻</b>Đi vệ sinh, rửa mặt cho tỉnh táo…</span></div>}
         {asking && !arrived && (
           <div className="dg-card" role="alertdialog" aria-label="Huỷ chuyến">
             <h2>Huỷ chuyến đi?</h2><p>Bạn sẽ quay về nơi xuất phát và chưa tới được {to}.</p>
@@ -307,7 +400,7 @@ export function DriveGame(props: {
           </div>
         )}
       </div>
-      {count <= 0 && hud && hint && !arrived && !hud.warn && <div className="dg-hint">{boat ? 'Giữ MÁY để tàu chạy · ◀ ▶ bẻ lái · đi giữa phao đỏ và phao xanh' : 'Giữ GA để chạy, THẮNG để giảm tốc · ◀ ▶ đổi làn · chạy đúng biển tròn đỏ'}</div>}
+      {count <= 0 && hud && hint && !arrived && !hud.warn && <div className="dg-hint">{boat ? 'Giữ MÁY để tàu chạy · ◀ ▶ bẻ lái · đi giữa phao đỏ và phao xanh' : `Giữ GA để chạy, THẮNG để giảm tốc · ◀ ▶ đổi làn · ${vehName} chạy tối đa ${props.truck.maxKmh ?? props.plan.maxKmh ?? 120} km/h`}</div>}
     </div>
   );
 }

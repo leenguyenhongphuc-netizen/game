@@ -7,10 +7,16 @@ import { REGIONS } from '../../../shared/catalog.ts';
 import type { Zone } from '../../../shared/catalog.ts';
 import { ROAD_LIMITS, speedFine } from '../../../shared/rules.ts';
 import { GEO, mat, mesh, rng } from '../scene/plants.ts';
-import { MORE, bird, cabin, cargoShip, ferry, lighthouse, limitSprite, minSprite, policeUnit, restStop, seaMaterial, skyDecor, wake } from './DriveExtras.ts';
+import { MORE, bird, cabin, cargoShip, chargerPosts, chargerStation, ferry, lighthouse, limitSprite, minSprite, playerVehicle, policeUnit, restStop, seaMaterial, skyDecor, wake } from './DriveExtras.ts';
+import type { VehGroup } from './DriveExtras.ts';
+import { VEHICLES } from '../../../shared/vehicles.ts';
 
 export type Mode = 'truck' | 'boat';
-export interface ScenePlan { km: number; needsBoat: boolean; seconds: number; tolls: number; tollFee: number; fuelNeededL: number; junctions: { atKm: number; dir: 'L' | 'R'; name: string }[]; stationsAtKm: number[] }
+export interface ScenePlan { km: number; needsBoat: boolean; seconds: number; tolls: number; tollFee: number; fuelNeededL: number; junctions: { atKm: number; dir: 'L' | 'R'; name: string }[]; stationsAtKm: number[];
+  /** Tuỳ chọn theo xe đang lái: xe điện dùng chargersAtKm thay trạm xăng; trạm dừng nghỉ có tên; số lần phải nghỉ; tốc độ tối đa của xe. */
+  power?: string; chargersAtKm?: number[]; restStops?: { atKm: number; name: string; hasFuel?: boolean; hasCharger?: boolean; province?: string | null }[]; restsNeeded?: number; maxKmh?: number }
+/** Xe đã dừng hẳn trong ô của một trạm dừng nghỉ: giao diện mở bảng trạm rồi gọi resume(). */
+export interface DriveRest { index: number; atKm: number; name: string; hasFuel: boolean; hasCharger: boolean; energy: number; tank: number; unit: string; price: number; electric: boolean }
 export interface DriveHud {
   progress: number; kmh: number; mode: Mode; phase: string; kmLeft: number;
   fuel: number; range: number; etcLeft: number; spent: number; detourKm: number; refuelL: number;
@@ -19,13 +25,21 @@ export interface DriveHud {
   limit: number; over: boolean; slowLane: boolean; odo: number; gear: 'D' | 'R'; cruise: boolean; view: View; canReverse: boolean;
   /** Độ mệt 0..1, tốc độ tàu (hải lý/giờ), hướng mũi tàu (độ), tổng tiền phạt tạm tính. */
   tired: number; knots: number; heading: number; fines: number; stopped: boolean;
+  /** Đơn vị năng lượng ('lít' | 'kWh'), xe điện, đang sạc (0..1; -1 khi không sạc), số lần đã nghỉ / phải nghỉ. */
+  unit: string; electric: boolean; charging: number; rests: number; restsNeeded: number;
 }
 export type View = 'chase' | 'pov';
 export interface DriveTicket { kmh: number; limit: number; over: number; min: number; max: number; fine: number; points: number; label: string; count: number }
-export interface DriveSummary { km: number; detourKm: number; fuelUsed: number; refuelL: number; refuelCost: number; tollCount: number; tollEtc: number; tollCash: number; ranDry: boolean; speeding: number[]; fineTotal: number; rests: number; odoKm: number }
+export interface DriveSummary { km: number; detourKm: number; fuelUsed: number; refuelL: number; refuelCost: number; tollCount: number; tollEtc: number; tollCash: number; ranDry: boolean; speeding: number[]; fineTotal: number; rests: number; odoKm: number;
+  /** Các lần sạc dọc đường (xe điện), cây số các trạm đã nghỉ, số lần phải nghỉ theo luật, đơn vị năng lượng. */
+  charges: { atKm: number; kwh: number }[]; restsAt: number[]; restsNeeded: number; unit: string; electric: boolean }
 export interface DriveOptions {
   fromRegionId: string; toRegionId: string; plan: ScenePlan; fuelL: number;
-  truck: { tankL: number; lPer100km: number; fuelPrice: number }; etc: number; truckColor: string;
+  truck: { tankL: number; lPer100km: number; fuelPrice: number; kind?: string; power?: string; unit?: string; maxKmh?: number; cold?: boolean }; etc: number; truckColor: string;
+  /** Xe dừng trong ô trạm dừng nghỉ. Không truyền thì trạm tự cho nghỉ 2 giây như trước. */
+  onRest?: (r: DriveRest) => void;
+  /** Tự lái thử: tự ghé trạm nghỉ, trạm xăng, trạm sạc khi cần (mặc định theo window.__driveAuto). */
+  autopilot?: boolean;
   onTick?: (t: DriveHud) => void;
   onBump?: (text: string, kind: 'bad' | 'good' | 'info') => void;
   onFlash?: (text: string) => void;
@@ -297,6 +311,9 @@ export class DriveScene {
   private fromName: string; private toName: string; private zf: Zone; private zt: Zone;
   // lái thật: ga, thắng, số, ga tự động, góc nhìn
   private throttle = 0; private brakeIn = 0; private gear: 'D' | 'R' = 'D'; private cruise = false; private view: View = 'chase'; private braking = false;
+  private ev = false; private unit = 'lít'; private eName = 'xăng'; private vmaxKmh = 200; private restsNeeded = 0; private restsAt: number[] = []; private charges: { atKm: number; kwh: number }[] = [];
+  private rearZ = 2.34; private rearX = 0.7;
+  private held: Ev | null = null; private chg: { add: number; t: number; dur: number } | null = null; private autoPilot = false; private autoX: number | null = null; private vehBack = 0; private pumps: Ev[] = [];
   private odo = 0; private tired = 0; private rests = 0; private speeding: number[] = []; private fineTotal = 0; private lowT = 0; private nagT = 0; private revFloor = 0; private yawn = 0;
   private pulled: { e: Ev; over: number; kmh: number; limit: number; shown: boolean; go: boolean } | null = null;
   private auxs: Ev[] = []; private limits: Ev[] = []; private polices: Ev[] = [];
@@ -314,6 +331,9 @@ export class DriveScene {
     this.fromName = from?.name ?? 'Nơi đi'; this.toName = to?.name ?? 'Nơi đến';
     this.zf = from?.zone ?? 'nam'; this.zt = to?.zone ?? 'nam';
     this.fuel = Math.max(0, opts.fuelL); this.etcLeft = Math.max(0, opts.etc); this.view = opts.view ?? 'chase'; this.cruise = !!opts.cruise;
+    { const pw = opts.truck.power ?? opts.plan.power ?? VEHICLES[opts.truck.kind ?? '']?.power ?? 'xang'; this.ev = pw === 'dien'; this.unit = this.ev ? 'kWh' : 'lít'; this.eName = this.ev ? 'pin' : pw === 'dau' ? 'dầu' : 'xăng';
+      this.vmaxKmh = Math.max(40, opts.truck.maxKmh ?? opts.plan.maxKmh ?? 200); this.restsNeeded = Math.max(0, opts.plan.restsNeeded ?? 0);
+      this.autoPilot = opts.autopilot ?? (globalThis as { __driveAuto?: boolean }).__driveAuto === true; }
     this.roadKm = plan.needsBoat ? plan.km * 0.6 : plan.km; this.seaKm = plan.needsBoat ? plan.km * 0.4 : 0;
     const road: Leg = { mode: 'truck', seconds: plan.needsBoat ? T * 0.6 : T, km: this.roadKm }, sea: Leg = { mode: 'boat', seconds: T * 0.4, km: this.seaKm };
     this.legs = !plan.needsBoat ? [road] : from?.island ? [sea, road] : [road, sea];
@@ -346,10 +366,12 @@ export class DriveScene {
     for (let i = 0; i < 9; i++) { const a = -0.9 + i * 0.225, h = 26 + this.r() * 26; const m = mesh(new THREE.ConeGeometry(22 + this.r() * 16, h, 7), mat(0xa9cbbd, { rough: 1 }), Math.sin(a) * 230, h / 2 - 3, -170 - Math.cos(a) * 60); m.castShadow = false; this.mountains.add(m); }
 
     const color = new THREE.Color(opts.truckColor || '#f08a6c').getHex();
-    this.truck = buildTruck(color);
+    { const spec = VEHICLES[opts.truck.kind ?? ''], grp = (spec?.group ?? 'tai_nhe') as VehGroup;
+      if (!spec || (grp === 'tai_nhe' && !this.ev && !spec.cold)) this.truck = buildTruck(color);
+      else { const v = playerVehicle(grp, color, { electric: this.ev, cold: !!spec.cold }); this.truck = v.root; this.vehBack = v.back; this.rearZ = v.rearZ; this.rearX = Math.min(0.9, v.halfW - 0.25); } }
     { const t = buildTruck(color); t.scale.setScalar(0.9); t.position.set(-1.05, 1.02, -1.2); const c2 = sedan(); c2.scale.setScalar(0.9); c2.position.set(1.05, 1.02, 0.2); const c3 = sedan(); c3.scale.setScalar(0.9); c3.position.set(1.05, 1.02, -3.4);
       this.boat = bake(ferry([t, c2, c3]), true); this.wakeM = wake(); this.boat.add(this.wakeM); }
-    for (const x of [-0.7, 0.7]) { const b = new THREE.Mesh(GEO.box, new THREE.MeshBasicMaterial({ color: 0xff2a1a })); b.position.set(x, 0.95, 2.34); b.scale.set(0.42, 0.24, 0.06); b.visible = false; this.truck.add(b); this.brakeL.push(b); }
+    for (const x of [-this.rearX, this.rearX]) { const b = new THREE.Mesh(GEO.box, new THREE.MeshBasicMaterial({ color: 0xff2a1a })); b.position.set(x, this.rearZ > 5 ? 1.1 : 0.95, this.rearZ); b.scale.set(0.42, 0.24, 0.06); b.visible = false; this.truck.add(b); this.brakeL.push(b); }
     this.cab = cabin(color); this.cab.root.visible = false; this.camera.add(this.cab.root);
     this.posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.95, 0.14), new THREE.MeshStandardMaterial({ color: 0xeef0f3, roughness: 0.6 }), 96); this.posts.frustumCulled = false; this.posts.castShadow = false; this.world.add(this.posts);
     this.truck.traverse((o) => { if ((o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry === GEO.cyl && Math.abs(o.rotation.z - Math.PI / 2) < 0.01) this.wheels.push(o); });
@@ -382,15 +404,22 @@ export class DriveScene {
     if (!js.length) js.push({ atKm: km, dir: 'R', name: this.toName });
     js.forEach((j, i) => { const last = i === js.length - 1; want.push({ ev: mk('junction', 30, 78, { dir: j.dir === 'L' ? -1 : 1, name: j.name || this.toName, exit: last, idx: i }), f: last ? 2 : clamp(j.atKm / km, 0.1, 0.96) }); });
     // Chuyến dài có rất nhiều trạm: chỉ dựng tối đa 5 trạm xăng, 6 trạm thu phí (rải đều) để chuyến đi không kéo lê
-    let st = (p.stationsAtKm ?? []).filter((k) => isFinite(k)).sort((a, b) => a - b);
-    if (st.length > 5) st = Array.from({ length: 5 }, (_, i) => st[Math.round(i * (st.length - 1) / 4)]);
+    let st = ((this.ev ? p.chargersAtKm ?? p.stationsAtKm : p.stationsAtKm) ?? []).filter((k) => isFinite(k)).sort((a, b) => a - b);
+    // Trạm dừng nghỉ có tên theo kế hoạch chuyến: chọn rải đều đủ số lần phải nghỉ (tối đa 5 trạm dựng hình)
+    const rsAll = (p.restStops ?? []).filter((r) => r && isFinite(r.atKm) && r.atKm < km - 8).sort((a, b) => a.atKm - b.atKm);
+    const nR = clamp(Math.max(1, this.restsNeeded), 1, 5);
+    const rsPick = rsAll.length > nR ? [...new Set(Array.from({ length: nR }, (_, i) => rsAll[Math.min(rsAll.length - 1, Math.round((i + 1) * rsAll.length / (nR + 1)))]))] : rsAll;
+    if (rsPick.length) st = st.filter((k) => !rsPick.some((r) => Math.abs(r.atKm - k) < 25));
+    const maxSt = rsPick.length ? 3 : 5;
+    if (st.length > maxSt) st = Array.from({ length: maxSt }, (_, i) => st[Math.round(i * (st.length - 1) / (maxSt - 1))]);
     const sf = st.map((k) => clamp(k / km, 0.05, 0.95));
-    sf.forEach((f, i) => want.push({ ev: mk('station', 66, 66, { idx: i }), f }));
+    sf.forEach((f, i) => want.push({ ev: mk('station', 66, 66, { idx: i, kind: this.ev ? 'charger' : 'fuel', v: st[i] }), f }));
     const nT = Math.max(0, Math.min(6, p.tolls | 0));
     for (let i = 0; i < nT; i++) want.push({ ev: mk('toll', 76, 24, { idx: i }), f: (i + 0.5) / Math.max(1, nT) * 0.92 + 0.01 * i });
     // Trạm dừng nghỉ xen giữa các trạm xăng
     const rf = sf.length >= 2 ? [(sf[0] + sf[1]) / 2, ...(sf.length >= 4 ? [(sf[sf.length - 2] + sf[sf.length - 1]) / 2] : [])] : roadSec >= 30 ? [sf.length ? clamp(sf[0] + 0.3, 0.2, 0.85) : 0.6] : [];
-    rf.forEach((f, i) => want.push({ ev: mk('rest', 70, 70, { idx: i }), f }));
+    if (rsPick.length) rsPick.forEach((r, i) => want.push({ ev: mk('rest', 70, 70, { idx: i, name: r.name, v: r.atKm, kind: (r.hasFuel !== false ? 'f' : '') + (r.hasCharger !== false ? 'c' : '') }), f: clamp(r.atKm / km, 0.06, 0.94) }));
+    else rf.forEach((f, i) => want.push({ ev: mk('rest', 70, 70, { idx: i, v: Math.round(f * km) }), f }));
     // Các điểm có thể có tổ CSGT bắn tốc độ (có tổ hay không là ngẫu nhiên mỗi chuyến)
     const force = this.opts.police ?? (globalThis as { __drivePolice?: boolean }).__drivePolice;
     (roadSec >= 60 ? [0.2, 0.52, 0.8] : roadSec >= 32 ? [0.3, 0.72] : [0.5]).forEach((f, i) => want.push({ ev: mk('police', 36, 96, { idx: i, armed: force ?? Math.random() < 0.7 }), f: f + 0.013 }));
@@ -418,7 +447,7 @@ export class DriveScene {
     const N = clamp(Math.round(this.seaL / 100), 4, 6); for (let i = 0; i < N; i++) this.gates.push(((i + 0.6) / N) * this.seaL);
   }
   private planLimits: () => void = () => {};
-  private reindex() { this.events.sort((a, b) => a.s - b.s); this.juncs = this.events.filter((e) => e.type === 'junction'); this.stations = this.events.filter((e) => e.type === 'station'); this.auxs = this.events.filter((e) => e.type === 'station' || e.type === 'rest'); this.limits = this.events.filter((e) => e.type === 'limit'); this.polices = this.events.filter((e) => e.type === 'police'); this.tolls = this.events.filter((e) => e.type === 'toll'); this.feats = this.events.filter((e) => e.type === 'feature'); }
+  private reindex() { this.events.sort((a, b) => a.s - b.s); this.juncs = this.events.filter((e) => e.type === 'junction'); this.stations = this.events.filter((e) => e.type === 'station'); this.auxs = this.events.filter((e) => e.type === 'station' || e.type === 'rest'); this.pumps = this.auxs.filter((e) => e.type === 'station' || (this.ev ? e.kind.includes('c') : e.kind.includes('f'))); this.limits = this.events.filter((e) => e.type === 'limit'); this.polices = this.events.filter((e) => e.type === 'police'); this.tolls = this.events.filter((e) => e.type === 'toll'); this.feats = this.events.filter((e) => e.type === 'feature'); }
 
   private buildEvent(e: Ev) {
     const add = (o: THREE.Object3D, ds: number, x: number, base = false) => { e.objs.push({ o, ds, x, base }); };
@@ -429,14 +458,23 @@ export class DriveScene {
       const gore = new THREE.Group(); gore.add(box(0xf2c94c, 0, 0.7, 0, 1.3, 1.4, 0.3), box(0x3f4652, 0, 0.7, -0.16, 0.9, 0.3, 0.05), mesh(GEO.cyl, mat(0xf2c94c), 0, 0.5, -2.2, 0.5, 1.0, 0.5));
       add(bake(gore, true), 16, e.dir * LW / 2, true);
     } else if (e.type === 'station') {
+      if (e.kind === 'charger') {
+        add(roadside('⚡ Trạm sạc 500 m →', '#1f9d5a', 6.4), -140, HW + 2.2);
+        add(roadside('⚡ Vào trạm sạc →', '#1f9d5a', 5.4), -58, HW + 2.2);
+        const cs = bake(chargerStation(), true); const sp = sign(`⚡ Sạc nhanh ${vnd(this.opts.truck.fuelPrice)}/kWh`, '#1f9d5a', 7.4); sp.position.set(4.2, 6.9, 0); cs.add(sp); add(cs, 0, HW + LW + 0.9);
+      } else {
       add(roadside('⛽ Trạm xăng 500 m →', '#f08a24', 6.4), -140, HW + 2.2);
       add(roadside('⛽ Vào trạm →', '#f08a24', 5), -58, HW + 2.2);
       add(fuelStation(this.opts.truck.fuelPrice), 0, HW + LW + 0.9);
+      }
       add(stopBox(0xf2c94c), 0, HW + LW / 2 + 0.3); add(limitPost(ROAD_LIMITS.station), -50, HW + LW + 1.6);
     } else if (e.type === 'rest') {
       add(roadside('☕ Trạm dừng nghỉ 500 m →', BLUE, 7), -150, HW + 2.2);
       add(roadside('☕ Vào trạm nghỉ →', BLUE, 5.6), -60, HW + 2.2);
-      const rs = bake(restStop(), true); const sp = sign('☕ Trạm dừng nghỉ', BLUE, 7); sp.position.set(8, 6.4, -3); rs.add(sp); add(rs, 0, HW + LW + 0.9);
+      const rsG = restStop(); if (e.kind.includes('c')) { const cp = chargerPosts(); cp.position.set(3.2, 0, -12.5); rsG.add(cp); }
+      const rs = bake(rsG, true); const sp = sign(`☕ ${e.name || 'Trạm dừng nghỉ'}`, BLUE, e.name ? 9 : 7); sp.position.set(8, 6.4, -3); rs.add(sp);
+      if (e.kind) { const sv = sign(`${e.kind.includes('f') && !this.ev ? '⛽ ' : ''}${e.kind.includes('c') ? '⚡ ' : ''}🍜 🚻`, '#2f6fd0', 5.2); sv.position.set(8, 4.9, -3); rs.add(sv); }
+      add(rs, 0, HW + LW + 0.9);
       add(stopBox(0x7fd0ff), 0, HW + LW / 2 + 0.3); add(limitPost(ROAD_LIMITS.station), -50, HW + LW + 1.6);
     } else if (e.type === 'police') {
       if (e.armed) { const u = policeUnit(); const root = bake(u.root, true); for (const l of u.lights) root.add(l); e.lights = u.lights; const sp = sign('CSGT', '#1f4fa8', 3); sp.position.set(1.6, 2.8, -3); root.add(sp); add(root, 0, HW + 2.4); }
@@ -573,7 +611,22 @@ export class DriveScene {
   /** Dùng cho kiểm thử: chạy mô phỏng thêm `sec` giây (không vẽ), để máy thử chậm vẫn đi hết tình huống. */
   simulate(sec: number) { for (let t = 0; t < sec && this.running && !this.arrived; t += 0.05) this.step(0.05); }
   /** Đã đọc biên bản: cho xe đi tiếp. */
-  resume() { if (this.pulled?.shown) { this.pulled.go = true; } }
+  resume() {
+    if (this.pulled?.shown) { this.pulled.go = true; }
+    if (this.held) { const e = this.held; this.held = null; this.rests++; if (!this.restsAt.includes(e.v)) this.restsAt.push(e.v); this.tired = 0; this.pause = Math.max(this.pause, 0.6); this.bump('☕ Nghỉ xong — tỉnh táo trở lại', 'good'); }
+  }
+  /** Đang đỗ ở trạm dừng nghỉ: đổ đầy bình hoặc sạc đầy pin (nếu trạm có). Trả về lượng nạp, tiền và số giây chờ; null nếu không nạp được. */
+  refuelHere(): { added: number; cost: number; seconds: number } | null { const e = this.held; return e && this.pumps.includes(e) ? this.topUp(e) : null; }
+  /** Xe đang đỗ ở trạm dừng nghỉ nào (null nếu không). */
+  restNow(): DriveRest | null { return this.held ? this.restInfo(this.held) : null; }
+  private restInfo(e: Ev): DriveRest { const tk = this.opts.truck; return { index: e.idx, atKm: e.v, name: e.name || 'Trạm dừng nghỉ', hasFuel: !this.ev && e.kind.includes('f'), hasCharger: this.ev && e.kind.includes('c'), energy: Math.round(this.fuel * 10) / 10, tank: tk.tankL, unit: this.unit, price: tk.fuelPrice, electric: this.ev }; }
+  /** Nạp đầy năng lượng tại trạm xăng, trạm sạc hoặc trạm dừng nghỉ. Xe điện sạc nhanh mất vài giây và được ghi vào danh sách `charges`. */
+  private topUp(e: Ev): { added: number; cost: number; seconds: number } | null {
+    const tk = this.opts.truck, add = Math.max(0, tk.tankL - this.fuel); if (add <= 0.5 || this.chg) return null;
+    const cost = Math.round(Math.round(add * 10) / 10 * tk.fuelPrice); this.refuelL += add; this.warnDry = false; this.speed = 0;
+    if (this.ev) { const dur = this.autoPilot ? 1.5 : 6; this.chg = { add, t: 0, dur }; this.pause = Math.max(this.pause, dur + 0.3); this.charges.push({ atKm: Math.round(e.v), kwh: Math.round(add * 10) / 10 }); this.bump(`⚡ Sạc nhanh +${Math.round(add)} kWh · ${vnd(cost)}`, 'good'); return { added: add, cost, seconds: dur }; }
+    this.fuel = tk.tankL; this.pause = Math.max(this.pause, 2.0); this.bump(`⛽ +${Math.round(add)} lít · ${vnd(cost)}`, 'good'); return { added: add, cost, seconds: 2 };
+  }
   /** Dùng cho kiểm thử: nhảy tới vị trí s trên chặng hiện tại (không tính sự kiện đã bỏ qua). */
   warp(s: number) { this.s = s; this.nextSc = s + 6; for (const it of this.scen) { it.active = false; it.obj.visible = false; } const plan = this.mode === 'boat' ? this.seaPlan : this.tplan; while (this.tIdx < plan.length && plan[this.tIdx].s < s + 30) this.tIdx++; }
   private quality?: Quality;
@@ -598,7 +651,7 @@ export class DriveScene {
   // ---------------------------------------------------------------- diễn biến
   private inAux() { return this.px > this.halfAt(this.s) + 0.3; }
   private bump(text: string, kind: 'bad' | 'good' | 'info') { this.opts.onBump?.(text, kind); }
-  private summary(): DriveSummary { const r1 = (n: number) => Math.round(n * 10) / 10; return { km: this.opts.plan.km, detourKm: this.detourKm, fuelUsed: r1(this.fuelUsed), refuelL: r1(this.refuelL), refuelCost: Math.round(r1(this.refuelL) * this.opts.truck.fuelPrice), tollCount: this.tollCount, tollEtc: this.tollEtc, tollCash: this.tollCash, ranDry: this.ranDry, speeding: [...this.speeding], fineTotal: this.fineTotal, rests: this.rests, odoKm: r1(this.odo) }; }
+  private summary(): DriveSummary { const r1 = (n: number) => Math.round(n * 10) / 10; return { km: this.opts.plan.km, detourKm: this.detourKm, fuelUsed: r1(this.fuelUsed), refuelL: r1(this.refuelL), refuelCost: Math.round(r1(this.refuelL) * this.opts.truck.fuelPrice), tollCount: this.tollCount, tollEtc: this.tollEtc, tollCash: this.tollCash, ranDry: this.ranDry, speeding: [...this.speeding], fineTotal: this.fineTotal, rests: this.rests, odoKm: r1(this.odo), charges: this.charges.map((c) => ({ ...c })), restsAt: [...this.restsAt], restsNeeded: this.restsNeeded, unit: this.unit, electric: this.ev }; }
   private kmh() { return Math.abs(this.speed) / UK; }
   /** Giới hạn tốc độ tại vị trí s. `main`: chỉ tính biển của đoạn đường (bỏ qua vùng trạm thu phí, làn vào trạm). */
   private limitAt(s: number, main = false): number {
@@ -606,6 +659,7 @@ export class DriveScene {
     let v: number;
     if (s < this.rampS) v = ROAD_LIMITS.village; else if (s < this.exS + 26) v = ROAD_LIMITS.ramp;
     else { const ex = this.exitDone; if (ex && s > ex.s + 60) v = s > ex.s + 120 ? ROAD_LIMITS.village : ROAD_LIMITS.ramp; else { v = POSTED[1] ?? 100; for (const l of this.limits) { if (l.s > s) break; v = l.v; } for (const e of this.feats) if (e.kind === 'tunnel' && Math.abs(s - e.s) < 34) v = Math.min(v, POSTED[0] ?? 80); } }
+    v = Math.min(v, this.vmaxKmh);
     if (main) return v;
     for (const e of this.tolls) { const u = s - e.s; if (u > -70 && u < 6) v = Math.min(v, ROAD_LIMITS.toll); }
     if (this.inAux()) for (const e of this.auxs) if (Math.abs(s - e.s) < 52) v = Math.min(v, ROAD_LIMITS.station);
@@ -618,6 +672,7 @@ export class DriveScene {
     this.elapsed += dt; this.legT += dt;
     const assist = this.legT > leg.seconds * 4;
     if (this.pause > 0) this.pause -= dt;
+    if (this.chg) { const c = this.chg, k = Math.min(dt, c.dur - c.t); this.fuel = Math.min(tk.tankL, this.fuel + c.add * k / c.dur); c.t += dt; if (c.t >= c.dur) { this.chg = null; this.bump('⚡ Sạc xong, pin đầy', 'good'); } }
     const end = boat ? this.seaL : this.endS, remain = end - this.s;
     // ---- bàn đạp
     let th = this.throttle, br = this.brakeIn;
@@ -647,6 +702,24 @@ export class DriveScene {
         }
       }
       const pl = this.pulled; if (pl && !pl.go) cap = 0;
+      // Tự lái thử: tự tấp vào trạm dừng nghỉ khi tới hạn nghỉ, vào trạm xăng/trạm sạc khi năng lượng không đủ đi tiếp
+      this.autoX = null;
+      if (this.autoPilot && !pl && this.gear === 'D' && !this.held) {
+        const tank = Math.max(1, tk.tankL), rangeKm = this.fuel / Math.max(0.1, tk.lPer100km) * 100, toEnd = this.kmBetween(this.s, this.endS);
+        for (const e of this.auxs) {
+          if (e.done) continue; const u = e.s - this.s; if (u < -7 || u > 200) continue;
+          const lowE = (this.fuel / tank < 0.5 || rangeKm < toEnd + 15) && this.pumps.includes(e) && rangeKm < toEnd + 15;
+          const need = e.type === 'rest' ? this.rests < this.restsNeeded || lowE : lowE;
+          if (!need) continue;
+          this.autoX = HW + LW / 2 + 0.3;
+          cap = Math.min(cap, u > 70 ? 60 : u > 2.5 ? Math.max(9, u * 0.95) : 0);
+          break;
+        }
+        }
+        // không cần ghé trạm: giữ làn giữa, gần nút giao thì sang đúng làn rẽ
+        if (this.autoX === null && this.s > this.exS + 30) { const j = this.juncs.find((x) => !x.done && x.s > this.s); this.autoX = j && j.s - this.s < 190 ? j.dir * LW : this.exitDone && this.s > this.exitDone.s ? null : 0; }
+      }
+      if (this.held) cap = 0;
       if (this.cruise && this.gear === 'D' && !pl) {
         const tgt = Math.max(8, Math.min(lim, this.limitAt(this.s + Math.max(0, this.speed) * 2.4)) - 2);
         if (kmh < tgt - 0.5) th = Math.max(th, clamp((tgt - kmh) / 10, 0.12, 1)); else if (kmh > tgt + 2 && th === 0) br = Math.max(br, clamp((kmh - tgt) / 30, 0.05, 0.7));
@@ -661,7 +734,7 @@ export class DriveScene {
         v += (acc - (1.1 + v * 0.013) - br * 46) * dt; if (v > top) v -= 30 * dt; v = Math.max(0, v);
       }
       if (v > cap) v = Math.max(cap, v - (pl ? 34 : 60) * dt);
-      if (this.pause > 0) v = 0;
+      if (this.pause > 0 || this.held) v = 0;
       this.braking = br > 0.05 || (v > cap - 0.5 && cap < kmh) || this.pause > 0;
       if (br > 0.7 && kmh > 70 && this.shake < 0.05) this.shake = 0.12;
       this.speed = v * UK;
@@ -675,7 +748,7 @@ export class DriveScene {
     let steer = this.btn;
     if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) steer -= 1;
     if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) steer += 1;
-    const tgt = this.pulled && !this.pulled.go ? this.edges(this.s)[1] - 1.3 : this.holdX ?? this.target, grip = Math.min(1, Math.abs(this.speed) / 6) * (this.speed < 0 ? -1 : 1);
+    const tgt = this.pulled && !this.pulled.go ? this.edges(this.s)[1] - 1.3 : this.holdX ?? this.autoX ?? this.target, grip = Math.min(1, Math.abs(this.speed) / 6) * (this.speed < 0 ? -1 : 1);
     if (tgt !== null) this.pv = clamp((tgt - this.px) * (this.pulled ? 2.4 : 8), -12, 12) * (this.speed < 0 ? -1 : 1);
     else this.pv += (clamp(steer, -1, 1) * (boat ? 7.5 : 10.5) - this.pv) * Math.min(1, dt * (boat ? 2.2 : 9));
     if (!boat && this.tired > 0.8 && tgt === null) this.pv += Math.sin(this.elapsed * 1.3) * (this.tired - 0.8) * 9 * dt * 10;
@@ -697,7 +770,7 @@ export class DriveScene {
     // xăng: chạy càng nhanh càng hao
     const d = this.det((prev + s) / 2), dkm = Math.abs(s - prev) * (d ? d.km / d.len : this.kmU), burn = dkm * tk.lPer100km / 100 * (1 + clamp((kmh - 80) / 60, 0, 1) * 0.5);
     this.odo += dkm;
-    if (this.fuel > 0) { const b = Math.min(this.fuel, burn); this.fuel -= b; this.fuelUsed += b; if (this.fuel <= 0 && !this.warnDry) { this.warnDry = true; this.ranDry = true; this.bump('Hết xăng! Xe chỉ bò được, sẽ tốn phí cứu hộ', 'bad'); } }
+    if (this.fuel > 0) { const b = Math.min(this.fuel, burn); this.fuel -= b; this.fuelUsed += b; if (this.fuel <= 0 && !this.warnDry) { this.warnDry = true; this.ranDry = true; this.bump(`Hết ${this.eName}! Xe chỉ bò được, sẽ tốn phí cứu hộ`, 'bad'); } }
     if (d && !d.turned && s > d.from + d.len * 0.45) { d.turned = true; this.bump(`↩ Quay đầu, vòng lại nút ${d.j.name}`, 'info'); }
     // mệt dần theo thời gian cầm lái; chạy quá chậm trên cao tốc thì nhắc
     if (kmh > 5) this.tired = Math.min(1, this.tired + dt / 105);
@@ -724,10 +797,11 @@ export class DriveScene {
       if (e.type === 'station' || e.type === 'rest') {
         const u = s - e.s;
         if (u > 70) { e.done = true; if (e.type === 'station') this.stationsPassed++; continue; }
-        if (this.inAux() && Math.abs(u) < 7.5 && kmh < 1.5 && this.pause <= 0) {
+        if (this.inAux() && Math.abs(u) < 7.5 && kmh < 1.5 && this.pause <= 0 && !this.held) {
           e.done = true; this.gear = 'D';
-          if (e.type === 'station') { this.stationsPassed++; const add = Math.max(0, tk.tankL - this.fuel); this.tired = Math.max(0, this.tired - 0.3); if (add > 0.5) { this.fuel = tk.tankL; this.refuelL += add; this.warnDry = false; this.pause = 2.0; this.speed = 0; this.bump(`⛽ +${Math.round(add)} lít · ${vnd(Math.round(add * 10) / 10 * tk.fuelPrice)}`, 'good'); } else this.bump('Bình còn đầy, chạy tiếp', 'info'); }
-          else { this.rests++; this.tired = 0; this.pause = 2.2; this.speed = 0; this.bump('☕ Nghỉ 15 phút — tỉnh táo trở lại', 'good'); }
+          if (e.type === 'station') { this.stationsPassed++; this.tired = Math.max(0, this.tired - 0.3); if (!this.topUp(e)) this.bump(`${this.ev ? 'Pin' : 'Bình'} còn đầy, chạy tiếp`, 'info'); }
+          else if (this.opts.onRest) { this.held = e; this.speed = 0; this.opts.onRest(this.restInfo(e)); if (this.autoPilot && this.pumps.includes(e) && this.fuel / Math.max(1, tk.tankL) < 0.7) this.topUp(e); }
+          else { this.rests++; this.restsAt.push(e.v); this.tired = 0; this.pause = 2.2; this.speed = 0; this.bump('☕ Nghỉ 15 phút — tỉnh táo trở lại', 'good'); }
         }
       }
       if (e.type === 'toll' && cross(e.s - 4)) {
@@ -770,8 +844,10 @@ export class DriveScene {
     if (this.mode === 'boat') { const i = this.gates.findIndex((g) => g > this.s); return this.offChan ? { icon: '⚠', text: 'Lệch luồng! Quay lại giữa phao đỏ và phao xanh', urgent: true } : { icon: '🧭', text: i < 0 ? `Qua hết phao, cập bến ${this.legIdx === this.legs.length - 1 ? this.toName : 'đất liền'}` : `Bám luồng tới cặp phao số ${i + 1}/${this.gates.length}`, urgent: false }; }
     const s = this.s, d = this.det();
     if (this.pulled) return { icon: '🚨', text: 'CSGT ra hiệu: giảm tốc, tấp vào lề phải', urgent: true };
+    if (this.held) return { icon: '☕', text: `Đang nghỉ ở ${this.held.name || 'trạm dừng nghỉ'}`, urgent: false };
+    if (this.chg) return { icon: '⚡', text: `Đang sạc nhanh… ${Math.round(this.chg.t / this.chg.dur * 100)}%`, urgent: false };
     if (this.gear === 'R') return { icon: 'R', text: 'Đang gài số lùi: giữ GA để lùi, bấm R để về số tiến', urgent: true };
-    if (this.inAux()) for (const e of this.auxs) { const u = s - e.s, what = e.type === 'station' ? 'đổ xăng' : 'nghỉ'; if (e.done || Math.abs(u) > 62) continue; if (u < -7.5) return { icon: e.type === 'station' ? '⛽' : '☕', text: `Còn ${Math.round((-u - 3) / UK / 10) * 10 || 10} m: thắng dần, dừng hẳn trong ô kẻ để ${what}`, urgent: false }; if (u <= 7.5) return { icon: 'P', text: `Đúng ô rồi: đạp thắng dừng hẳn để ${what}`, urgent: true }; return { icon: '↩', text: 'Lố ô dừng: dừng hẳn, gài số lùi (R) rồi lùi lại', urgent: true }; }
+    if (this.inAux()) for (const e of this.auxs) { const u = s - e.s, what = e.type === 'station' ? (this.ev ? 'sạc pin' : 'đổ xăng') : 'vào trạm nghỉ'; if (e.done || Math.abs(u) > 62) continue; if (u < -7.5) return { icon: e.type === 'station' ? (this.ev ? '⚡' : '⛽') : '☕', text: `Còn ${Math.round((-u - 3) / UK / 10) * 10 || 10} m: thắng dần, dừng hẳn trong ô kẻ để ${what}`, urgent: false }; if (u <= 7.5) return { icon: 'P', text: `Đúng ô rồi: đạp thắng dừng hẳn để ${what}`, urgent: true }; return { icon: '↩', text: 'Lố ô dừng: dừng hẳn, gài số lùi (R) rồi lùi lại', urgent: true }; }
     for (const e of this.tolls) { const u = e.s - s; if (!e.done && u > 0 && u < 90) return this.etcLeft >= this.opts.plan.tollFee ? { icon: '🎫', text: `Trạm thu phí: giảm xuống ${ROAD_LIMITS.toll} km/h, ETC tự trừ tiền`, urgent: false } : { icon: '💵', text: 'Không đủ ETC: dừng trước thanh chắn trả tiền mặt', urgent: true }; }
     if (s < this.exS) return { icon: '↑', text: s < 4 && this.speed === 0 ? 'Giữ bàn đạp GA để lăn bánh' : 'Chạy qua làng rồi nhập làn lên cao tốc', urgent: false };
     const j = this.juncs.find((x) => !x.done && x.s > s);
@@ -785,20 +861,24 @@ export class DriveScene {
     const boat = this.mode === 'boat', tk = this.opts.truck, left = this.kmLeft(), range = this.fuel / Math.max(1, tk.lPer100km) * 100, kmh = Math.round(this.kmh()), limit = this.limitAt(this.s);
     let warn: string | null = null;
     if (boat) warn = this.offChan ? 'Lệch luồng' : null;
-    else if (this.fuel <= 0) warn = 'Hết xăng! Sẽ tốn phí cứu hộ';
+    else if (this.fuel <= 0) warn = `Hết ${this.eName}! Sẽ tốn phí cứu hộ`;
     else {
       // Chỉ nhắc khi buộc phải ghé trạm kế tiếp, và khi trạm đã gần — không treo cảnh báo suốt chuyến.
-      const ahead = this.stations.filter((e) => !e.done && e.s > this.s), st = ahead[0];
+      const E = this.ev ? 'Pin' : this.eName === 'dầu' ? 'Dầu' : 'Xăng', ic = this.ev ? '⚡' : '⛽';
+      const ahead = this.pumps.filter((e) => !e.done && e.s > this.s), st = ahead[0];
       const toNext = st ? this.kmBetween(this.s, st.s) : Infinity;
       const toAfter = ahead[1] ? this.kmBetween(this.s, ahead[1].s) : this.kmBetween(this.s, this.endS);
-      if (st && range < toNext) warn = `Xăng chỉ còn ~${Math.round(range)} km · trạm ⛽ còn ${Math.max(1, Math.round(toNext))} km`;
-      else if (st && range < toAfter && toNext <= 25) warn = `Sắp cạn xăng · ghé trạm ⛽ bên phải sau ${Math.max(1, Math.round(toNext))} km`;
-      else if (!st && range < this.kmBetween(this.s, this.endS)) warn = 'Xăng không đủ tới nơi';
+      const due = this.restsNeeded > 0 ? Math.floor((1 - left / Math.max(1, this.opts.plan.km)) * (this.restsNeeded + 1) + 0.12) : 0;
+      if (st && range < toNext) warn = `${E} chỉ còn ~${Math.round(range)} km · trạm ${ic} còn ${Math.max(1, Math.round(toNext))} km`;
+      else if (st && range < toAfter && toNext <= 25) warn = `Sắp cạn ${this.eName} · ghé trạm ${ic} bên phải sau ${Math.max(1, Math.round(toNext))} km`;
+      else if (!st && range < this.kmBetween(this.s, this.endS)) warn = `${E} không đủ tới nơi`;
+      else if (due > this.rests && !this.held) warn = `Đã lái gần 4 giờ liên tục — luật quy định không quá 4 giờ: vào trạm dừng nghỉ ☕ kế tiếp (${this.rests}/${this.restsNeeded} lần)`;
       else if (this.tired > 0.8) warn = 'Buồn ngủ: ghé trạm dừng nghỉ ☕ hoặc trạm xăng';
     }
     const knots = this.speed / SEA_V * 12, head = ((this.mapHead() * 180 / Math.PI + 90 + 720) % 360);
     return { progress: clamp(1 - left / Math.max(1, this.opts.plan.km), 0, 1), kmh: boat ? Math.round(knots * 1.852) : kmh, mode: this.mode, phase: this.phase(), kmLeft: Math.max(0, left), fuel: this.fuel, range, etcLeft: this.etcLeft, spent: Math.round(Math.round(this.refuelL * 10) / 10 * tk.fuelPrice) + this.tollCash + this.fineTotal, detourKm: this.detourKm, refuelL: Math.round(this.refuelL * 10) / 10, nav: this.nav(), warn,
-      limit, over: !boat && kmh >= limit + 5, slowLane: false, odo: this.odo, gear: this.gear, cruise: this.cruise, view: this.view, canReverse: !boat && kmh < 2, tired: this.tired, knots: Math.max(0, knots), heading: head, fines: this.fineTotal, stopped: kmh < 1 };
+      limit, over: !boat && kmh >= limit + 5, slowLane: false, odo: this.odo, gear: this.gear, cruise: this.cruise, view: this.view, canReverse: !boat && kmh < 2, tired: this.tired, knots: Math.max(0, knots), heading: head, fines: this.fineTotal, stopped: kmh < 1,
+      unit: this.unit, electric: this.ev, charging: this.chg ? clamp(this.chg.t / this.chg.dur, 0, 1) : -1, rests: this.rests, restsNeeded: this.restsNeeded };
   }
   /** Hướng đi trên bản đồ (radian, trục x sang phải, y xuống dưới). */
   private mapHead(): number {
@@ -926,7 +1006,7 @@ export class DriveScene {
       this.camera.rotation.set(boat ? -0.3 : -0.045, yaw - this.pv * 0.006, veh.rotation.z * 0.5, 'YXZ');
       this.cab.wheel.rotation.z = -this.pv * 0.2; this.cab.needle.rotation.z = lerp(2.2, -2.2, clamp(kmh / 160, 0, 1));
     } else {
-      this.camera.position.set(this.px * 0.86 + jx, (boat ? (portrait ? 17 : 9.5) : portrait ? 10.5 : 7.2) + jy, boat ? (portrait ? 25 : 20) : portrait ? 14 : 13);
+      this.camera.position.set(this.px * 0.86 + jx, (boat ? (portrait ? 17 : 9.5) : portrait ? 10.5 : 7.2) + jy, boat ? (portrait ? 25 : 20) : (portrait ? 14 : 13) + this.vehBack);
       this.camera.lookAt(this.px * 0.92, boat ? (portrait ? -4 : -2) : portrait ? -2.4 : -1.6, boat ? -22 : portrait ? -15 : -15);
     }
     this.decor.rotation.y = this.phi * 0.6;

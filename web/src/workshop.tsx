@@ -8,6 +8,7 @@ import { api } from './api.ts';
 import type { Me } from './api.ts';
 import { WhyLimit } from './trade.tsx';
 import { fmtDuration, useAction } from './ui.ts';
+import './progress.css';
 
 interface Job { id: number; machineId: number | null; specialtyId: string; recipeId: string; kgIn: number; kgOut: number; readyAt: number }
 interface Machine { id: number; kind: MachineKind; name: string; emoji: string; level: number; slots: number; time: number; recipes: string[]; support: boolean; bonus: { yield?: number; value?: number; grade?: number } | null; upgradeCost: number | null; jobs: Job[] }
@@ -20,7 +21,15 @@ interface WorkshopData {
   isWorkshop?: boolean; machines?: Machine[]; catalog?: CatalogRow[]; recipes?: RecipeRow[]; stock?: StockRow[]; productInfo?: ProductRow[];
   bonus?: { yield: number; value: number; grade: number }; runFeePerKg?: number; energyCost?: number; maxMachines?: number; maxPerKind?: number; maxLevel?: number;
 }
-export type WorkshopExit = 'cho' | 'sieuthi' | 'xuatkhau';
+export type WorkshopExit = 'cho' | 'sieuthi' | 'xuatkhau' | 'dunghop';
+export interface ImportLeg { stage: string; name: string; etaAt: number }
+/** Đơn nhập máy đang trên đường về; App dùng để phát hoạt cảnh nhập khẩu. */
+export interface ImportOrder { id: number; importId: string; kind: MachineKind; name: string; origin: string; flag: string; port: string; orderedAt: number; legs: ImportLeg[]; stage: string; arrived: boolean; arriveAt: number; total: number }
+interface ImportCost { price: number; freight: number; duty: number; vat: number; fees: number; total: number }
+interface ImportRow { id: string; kind: MachineKind; origin: string; flag: string; name: string; price: number; speed: number; yieldBonus: number; minLevel: number; port: string; seaMinutes: number; note: string; emoji: string; baseName: string; recipes: string[]; cost: ImportCost; minutes: number; canOrder: boolean; whyNot: string | null }
+interface ImportData { isWorkshop: boolean; level: number; cash: number; catalog: ImportRow[]; orders: ImportOrder[]; maxPending: number; now: number; note: string }
+const LEG_ICON: Record<string, string> = { tau_bien: '🚢', thong_quan: '🛃', xe_ve_xuong: '🚛', da_toi: '🏭' };
+const LEG_SHORT: Record<string, string> = { tau_bien: 'Tàu biển', thong_quan: 'Thông quan', xe_ve_xuong: 'Xe về xưởng' };
 
 const O = '#56310f', S = { stroke: O, strokeWidth: 2, strokeLinejoin: 'round', strokeLinecap: 'round' } as const;
 /** Hình vẽ riêng cho từng loại máy; `run` bật hoạt ảnh hơi nước, băng chuyền. */
@@ -75,8 +84,78 @@ function MachineArt({ kind, run }: { kind: MachineKind; run: boolean }) {
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const bonusText = (b?: { yield?: number; value?: number; grade?: number } | null) => !b ? '' : b.yield ? `mỗi mẻ ra thêm ${pct(b.yield)} thành phẩm` : b.value ? `thành phẩm bán thêm ${pct(b.value)}` : b.grade ? `hàng Loại 2, Loại 3 chỉ thiệt ${pct(1 - b.grade)} so với thường` : '';
 
-/** Xưởng chế biến. `onOpen` (tuỳ chọn) để App mở Chợ, Siêu thị hay thẻ Xuất khẩu khi người chơi bấm lối ra. */
-export function WorkshopPanel({ me, priceOf, onChanged, onOpen }: { me: Me; priceOf: (id: string) => number; onChanged: () => void; onOpen?: (where: WorkshopExit) => void }) {
+/** Máy nhập khẩu: danh mục theo nước, chi phí tách dòng, đơn đang về theo ba chặng, lắp vào xưởng khi tới nơi. */
+function ImportSection({ me, onChanged, onImport }: { me: Me; onChanged: () => void; onImport?: (order: ImportOrder) => void }) {
+  const [data, setData] = useState<ImportData | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [, tick] = useState(0);
+  const load = useCallback(async () => { try { setData(await api<ImportData>('GET', '/api/workshop/imports')); } catch { setData(null); } }, []);
+  useEffect(() => { void load(); const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [load]);
+  const act = useAction(useCallback(() => { void load(); onChanged(); }, [load, onChanged]));
+  // khi một đơn vừa tới giờ thì hỏi lại máy chủ để hiện nút lắp
+  const due = data?.orders.some((o) => !o.arrived && o.arriveAt <= Date.now());
+  useEffect(() => { if (due) void load(); }, [due, load]);
+  if (!data || !data.isWorkshop) return null;
+  const now = Date.now(), scale = me.config.timeScale || 1, pending = data.orders.filter((o) => !o.arrived).length;
+  return (
+    <div className="imp" data-orders={data.orders.length}>
+      <h3><span className="wk-n">🌏</span> Máy nhập khẩu</h3>
+      <p className="muted">{data.note}</p>
+      {act.error && <p className="error" role="alert">{act.error}</p>}
+      {data.orders.map((o) => {
+        const idx = o.arrived ? o.legs.length : Math.max(0, o.legs.findIndex((l) => l.etaAt > now));
+        return (
+          <div className={o.arrived ? 'imp-order arrived' : 'imp-order'} key={o.id} data-order={o.id}>
+            <strong><span aria-hidden="true">{o.flag} </span>{o.name} · {o.origin}</strong>
+            <ol className="imp-legs" aria-label="Các chặng máy đang về">
+              {o.legs.map((l, i) => {
+                const state = o.arrived || i < idx ? 'done' : i === idx ? 'now' : '';
+                return <li key={l.stage} className={state} title={l.name}><b aria-hidden="true">{LEG_ICON[l.stage] ?? '📦'}</b>{LEG_SHORT[l.stage] ?? l.name}<span>{state === 'done' ? 'xong ✓' : state === 'now' ? `còn ${fmtDuration(l.etaAt - now)}` : 'chờ'}</span></li>;
+              })}
+            </ol>
+            {o.arrived
+              ? <button type="button" className="go" disabled={act.busy} onClick={() => act.run(() => api('POST', `/api/workshop/imports/${o.id}/install`, {}))}>🏭 Lắp vào xưởng</button>
+              : <small>Qua {o.port} · tới xưởng sau {fmtDuration(o.arriveAt - now)} · đã trả {fmtMoney(o.total)}</small>}
+          </div>
+        );
+      })}
+      {data.catalog.map((c) => {
+        const faster = Math.round((1 - c.speed) * 100), less = Math.round(c.yieldBonus * 100), on = open === c.id;
+        const why = pending >= data.maxPending ? `Đang chờ ${pending} máy về, tối đa ${data.maxPending} đơn cùng lúc` : c.whyNot;
+        return (
+          <div className={c.canOrder && !why ? 'imp-card' : 'imp-card off'} key={c.id} data-import={c.id}>
+            <header><span className="imp-flag" aria-hidden="true">{c.flag}</span><div className="grow"><strong>{c.name}</strong><small>Nhập từ {c.origin} · thay cho {c.baseName} trong nước · cần cấp {c.minLevel}</small></div></header>
+            <div className="imp-vs"><span>Nhanh hơn {faster}%</span><span>Hao ít hơn {less}%</span><span>Về sau {fmtDuration((c.minutes * 60_000) / scale)}</span></div>
+            <small>{c.note}</small>
+            <button type="button" aria-expanded={on} onClick={() => setOpen(on ? null : c.id)}>{on ? 'Ẩn bảng chi phí' : `Xem chi phí · tổng ${fmtMoney(c.cost.total)}`}</button>
+            {on && (
+              <>
+                <table className="imp-cost">
+                  <tbody>
+                    <tr><td>Giá máy</td><td>{fmtMoney(c.cost.price)}</td></tr>
+                    <tr><td>Cước tàu biển về {c.port}</td><td>{fmtMoney(c.cost.freight)}</td></tr>
+                    <tr><td>Thuế nhập khẩu</td><td>{fmtMoney(c.cost.duty)}</td></tr>
+                    <tr><td>Thuế giá trị gia tăng</td><td>{fmtMoney(c.cost.vat)}</td></tr>
+                    <tr><td>Phí thông quan, vận chuyển về xưởng</td><td>{fmtMoney(c.cost.fees)}</td></tr>
+                    <tr className="sum"><td>Tổng phải trả</td><td>{fmtMoney(c.cost.total)}</td></tr>
+                  </tbody>
+                </table>
+                <button type="button" className="go" disabled={act.busy || !c.canOrder || !!why}
+                  onClick={() => act.run(async () => { const r = await api<{ order: ImportOrder }>('POST', '/api/workshop/machines/import', { kind: c.id }); setOpen(null); if (r.order) onImport?.(r.order); })}>
+                  Đặt mua máy<small>{why ?? `trả ${fmtMoney(c.cost.total)}, máy về theo đường biển`}</small>
+                </button>
+              </>
+            )}
+            {!on && why && <small className="error">{why}</small>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Xưởng chế biến. `onOpen` (tuỳ chọn) để App mở Chợ, Siêu thị, thẻ Xuất khẩu hay Lò dung hợp; `onImport` để App phát hoạt cảnh khi vừa đặt máy nhập khẩu. */
+export function WorkshopPanel({ me, priceOf, onChanged, onOpen, onImport }: { me: Me; priceOf: (id: string) => number; onChanged: () => void; onOpen?: (where: WorkshopExit) => void; onImport?: (order: ImportOrder) => void }) {
   const [data, setData] = useState<WorkshopData | null>(null);
   const [open, setOpen] = useState<number | null>(null);
   const [pick, setPick] = useState<string | null>(null);
@@ -267,6 +346,9 @@ export function WorkshopPanel({ me, priceOf, onChanged, onOpen }: { me: Me; pric
           <WhyLimit k="workshop_machines" />
         </>
       )}
+
+      <ImportSection me={me} onChanged={() => { void load(); onChanged(); }} onImport={onImport} />
+      <button type="button" className="wk-merge" onClick={() => onOpen?.('dunghop')} disabled={!onOpen}><span aria-hidden="true">🛠️ </span><b>Ghép máy, phối hộp quà</b><small>Hai máy cùng loại cùng cấp ráp thành máy cấp cao hơn; thành phẩm phối thành hộp quà đặc sản. Mở Lò dung hợp.</small></button>
 
       <h3><span className="wk-n">3</span> Thành phẩm</h3>
       {productList}
