@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES } from '../../shared/catalog.ts';
 import { QUALITY_NAMES, fmtMoney } from '../../shared/rules.ts';
-import type { Quality } from '../../shared/rules.ts';
+import type { Quality, SightLeg } from '../../shared/rules.ts';
 import type { Sight } from '../../shared/sights.ts';
 import { api } from './api.ts';
 import type { Me } from './api.ts';
@@ -10,9 +10,15 @@ import { ProvinceMap, hasProvinceMap } from './map/ProvinceMap.tsx';
 import { WhyLimit } from './trade.tsx';
 import { useAction } from './ui.ts';
 
-export type SightRow = Sight & { km: number; taxiFare: number; visits: number; done: boolean; stopsSeen: string[] };
+/** `taxiFare` là tổng tiền đi lại (taxi + tàu nếu ra đảo); `route.legs` là từng chặng. */
+export type SightRow = Sight & { km: number; taxiFare: number; route?: { legs: SightLeg[]; total: number; km?: number }; visits: number; done: boolean; stopsSeen: string[] };
 export interface SightsData { province: string; regionId: string | null; here?: boolean; sights: SightRow[]; others: { province: string; count: number }[] }
-export interface SightTrip { sight: SightRow; km: number; seconds: number; taxiFare: number; entryFee: number }
+export interface SightTrip { sight: SightRow; km: number; seconds: number; taxiFare: number; entryFee: number; /** Các chặng phải đi lần lượt: taxi, hoặc taxi ra cảng rồi tàu ra đảo. */ legs: SightLeg[] }
+
+/** Một dòng tả một chặng: "🚕 Taxi ra cảng Sa Kỳ · 42 km · 120.000đ". */
+export function legLabel(l: SightLeg): string {
+  return l.mode === 'tau_thuy' ? `⛴️ ${l.boat ?? 'Tàu'} từ ${l.from} tới ${l.to}` : `🚕 Taxi tới ${l.to}`;
+}
 
 const ALL_REGIONS = Object.values(REGIONS);
 /** Lọc danh sách địa danh khi một tỉnh có nhiều điểm. */
@@ -45,8 +51,9 @@ export function SightsPanel({ me, refresh, onGo }: { me: Me; refresh: () => void
   const gates = ALL_REGIONS.filter((r) => r.province === data.province).map((r) => r.name);
   const others = data.others.filter((o) => o.province !== data.province);
   const go = (s: SightRow) => act.run(async () => {
-    const r = await api<{ ok: boolean; km: number; taxiFare: number; entryFee: number; seconds: number }>('POST', `/api/sights/${s.id}/visit`, { mode: 'taxi' });
-    onGo({ sight: s, km: r.km, seconds: r.seconds, taxiFare: r.taxiFare, entryFee: r.entryFee });
+    const r = await api<{ ok: boolean; km: number; taxiFare: number; entryFee: number; seconds: number; legs?: SightLeg[] }>('POST', `/api/sights/${s.id}/visit`, {});
+    const legs = r.legs?.length ? r.legs : s.route?.legs?.length ? s.route.legs : [{ mode: 'taxi' as const, from: '', to: s.name, km: r.km, fare: r.taxiFare, seconds: r.seconds }];
+    onGo({ sight: s, km: r.km, seconds: r.seconds, taxiFare: r.taxiFare, entryFee: r.entryFee, legs });
   });
 
   return (
@@ -55,7 +62,7 @@ export function SightsPanel({ me, refresh, onGo }: { me: Me; refresh: () => void
         {data.sights.length === 0
           ? `${data.province} chưa dựng điểm tham quan. Đội làm game đang dựng dần từng tỉnh theo địa danh thật.`
           : here
-            ? `Bạn đang ở ${data.province}. Chọn một địa danh trên bản đồ, bắt taxi tới nơi rồi đi bộ tham quan; lối ra của mỗi nơi dẫn sang siêu thị đặc sản.`
+            ? `Bạn đang ở ${data.province}. Chọn một địa danh trên bản đồ, bắt taxi tới nơi (ra đảo thì taxi tới cảng rồi đi tàu) và đi bộ tham quan; lối ra của mỗi nơi dẫn sang siêu thị đặc sản.`
             : `Xem trước ${data.province}. Hãy tới ${gates.length ? gates.join(' hoặc ') : 'một vùng thuộc tỉnh này'} trước (mua vé hoặc lái xe tải ở thẻ Các vùng trồng), rồi mới bắt taxi đi tham quan được.`}
       </p>
       {data.sights.length > 0 && hasProvinceMap(data.province) && (
@@ -91,9 +98,13 @@ export function SightsPanel({ me, refresh, onGo }: { me: Me; refresh: () => void
                 </ul>
               )}
               <div className="sight-foot">
-                <span className="sight-facts"><span>🚕 {s.km} km · {fmtMoney(s.taxiFare)}</span><span>🎟️ {s.entryFee > 0 ? fmtMoney(s.entryFee) : 'vào cửa tự do'}</span></span>
+                <span className="sight-facts">
+                  {(s.route?.legs?.length ? s.route.legs : [{ mode: 'taxi' as const, from: '', to: s.name, km: s.km, fare: s.taxiFare, seconds: 0 }]).map((l, k) => <span key={k}>{legLabel(l)} · {l.km} km · {fmtMoney(l.fare)}</span>)}
+                  <span>🎟️ Vé cổng: {s.entryFee > 0 ? fmtMoney(s.entryFee) : 'vào cửa tự do'}</span>
+                  {s.island && s.port?.note && sel === s.id && <small className="muted">{s.port.note}</small>}
+                </span>
                 {here
-                  ? <button type="button" className="go" disabled={act.busy || me.user.cash < total} onClick={() => go(s)}>{s.kind === 'dao' ? '⛴️ Đi tàu ra đảo' : '🚕 Bắt taxi tới đây'}<small>{me.user.cash < total ? 'không đủ tiền' : `hết ${fmtMoney(total)}`}</small></button>
+                  ? <button type="button" className="go" disabled={act.busy || me.user.cash < total} onClick={() => go(s)}>{s.route?.legs.some((l) => l.mode === 'tau_thuy') ? (s.route.legs.length > 1 ? '🚕⛴️ Đi ra đảo' : '⛴️ Đi tàu tới đây') : '🚕 Bắt taxi tới đây'}<small>{me.user.cash < total ? 'không đủ tiền' : `hết ${fmtMoney(total)}`}</small></button>
                   : <small className="muted">Tới {data.province} mới đi được</small>}
               </div>
             </li>

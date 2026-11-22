@@ -16,7 +16,7 @@ import {
   LIMIT_REASONS, TRAVEL_VS_TRUCK, QUALITY_MULT, taxiFare, TAXI_MAX_KM, haversineKm,
   landFees, starterMachine, exportDiscount, exportMaxActive, EXPORT_DISCOUNT_TRADER, EXPORT_DISCOUNT_COOP, EXPORT_MAX_ACTIVE_TOP, MACHINES, machineStats, machineUpgradeCost, WORKSHOP_RUN_FEE_PER_KG,
   LEVELS, XP, ENERGY_COST, ENERGY_MAX, levelOf, levelPerks, energyAt, tripEnergy, LAND_CERT_NAME,
-  SIGHT_MIN_KM, SIGHT_REWARD, SUPER_DAILY_KG, SUPER_FEE, SUPER_MAX_LOTS, SUPER_MAX_LOT_KG, SUPER_MAX_RATIO, SUPER_MIN_KG, SUPER_NPC_KG, SUPER_NPC_RATIO, superPriceRange,
+  SIGHT_MIN_KM, SIGHT_REWARD, sightRoute, SUPER_DAILY_KG, SUPER_FEE, SUPER_MAX_LOTS, SUPER_MAX_LOT_KG, SUPER_MAX_RATIO, SUPER_MIN_KG, SUPER_NPC_KG, SUPER_NPC_RATIO, superPriceRange,
 } from '../../shared/rules.ts';
 import { SIGHTS, SIGHT_PROVINCES, sightsOfProvince } from '../../shared/sights.ts';
 import { ITEMS, ITEM_BAG_MAX, HOME_SHOP_ITEMS } from '../../shared/items.ts';
@@ -1725,6 +1725,42 @@ test('điểm tham quan: phải ở trong tỉnh, trả taxi và vé cổng, đi
   assert.equal((await meOf(cookie)).user.sightsDone, 1);
   await db.query('update users set cash = 1000 where id = $1', [me0.user.id]);
   assert.equal((await call('POST', '/api/sights/dn_my_son/visit', {}, cookie)).body.error, 'khong_du_tien');
+});
+
+test('đường tới địa danh: đất liền đi taxi, ra đảo thì taxi tới cảng rồi đi tàu, đang ở trên đảo thì chỉ đi xe', async () => {
+  const lySon = SIGHTS.find((s) => s.id === 'qng_ly_son')!, cham = SIGHTS.find((s) => s.id === 'dn_cu_lao_cham')!;
+  for (const s of SIGHTS.filter((x) => x.kind === 'dao')) assert.ok(s.island && s.port, `${s.id} là đảo thì phải có cảng`);
+  const start = async (name: string, regionId: string) => {
+    const cookie = await signup(name);
+    assert.equal((await call('POST', '/api/onboard', { regionId }, cookie)).status, 200);
+    await db.query('update users set cash = 5000000 where id = $1', [(await meOf(cookie)).user.id]);
+    return cookie;
+  };
+  // Trà Bồng (đất liền Quảng Ngãi) → Lý Sơn: taxi ra cảng Sa Kỳ rồi tàu cao tốc.
+  const land = await start('khach_ra_dao', 'qng_trabong');
+  const row = (await call('GET', '/api/sights', undefined, land)).body.sights.find((x: any) => x.id === 'qng_ly_son');
+  const want = sightRoute(REGIONS.qng_trabong, lySon, SIGHTS);
+  assert.deepEqual(row.route.legs.map((l: any) => [l.mode, l.to]), [['taxi', 'cảng Sa Kỳ'], ['tau_thuy', 'cảng Lý Sơn']]);
+  assert.deepEqual([row.route.total, row.taxiFare, row.km], [want.total, want.total, want.km]);
+  assert.equal(row.route.total, row.route.legs[0].fare + row.route.legs[1].fare);
+  assert.ok(row.route.legs[1].km >= 25 && row.route.legs[1].km <= 40, 'Sa Kỳ – Lý Sơn khoảng 30 km');
+  const cash0 = (await meOf(land)).user.cash;
+  const go = await call('POST', '/api/sights/qng_ly_son/visit', {}, land);
+  assert.deepEqual([go.status, go.body.legs.length, go.body.total, go.body.taxiFare], [200, 2, want.total, want.total]);
+  assert.equal((await meOf(land)).user.cash, cash0 - want.total - lySon.entryFee, 'trừ cả taxi, vé tàu và vé cổng');
+  // Đang ở ngay vùng trồng trên đảo Lý Sơn: chỉ đi xe trên đảo.
+  const isle = await start('khach_tren_dao', 'qng_lyson');
+  const onIsle = (await call('GET', '/api/sights', undefined, isle)).body.sights.find((x: any) => x.id === 'qng_ly_son');
+  assert.deepEqual(onIsle.route.legs.map((l: any) => l.mode), ['taxi']);
+  assert.ok(onIsle.route.total < row.route.total);
+  // Tiên Phước → Cù Lao Chàm qua bến Cửa Đại; → Hội An vẫn một chặng taxi.
+  const dn = await start('khach_cham', 'dn_tienphuoc');
+  const list = (await call('GET', '/api/sights', undefined, dn)).body.sights;
+  assert.deepEqual(list.find((x: any) => x.id === 'dn_cu_lao_cham').route.legs.map((l: any) => [l.mode, l.to]), [['taxi', cham.port!.name], ['tau_thuy', cham.port!.islandPort]]);
+  assert.deepEqual(list.find((x: any) => x.id === 'dn_hoi_an').route.legs.map((l: any) => l.mode), ['taxi']);
+  // Từ đảo vào địa danh đất liền: tàu về cảng trước rồi mới taxi.
+  const back = sightRoute(REGIONS.qng_lyson, { name: 'Điểm đất liền', lat: 15.12, lng: 108.8 }, SIGHTS);
+  assert.deepEqual(back.legs.map((l) => [l.mode, l.to]), [['tau_thuy', 'cảng Sa Kỳ'], ['taxi', 'Điểm đất liền']]);
 });
 
 test('siêu thị đặc sản: ký gửi trong khung giá, mua có giới hạn, người bán nhận tiền trừ phí, kệ nhà bán không trống', async () => {

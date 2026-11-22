@@ -1,5 +1,5 @@
 // Điểm tham quan thật ở từng tỉnh, thành: toạ độ thật, các điểm dừng theo đúng thứ tự đi bộ ngoài đời.
-// Người chơi phải đang ở trong tỉnh đó (vùng nhà hoặc vùng đang tham quan) mới bắt taxi tới được.
+// Người chơi phải đang ở trong tỉnh đó (vùng nhà hoặc vùng đang tham quan) mới đi tới được: taxi trên đất liền, ra đảo thì taxi tới cảng rồi đi tàu.
 
 export type SightKind = 'pho_co' | 'den_thap' | 'nui' | 'cau' | 'chua' | 'dao' | 'bien' | 'lang_nghe' | 'deo';
 export interface SightStop { id: string; name: string; /** Điều có thật về điểm dừng, hiện khi người chơi đi tới. */ fact: string }
@@ -12,7 +12,12 @@ export interface Sight {
   entryFee: number;
   /** Các điểm dừng theo thứ tự đi; điểm cuối là lối ra dẫn sang siêu thị đặc sản. */
   stops: SightStop[];
+  /** Địa danh nằm trên đảo: phải đi tàu từ cảng đất liền `port`. */
+  island?: boolean;
+  port?: SightPort;
 }
+/** Cảng đất liền có tàu ra đảo và tên bến trên đảo. */
+export interface SightPort { name: string; lat: number; lng: number; islandPort: string; /** Tên loại tàu chạy tuyến này. */ boat: string; note?: string }
 
 export const SIGHTS: Sight[] = [
   {
@@ -87,6 +92,7 @@ export const SIGHTS: Sight[] = [
   },
   {
     id: 'dn_cu_lao_cham', name: 'Cù Lao Chàm', province: 'Đà Nẵng', formerProvince: 'Quảng Nam', lat: 15.955, lng: 108.51, kind: 'dao', emoji: '🏝️',
+    island: true, port: { name: 'bến Cửa Đại', lat: 15.876, lng: 108.385, islandPort: 'cầu cảng Bãi Làng', boat: 'Ca nô cao tốc', note: 'Ca nô từ bến Cửa Đại (Hội An) ra Cù Lao Chàm mất khoảng 20 phút; mùa biển động tàu ngừng chạy.' },
     blurb: 'Cụm đảo ngoài khơi Hội An, khu dự trữ sinh quyển thế giới, nơi nói không với túi ni lông.', entryFee: 14_000,
     stops: [
       { id: 'cau_cang', name: 'Cầu cảng Bãi Làng', fact: 'Cù Lao Chàm gồm 8 hòn đảo, lớn nhất là Hòn Lao. Năm 2009 UNESCO công nhận đây là khu dự trữ sinh quyển thế giới.' },
@@ -157,6 +163,7 @@ export const SIGHTS: Sight[] = [
   },
   {
     id: 'qng_ly_son', name: 'Đảo Lý Sơn', province: 'Quảng Ngãi', lat: 15.38, lng: 109.12, kind: 'dao', emoji: '🌋',
+    island: true, port: { name: 'cảng Sa Kỳ', lat: 15.21, lng: 108.92, islandPort: 'cảng Lý Sơn', boat: 'Tàu cao tốc', note: 'Tàu cao tốc từ cảng Sa Kỳ ra Lý Sơn đi khoảng 30 km, mất chừng 35 phút.' },
     blurb: 'Hòn đảo sinh ra từ núi lửa ngoài khơi Quảng Ngãi, được gọi là vương quốc tỏi.', entryFee: 10_000,
     stops: [
       { id: 'cang', name: 'Cảng Lý Sơn', fact: 'Lý Sơn cách đất liền khoảng 30 km, đi tàu cao tốc từ cảng Sa Kỳ. Đảo hình thành từ các đợt phun trào núi lửa cách nay hàng triệu năm, trên đảo còn năm miệng núi lửa đã tắt.' },

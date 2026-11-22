@@ -357,6 +357,51 @@ export const GIFT_DAILY_LIMIT = 5, GIFT_MAX_KG = 20, REGION_SET_REWARD = 50_000;
 // ---------------------------------------------------------------- điểm tham quan và siêu thị đặc sản
 /** Quãng taxi ngắn nhất tới một điểm tham quan, thưởng lần đầu đi hết mọi điểm dừng, thời lượng hoạt cảnh taxi. */
 export const SIGHT_MIN_KM = 3, SIGHT_REWARD = 30_000, SIGHT_TAXI_SECONDS = 12;
+/** Một chặng trên đường tới điểm tham quan. */
+export interface SightLeg { mode: 'taxi' | 'tau_thuy'; from: string; to: string; km: number; fare: number; seconds: number; /** Tên loại tàu (chặng tàu). */ boat?: string }
+export interface SightRoute { legs: SightLeg[]; total: number; km: number }
+/** Vùng trên đảo cách địa danh dưới mức này thì coi như cùng một hòn đảo, không cần tàu. */
+export const SIGHT_SAME_ISLAND_KM = 15;
+/** Giá vé tàu ra đảo cho một quãng biển (cùng bảng giá tàu thuỷ du lịch). */
+export function boatFare(km: number): number {
+  return Math.round((TRAVEL_MODES.tau_thuy.base + TRAVEL_MODES.tau_thuy.perKm * Math.max(0, km)) / 1000) * 1000;
+}
+/**
+ * Đường tới một điểm tham quan từ vùng đang đứng: đất liền thì một chặng taxi; ra đảo thì taxi tới cảng rồi đi tàu;
+ * đang ở đảo mà vào đất liền (hay sang đảo khác) thì đi tàu về cảng trước. Đang ở ngay trên đảo đó thì chỉ đi xe trên đảo.
+ */
+export function sightRoute(
+  from: { name: string; lat: number; lng: number; island?: boolean } | null | undefined,
+  s: { name: string; lat: number; lng: number; island?: boolean; port?: { name: string; lat: number; lng: number; islandPort: string; boat?: string } },
+  /** Các địa danh đảo đã biết cảng, để tìm cảng đất liền của hòn đảo người chơi đang đứng. */
+  islandSights: { lat: number; lng: number; island?: boolean; port?: { name: string; lat: number; lng: number; islandPort: string; boat?: string } }[] = [],
+): SightRoute {
+  const kmOf = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => Math.max(SIGHT_MIN_KM, Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng)));
+  const taxi = (a: string, b: string, km: number): SightLeg => ({ mode: 'taxi', from: a, to: b, km, fare: taxiFare(km), seconds: SIGHT_TAXI_SECONDS });
+  const boat = (a: string, b: string, km: number, name?: string): SightLeg => ({ mode: 'tau_thuy', from: a, to: b, km, fare: boatFare(km), seconds: TRAVEL_MODES.tau_thuy.seconds, boat: name ?? 'Tàu thuỷ' });
+  const done = (legs: SightLeg[]): SightRoute => ({ legs, total: legs.reduce((n, l) => n + l.fare, 0), km: legs.reduce((n, l) => n + l.km, 0) });
+  if (!from) return done([taxi('chỗ bạn đứng', s.name, SIGHT_MIN_KM)]);
+  const sameIsland = !!from.island && !!s.island && haversineKm(from.lat, from.lng, s.lat, s.lng) < SIGHT_SAME_ISLAND_KM;
+  if (sameIsland || (!from.island && !s.island)) return done([taxi(from.name, s.name, kmOf(from, s))]);
+  const legs: SightLeg[] = [];
+  let cur: { name: string; lat: number; lng: number } = from;
+  if (from.island) {
+    // tàu từ đảo đang đứng về cảng đất liền của chính hòn đảo đó (nếu biết), không thì cập bến gần nơi cần tới
+    const own = islandSights.find((x) => x.island && x.port && haversineKm(from.lat, from.lng, x.lat, x.lng) < SIGHT_SAME_ISLAND_KM)?.port;
+    const land = own ?? (s.island && s.port ? s.port : { name: `bến tàu gần ${s.name}`, lat: s.lat, lng: s.lng, boat: undefined });
+    legs.push(boat(from.name, land.name, kmOf(from, land), land.boat));
+    cur = land;
+  }
+  if (s.island && s.port) {
+    if (haversineKm(cur.lat, cur.lng, s.port.lat, s.port.lng) > 1) legs.push(taxi(cur.name, s.port.name, kmOf(cur, s.port)));
+    legs.push(boat(s.port.name, s.port.islandPort, kmOf(s.port, s), s.port.boat));
+  } else if (s.island) {
+    legs.push(boat(cur.name, s.name, kmOf(cur, s)));
+  } else {
+    legs.push(taxi(cur.name, s.name, haversineKm(cur.lat, cur.lng, s.lat, s.lng) < 1 ? SIGHT_MIN_KM : kmOf(cur, s)));
+  }
+  return done(legs);
+}
 /** Siêu thị đặc sản: khung giá ký gửi so với giá tham chiếu, phí sàn, giới hạn lô và lượng mua mỗi ngày. */
 export const SUPER_MIN_RATIO = 1.0, SUPER_MAX_RATIO = 1.6, SUPER_FEE = 0.05;
 export const SUPER_MIN_KG = 5, SUPER_MAX_LOT_KG = 300, SUPER_MAX_LOTS = 6, SUPER_DAILY_KG = 30;

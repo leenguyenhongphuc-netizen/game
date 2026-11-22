@@ -250,6 +250,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [sightShops, setSightShops] = useState<{ id: string; name: string; kind: string; emoji: string }[]>([]);
   const [shopOpen, setShopOpen] = useState<string | null>(null);
   const [sightTrip, setSightTrip] = useState<SightTrip | null>(null);
+  const [sightLeg, setSightLeg] = useState(0); // chặng đang đi trên đường tới địa danh (taxi ra cảng, rồi tàu ra đảo)
   const [sightWalk, setSightWalk] = useState<SightTrip | null>(null);
   const [marketTab, setMarketTab] = useState<'cho' | 'gia'>('cho');
   const [xomTab, setXomTab] = useState<'ban' | 'htx' | 'qua'>('ban');
@@ -498,9 +499,20 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       )}
       {respin && <div className="overlay"><RoleWheel regionName={REGIONS[me.user.homeRegionId!].name} onDone={() => { setRespin(false); reload(); }} /></div>}
       {exportRide && <ExportRide mode={exportRide.mode} fromName={REGIONS[me.user.homeRegionId!].name} marketName={EXPORT_MARKETS[exportRide.market].name} specialtyName={SPECIALTIES[exportRide.specialtyId].name} emoji={CROPS[SPECIALTIES[exportRide.specialtyId].crop].emoji} kg={exportRide.kg} onDone={() => { setExportRide(null); setKhoTab('xuat'); setTab('kho'); }} />}
-      {sightTrip && <TravelRide mode={sightTrip.sight.kind === 'dao' ? 'tau_thuy' : 'taxi'} fromRegionId={tour ?? me.user.homeRegionId!} toRegionId={tour ?? me.user.homeRegionId!} toName={sightTrip.sight.name} fare={sightTrip.taxiFare} km={sightTrip.km} seconds={Math.max(14, sightTrip.seconds)}
-        sideHint={sightTrip.sight.kind === 'dao' || sightTrip.sight.kind === 'chua' ? 'bien' : sightTrip.sight.kind === 'cau' ? 'song' : sightTrip.sight.kind === 'pho_co' ? 'pho' : 'nui'}
-        onFinish={() => { const t = sightTrip; setSightShops([]); void api('GET', `/api/sights/${t.sight.id}/shops`).then((d) => setSightShops(d.shops ?? [])).catch(() => undefined); setSightWalk(t); setSightTrip(null); }} />}
+      {sightTrip && (() => {
+        // đi lần lượt từng chặng: đất liền một chặng taxi; ra đảo thì taxi tới cảng rồi tàu ra bến trên đảo
+        const legs = sightTrip.legs?.length ? sightTrip.legs : [{ mode: 'taxi' as const, from: '', to: sightTrip.sight.name, km: sightTrip.km, fare: sightTrip.taxiFare, seconds: sightTrip.seconds }];
+        const leg = legs[Math.min(sightLeg, legs.length - 1)], last = sightLeg >= legs.length - 1, here = tour ?? me.user.homeRegionId!;
+        const kind = sightTrip.sight.kind;
+        return (
+          <TravelRide key={`${sightTrip.sight.id}-${sightLeg}`} mode={leg.mode} fromRegionId={here} toRegionId={here} toName={last ? (leg.mode === 'tau_thuy' ? `${leg.to} · ${sightTrip.sight.name}` : sightTrip.sight.name) : leg.to} fare={leg.fare} km={leg.km} seconds={Math.max(14, leg.seconds)}
+            sideHint={!last || kind === 'dao' || kind === 'chua' || kind === 'bien' ? 'bien' : kind === 'cau' ? 'song' : kind === 'pho_co' || kind === 'lang_nghe' ? 'pho' : 'nui'}
+            onFinish={() => {
+              if (!last) { setSightLeg(sightLeg + 1); return; }
+              const t = sightTrip; setSightLeg(0); setSightShops([]); void api('GET', `/api/sights/${t.sight.id}/shops`).then((d) => setSightShops(d.shops ?? [])).catch(() => undefined); setSightWalk(t); setSightTrip(null);
+            }} />
+        );
+      })()}
       {sightWalk && <SightWalk sightId={sightWalk.sight.id} seen={sightWalk.sight.stopsSeen} shops={sightShops} onShop={(id) => setShopOpen(id)} energy={me.user.energy !== undefined ? { value: me.user.energy, max: me.user.energyMax ?? 100 } : undefined} onExit={(r) => {
         setShopOpen(null);
         const s = sightWalk; setSightWalk(null);

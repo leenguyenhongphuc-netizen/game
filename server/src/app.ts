@@ -18,7 +18,7 @@ import {
   marketDayAt, nearestRegion, npcPrice, qualityFromLate, region as findRegion, seedCost, snapCell, specialty as findSpecialty, stepCount,
   stepWaitMs, urbanCoreAt, weatherAt, speedFine, wholesalePrice, WHOLESALE_SUPPLY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_GATEWAYS, EXPORT_MAX_ACTIVE,
   exportModesFor, exportQuote, coopOrderRoute, LIMIT_REASONS, TRAVEL_VS_TRUCK, haversineKm, taxiFare,
-  SIGHT_MIN_KM, SIGHT_REWARD, SIGHT_TAXI_SECONDS, SUPER_DAILY_KG, SUPER_FEE, SUPER_MAX_LOTS, SUPER_MAX_LOT_KG, SUPER_MIN_KG,
+  SIGHT_REWARD, SIGHT_TAXI_SECONDS, sightRoute, SUPER_DAILY_KG, SUPER_FEE, SUPER_MAX_LOTS, SUPER_MAX_LOT_KG, SUPER_MIN_KG,
   SUPER_NPC_GUESTS, SUPER_NPC_KG, SUPER_NPC_RATIO, superPriceRange,
   ENERGY_COST, ENERGY_REGEN_MINUTES, LEVELS, XP, energyAt, levelOf, levelPerks, tripEnergy, LAND_CERT_NAME, landFees,
   MACHINES, MACHINE_MAX_LEVEL, WORKSHOP_MAX_MACHINES, WORKSHOP_MAX_PER_KIND, WORKSHOP_RUN_FEE_PER_KG, machineStats, machineUpgradeCost, machinesForRecipe, starterMachine,
@@ -1860,10 +1860,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       regionIn: (province: string) => ids.find((id) => findRegion(id)!.province === province) ?? null,
       provinces: [...new Set(ids.map((id) => findRegion(id)!.province))] };
   }
-  const sightKm = (regionId: string | null, s: { lat: number; lng: number }) => {
-    const r = regionId ? findRegion(regionId) : undefined;
-    return r ? Math.max(SIGHT_MIN_KM, Math.round(haversineKm(r.lat, r.lng, s.lat, s.lng))) : SIGHT_MIN_KM;
-  };
+  const routeTo = (regionId: string | null, s: Parameters<typeof sightRoute>[1]) => sightRoute(regionId ? findRegion(regionId) : null, s, SIGHTS);
   const cleanStops = (v: unknown, valid: string[]) => [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === 'string' && valid.includes(x)))];
   const superProvince = (v: unknown) => {
     const p = String(v ?? '');
@@ -1881,8 +1878,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const seen = await db.query('select sight_id, visits, stops, done_at from sight_visits where user_id = $1', [userId]);
     const by = new Map(seen.rows.map((r) => [r.sight_id as string, r]));
     const sights = (province ? sightsOfProvince(province) : []).map((s) => {
-      const km = sightKm(from, s), v = by.get(s.id);
-      return { ...s, km, taxiFare: taxiFare(km), visits: v?.visits ?? 0, done: !!v?.done_at, stopsSeen: cleanStops(v?.stops, s.stops.map((x) => x.id)) };
+      const route = routeTo(from, s), v = by.get(s.id);
+      return { ...s, km: route.km, taxiFare: route.total, route, visits: v?.visits ?? 0, done: !!v?.done_at, stopsSeen: cleanStops(v?.stops, s.stops.map((x) => x.id)) };
     });
     return {
       province, regionId: from ?? null, here, sights,
@@ -1897,16 +1894,16 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return db.tx(async (q) => {
       const w = await whereabouts(q, userId, true);
       if (!w.provinces.includes(s.province)) throw bad('khac_tinh', `Bạn cần tới ${s.province} trước rồi mới bắt taxi tới ${s.name} được.`, 409);
-      const km = sightKm(w.regionIn(s.province), s), fare = taxiFare(km);
-      if (w.cash < fare + s.entryFee) throw bad('khong_du_tien', 'Bạn không đủ tiền taxi và vé vào cổng.', 409);
+      const route = routeTo(w.regionIn(s.province), s), km = route.km, fare = route.total;
+      if (w.cash < fare + s.entryFee) throw bad('khong_du_tien', route.legs.some((l) => l.mode === 'tau_thuy') ? 'Bạn không đủ tiền taxi, vé tàu và vé vào cổng.' : 'Bạn không đủ tiền taxi và vé vào cổng.', 409);
       const en = await energyState(q, userId);
       if (en.cur < ENERGY_COST.stop) throw bad('het_suc', `Bạn đã hết sức để đi bộ tham quan (cần ít nhất ${ENERGY_COST.stop} thể lực, đang có ${en.cur}). Hãy ăn uống hoặc nghỉ một lúc đã.`, 409);
-      await addCash(q, userId, -fare, `taxi_tham_quan:${s.id}`);
+      for (const l of route.legs) await addCash(q, userId, -l.fare, `${l.mode === 'tau_thuy' ? 'tau' : 'taxi'}_tham_quan:${s.id}`);
       if (s.entryFee > 0) await addCash(q, userId, -s.entryFee, `ve_tham_quan:${s.id}`);
       await q.query(
         `insert into sight_visits (user_id, sight_id, visits, is_open) values ($1,$2,1,true)
          on conflict (user_id, sight_id) do update set visits = sight_visits.visits + 1, is_open = true`, [userId, s.id]);
-      return { ok: true, km, taxiFare: fare, entryFee: s.entryFee, seconds: SIGHT_TAXI_SECONDS };
+      return { ok: true, km, taxiFare: fare, entryFee: s.entryFee, seconds: SIGHT_TAXI_SECONDS, legs: route.legs, total: fare };
     });
   });
 
