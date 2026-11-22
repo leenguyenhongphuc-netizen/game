@@ -30,6 +30,8 @@ import { BuildMode } from './build.tsx';
 import { LandCertificate, PassportPanel } from './passport.tsx';
 import { ProgressPanel } from './progress.tsx';
 import { FusionPanel } from './fusion.tsx';
+import { GaragePanel } from './vehicles.tsx';
+import { ShoppingPanel } from './shopping.tsx';
 import { LandUpgrades } from './upgrades.tsx';
 import { ImportRide } from './drive/ImportRide.tsx';
 import type { ImportOrder } from './workshop.tsx';
@@ -210,7 +212,7 @@ type Tab = 'vuon' | 'kho' | 'cho' | 'ban' | 'bando' | 'so' | 'sap' | 'toi' | 'tr
 interface Trip { tripId: number; fromRegionId: string; toRegionId: string; plan: DrivePlan; fuelL: number; etc: number; cash: number; truck: { tankL: number; lPer100km: number; fuelPrice: number } }
 interface TripDone { regionId: string; fuelUsedL: number; fuelCost: number; rescueL: number; tollCost: number; tollFromEtc: number; fuelL: number; etc: number; cash: number; fineCost?: number; fines?: { overKmh: number; fine: number; points: number; label: string }[] }
 const TABS: [Tab, IconName, string][] = [['kho', 'kho', 'Kho'], ['cho', 'cho', 'Chợ'], ['ban', 'xom', 'Xóm'], ['bando', 'dulich', 'Du lịch'], ['trangtri', 'trangtri', 'Trang trí']];
-const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho, đơn hàng, xưởng', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch và sổ tem', so: '', sap: 'Sạp hàng xóm', toi: 'Hồ sơ của tôi', trungbay: 'Quầy trưng bày đặc sản', trangtri: 'Trang trí nhà, sạp, nhân vật' };
+const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho, đơn hàng, xưởng', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch và sổ tem', so: '', sap: 'Sạp hàng xóm', toi: 'Hồ sơ của tôi', trungbay: 'Quầy trưng bày đặc sản', trangtri: 'Trang trí, mua sắm, bãi xe' };
 
 /** Vườn mẫu của một vùng: trồng đủ mọi đặc sản của vùng, cây đang ra trái, để khách tham quan. */
 function modelLot(regionId: string): LotView {
@@ -254,6 +256,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [travelTab, setTravelTab] = useState<'di' | 'thamquan' | 'sieuthi' | 'hochieu' | 'tientrinh' | 'so'>('di');
   const [importRide, setImportRide] = useState<ImportOrder | null>(null);
+  const [shopTab, setShopTab] = useState<'trangtri' | 'muasam' | 'baixe'>('trangtri');
   const [cert, setCert] = useState<number | null>(null);
   const [sightShops, setSightShops] = useState<{ id: string; name: string; kind: string; emoji: string }[]>([]);
   const [shopOpen, setShopOpen] = useState<string | null>(null);
@@ -325,7 +328,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     if (!trip) return;
     try {
       const d = await api<TripDone>('POST', `/api/trips/${trip.tripId}/finish`, res);
-      setToast(`🚚 Đã tới ${REGIONS[trip.toRegionId].name} · xăng ${fmtMoney(d.fuelCost)}${d.rescueL > 0 ? ' (có phí cứu hộ)' : ''} · phí đường ${fmtMoney(d.tollCost)}${d.fineCost ? ` · phạt quá tốc độ ${fmtMoney(d.fineCost)}` : ''}.`); if (trip.toRegionId !== me.user.homeRegionId) { setTour(trip.toRegionId); worldRef.current?.goHome(); setTourTab('buon'); setTab('trungbay'); } else { setTour(null); setKhoTab('kho'); setTab('kho'); }
+      setToast(`🚚 Đã tới ${REGIONS[trip.toRegionId].name} · xăng ${fmtMoney(d.fuelCost)}${d.rescueL > 0 ? ' (có phí cứu hộ)' : ''} · phí đường ${fmtMoney(d.tollCost)}${d.fineCost ? ` · phạt quá tốc độ ${fmtMoney(d.fineCost)}` : ''}${(d as { upkeepCost?: number }).upkeepCost ? ` · đăng kiểm, bảo hiểm ${fmtMoney((d as { upkeepCost?: number }).upkeepCost!)}` : ''}${(d as { fatigue?: { message?: string } | null }).fatigue?.message ? ` · ${(d as { fatigue?: { message?: string } }).fatigue!.message}` : ''}.`); if (trip.toRegionId !== me.user.homeRegionId) { setTour(trip.toRegionId); worldRef.current?.goHome(); setTourTab('buon'); setTab('trungbay'); } else { setTour(null); setKhoTab('kho'); setTab('kho'); }
     } catch (e) { setToast(e instanceof Error ? e.message : 'Có lỗi xảy ra.'); }
     setTrip(null); reload();
   };
@@ -586,7 +589,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
             {tab === 'bando' && (
               <>
                 <div className="tabs"><button aria-selected={travelTab === 'di'} onClick={() => setTravelTab('di')}>Bản đồ</button><button aria-selected={travelTab === 'thamquan'} onClick={() => setTravelTab('thamquan')}>Tham quan</button><button aria-selected={travelTab === 'sieuthi'} onClick={() => setTravelTab('sieuthi')}>Siêu thị</button><button aria-selected={travelTab === 'hochieu'} onClick={() => setTravelTab('hochieu')}>Hộ chiếu</button><button aria-selected={travelTab === 'tientrinh'} onClick={() => setTravelTab('tientrinh')}>Thăng hạng</button><button aria-selected={travelTab === 'so'} onClick={() => setTravelTab('so')}>Sổ tem</button></div>
-                {travelTab === 'di' && <TravelPanel me={me} startRide={startRide} startTrip={isTrader ? startTrip : undefined} touring={tour} />}
+                {travelTab === 'di' && <TravelPanel me={me} startRide={startRide} startTrip={isTrader || me.user.vehicle ? startTrip : undefined} openGarage={() => { setShopTab('baixe'); setTab('trangtri'); }} touring={tour} />}
                 {travelTab === 'thamquan' && <SightsPanel me={me} refresh={reload} onGo={(t) => { setTab('vuon'); setSightTrip(t); }} />}
                 {travelTab === 'sieuthi' && <SupermarketPanel me={me} province={REGIONS[tour ?? me.user.homeRegionId!].province} refresh={reload} />}
                 {travelTab === 'hochieu' && <PassportPanel me={me} refresh={reload} />}
@@ -600,7 +603,14 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                 {tourTab === 'buon' ? <TradePanel me={me} regionId={tour} refresh={reload} openStock={() => { setKhoTab('kho'); setTab('kho'); }} /> : <ShowcasePanel me={me} regionId={tour} priceOf={priceOf} refresh={reload} visit={visit} />}
               </>
             )}
-            {tab === 'trangtri' && <CustomizePanel me={me} home={atHome ? center ?? null : null} worldRef={worldRef} atHome={atHome} onChanged={reload} onBuild={() => { setTab('vuon'); setBuilding(true); }} />}
+            {tab === 'trangtri' && (
+              <>
+                <div className="tabs"><button aria-selected={shopTab === 'trangtri'} onClick={() => setShopTab('trangtri')}>Trang trí</button><button aria-selected={shopTab === 'muasam'} onClick={() => setShopTab('muasam')}>Mua sắm</button><button aria-selected={shopTab === 'baixe'} onClick={() => setShopTab('baixe')}>Bãi xe</button></div>
+                {shopTab === 'trangtri' && <CustomizePanel me={me} home={atHome ? center ?? null : null} worldRef={worldRef} atHome={atHome} onChanged={reload} onBuild={() => { setTab('vuon'); setBuilding(true); }} />}
+                {shopTab === 'muasam' && <ShoppingPanel me={me} refresh={reload} where={tour ? REGIONS[tour].province : undefined} />}
+                {shopTab === 'baixe' && <GaragePanel me={me} refresh={reload} />}
+              </>
+            )}
             {tab === 'sap' && ctxLot && (ctxLot.stall.length ? <StallList listings={ctxLot.stall} canBuy onChanged={reload} /> : <p className="hint">{ctxLot.plot.ownerName} chưa bày món nào.</p>)}
           </div>
         </div>

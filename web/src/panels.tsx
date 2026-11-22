@@ -14,6 +14,7 @@ import { NpcBadge } from './work.tsx';
 import { CompareCard, WhyLimit } from './trade.tsx';
 import { VietnamMap } from './map/VietnamMap.tsx';
 import { SIGHT_PROVINCES } from '../../shared/sights.ts';
+import { VEHICLES, tripPlanFor } from '../../shared/vehicles.ts';
 
 const ZONES = Object.keys(ZONE_NAMES) as Zone[];
 const pct = (n: number) => `${Math.round(n * 100)}%`;
@@ -112,8 +113,10 @@ export function GiftsPanel() {
 }
 
 // ------------------------------------------------------------------ du lịch: chọn nơi đến và phương tiện
-export function TravelPanel({ me, startRide, startTrip, touring }: {
+export function TravelPanel({ me, startRide, startTrip, touring, openGarage }: {
   me: Me; touring: string | null;
+  /** Mở Bãi xe & đại lý (khi chưa có xe hoặc muốn đổi xe). */
+  openGarage?: () => void;
   startRide: (mode: TravelMode, regionId: string, km: number) => Promise<void>;
   startTrip?: (toRegionId: string) => Promise<void>;
 }) {
@@ -123,6 +126,8 @@ export function TravelPanel({ me, startRide, startTrip, touring }: {
   const act = useAction();
   const home = me.user.homeRegionId!;
   const owned = new Set(me.plots.map((p) => p.regionId));
+  // Xe đang lái (mọi vai đều có thể mua xe): thông số chuyến tính theo đúng chiếc xe đó
+  const veh = (me.user as { vehicle?: { kind: string; name: string; cargoKg: number; unit: string; power: string; tank: number } | null }).vehicle ?? null, vspec = veh ? VEHICLES[veh.kind] : undefined;
   return (
     <div>
       <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Chạm một ghim trên bản đồ hoặc chọn trong danh sách, rồi đi bằng xe khách, taxi, tàu hoả, máy bay hoặc tàu thuỷ. Tới nơi bạn được dạo vườn mẫu, ghé quầy trưng bày để mua đặc sản và sưu tập tem.</p>
@@ -151,20 +156,31 @@ export function TravelPanel({ me, startRide, startTrip, touring }: {
                       ))}
                     </div>
                     {startTrip && (me.user.truckRegionId ?? home) !== r.id && (() => {
-                      const plan = tripPlan(me.user.truckRegionId ?? home, r.id), fuel = me.user.fuelL ?? TRUCK.startFuelL;
+                      const at = me.user.truckRegionId ?? home, plan = vspec ? tripPlanFor(vspec, at, r.id) : tripPlan(at, r.id), fuel = me.user.fuelL ?? TRUCK.startFuelL;
+                      const unit = veh?.unit ?? 'lít', ev = veh?.power === 'dien', cargo = veh?.cargoKg ?? plan.cargoKg ?? TRUCK.cargoKg, rests = vspec ? (plan as ReturnType<typeof tripPlanFor>).restsNeeded : 0;
+                      const stops = ev ? (plan as ReturnType<typeof tripPlanFor>).chargersAtKm.length : plan.stationsAtKm.length;
+                      const cargoTxt = cargo >= 1000 ? `${(cargo / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tấn` : `${cargo} kg`;
                       return (
                         <div className="trip-card">
-                          <strong>🚚 Tự lái xe tải đi buôn</strong>
-                          <small>Chở hàng trong kho tới bán giá ở đó, rồi thu mua sỉ tới {plan.cargoKg ?? TRUCK.cargoKg} kg đặc sản chở về. Tiền xăng và phí đường là tiền vốn của chuyến buôn.</small>
+                          <strong>{ev ? '⚡' : '🚚'} Tự lái {veh ? veh.name.replace(/^Xe /, 'xe ') : 'xe tải'} đi buôn</strong>
+                          <small>Chở hàng trong kho tới bán giá ở đó{me.user.role === 'thuong_lai' ? `, rồi thu mua sỉ tới ${cargoTxt} đặc sản chở về` : ` (xe chở được ${cargoTxt})`}. Tiền {ev ? 'điện' : 'xăng dầu'} và phí đường là tiền vốn của chuyến buôn.{rests > 0 ? ` Chuyến dài ${(plan as ReturnType<typeof tripPlanFor>).driveHours} giờ lái: phải ghé trạm dừng nghỉ ${rests} lần.` : ''}</small>
                           <div className="facts">
                             <div><span aria-hidden="true">🛣️</span><b>{plan.km} km</b><small>{plan.needsBoat ? 'có chặng tàu' : `${plan.junctions.length} nút giao`}</small></div>
-                            <div><span aria-hidden="true">⛽</span><b>{plan.fuelNeededL} lít</b><small>{fuel >= plan.fuelNeededL ? `bình đang có ${fuel.toFixed(0)}` : `thiếu ${(plan.fuelNeededL - fuel).toFixed(0)}, ghé ${plan.stationsAtKm.length} trạm`}</small></div>
+                            <div><span aria-hidden="true">{ev ? '🔋' : '⛽'}</span><b>{plan.fuelNeededL} {unit}</b><small>{fuel >= plan.fuelNeededL ? `${ev ? 'pin' : 'bình'} đang có ${fuel.toFixed(0)}` : `thiếu ${(plan.fuelNeededL - fuel).toFixed(0)}, ghé ${stops} trạm${ev ? ' sạc' : ''}`}</small></div>
                             <div><span aria-hidden="true">🎫</span><b>{fmtMoney(plan.tolls * plan.tollFee)}</b><small>{plan.tolls} trạm thu phí{(me.user.etc ?? 0) < plan.tolls * plan.tollFee ? ' · ETC thiếu' : ''}</small></div>
                           </div>
-                          <button className="primary" disabled={act.busy || fuel <= 0} onClick={() => act.run(() => startTrip(r.id))}>{fuel <= 0 ? 'Hết xăng: lên xe đổ trước' : 'Lên đường'}</button>
+                          <button className="primary" disabled={act.busy || fuel <= 0} onClick={() => act.run(() => startTrip(r.id))}>{fuel <= 0 ? `Hết ${ev ? 'pin' : 'xăng'}: lên xe ${ev ? 'sạc' : 'đổ'} trước` : 'Lên đường'}</button>
+                          {openGarage && <button type="button" className="link" onClick={openGarage}>Đổi xe, mua xe ở Bãi xe</button>}
                         </div>
                       );
                     })()}
+                    {!startTrip && openGarage && (me.user.truckRegionId ?? home) !== r.id && (
+                      <div className="trip-card">
+                        <strong>🚚 Tự lái xe chở hàng đi bán</strong>
+                        <small>{veh ? `Bạn đang có ${veh.name}.` : 'Bạn chưa có xe.'} Có xe riêng thì chở hàng trong kho tới bán theo giá ở nơi đến, không phải bán tại vườn.</small>
+                        <button type="button" className="primary" onClick={openGarage}>{veh ? 'Mở Bãi xe' : 'Mua xe ở Bãi xe'}</button>
+                      </div>
+                    )}
                     {startTrip && (me.user.truckRegionId ?? home) === r.id && <span className="tag">🚚 Xe tải đang đỗ ở đây</span>}
                   </div>
                 )}
