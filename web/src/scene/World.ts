@@ -966,6 +966,12 @@ export class World {
     ray.setFromCamera(new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), this.camera);
     const hit = new THREE.Vector3(); return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit) ? { x: hit.x, z: hit.z } : null;
   }
+  /** Vào/ra chế độ xây dựng: đưa nhân vật vào sân trước nhà và lùi máy ảnh để thấy trọn sân; ra thì trả mức phóng cũ. */
+  buildFocus(on: boolean) {
+    if (on) { this.buildZoom = this.zoom; this.zoom = this.camera.aspect < 0.9 ? 1.6 : 1.15; if (this.driving) this.exitTruck(); this.pos.set(0, 0, 6.9); this.walkTo = null; this.vel.set(0, 0, 0); this.camPos.copy(this.pos); }
+    else if (this.buildZoom !== null) { this.zoom = this.buildZoom; this.buildZoom = null; }
+  }
+  private buildZoom: number | null = null;
   /** Bỏ lệnh "chạy tới điểm vừa chạm" (khi cú chạm đó dùng để đặt đồ). */
   cancelWalk() { this.walkTo = null; }
   /** Vẽ các món xem trước: ok = bóng xanh, bad = bóng đỏ, pending = món vừa đặt chờ lưu, select = vòng sáng quanh món đã có. Gọi với [] hoặc null để xoá. */

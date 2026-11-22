@@ -26,6 +26,7 @@ import { TravelRide } from './drive/TravelRide.tsx';
 import { SightsPanel, SupermarketPanel } from './sights.tsx';
 import type { SightTrip } from './sights.tsx';
 import { SightWalk } from './sight/SightWalk.tsx';
+import { BuildMode } from './build.tsx';
 import { LandCertificate, PassportPanel } from './passport.tsx';
 import { BagPanel, EnergyBar, LevelBadge, ShopSheet, describeProgress } from './vital.tsx';
 import type { RideMode } from './drive/TravelRide.tsx';
@@ -231,6 +232,7 @@ const STEP_ICON = { water: '💧', soil: '⛏️', leaf: '✂️', harvest: '�
 function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const homePlotId = me.plots.find((p) => p.isHome)!.id;
   const [tab, setTab] = useState<Tab>('vuon');
+  const [building, setBuilding] = useState(false);
   const [plotId, setPlotId] = useState(homePlotId);
   const [village, setVillage] = useState<Village | null>(null);
   const [offset, setOffset] = useState(0);
@@ -525,6 +527,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       }} />}
       {sightWalk && shopOpen && <ShopSheet sightId={sightWalk.sight.id} shopId={shopOpen} onClose={() => setShopOpen(null)} onChanged={() => { void refresh(); }} />}
       {cert !== null && <LandCertificate plotId={cert} onClose={() => setCert(null)} />}
+      {building && atHome && center && tab === 'vuon' && <BuildMode me={me} home={center} worldRef={worldRef} onChanged={reload} onClose={() => setBuilding(false)} />}
       {ride && <TravelRide mode={ride.mode} fromRegionId={me.user.homeRegionId!} toRegionId={ride.to} km={ride.km} seconds={TRAVEL_MODES[ride.mode].seconds} onFinish={() => { setTour(ride.to); setRide(null); worldRef.current?.goHome(); }} />}
       {trip && <DriveGame fromRegionId={trip.fromRegionId} toRegionId={trip.toRegionId} plan={trip.plan} fuelL={trip.fuelL} truck={trip.truck} etc={trip.etc} cash={trip.cash} truckColor={me.user.avatar?.truck ?? '#f08a6c'} onFinish={finishTrip} onCancel={() => { setTrip(null); setToast('Đã huỷ chuyến. Xe vẫn đỗ ở chỗ cũ.'); }} />}
 
@@ -586,7 +589,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                 {tourTab === 'buon' ? <TradePanel me={me} regionId={tour} refresh={reload} openStock={() => { setKhoTab('kho'); setTab('kho'); }} /> : <ShowcasePanel me={me} regionId={tour} priceOf={priceOf} refresh={reload} visit={visit} />}
               </>
             )}
-            {tab === 'trangtri' && <CustomizePanel me={me} home={atHome ? center ?? null : null} worldRef={worldRef} atHome={atHome} onChanged={reload} />}
+            {tab === 'trangtri' && <CustomizePanel me={me} home={atHome ? center ?? null : null} worldRef={worldRef} atHome={atHome} onChanged={reload} onBuild={() => { setTab('vuon'); setBuilding(true); }} />}
             {tab === 'sap' && ctxLot && (ctxLot.stall.length ? <StallList listings={ctxLot.stall} canBuy onChanged={reload} /> : <p className="hint">{ctxLot.plot.ownerName} chưa bày món nào.</p>)}
           </div>
         </div>

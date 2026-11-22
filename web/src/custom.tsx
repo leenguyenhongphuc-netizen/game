@@ -1,5 +1,5 @@
 // Cá nhân hoá: nhà và cổng, gian hàng, nhân vật, đồ trang trí sân vườn.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import {
   AWNING_COLORS, DECOR_ITEMS, DECOR_MAX, DEFAULT_AVATAR, DEFAULT_STYLE, FENCE_STYLES, HATS, HOUSE_TYPES, ROOF_COLORS, SHIRT_COLORS,
@@ -11,6 +11,7 @@ import { api } from './api.ts';
 import type { LotView, Me } from './api.ts';
 import type { World } from './scene/World.ts';
 import { useAction } from './ui.ts';
+import './build.css';
 
 function Swatches({ label, colors, value, onPick }: { label: string; colors: string[]; value: string; onPick: (c: string) => void }) {
   return (
@@ -20,13 +21,18 @@ function Swatches({ label, colors, value, onPick }: { label: string; colors: str
   );
 }
 
-export function CustomizePanel({ me, home, worldRef, atHome, onChanged }: { me: Me; home: LotView | null; worldRef: MutableRefObject<World | null>; atHome: boolean; onChanged: () => void }) {
+export function CustomizePanel({ me, home, worldRef, atHome, onChanged, onBuild }: { me: Me; home: LotView | null; worldRef: MutableRefObject<World | null>; atHome: boolean; onChanged: () => void; onBuild?: () => void }) {
   const [tab, setTab] = useState<'nha' | 'sap' | 'nguoi' | 'san'>('nha');
   const [style, setStyle] = useState<PlotStyle>({ ...DEFAULT_STYLE, ...(home?.plot.style ?? {}) });
   const [avatar, setAvatar] = useState<Avatar>({ ...DEFAULT_AVATAR, ...(me.user.avatar ?? {}) });
   const decor: DecorPlacement[] = home?.plot.decor ?? [];
   const act = useAction(onChanged);
+  // "Xem thử": thu bảng thành một thanh nhỏ để nhìn nhà, cổng, nhân vật rồi mở lại đúng thẻ đang chọn
+  const [peek, setPeek] = useState(false);
+  useEffect(() => { document.body.classList.toggle('vv-peek', peek); return () => { document.body.classList.remove('vv-peek'); }; }, [peek]);
+  useEffect(() => { if (!peek) return; const w = worldRef.current; w?.buildFocus(true); return () => { w?.buildFocus(false); }; }, [peek, worldRef]);
   if (!home) return <p className="hint">Đang tải…</p>;
+  if (peek) return <div className="peek-bar"><span>👁 Đang xem thử · thay đổi đã được lưu</span><button className="primary" onClick={() => setPeek(false)}>Mở lại bảng</button></div>;
   const owned = new Set(home.plot.ownedHouses ?? []);
   const saveStyle = (next: PlotStyle) => { setStyle(next); void act.run(() => api('POST', `/api/plots/${home.plot.id}/style`, next)); };
   const saveAvatar = (next: Avatar) => { setAvatar(next); void act.run(() => api('POST', '/api/avatar', next)); };
@@ -41,6 +47,7 @@ export function CustomizePanel({ me, home, worldRef, atHome, onChanged }: { me: 
         <button aria-selected={tab === 'san'} onClick={() => setTab('san')}>Sân vườn</button>
       </div>
       {act.error && <p className="error" role="alert">{act.error}</p>}
+      {tab !== 'san' && <div className="peek-row"><button type="button" className="peek-btn" onClick={() => setPeek(true)}>👁 Xem thử</button></div>}
 
       {tab === 'nha' && (
         <div className="custom">
@@ -84,19 +91,9 @@ export function CustomizePanel({ me, home, worldRef, atHome, onChanged }: { me: 
 
       {tab === 'san' && (
         <div className="custom">
-          <p className="muted">Đi tới chỗ muốn đặt trong sân nhà, mở lại màn này rồi chọn món: món đồ sẽ nằm ngay chỗ nhân vật đang đứng. Tối đa {DECOR_MAX} món; gỡ đi không được hoàn tiền.</p>
+          <p className="muted">Vào chế độ xây dựng để chọn món trong khay rồi chạm lên sân để đặt, đặt liền nhiều món không cần mở lại bảng này. Tối đa {DECOR_MAX} món; cất đi không được hoàn tiền.</p>
           {!atHome && <p className="error">Bạn cần đang ở vườn nhà để đặt đồ.</p>}
-          <div className="pick-row">
-            {DECOR_ITEMS.map((d) => (
-              <button key={d.id} type="button" className="pick" disabled={act.busy || !atHome || decor.length >= DECOR_MAX || me.user.cash < d.price}
-                onClick={() => {
-                  const p = worldRef.current?.position(); if (!p) return;
-                  void saveDecor([...decor, { item: d.id, x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, rot: 0 }]);
-                }}>
-                <span className="emoji">{d.emoji}</span><strong>{d.name}</strong><small>{fmtMoney(d.price)}</small>
-              </button>
-            ))}
-          </div>
+          <button type="button" className="build-enter" disabled={!atHome || !onBuild} onClick={() => onBuild?.()}>🔨 Vào chế độ xây dựng<small>{DECOR_ITEMS.length} món · từ {fmtMoney(Math.min(...DECOR_ITEMS.map((d) => d.price)))}</small></button>
           <h3>Đã đặt ({decor.length}/{DECOR_MAX})</h3>
           {decor.length === 0 && <p className="hint">Sân chưa có món trang trí nào.</p>}
           {decor.map((d, i) => {
