@@ -37,7 +37,20 @@ export function buildHouse(type: string, wall: number, roof: number, night: bool
   const h = new THREE.Group();
   const dark = mat(0x9a7150), white = mat(0xffffff), w = mat(wall), r = mat(roof);
   const glow = night ? mat(0xffe08a, { emissive: 0xffc24a }) : mat(0x8fd3f2, { rough: 0.3 });
-  const win = (x: number, y: number, z: number) => h.add(mesh(GEO.box, glow, x, y, z, 0.9, 0.8, 0.08), mesh(GEO.box, white, x, y, z + 0.04, 1.05, 0.1, 0.05), mesh(GEO.box, white, x, y, z + 0.04, 0.1, 0.95, 0.05));
+  const shutter = mat(new THREE.Color(roof).multiplyScalar(0.82).getHex()), leaf = mat(0x5cb85f);
+  const win = (x: number, y: number, z: number) => {
+    h.add(mesh(GEO.box, glow, x, y, z, 0.9, 0.8, 0.08), mesh(GEO.box, white, x, y, z + 0.04, 1.05, 0.1, 0.05), mesh(GEO.box, white, x, y, z + 0.04, 0.1, 0.95, 0.05));
+    for (const sx of [-1, 1]) h.add(mesh(GEO.box, shutter, x + sx * 0.66, y, z + 0.03, 0.34, 0.86, 0.06));
+    h.add(mesh(GEO.box, mat(0xb9855a), x, y - 0.56, z + 0.16, 1.1, 0.16, 0.26), mesh(GEO.ball, leaf, x - 0.3, y - 0.42, z + 0.16, 0.17), mesh(GEO.ball, leaf, x + 0.3, y - 0.42, z + 0.16, 0.17), mesh(GEO.ball, mat(0xf7a8c4), x, y - 0.38, z + 0.2, 0.13), mesh(GEO.ball, mat(0xffe27a), x + 0.42, y - 0.36, z + 0.2, 0.09));
+  };
+  /** Mái ngói: thêm bờ nóc, diềm mái sẫm và các gờ ngói chạy dọc mái trước. */
+  const tiles = (y: number, z: number, wdt: number, dep: number) => {
+    const dk = mat(new THREE.Color(roof).multiplyScalar(0.8).getHex());
+    h.add(mesh(GEO.box, dk, 0, y - 0.09, z + dep / 2, wdt + 0.1, 0.1, 0.14));
+    for (let x = -wdt / 2 + 0.3; x < wdt / 2; x += 0.62) h.add(mesh(GEO.box, dk, x, y + 0.1, z, 0.13, 0.07, dep - 0.1));
+  };
+  const steps = (z: number, wdt: number) => h.add(mesh(GEO.box, mat(0xd9cdb4), 0, 0.08, z, wdt, 0.16, 0.5), mesh(GEO.box, mat(0xe6dcc6), 0, 0.04, z + 0.42, wdt + 0.4, 0.08, 0.44));
+  const pots = (z: number, xs: number[]) => { for (const x of xs) h.add(mesh(GEO.cyl, mat(0xc9774e), x, 0.5, z, 0.2, 0.36, 0.16), mesh(GEO.ball, leaf, x, 0.86, z, 0.26), mesh(GEO.ball, mat(x > 0 ? 0xf7a8c4 : 0xffd23f), x + 0.08, 1.02, z + 0.08, 0.1)); };
   if (type === 'nha_san') { // nhà sàn gỗ mái lá
     const wood = mat(0xc99a68), thatch = mat(0xe6c66a);
     for (const x of [-2.4, 0, 2.4]) for (const z of [-1.4, 1.4]) h.add(mesh(GEO.cyl, dark, x, 0.75, z, 0.14, 1.5, 0.14));
@@ -46,6 +59,8 @@ export function buildHouse(type: string, wall: number, roof: number, night: bool
     h.add(mesh(GEO.box, r, 0, 3.72, 0, 6.2, 0.12, 4.2), mesh(GEO.box, dark, 0, 2.5, 1.62, 0.9, 1.5, 0.1));
     win(-1.7, 2.8, 1.62); win(1.7, 2.8, 1.62);
     for (let i = 0; i < 5; i++) h.add(mesh(GEO.box, wood, 0, 0.25 + i * 0.3, 2.9 - i * 0.26, 1.2, 0.1, 0.3)); // cầu thang
+    for (const x of [-2.9, 2.9]) h.add(mesh(GEO.box, wood, x, 2.1, 1.75, 0.1, 0.8, 0.1)); h.add(mesh(GEO.box, wood, -1.75, 2.45, 1.78, 2.3, 0.08, 0.08), mesh(GEO.box, wood, 1.75, 2.45, 1.78, 2.3, 0.08, 0.08)); // lan can
+    for (let i = 0; i < 3; i++) h.add(mesh(GEO.ball, mat(0xf2c94a), -2.3 + i * 0.36, 3.45 - (i % 2) * 0.1, 1.7, 0.1, 0.22, 0.1)); // bắp treo hiên
   } else if (type === 'nha_ba_gian') { // nhà ba gian mái dài
     h.add(mesh(GEO.box, mat(0xcdbb99), 0, 0.2, 0.1, 6.8, 0.4, 4.4), mesh(GEO.box, w, 0, 1.5, -0.3, 6.2, 2.2, 3));
     const roofM = mesh(new THREE.CylinderGeometry(0.01, 2.6, 1.4, 4, 1), r, 0, 3.3, -0.3, 1.9, 1, 0.9); roofM.rotation.y = Math.PI / 4; h.add(roofM);
@@ -53,13 +68,17 @@ export function buildHouse(type: string, wall: number, roof: number, night: bool
     for (const x of [-3, -1, 1, 3]) h.add(mesh(GEO.cyl, mat(0xb5523b), x, 1.4, 2.2, 0.11, 2.2, 0.11));
     for (const x of [-2, 0, 2]) h.add(mesh(GEO.box, dark, x, 1.2, 1.22, 1.3, 1.7, 0.1));
     h.add(mesh(GEO.box, mat(0xf6d77a), 0, 2.45, 1.26, 1.6, 0.36, 0.06));
+    tiles(2.62, 1.6, 6.9, 1.6); steps(2.5, 2.4); pots(2.55, [-2.6, 2.6]);
+    h.add(mesh(GEO.box, mat(new THREE.Color(roof).multiplyScalar(0.8).getHex()), 0, 4.02, -0.3, 2.4, 0.16, 0.3));
   } else { // nhà mái ngói có hiên
     h.add(mesh(GEO.box, mat(0xcdbb99), 0, 0.15, 0, 6.6, 0.3, 4.6), mesh(GEO.box, w, 0, 1.5, 0, 5.6, 2.4, 3.6));
     const roofM = mesh(new THREE.CylinderGeometry(0.01, 3.1, 1.8, 4, 1), r, 0, 3.6, 0, 1.38, 1, 0.98); roofM.rotation.y = Math.PI / 4; h.add(roofM);
     h.add(mesh(GEO.box, dark, 0, 1.1, 1.82, 1.0, 1.6, 0.1), mesh(GEO.box, r, 0, 2.6, 2.5, 6.3, 0.14, 1.5));
     win(-1.8, 1.7, 1.82); win(1.8, 1.7, 1.82);
     for (const x of [-2.9, 2.9]) h.add(mesh(GEO.cyl, dark, x, 1.4, 3.1, 0.09, 2.4, 0.09));
-    h.add(mesh(GEO.box, mat(0xb0a08a), 1.9, 4.2, -0.3, 0.5, 0.9, 0.5));
+    h.add(mesh(GEO.box, mat(0xb0a08a), 1.9, 4.2, -0.3, 0.5, 0.9, 0.5), mesh(GEO.box, mat(0x8a7d6a), 1.9, 4.7, -0.3, 0.62, 0.12, 0.62));
+    tiles(2.67, 2.5, 6.3, 1.5); steps(2.55, 1.6); pots(2.9, [-2.2, 2.2]);
+    h.add(mesh(GEO.box, mat(0xfdf6e6), 0, 2.0, 1.83, 1.2, 0.12, 0.06), mesh(GEO.ball, mat(0xffd23f), 0.32, 1.1, 1.9, 0.06), mesh(GEO.box, mat(0xe9dcc0), 0, 0.5, 1.83, 5.62, 0.5, 0.04));
   }
   return h;
 }
@@ -98,7 +117,11 @@ export function makeTruck(color: number): { root: THREE.Group; wheels: THREE.Mes
   root.add(mesh(GEO.box, mat(0xd9a877), 0, 0.95, -0.75, 1.8, 0.7, 2.6), mesh(GEO.box, mat(0xb9855a), 0, 1.33, -0.75, 1.9, 0.08, 2.7));
   for (const [x, z, c] of [[-0.45, -0.2, 0xf4c430], [0.45, -0.3, 0xe8457f], [-0.4, -1.3, 0x9bd64a], [0.4, -1.4, 0xf08a24]] as const) root.add(mesh(GEO.box, mat(0xc9975a), x, 1.6, z, 0.7, 0.45, 0.7), mesh(GEO.ball, mat(c), x, 1.9, z, 0.2));
   root.add(mesh(GEO.ball, mat(0xfff3b0, { emissive: 0xffe08a }), -0.6, 0.95, 2.07, 0.13), mesh(GEO.ball, mat(0xfff3b0, { emissive: 0xffe08a }), 0.6, 0.95, 2.07, 0.13));
-  for (const x of [-0.9, 0.9]) for (const z of [1.3, -1.3]) { const w = mesh(GEO.cyl, mat(0x2b2f38), x, 0.42, z, 0.42, 0.3, 0.42); w.rotation.z = Math.PI / 2; wheels.push(w); root.add(w); }
+  const chrome = mat(0xdfe6ee, { rough: 0.3 }), lite = mat(new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.35).getHex());
+  root.add(mesh(GEO.box, chrome, 0, 0.5, 2.12, 1.86, 0.2, 0.14), mesh(GEO.box, dark, 0, 0.92, 2.07, 0.8, 0.26, 0.04), mesh(GEO.box, lite, 0, 1.95, 1.3, 1.6, 0.12, 1.1)); // cản trước, lưới tản nhiệt, nóc
+  for (const sx of [-1, 1]) root.add(mesh(GEO.box, dark, sx * 1.02, 1.5, 1.85, 0.08, 0.26, 0.16), mesh(GEO.box, mat(0xa9dcf2, { rough: 0.25 }), sx * 0.91, 1.5, 1.4, 0.04, 0.5, 0.8), mesh(GEO.box, mat(0xe8412f, { emissive: 0xb02a1e }), sx * 0.7, 0.9, -2.07, 0.3, 0.16, 0.05), mesh(GEO.box, dark, sx * 0.92, 0.72, 1.3, 0.1, 0.12, 1.0), mesh(GEO.box, dark, sx * 0.92, 0.72, -1.3, 0.1, 0.12, 1.0));
+  root.add(mesh(GEO.box, mat(0xfdf6e6), 0, 0.62, -2.08, 0.6, 0.2, 0.04)); // biển số
+  for (const x of [-0.9, 0.9]) for (const z of [1.3, -1.3]) { const w = mesh(GEO.cyl, mat(0x2b2f38), x, 0.42, z, 0.42, 0.3, 0.42); w.rotation.z = Math.PI / 2; w.add(mesh(GEO.cyl, chrome, 0, x > 0 ? -0.52 : 0.52, 0, 0.5, 0.06, 0.5)); wheels.push(w); root.add(w); }
   return { root, wheels };
 }
 

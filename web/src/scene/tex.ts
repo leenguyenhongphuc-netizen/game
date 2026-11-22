@@ -49,8 +49,8 @@ export function roadTex(color: number, paved = false): THREE.CanvasTexture {
       g.fillStyle = 'rgba(255,255,255,0.75)'; g.fillRect(0, 8, 256, 2.5); g.fillRect(0, 117.5, 256, 2.5);
       return;
     }
-    for (const y of [44, 84]) { const gr = g.createLinearGradient(0, y - 11, 0, y + 11); gr.addColorStop(0, tone(0.85, 0)); gr.addColorStop(0.5, tone(0.88, 0.6)); gr.addColorStop(1, tone(0.85, 0)); g.fillStyle = gr; g.fillRect(0, y - 11, 256, 22); }
-    { const gr = g.createLinearGradient(0, 52, 0, 76); gr.addColorStop(0, tone(1.06, 0)); gr.addColorStop(0.5, tone(1.07, 0.7)); gr.addColorStop(1, tone(1.06, 0)); g.fillStyle = gr; g.fillRect(0, 52, 256, 24); }
+    for (const y of [44, 84]) { const gr = g.createLinearGradient(0, y - 11, 0, y + 11); gr.addColorStop(0, tone(0.85, 0)); gr.addColorStop(0.5, tone(0.9, 0.42)); gr.addColorStop(1, tone(0.85, 0)); g.fillStyle = gr; g.fillRect(0, y - 11, 256, 22); }
+    { const gr = g.createLinearGradient(0, 52, 0, 76); gr.addColorStop(0, tone(1.06, 0)); gr.addColorStop(0.5, tone(1.05, 0.5)); gr.addColorStop(1, tone(1.06, 0)); g.fillStyle = gr; g.fillRect(0, 52, 256, 24); }
     for (let i = 0; i < 420; i++) { const k = r(); g.fillStyle = k < 0.5 ? tone(0.86, 0.35) : k < 0.85 ? tone(1.1, 0.45) : 'rgba(160,150,135,0.4)'; const s = 0.6 + r() * 1.3; g.beginPath(); g.ellipse(r() * 256, 6 + r() * 116, s, s * 0.7, 0, 0, 6.3); g.fill(); }
     for (let i = 0; i < 26; i++) { g.fillStyle = 'rgba(120,150,90,0.5)'; g.fillRect(r() * 256, r() < 0.5 ? 2 + r() * 10 : 116 + r() * 10, 2 + r() * 3, 2); }
   });

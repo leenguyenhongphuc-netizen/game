@@ -74,7 +74,7 @@ for (const dev of DEVICES) {
   const dir = join(OUT, dev.id); mkdirSync(dir, { recursive: true });
   const ctx = await browser.newContext({ viewport: { width: dev.w, height: dev.h }, deviceScaleFactor: 1, hasTouch: dev.touch, isMobile: dev.touch, geolocation: { latitude: 10.34, longitude: 106.03 }, permissions: ['geolocation'], locale: 'vi-VN' });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { window.__rideStep = 0.15; window.__driveAuto = true; }); // hoạt cảnh du lịch: cho mỗi khung hình nhảy bước dài hơn vì máy thử không có GPU
+  await page.addInitScript(() => { window.__rideStep = 0.15; window.__driveAuto = true; window.__drivePolice = false; }); // hoạt cảnh du lịch: cho mỗi khung hình nhảy bước dài hơn vì máy thử không có GPU
   const logs = [];
   page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) logs.push(`console: ${m.text().slice(0, 200)}`); });

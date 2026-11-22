@@ -12,6 +12,11 @@ declare global { interface Window { __finishCount?: number; __result?: DriveResu
 
 function Test() {
   const q = new URLSearchParams(location.search);
+  // &auto=1 bật ga tự động, &police=1 ép mọi điểm đều có tổ CSGT, &view=pov vào thẳng góc nhìn ca-bin
+  const w = window as unknown as { __driveAuto?: boolean; __drivePolice?: boolean };
+  if (q.get('auto') === '1') w.__driveAuto = true;
+  if (q.has('police')) w.__drivePolice = q.get('police') === '1';
+  if (q.get('view')) { try { localStorage.setItem('vv-drive-view', q.get('view') === 'pov' ? 'pov' : 'chase'); } catch { /* bỏ qua */ } }
   const [state, setState] = useState<'run' | 'done' | 'cancel'>('run');
   if (state !== 'run') return <h1 id="result" style={{ fontFamily: 'sans-serif', padding: 24 }}>{state === 'done' ? 'XONG' : 'ĐÃ HUỶ'}</h1>;
   const done = () => { window.__finishCount = (window.__finishCount ?? 0) + 1; document.title = 'XONG'; setState('done'); };

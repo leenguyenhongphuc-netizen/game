@@ -10,6 +10,7 @@ import { addHat, buildDecor, buildFence, buildHouse, buildRoleProp, hex, makeTru
 import type { Listing, Planting } from '../api.ts';
 import { GEO, buildPlant, fruitColor, mat, mesh, rng } from './plants.ts';
 import type { Stage } from './plants.ts';
+import { roadsideProp, zoneHouse, zoneScene } from './zones.ts';
 import { blobTex, boardCanvas, edgeFade, grassTex, roadTex, softDot } from './tex.ts';
 
 // ---------------------------------------------------------------- bố cục xóm
@@ -73,34 +74,35 @@ export function bake(root: THREE.Object3D): THREE.Group {
   return out;
 }
 
+const TUFT_GEO = new THREE.ConeGeometry(1, 1, 5), FLOWER_GEO = new THREE.OctahedronGeometry(1, 0);
 type LabelTone = 'gold' | 'paper' | 'region' | 'float';
 /** Biển chữ trong thế giới: tấm ván gỗ (hoặc viên chữ nổi), cao `h` đơn vị, rộng theo chữ. */
 function makeLabel(text: string, tone: LabelTone = 'paper', h = 0.92, floatBg?: string): THREE.Sprite {
   const { canvas, aspect } = boardCanvas(text, tone, floatBg);
   const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-  sp.scale.set(h * aspect, h, 1);
+  sp.scale.set(h * aspect, h, 1); sp.renderOrder = 6;
   return sp;
 }
 
 interface Body { root: THREE.Group; legL: THREE.Mesh; legR: THREE.Mesh; armL: THREE.Group; armR: THREE.Group }
 function makeFarmer(shirt: number, hat = 'non_la'): Body {
-  const root = new THREE.Group();
+  const root = new THREE.Group(), core = new THREE.Group();
   const skin = mat(0xf8d3ae), cloth = mat(shirt), pants = mat(0x4f5f86), shoe = mat(0x6b4a2f), hair = mat(0x3a2a1c), dark = mat(0x2b2118);
   const trim = mat(new THREE.Color(shirt).multiplyScalar(0.78).getHex());
   // chân ngắn tròn, có giày — dáng "chibi": đầu to, thân bầu
   const leg = (x: number) => { const m = mesh(GEO.cyl, pants, x, 0.26, 0, 0.13, 0.5, 0.14); m.add(mesh(GEO.ball, shoe, 0, -0.46, 0.35, 1.25, 0.22, 1.9)); return m; };
   const legL = leg(-0.16), legR = leg(0.16);
-  root.add(legL, legR);
-  root.add(mesh(GEO.ball, cloth, 0, 0.84, 0, 0.4, 0.44, 0.34), mesh(GEO.cyl, trim, 0, 0.5, 0, 0.36, 0.1, 0.31)); // thân áo + gấu áo
-  root.add(mesh(GEO.ball, mat(0xfdf6e6), 0, 1.15, 0.05, 0.22, 0.1, 0.2)); // cổ áo
-  for (const y of [0.98, 0.8]) root.add(mesh(GEO.ball, mat(0xfdf6e6), 0, y, 0.33, 0.035)); // khuy
-  root.add(mesh(GEO.ball, skin, 0, 1.52, 0, 0.42));
-  root.add(mesh(GEO.ball, hair, 0, 1.6, -0.1, 0.43, 0.38, 0.4)); // tóc sau gáy
-  for (const x of [-0.15, 0.15]) root.add(mesh(GEO.ball, dark, x, 1.54, 0.37, 0.058, 0.075, 0.04), mesh(GEO.ball, mat(0xffffff), x + 0.02, 1.565, 0.4, 0.02));
-  for (const x of [-0.25, 0.25]) root.add(mesh(GEO.ball, mat(0xf4a48c), x, 1.42, 0.31, 0.075, 0.05, 0.03)); // má hồng
-  root.add(mesh(GEO.ball, mat(0xc9644a), 0, 1.4, 0.4, 0.06, 0.025, 0.02)); // miệng cười
-  addHat(root, hat);
+  core.add(mesh(GEO.ball, cloth, 0, 0.84, 0, 0.4, 0.44, 0.34), mesh(GEO.cyl, trim, 0, 0.5, 0, 0.36, 0.1, 0.31)); // thân áo + gấu áo
+  core.add(mesh(GEO.ball, mat(0xfdf6e6), 0, 1.15, 0.05, 0.22, 0.1, 0.2)); // cổ áo
+  for (const y of [0.98, 0.8]) core.add(mesh(GEO.ball, mat(0xfdf6e6), 0, y, 0.33, 0.035)); // khuy
+  core.add(mesh(GEO.ball, skin, 0, 1.52, 0, 0.42));
+  core.add(mesh(GEO.ball, hair, 0, 1.6, -0.1, 0.43, 0.38, 0.4)); // tóc sau gáy
+  for (const x of [-0.15, 0.15]) core.add(mesh(GEO.ball, dark, x, 1.54, 0.37, 0.058, 0.075, 0.04), mesh(GEO.ball, mat(0xffffff), x + 0.02, 1.565, 0.4, 0.02));
+  for (const x of [-0.25, 0.25]) core.add(mesh(GEO.ball, mat(0xf4a48c), x, 1.42, 0.31, 0.075, 0.05, 0.03)); // má hồng
+  core.add(mesh(GEO.ball, mat(0xc9644a), 0, 1.4, 0.4, 0.06, 0.025, 0.02)); // miệng cười
+  addHat(core, hat);
+  root.add(bake(core), legL, legR); // phần thân, đầu, nón gộp lại theo chất liệu để ít lần vẽ
   const arm = (x: number) => { const g = new THREE.Group(); g.position.set(x, 1.06, 0); g.add(mesh(GEO.cyl, cloth, 0, -0.2, 0, 0.1, 0.42, 0.1), mesh(GEO.ball, skin, 0, -0.46, 0, 0.115)); g.rotation.z = x < 0 ? -0.12 : 0.12; root.add(g); return g; };
   const armL = arm(-0.44), armR = arm(0.44);
   root.traverse((o) => { o.receiveShadow = false; });
@@ -171,6 +173,8 @@ class Lot {
   npc: Body | null = null;
   private slot: number;
   private night: boolean;
+  /** Miền của vùng đang xem: quyết định kiểu nhà mặc định. */
+  zone: Zone = 'nam';
 
   constructor(slot: number, night: boolean) {
     this.slot = slot; this.night = night;
@@ -228,13 +232,18 @@ class Lot {
     } else {
     // Sân đất và các ô được trồng theo vai trò
     st.add(mesh(GEO.box, mat(0xefdcb4), 0, 0.03, 0.2, PLOT_COLS * TILE + 1.6, 0.06, PLOT_ROWS * TILE + 1.6));
-    for (const t of tiles) { const p = tileLocal(t); st.add(mesh(GEO.box, mat((t + Math.floor(t / PLOT_COLS)) % 2 ? 0xa57650 : 0xb08259), p.x, 0.08, p.z, TILE - 0.14, 0.08, TILE - 0.14)); }
+    st.add(mesh(GEO.box, mat(0xdcc394), 0, 0.02, 0.2, PLOT_COLS * TILE + 2.0, 0.05, PLOT_ROWS * TILE + 2.0));
+    for (const t of tiles) {
+      const p = tileLocal(t), alt = (t + Math.floor(t / PLOT_COLS)) % 2;
+      st.add(mesh(GEO.box, mat(0x8a5f3f), p.x, 0.06, p.z, TILE - 0.1, 0.1, TILE - 0.1), mesh(GEO.box, mat(alt ? 0xa57650 : 0xb08259), p.x, 0.1, p.z, TILE - 0.26, 0.08, TILE - 0.26));
+      for (let i = 0; i < 4; i++) st.add(mesh(GEO.box, mat(alt ? 0xb58560 : 0xbf8f67), p.x - 0.63 + i * 0.42, 0.15, p.z, 0.2, 0.05, TILE - 0.42)); // rãnh luống
+    }
     buildFence(st, style?.fence ?? 'trang', FENCE, roofColor);
     // Lối đá từ cổng vào ruộng, vòng ra nhà
     const stone = mat(0xfaf3e3);
     for (let i = 0; i < 4; i++) st.add(mesh(GEO.cyl, stone, i % 2 ? 0.2 : -0.2, 0.05, FENCE.front - 0.6 - i * 0.75, 0.42, 0.06, 0.36));
     for (let i = 0; i < 9; i++) st.add(mesh(GEO.cyl, stone, -7.6 + (i % 2 ? 0.15 : -0.1), 0.05, 5.2 - i * 1.5, 0.4, 0.06, 0.34));
-    const h = buildHouse(style?.house ?? 'mai_ngoi', wallColor, roofColor, this.night); h.position.set(0, 0, -10.4);
+    const h = buildHouse(style?.house ?? zoneHouse(this.zone), wallColor, roofColor, this.night); h.position.set(0, 0, -10.4);
     h.add(mesh(GEO.cyl, mat(0xb5613c), -3.6, 0.55, 3.1, 0.45, 0.8, 0.45), mesh(GEO.cyl, mat(0x7fd3e8, { rough: 0.2 }), -3.6, 0.96, 3.1, 0.38, 0.03, 0.38));
     st.add(h);
     // Cây bóng mát, đống rơm, giếng trong sân
@@ -250,6 +259,10 @@ class Lot {
     s.add(mesh(GEO.box, mat(0xd9a877), 0, 0.55, 0, 3.4, 1.1, 1.3), mesh(GEO.box, mat(0xf2d2a2), 0, 1.13, 0.05, 3.6, 0.08, 1.5));
     for (const x of [-1.65, 1.65]) for (const z of [-0.6, 0.6]) s.add(mesh(GEO.cyl, woodDark, x, 1.5, z, 0.07, 3, 0.07));
     for (let i = 0; i < 8; i++) { const strip = mesh(GEO.box, mat(i % 2 ? 0xffffff : awning), -1.58 + i * 0.45, 3.05, 0.1, 0.45, 0.1, 2.1); strip.rotation.x = 0.22; s.add(strip); }
+    for (let i = 0; i < 8; i++) s.add(mesh(GEO.ball, mat(i % 2 ? 0xffffff : awning), -1.58 + i * 0.45, 2.74, 1.14, 0.225, 0.2, 0.05)); // diềm bạt lượn sóng
+    s.add(mesh(GEO.box, mat(0x8a5f3c), 0, 0.5, 0.68, 3.0, 0.7, 0.05), mesh(GEO.box, mat(0xf6e3ba), 0, 0.52, 0.71, 2.2, 0.42, 0.03)); // bảng giá trước quầy
+    for (const [x, z, c] of [[-2.2, 0.5, 0xf08a24], [2.25, 0.4, 0x9bd64a], [2.3, -0.5, 0xe8457f]] as const) { s.add(mesh(GEO.box, mat(0xc9975a), x, 0.25, z, 0.7, 0.5, 0.7)); for (let k = 0; k < 4; k++) s.add(mesh(GEO.ball, mat(c, { rough: 0.5 }), x + (k % 2 ? 0.16 : -0.16), 0.56, z + (k > 1 ? 0.16 : -0.16), 0.15)); }
+    s.add(mesh(GEO.cyl, woodDark, -1.2, 2.5, 0.62, 0.02, 0.5, 0.02), mesh(GEO.ball, this.night ? mat(0xffe08a, { emissive: 0xffc24a }) : mat(0xe8412f), -1.2, 2.16, 0.62, 0.16, 0.2, 0.16)); // đèn lồng
     st.add(s);
     }
     if (style?.stallName) { const sign = makeLabel(style.stallName, 'paper', 0.66); sign.position.set(STALL.x, 3.9, STALL.z); this.group.add(sign); this.signs.push(sign); }
@@ -266,7 +279,7 @@ class Lot {
     this.data = data;
     const want = data ? (data.kind === 'rooftop' ? 'roof' : 'farm') : this.slot === 0 ? 'none' : 'empty';
     if (want === 'none') { this.group.clear(); this.built = 'none'; return; }
-    const look = !data ? want : [want, data.ownerRole, JSON.stringify(data.style ?? null), JSON.stringify(data.decor ?? null), JSON.stringify(data.avatar ?? null)].join('|');
+    const look = !data ? want : [want, this.zone, data.ownerRole, JSON.stringify(data.style ?? null), JSON.stringify(data.decor ?? null), JSON.stringify(data.avatar ?? null)].join('|');
     if (this.built !== want || this.look !== look) { this.rebuild(want); this.look = look; }
     if (!data) return;
     const text = data.style?.gateName || (data.mine ? (data.kind === 'rooftop' ? 'Sân thượng nhà' : 'Vườn nhà') : `Vườn ${data.ownerName}`);
@@ -334,6 +347,7 @@ export class World {
   private env = new THREE.Group();
   private lots: Lot[] = [];
   private colliders: [number, number, number, number][] = [];
+  private envColliders: [number, number, number, number][] = [];
   private state: WorldState | null = null;
   private regionId = '';
   private player: Body;
@@ -362,6 +376,9 @@ export class World {
   private chickens: { obj: THREE.Group; target: THREE.Vector3; wait: number; speed: number }[] = [];
   private clouds: THREE.Group[] = [];
   private flutter: { m: THREE.Mesh; c: THREE.Vector3; ph: number }[] = [];
+  private shades: THREE.Mesh[] = [];
+  private puffs: { s: THREE.Sprite; lot: number; ph: number }[] = [];
+  private flies: { s: THREE.Sprite; ph: number }[] = [];
   private water: THREE.Mesh | null = null;
   private ro: ResizeObserver;
   private disposed = false;
@@ -480,6 +497,27 @@ export class World {
       g.position.set(-8 + i * 0.7, 0, 7 - i * 0.3);
       this.chickens.push({ obj: g, target: g.position.clone(), wait: i * 0.7, speed: 1.2 + i * 0.15 }); this.scene.add(g);
     }
+    { // chó vàng quanh quẩn trong sân (đầu là phần tử thứ hai để gật gù như gà)
+      const g = new THREE.Group(), body = new THREE.Group(), head = new THREE.Group(), fur = mat(0xd9a05a), dk = mat(0x8a5a2a);
+      body.add(mesh(GEO.sphere, fur, 0, 0.42, 0, 0.24, 0.24, 0.42));
+      const tail = mesh(GEO.cone, fur, 0, 0.62, -0.42, 0.06, 0.34, 0.06); tail.rotation.x = -0.7; body.add(tail);
+      for (const x of [-0.14, 0.14]) for (const z of [-0.24, 0.24]) body.add(mesh(GEO.box, fur, x, 0.14, z, 0.1, 0.28, 0.1));
+      head.add(mesh(GEO.sphere, fur, 0, 0, 0.42, 0.22), mesh(GEO.sphere, dk, 0, -0.04, 0.62, 0.09, 0.08, 0.1), mesh(GEO.cone, dk, -0.13, 0.22, 0.38, 0.07, 0.18, 0.07), mesh(GEO.cone, dk, 0.13, 0.22, 0.38, 0.07, 0.18, 0.07));
+      const hb = bake(head); hb.position.y = 0.6; g.add(bake(body), hb);
+      g.position.set(3.5, 0, 9.5); this.chickens.push({ obj: g, target: g.position.clone(), wait: 2, speed: 2.4 }); this.scene.add(g);
+    }
+    for (let i = 0; i < 4; i++) { // bóng mây trôi trên mặt đất
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(38, 26).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: blobTex(), color: 0x15301a, transparent: true, opacity: 0.2, depthWrite: false }));
+      m.position.set(-60 + i * 42, 0.14, -8 + (i % 2) * 34); m.renderOrder = -1; m.visible = !this.sky.night; this.shades.push(m); this.scene.add(m);
+    }
+    for (let i = 0; i < 9; i++) { // khói bếp
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: softDot(), color: this.sky.night ? 0x9aa6c8 : 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+      this.puffs.push({ s, lot: i % 3, ph: i / 9 }); this.scene.add(s);
+    }
+    if (this.sky.night) for (let i = 0; i < 26; i++) { // đom đóm
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: softDot(), color: 0xf6ff8a, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+      s.scale.setScalar(0.34); this.flies.push({ s, ph: i * 2.39 }); this.scene.add(s);
+    }
     if (!this.sky.night) for (let i = 0; i < 8; i++) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.24), new THREE.MeshBasicMaterial({ color: [0xff7fb0, 0xffd23f, 0x7fd0ff, 0xffffff][i % 4], side: THREE.DoubleSide }));
       this.flutter.push({ m, c: new THREE.Vector3(-14 + i * 4, 1.2, 9 + (i % 3) * 2), ph: i * 1.7 }); this.scene.add(m);
@@ -524,8 +562,8 @@ export class World {
     const st = new THREE.Group(), road = mat(th.road), edge = mat(this.urban ? 0xf3f4f6 : 0xfbf3df);
     const strip = (x: number, z: number, len: number, wid: number, alongZ = false) => { // dải đường có vân, mép mờ vào cỏ
       const tex = roadTex(th.road, this.urban).clone(); tex.needsUpdate = true; tex.repeat.set(len / 9, 1);
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, wid).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, alphaMap: this.urban ? null : edgeFade(), transparent: !this.urban, roughness: 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
-      m.position.set(x, 0.035, z); if (alongZ) m.rotation.y = Math.PI / 2; m.receiveShadow = true; m.renderOrder = alongZ ? 1 : 2; this.env.add(m);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, wid).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, alphaMap: this.urban ? null : edgeFade(), transparent: !this.urban, roughness: 1, depthWrite: this.urban, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+      m.position.set(x, 0.035, z); if (alongZ) m.rotation.y = Math.PI / 2; m.receiveShadow = true; m.renderOrder = this.urban ? 0 : alongZ ? -3 : -2; this.env.add(m);
     };
     strip(0, ROAD_Z, (WORLD.x + 60) * 2, ROAD_HALF * 2 + 1.3);
     for (let x = -WORLD.x - 4; x <= WORLD.x + 4; x += 2.4) for (const s of [-1, 1]) { const k = 0.7 + ((Math.abs(x * 7.3) % 1) * 0.6); if ((Math.round(x / 2.4) + (s > 0 ? 1 : 0)) % 3 !== 0) st.add(mesh(GEO.ball, edge, x + (s > 0 ? 1.1 : 0), 0.04, ROAD_Z + s * (ROAD_HALF + 0.35), 0.3 * k, 0.11, 0.24 * k)); }
@@ -538,27 +576,48 @@ export class World {
     if (this.urban) this.buildSkyline(st, r);
     if (zone === 'nam' && !this.urban) st.add(mesh(GEO.box, new THREE.MeshStandardMaterial({ color: 0x8fd8ea, roughness: 0.25, transparent: true, opacity: 0.92 }), 0, 0.03, WORLD.zMin - 3, 300, 0.06, 6));
     // Cây, bụi quanh xóm
+    const gapX = (x: number) => Math.abs(((x - 12) % PITCH + PITCH * 1.5) % PITCH - PITCH / 2); // khoảng cách tới tim khe giữa hai lô
     const free = (x: number, z: number) => {
       if (Math.abs(z - ROAD_Z) < ROAD_HALF + 1.5) return false;
+      if (!this.urban && Math.abs(x) < 3 * PITCH && gapX(x) < 2.6 && z > -12 && z < 2 * ROAD_Z + 12) return false;
       for (let i = 0; i < SLOT_COUNT; i++) { const l = toLocal(i, x, z); if (Math.abs(l.x) < FENCE.x + 1.2 && l.z > FENCE.back - 1.2 && l.z < FENCE.front + 4) return false; }
       return true;
     };
-    let placed = 0, guard = 0;
+    let placed = 0, guard = 0; const grove = new THREE.Group(); // gộp cả rặng cây thành vài lưới: giảm mạnh số lần vẽ
     while (placed < (this.urban ? 22 : 70) && guard++ < 900) {
       const x = (r() * 2 - 1) * (WORLD.x + 40), z = WORLD.zMin - 34 + r() * (WORLD.zMax - WORLD.zMin + 70);
       const d = out(x, z); if (!free(x, z) || (th.sea && d > 3)) continue;
       if (z > ROAD_Z + ROAD_HALF && z < 2 * ROAD_Z + 6 && Math.abs(x) < 8 && r() < 0.7) continue;
       const k = d / 34, t = this.makeTree(th.trees, r); t.position.set(x, th.sea ? 0 : k * k * th.hill * 2.4, z); t.rotation.y = r() * 6; t.scale.setScalar(0.9 + r() * 0.7);
-      t.userData.sway = r() * 6; this.env.add(t); placed++;
+      grove.add(t); placed++;
     }
+    this.env.add(bake(grove));
     for (let i = 0; i < 60; i++) { const x = (r() * 2 - 1) * WORLD.x, z = WORLD.zMin + r() * (WORLD.zMax - WORLD.zMin); if (free(x, z)) st.add(mesh(GEO.ball, mat(i % 3 ? 0x79c96d : 0x5cb85f), x, 0.2, z, 0.4 + r() * 0.3, 0.3, 0.4)); }
     for (let i = 0; i < th.mountains; i++) {
       const a = Math.PI * (1.05 + (i / Math.max(1, th.mountains - 1)) * 0.9) + r() * 0.15, dist = 150 + r() * 50, hh = 34 + r() * 36;
       const m = mesh(new THREE.ConeGeometry(26 + r() * 20, hh, 6), mat(zone === 'taynguyen' ? 0x9cc79a : 0xa9cbbd, { rough: 1 }), Math.cos(a) * dist, hh / 2 - 3, 15 + Math.sin(a) * dist); m.castShadow = false; m.rotation.y = r() * 3; this.env.add(m);
     }
+    this.envColliders = [];
+    if (!this.urban) {
+      let idx = Math.floor(r() * 4);
+      const all = new THREE.Group(); // gộp mọi tiểu cảnh thành một lưới theo chất liệu để ít lần vẽ
+      for (let k = -3; k <= 2; k++) for (const side of [1, -1]) { // tiểu cảnh đặc trưng của miền ở khe giữa các lô
+        const gx = k * PITCH + 12, sc = zoneScene(zone, idx++, r);
+        sc.position.set(gx, 0, side === 1 ? 0 : 2 * ROAD_Z); sc.rotation.y = side === 1 ? 0 : Math.PI; all.add(sc);
+        this.envColliders.push(side === 1 ? [gx - 2.0, gx + 2.0, -10.4, 8.4] : [gx - 2.0, gx + 2.0, 2 * ROAD_Z - 8.4, 2 * ROAD_Z + 10.4]);
+      }
+      this.env.add(bake(all));
+      for (let i = 0; i < SLOT_COUNT; i++) { const a = flip(i, -5.6, 10.4), pr = roadsideProp(zone, i + idx, r); pr.position.set(a.x, 0, a.z); pr.rotation.y = r() * 6; st.add(pr); }
+      // cổng chào tên vùng bắc ngang đường làng
+      const ax = 15.6, post = mat(0x8a5f3c), reg = REGIONS[regionId];
+      for (const s of [-1, 1]) st.add(mesh(GEO.cyl, post, ax, 2.2, ROAD_Z + s * (ROAD_HALF + 1.1), 0.12, 4.4, 0.12), mesh(GEO.ball, mat(0xf2b25c), ax, 4.5, ROAD_Z + s * (ROAD_HALF + 1.1), 0.24));
+      st.add(mesh(GEO.box, post, ax, 4.15, ROAD_Z, 0.16, 0.16, ROAD_HALF * 2 + 2.6));
+      for (let i = 0; i < 7; i++) st.add(mesh(GEO.cone, mat([0xe8412f, 0xffd23f, 0x6fb7d9, 0xfdf6e6][i % 4]), ax, 3.86, ROAD_Z - 2.7 + i * 0.9, 0.05, 0.34, 0.16).rotateX(Math.PI));
+      if (reg) { const lb = makeLabel(`Chào mừng tới ${reg.name}`, 'region', 0.78); lb.position.set(ax, 5.0, ROAD_Z); this.env.add(lb); }
+    }
     this.env.add(bake(st));
     // Cỏ và hoa dại
-    const tuft = new THREE.InstancedMesh(GEO.cone, mat(this.urban ? 0x8fd67c : th.grass2), 700), flower = new THREE.InstancedMesh(GEO.sphere, new THREE.MeshStandardMaterial({ roughness: 0.6 }), 260);
+    const tuft = new THREE.InstancedMesh(TUFT_GEO, mat(this.urban ? 0x8fd67c : new THREE.Color(th.grass2).multiplyScalar(0.88).getHex()), 700), flower = new THREE.InstancedMesh(FLOWER_GEO, new THREE.MeshStandardMaterial({ roughness: 0.6 }), 260);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color(), palette = [0xffffff, 0xffe27a, 0xf7a8c4, 0xf6b384, 0xcdb4f2];
     let ti = 0, fi = 0, tries = 0;
     while ((ti < 700 || fi < 260) && tries++ < 6000) {
@@ -594,8 +653,9 @@ export class World {
     this.state = state;
     for (const c of this.chickens) c.obj.visible = !urban; // sân thượng thành phố không nuôi gà thả
     const t = this.clock.elapsedTime;
-    for (let i = 0; i < SLOT_COUNT; i++) this.lots[i].setData(state.lots[i] ?? null, t);
-    this.colliders = this.lots.flatMap((l) => l.colliders());
+    const zone = REGIONS[state.regionId]?.zone ?? 'nam';
+    for (let i = 0; i < SLOT_COUNT; i++) { this.lots[i].zone = zone; this.lots[i].setData(state.lots[i] ?? null, t); }
+    this.colliders = [...this.lots.flatMap((l) => l.colliders()), ...this.envColliders];
   }
 
   private buildRain() {
@@ -777,6 +837,15 @@ export class World {
       } else { d.normalize(); c.obj.position.addScaledVector(d, Math.min(dist, c.speed * dt)); c.obj.rotation.y = Math.atan2(d.x, d.z); c.obj.position.y = Math.abs(Math.sin(t * 14)) * 0.05; c.obj.children[1].position.y = 0.6; }
     }
     for (const c of this.clouds) { c.position.x += c.userData.speed * dt; if (c.position.x > 110) c.position.x = -110; }
+    const wet = this.weather === 'mua' || this.weather === 'bao';
+    for (const m of this.shades) { m.position.x += dt * 1.6; if (m.position.x > 96) m.position.x = -96; m.visible = !this.sky.night && !wet && this.weather !== 'nang_gat'; }
+    for (const p of this.puffs) { // khói bay lên từ mái nhà các lô gần
+      const lot = this.lots[p.lot], on = !!lot.data && lot.data.kind !== 'rooftop' && !this.urban && !wet;
+      const k = (t * 0.22 + p.ph) % 1, base = flip(p.lot, 1.9, -10.7);
+      p.s.visible = on; if (!on) continue;
+      p.s.position.set(base.x + Math.sin(k * 5 + p.ph * 9) * 0.35 + k * 0.9, 4.8 + k * 3.4, base.z); p.s.scale.setScalar(0.5 + k * 1.3); (p.s.material as THREE.SpriteMaterial).opacity = Math.sin(k * Math.PI) * 0.5;
+    }
+    for (const f of this.flies) { f.s.position.set(this.camPos.x + Math.sin(t * 0.31 + f.ph) * 13 + Math.sin(f.ph * 7) * 6, 0.8 + Math.abs(Math.sin(t * 0.7 + f.ph)) * 1.6, this.camPos.z - 2 + Math.cos(t * 0.23 + f.ph * 1.7) * 11); (f.s.material as THREE.SpriteMaterial).opacity = 0.35 + Math.abs(Math.sin(t * 2.1 + f.ph)) * 0.6; }
     if (this.rain.visible) {
       const m = new THREE.Matrix4(), slant = this.weather === 'bao' ? 0.45 : 0.12;
       for (let i = 0; i < this.rainDrops.length; i++) {

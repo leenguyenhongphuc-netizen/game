@@ -490,7 +490,9 @@ export function harbourCrane(h = 13): THREE.Group {
 export function warehouse(w = 14, d = 10, h = 5, roof = 0x6fb7d9): THREE.Group {
   const g = new THREE.Group();
   g.add(mesh(GEO.box, mat(0xf3ead2), 0, h / 2, 0, w, h, d));
-  const r = mesh(new THREE.CylinderGeometry(d * 0.62, d * 0.62, w + 0.8, 16, 1, false, 0, Math.PI), mat(roof), 0, h - d * 0.36, 0); r.rotation.z = Math.PI / 2; r.rotation.y = Math.PI / 2; g.add(r);
+  // Mái vòm tôn: nửa ống nằm dọc theo chiều rộng nhà, hơi dẹt
+  const rg = new THREE.CylinderGeometry(d / 2 + 0.4, d / 2 + 0.4, w + 0.8, 18, 1, false, 0, Math.PI); rg.rotateZ(Math.PI / 2);
+  g.add(mesh(rg, mat(roof), 0, h - 0.05, 0, 1, 0.42, 1));
   for (const x of [-w * 0.22, w * 0.22]) { g.add(mesh(GEO.box, mat(0xb9bfc9), x, h * 0.36, d / 2 + 0.02, w * 0.3, h * 0.72, 0.08)); for (let k = 0; k < 5; k++) g.add(mesh(GEO.box, mat(0x9aa1ab), x, 0.3 + k * h * 0.14, d / 2 + 0.07, w * 0.3, 0.05, 0.03)); }
   g.add(mesh(GEO.box, mat(0x4a5160), 0, 0.2, d / 2 + 1.2, w, 0.4, 2.4));
   return g;

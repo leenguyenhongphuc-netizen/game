@@ -98,10 +98,11 @@ const CSS = `
   .dg-track { margin-top: 11px; height: 8px; } .dg-icon { font-size: 1.05rem; top: -16px; }
   .dg-map { width: 94px; height: 94px; } .dg-stat { font-size: 0.76rem; padding: 4px 8px; }
   .dg-steer { width: 58px; height: 58px; } .dg-bump { top: 40%; font-size: 1.2rem; } .dg-pedal.gas { height: 72px; } .dg-pedal.brake { height: 50px; } .dg-dial { width: 78px; height: 78px; } .dg-dial strong { font-size: 1.35rem; margin-top: 9px; } .dg-dial small { bottom: 11px; } .dg-mini button { height: 44px; min-width: 46px; } .dg-right { grid-auto-flow: column; align-items: end; } .dg-left { gap: 4px; }
-  .dg-warn { font-size: 0.8rem; padding: 2px 10px; } .dg-hint { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 96px); max-width: 44%; }
+  .dg-warn { font-size: 0.8rem; padding: 2px 10px; } .dg-hint { bottom: auto; top: calc(max(8px, env(safe-area-inset-top)) + 54px); max-width: 44%; } .dg-dash { justify-self: end; margin-right: 6px; }
   .dg-bottom { bottom: max(8px, env(safe-area-inset-bottom)); }
   .dg-card { padding: 10px 14px; gap: 5px; width: min(440px, 100%); } .dg-card h2 { font-size: 1.2rem; } .dg-sum { grid-template-columns: 1fr 1fr; column-gap: 14px; font-size: 0.84rem; }
 }
+@media (max-width: 400px) and (min-height: 481px) { .dg-steer { width: 56px; height: 56px; font-size: 1.45rem; } .dg-pedal.brake { width: 56px; height: 54px; font-size: 0.72rem; } .dg-pedal.gas { width: 54px; height: 86px; } .dg-dial { width: 84px; height: 84px; } .dg-dial strong { font-size: 1.45rem; } .dg-dial small { bottom: 12px; } .dg-mini button { min-width: 46px; font-size: 0.72rem; padding: 0 4px; } .dg-odo { font-size: 0.66rem; padding: 1px 5px; } .dg-bottom { gap: 2px; } }
 @media (min-width: 700px) and (min-height: 481px) { .dg { font-size: 16px; } .dg-top { max-width: 720px; margin: 0 auto; } .dg-map { width: 150px; height: 150px; } }
 @media (prefers-reduced-motion: reduce) { .dg-count, .dg-card, .dg-bump, .dg-flash, .dg-nav.urgent { animation-duration: 0.01s; } }
 `;
@@ -294,7 +295,7 @@ export function DriveGame(props: {
               <li className="bad"><span>Vượt quá</span><b>{ticket.over} km/h</b></li>
             </ul>
             <div className="big">Phạt {vnd(ticket.fine)}</div>
-            <small>Lỗi: ô tô chạy {ticket.label}. Khung phạt {vnd(ticket.min)} – {vnd(ticket.max)}{ticket.points ? `, trừ ${ticket.points} điểm giấy phép lái xe` : ''}. Trong game tính mức giữa khung, trừ vào tiền mặt khi tới nơi.</small>
+            <small>Lỗi: ô tô chạy {ticket.label}. Khung phạt {vnd(ticket.min)} – {vnd(ticket.max)}{ticket.points ? `, trừ ${ticket.points} điểm giấy phép lái xe` : ''}. Trong game tính mức giữa khung và trừ vào tiền mặt.</small>
             <small>Căn cứ: Điều 6 Nghị định 168/2024/NĐ-CP. Chạy đúng biển tròn viền đỏ bên đường — vừa an toàn vừa đỡ tốn xăng.</small>
             <div className="dg-row"><button className="go" onClick={() => { scene.current?.resume(); setTicket(null); }}>Đã hiểu, chạy đúng tốc độ</button></div>
           </div>

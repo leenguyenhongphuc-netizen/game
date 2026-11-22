@@ -77,7 +77,7 @@ export function restStop(): THREE.Group {
 }
 
 /** Nội thất ca-bin nhìn từ ghế lái (gắn vào máy quay; máy quay nhìn về -z). */
-export function cabin(bodyColor: number): { root: THREE.Group; wheel: THREE.Group; needle: THREE.Mesh } {
+export function cabin(bodyColor: number): { root: THREE.Group; wheel: THREE.Group; needle: THREE.Mesh; roof: THREE.Group } {
   const g = new THREE.Group();
   const m = (c: number, rough = 0.9) => new THREE.MeshStandardMaterial({ color: c, roughness: rough, fog: false });
   const add = (geo: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number, sx: number, sy: number, sz: number) => { const o = new THREE.Mesh(geo, material); o.position.set(x, y, z); o.scale.set(sx, sy, sz); g.add(o); return o; };
@@ -89,12 +89,12 @@ export function cabin(bodyColor: number): { root: THREE.Group; wheel: THREE.Grou
   const dial = add(GEO.cyl, new THREE.MeshBasicMaterial({ color: 0xf6f1e3, fog: false }), 0, -0.44, -0.925, 0.115, 0.01, 0.115); dial.rotation.x = Math.PI / 2 - 0.25;
   const needle = add(GEO.box, new THREE.MeshBasicMaterial({ color: 0xe0342b, fog: false }), 0, -0.44, -0.915, 0.012, 0.1, 0.004); needle.geometry = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0); needle.rotation.x = -0.25;
   // cột A, mép trần, gương
-  const pl = add(GEO.box, dark, -0.82, 0.12, -1.45, 0.09, 1.9, 0.12); pl.rotation.z = 0.2; pl.rotation.x = -0.35;
-  const pr = add(GEO.box, dark, 1.72, 0.12, -1.45, 0.09, 1.9, 0.12); pr.rotation.z = -0.2; pr.rotation.x = -0.35;
-  add(GEO.box, dark, 0.42, 0.86, -1.1, 3.0, 0.2, 0.6);
-  add(GEO.box, dark, 0.42, 0.62, -1.2, 0.34, 0.1, 0.05);                  // gương trong
-  add(GEO.box, new THREE.MeshStandardMaterial({ color: 0x9fb7c9, roughness: 0.15, metalness: 0.6, fog: false }), 0.42, 0.62, -1.17, 0.3, 0.07, 0.02);
-  for (const sx of [-1, 1]) { const x = 0.42 + sx * 1.62; add(GEO.box, dark, x, -0.12, -1.5, 0.06, 0.06, 0.3); add(GEO.box, dark, x + sx * 0.12, -0.02, -1.62, 0.26, 0.42, 0.06); add(GEO.box, new THREE.MeshStandardMaterial({ color: 0x9fb7c9, roughness: 0.15, metalness: 0.6, fog: false }), x + sx * 0.12, -0.02, -1.585, 0.21, 0.36, 0.02); }
+  const pl = add(GEO.box, dark, -1.02, 0.12, -1.7, 0.055, 1.9, 0.08); pl.rotation.z = 0.2; pl.rotation.x = -0.35;
+  const pr = add(GEO.box, dark, 1.86, 0.12, -1.7, 0.055, 1.9, 0.08); pr.rotation.z = -0.2; pr.rotation.x = -0.35;
+  const roof = new THREE.Group(); g.add(roof);
+  roof.add(add(GEO.box, dark, 0.42, 0.86, -1.1, 3.0, 0.2, 0.6), add(GEO.box, dark, 0.42, 0.62, -1.2, 0.34, 0.1, 0.05));                  // mép trần, gương trong
+  roof.add(add(GEO.box, new THREE.MeshStandardMaterial({ color: 0x9fb7c9, roughness: 0.15, metalness: 0.6, fog: false }), 0.42, 0.62, -1.17, 0.3, 0.07, 0.02));
+  for (const sx of [-1, 1]) { const x = 0.42 + sx * 1.78; add(GEO.box, dark, x, -0.3, -1.6, 0.05, 0.05, 0.3); add(GEO.box, dark, x + sx * 0.12, -0.2, -1.72, 0.2, 0.3, 0.05); add(GEO.box, new THREE.MeshStandardMaterial({ color: 0x9fb7c9, roughness: 0.15, metalness: 0.6, fog: false }), x + sx * 0.12, -0.2, -1.69, 0.16, 0.25, 0.02); }
   // vô-lăng
   const col = new THREE.Group(); col.position.set(0, -0.55, -0.82); col.rotation.x = -0.42; g.add(col);
   const wheel = new THREE.Group(); col.add(wheel);
@@ -102,7 +102,7 @@ export function cabin(bodyColor: number): { root: THREE.Group; wheel: THREE.Grou
   for (const a of [Math.PI / 2, Math.PI * 7 / 6, Math.PI * 11 / 6]) { const s = new THREE.Mesh(GEO.box, mid); s.scale.set(0.24, 0.04, 0.03); s.position.set(Math.cos(a) * 0.12, Math.sin(a) * 0.12, 0); s.rotation.z = a; wheel.add(s); }
   const hub = new THREE.Mesh(GEO.cyl, mid); hub.scale.set(0.06, 0.04, 0.06); hub.rotation.x = Math.PI / 2; wheel.add(hub);
   g.traverse((o) => { const me = o as THREE.Mesh; if (me.isMesh) { me.castShadow = false; me.receiveShadow = false; me.frustumCulled = false; me.renderOrder = 10; } });
-  return { root: g, wheel, needle };
+  return { root: g, wheel, needle, roof };
 }
 
 /** Phà thép chở xe: thân, boong, cửa dốc, lan can, ca-bin lái, ống khói, phao cứu sinh. Mũi hướng -z. */
@@ -163,7 +163,7 @@ export function skyDecor(): THREE.Group {
 /** Mặt biển: sóng lăn tăn, phản chiếu trời theo góc nhìn, lấp lánh nắng, bọt trắng; tự hoà vào sương xa. */
 export function seaMaterial(fog: THREE.Fog): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { uT: { value: 0 }, uOff: { value: new THREE.Vector2() }, uDeep: { value: new THREE.Color(0x1f7fae) }, uShallow: { value: new THREE.Color(0x45b6cf) }, uSky: { value: new THREE.Color(0xcfeefc) }, uFog: { value: fog.color }, uNear: { value: fog.near }, uFar: { value: fog.far }, uSun: { value: new THREE.Vector3(0.35, 0.55, -0.75).normalize() } },
+    uniforms: { uT: { value: 0 }, uOff: { value: new THREE.Vector2() }, uDeep: { value: new THREE.Color(0x0f6fa6) }, uShallow: { value: new THREE.Color(0x2fa8cc) }, uSky: { value: new THREE.Color(0xbfe6fa) }, uFog: { value: fog.color }, uNear: { value: fog.near }, uFar: { value: fog.far }, uSun: { value: new THREE.Vector3(0.35, 0.55, -0.75).normalize() } },
     vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
     fragmentShader: `
       uniform float uT, uNear, uFar; uniform vec2 uOff; uniform vec3 uDeep, uShallow, uSky, uFog, uSun; varying vec3 vW;
@@ -175,9 +175,9 @@ export function seaMaterial(fog: THREE.Fog): THREE.ShaderMaterial {
         vec3 v = normalize(cameraPosition - vW);
         float fr = pow(1.0 - max(dot(n, v), 0.0), 3.0);
         vec3 col = mix(uDeep, uShallow, 0.5 + 0.5*h(p*0.45));
-        col = mix(col, uSky, clamp(fr*0.9 + 0.06, 0.0, 1.0));
-        float sp = pow(max(dot(reflect(-uSun, n), v), 0.0), 48.0); col += vec3(1.0, 0.96, 0.82) * sp * 0.8;
-        float foam = smoothstep(0.86, 1.0, h(p*1.9) + 0.3*sin(p.x*2.7+uT*1.3)); col = mix(col, vec3(1.0), foam*0.4);
+        col = mix(col, uSky, clamp(fr*0.55 + 0.04, 0.0, 0.8));
+        float sp = pow(max(dot(reflect(-uSun, n), v), 0.0), 48.0); col += vec3(1.0, 0.96, 0.82) * sp * 0.45;
+        float foam = smoothstep(0.86, 1.0, h(p*1.9) + 0.3*sin(p.x*2.7+uT*1.3)); col = mix(col, vec3(1.0), foam*0.22);
         col = mix(col, uFog, smoothstep(uNear, uFar, length(cameraPosition - vW)));
         gl_FragColor = vec4(col, 1.0);
         #include <colorspace_fragment>
@@ -197,7 +197,7 @@ export function wake(): THREE.Mesh {
 // ---------------------------------------------------------------- cảnh ven đường bổ sung
 export const MORE: Record<string, () => THREE.Group> = {
   // Nhà ống ba tầng ven quốc lộ
-  tube: () => { const g = new THREE.Group(), c = [0xfff0c9, 0xd9ecf5, 0xffe0d2, 0xe3f2d5][Math.floor(Math.random() * 4)], f = 2 + Math.floor(Math.random() * 3); g.add(box(c, 0, f * 1.45, 0, 3.0, f * 2.9, 6)); for (let i = 0; i < f; i++) { g.add(box(0x7fb6d1, 0, 1.6 + i * 2.9, 3.02, 1.6, 1.3, 0.05, { rough: 0.3 })); if (i) g.add(box(0xe9eef2, 0, 0.55 + i * 2.9, 3.4, 2.9, 0.7, 0.7)); } g.add(box(0x7a4a22, 0, 1.0, 3.03, 1.9, 2.0, 0.05), box(0xd4523a, 0, f * 2.9 + 0.15, 0, 3.2, 0.3, 6.2), cyl(0xb8bec6, 0.9, f * 2.9 + 0.9, -1.5, 0.45, 1.2)); return g; },
+  tube: () => { const g = new THREE.Group(), c = [0xfff0c9, 0xd9ecf5, 0xffe0d2, 0xe3f2d5][Math.floor(Math.random() * 4)], f = 2 + Math.floor(Math.random() * 2); g.scale.setScalar(0.72); g.add(box(c, 0, f * 1.45, 0, 3.0, f * 2.9, 6)); for (let i = 0; i < f; i++) { g.add(box(0x7fb6d1, 0, 1.6 + i * 2.9, 3.02, 1.6, 1.3, 0.05, { rough: 0.3 })); if (i) g.add(box(0xe9eef2, 0, 0.55 + i * 2.9, 3.4, 2.9, 0.7, 0.7)); } g.add(box(0x7a4a22, 0, 1.0, 3.03, 1.9, 2.0, 0.05), box(0xd4523a, 0, f * 2.9 + 0.15, 0, 3.2, 0.3, 6.2), cyl(0xb8bec6, 0.9, f * 2.9 + 0.9, -1.5, 0.45, 1.2)); return g; },
   // Đồi chè bậc thang
   tea: () => { const g = new THREE.Group(); for (let i = 0; i < 4; i++) { g.add(mesh(GEO.sphere, mat(i % 2 ? 0x3f9a55 : 0x4fae62, { rough: 1 }), 0, -0.5 + i * 0.9, -i * 1.6, 9 - i * 1.7, 1.5, 5.4 - i * 0.9)); for (let j = 0; j < 5 - i; j++) g.add(box(0x2f7d45, -5.6 + i * 1.3 + j * 2.6, 0.75 + i * 0.9, 2.2 - i * 1.9, 2.0, 0.34, 0.5)); } return g; },
   // Cột Km: trụ trắng đầu đỏ

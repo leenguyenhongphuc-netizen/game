@@ -100,7 +100,7 @@ export class Village {
     post(S, 0x8f97a3, 4.5, 0, -0.6, 2.6, 0.07);
     const disc = mesh(GEO.cyl, mat(0x2a7fd6), 4.5, 2.9, -0.6, 0.48, 0.1, 0.48); disc.rotation.z = Math.PI / 2; S.add(disc);
     const label = sign(`Bến xe ${from}`, '#2a7fd6', 6.6, 7.3, 4.7, 3.7); this.root.add(label); post(S, 0x8f97a3, 7.3, 0, 3.7, 3.9, 0.08);
-    prop(S, timeBoard(2.6, 1.5), 7.46, 1.9, -5.0, 1, Math.PI); prop(S, lampPost(4.6), 4.6, 0, -9.4, 1, Math.PI);
+    prop(S, timeBoard(1.6, 1.0), 7.46, 2.0, -6.4, 1, Math.PI); prop(S, lampPost(4.6), 4.6, 0, -9.4, 1, Math.PI);
     crowd(S, [[6.9, 0.16, -6.2, -1.6], [6.2, 0.16, -3.4, -1.9], [5.3, 0.16, -8.6, -1.2]], hash(from) & 7);
     box(S, 0x4fa86a, 4.7, 0.5, -10.6, 0.6, 0.9, 0.6); box(S, 0x3f8f52, 4.7, 0.98, -10.6, 0.66, 0.08, 0.66);
     // Vườn nhà: hàng rào, cổng, nhà, lối đi
@@ -206,7 +206,7 @@ export class TrainStation {
   private steam(time: number, power: number) {
     this.puffs.forEach((m, i) => {
       const k = (time * (0.5 + power) + i / this.puffs.length) % 1;
-      m.position.set(Math.sin(k * 5 + i) * 0.5, 4.9 + k * (3 + power * 3), this.train.position.z - 16.8 + k * power * 4); m.scale.setScalar(0.35 + k * (0.7 + power));
+      m.position.set(Math.sin(k * 5 + i) * 0.5, 4.9 + k * (3 + power * 3), this.train.position.z - 16.8 + k * power * 4); m.scale.setScalar(0.3 + k * (0.6 + power * 0.45));
     });
   }
   private cam(c: Ctx) { c.shoot(this.pts, c.portrait ? 2.84 : 2.3, c.portrait ? 0.46 : 0.17, this.signs); }

@@ -382,13 +382,13 @@ export class DriveScene {
     const sf = st.map((k) => clamp(k / km, 0.05, 0.95));
     sf.forEach((f, i) => want.push({ ev: mk('station', 66, 66, { idx: i }), f }));
     const nT = Math.max(0, Math.min(6, p.tolls | 0));
-    for (let i = 0; i < nT; i++) want.push({ ev: mk('toll', 46, 24, { idx: i }), f: (i + 0.5) / Math.max(1, nT) * 0.92 + 0.01 * i });
+    for (let i = 0; i < nT; i++) want.push({ ev: mk('toll', 76, 24, { idx: i }), f: (i + 0.5) / Math.max(1, nT) * 0.92 + 0.01 * i });
     // Trạm dừng nghỉ xen giữa các trạm xăng
     const rf = sf.length >= 2 ? [(sf[0] + sf[1]) / 2, ...(sf.length >= 4 ? [(sf[sf.length - 2] + sf[sf.length - 1]) / 2] : [])] : roadSec >= 30 ? [sf.length ? clamp(sf[0] + 0.3, 0.2, 0.85) : 0.6] : [];
     rf.forEach((f, i) => want.push({ ev: mk('rest', 70, 70, { idx: i }), f }));
     // Các điểm có thể có tổ CSGT bắn tốc độ (có tổ hay không là ngẫu nhiên mỗi chuyến)
     const force = this.opts.police ?? (globalThis as { __drivePolice?: boolean }).__drivePolice;
-    (roadSec >= 60 ? [0.2, 0.52, 0.8] : roadSec >= 32 ? [0.3, 0.72] : [0.5]).forEach((f, i) => want.push({ ev: mk('police', 36, 22, { idx: i, armed: force ?? Math.random() < 0.7 }), f: f + 0.013 }));
+    (roadSec >= 60 ? [0.2, 0.52, 0.8] : roadSec >= 32 ? [0.3, 0.72] : [0.5]).forEach((f, i) => want.push({ ev: mk('police', 36, 96, { idx: i, armed: force ?? Math.random() < 0.7 }), f: f + 0.013 }));
     if (roadSec >= 28) want.push({ ev: mk('feature', 46, 52, { kind: THEMES[this.zf].mountains !== null ? 'tunnel' : 'bridge' }), f: 0.47 });
     want.sort((a, b) => a.f - b.f);
     let prev: Ev | null = null;
@@ -438,7 +438,7 @@ export class DriveScene {
     } else if (e.type === 'limit') {
       add(limitPost(e.v), 4, HW + 1.7); add(limitPost(e.v), 4, -HW - 1.5); add(limitPost(e.v, ROAD_LIMITS.highwayMin), 170, HW + 1.7);
     } else if (e.type === 'toll') {
-      add(limitPost(ROAD_LIMITS.toll), -44, HW + 1.7);
+      add(limitPost(ROAD_LIMITS.toll), -70, HW + 1.7);
       add(gantry(HW, [{ text: `Trạm thu phí · ${vnd(this.opts.plan.tollFee)}`, x: 0, w: 9, bg: BLUE }]), -96, 0);
       const t = tollPlaza(); e.arms = t.arms; add(t.root, 0, 0);
     } else if (e.kind === 'tunnel') { add(tunnel(), 0, 0); add(roadside('Hầm đường bộ', BLUE, 5), -70, HW + 2.2); }
@@ -465,7 +465,7 @@ export class DriveScene {
       for (let i = 0; i < 7; i++) { const p = SCENERY.palm(); p.position.set(-20 + i * 6.5, 1.6, 2 + (i % 2) * 2); land.add(p); }
       for (let i = 0; i < 3; i++) { const h = EXTRA.thouse(); h.position.set(-12 + i * 12, 2.4, -1); land.add(h); }
       const lb = bake(land); const ls = sign(roadLast ? 'Cảng đất liền' : `Chào mừng tới ${this.toName}`, '#f08a6c', 12); ls.position.set(0, 9, 4); lb.add(ls); put(lb, this.seaL + 38, 0, 'boat');
-      put(bake(lighthouse()), this.seaL * 0.56, CH + 34, 'boat'); put(bake(cargoShip()), this.seaL * 0.3, -(CH + 62), 'boat'); put(bake(cargoShip()), this.seaL * 0.8, CH + 90, 'boat');
+      put(bake(lighthouse()), this.seaL * 0.56, CH + 19, 'boat'); put(bake(cargoShip()), this.seaL * 0.3, -(CH + 62), 'boat'); put(bake(cargoShip()), this.seaL * 0.8, CH + 90, 'boat');
       for (let i = 0; i < 6; i++) { const b = bird(); b.root.visible = false; this.scene.add(b.root); this.birds.push({ b, a: i * 1.1, r: 9 + i * 3.5, h: 7 + (i % 3) * 2.2, w: 0.5 + (i % 4) * 0.12 }); }
       this.gates.forEach((s, i) => { for (const side of [-1, 1]) { const b = bake(buoy(side < 0 ? 0xe0342b : 0x2faa5a, true)); const n = sign(String(i + 1), side < 0 ? '#e0342b' : '#2faa5a', 3.2); n.position.y = 3.6; b.add(n); put(b, s, side * (CH + 0.8), 'boat'); } });
     }
@@ -565,11 +565,13 @@ export class DriveScene {
   setCruise(on: boolean) { this.cruise = !!on; if (on) this.gear = 'D'; }
   auto(on: boolean) { this.setCruise(on); }
   setView(v: View) { this.view = v === 'pov' ? 'pov' : 'chase'; this.resize(); }
+  /** Dùng cho kiểm thử: chạy mô phỏng thêm `sec` giây (không vẽ), để máy thử chậm vẫn đi hết tình huống. */
+  simulate(sec: number) { for (let t = 0; t < sec && this.running && !this.arrived; t += 0.05) this.step(0.05); }
   /** Đã đọc biên bản: cho xe đi tiếp. */
   resume() { if (this.pulled?.shown) { this.pulled.go = true; } }
   /** Dùng cho kiểm thử: nhảy tới vị trí s trên chặng hiện tại (không tính sự kiện đã bỏ qua). */
   warp(s: number) { this.s = s; this.nextSc = s + 6; for (const it of this.scen) { it.active = false; it.obj.visible = false; } const plan = this.mode === 'boat' ? this.seaPlan : this.tplan; while (this.tIdx < plan.length && plan[this.tIdx].s < s + 30) this.tIdx++; }
-  private resize() { const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.fovNow = this.camera.fov = this.baseFov(); this.camera.updateProjectionMatrix(); }
+  private resize() { const w = this.container.clientWidth || 1, h = this.container.clientHeight || 1; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.fovNow = this.camera.fov = this.baseFov(); this.camera.updateProjectionMatrix(); const pt = w / h < 0.9; this.cab.root.position.set(0, pt ? -0.42 : -0.06, pt ? -0.1 : 0); this.cab.roof.visible = !pt; }
   private baseFov() { const portrait = this.camera.aspect < 0.9; return this.view === 'pov' && this.mode !== 'boat' ? (portrait ? 78 : 62) : portrait ? 58 : 46; }
 
   private applyLeg(first = false) {
@@ -599,7 +601,7 @@ export class DriveScene {
     if (s < this.rampS) v = ROAD_LIMITS.village; else if (s < this.exS + 26) v = ROAD_LIMITS.ramp;
     else { const ex = this.exitDone; if (ex && s > ex.s + 60) v = s > ex.s + 120 ? ROAD_LIMITS.village : ROAD_LIMITS.ramp; else { v = POSTED[1] ?? 100; for (const l of this.limits) { if (l.s > s) break; v = l.v; } for (const e of this.feats) if (e.kind === 'tunnel' && Math.abs(s - e.s) < 34) v = Math.min(v, POSTED[0] ?? 80); } }
     if (main) return v;
-    for (const e of this.tolls) { const u = s - e.s; if (u > -44 && u < 6) v = Math.min(v, ROAD_LIMITS.toll); }
+    for (const e of this.tolls) { const u = s - e.s; if (u > -70 && u < 6) v = Math.min(v, ROAD_LIMITS.toll); }
     if (this.inAux()) for (const e of this.auxs) if (Math.abs(s - e.s) < 52) v = Math.min(v, ROAD_LIMITS.station);
     return v;
   }
@@ -626,10 +628,21 @@ export class DriveScene {
       if (this.pause > 0) this.speed = 0;
     } else {
       // Trạm thu phí: không đủ ETC hoặc lao qua quá nhanh thì thanh chắn không mở — phải dừng trước cabin
-      for (const e of this.tolls) { if (e.done) continue; const u = e.s - 6 - this.s; if (u > -1 && u < 60 && (this.etcLeft < this.opts.plan.tollFee || e.kind === 'fast')) cap = Math.min(cap, u < 1 ? 0 : Math.sqrt(u) * 9); if (u > 0 && u < 14 && e.kind !== 'fast' && kmh > ROAD_LIMITS.toll + 8 && this.etcLeft >= this.opts.plan.tollFee) { e.kind = 'fast'; this.bump(`Qua trạm quá ${ROAD_LIMITS.toll} km/h: ETC không kịp đọc, phải dừng!`, 'bad'); } }
+      for (const e of this.tolls) {
+        if (e.done || e.armed) continue; const u = e.s - 6 - this.s, fee = this.opts.plan.tollFee, poor = this.etcLeft < fee;
+        if (u > 0 && u < 14 && e.kind !== 'fast' && !poor && kmh > ROAD_LIMITS.toll + 8) { e.kind = 'fast'; this.bump(`Qua trạm quá ${ROAD_LIMITS.toll} km/h: ETC không kịp đọc, phải dừng!`, 'bad'); }
+        if (u > -1 && u < 60 && (poor || e.kind === 'fast')) {
+          cap = Math.min(cap, u < 1.2 ? 0 : Math.sqrt(u) * 9);
+          if (u < 2.5 && kmh < 1 && this.pause <= 0) {       // đã dừng trước thanh chắn: trả tiền rồi mới được đi
+            e.armed = true; e.kind = 'stop'; this.pause = 1.7;
+            if (poor) { const c = Math.round(fee * 1.2); this.tollCash += c; this.bump(`Không đủ ETC: trả tiền mặt ${vnd(c)} (+20%)`, 'bad'); }
+            else { this.etcLeft -= fee; this.tollEtc += fee; this.bump(`Dừng quẹt thẻ: -${vnd(fee)} ETC`, 'info'); }
+          }
+        }
+      }
       const pl = this.pulled; if (pl && !pl.go) cap = 0;
       if (this.cruise && this.gear === 'D' && !pl) {
-        const tgt = Math.max(8, lim - 2);
+        const tgt = Math.max(8, Math.min(lim, this.limitAt(this.s + Math.max(0, this.speed) * 2.4)) - 2);
         if (kmh < tgt - 0.5) th = Math.max(th, clamp((tgt - kmh) / 10, 0.12, 1)); else if (kmh > tgt + 2 && th === 0) br = Math.max(br, clamp((kmh - tgt) / 30, 0.05, 0.7));
         else if (th === 0) th = clamp(0.1 + kmh / VMAX * 0.5, 0, 0.7);
       }
@@ -638,7 +651,7 @@ export class DriveScene {
       const dry = this.fuel <= 0, top = dry ? 30 : VMAX;
       if (this.gear === 'R') { v += (-(th * 16) * (1 + v / 14) + br * 40 * (v < 0 ? 1 : 0) + (th === 0 ? 6 : 0)) * dt; v = clamp(v, -12, 0); }
       else {
-        const acc = th * (dry ? 5 : 15.5) * Math.max(0, 1 - Math.max(0, v) / top) ** 0.8;
+        const acc = th * (dry ? 5 : 21) * Math.max(0, 1 - Math.max(0, v) / (top + 12)) ** 0.9;
         v += (acc - (1.1 + v * 0.013) - br * 46) * dt; if (v > top) v -= 30 * dt; v = Math.max(0, v);
       }
       if (v > cap) v = Math.max(cap, v - (pl ? 34 : 60) * dt);
@@ -713,8 +726,7 @@ export class DriveScene {
       }
       if (e.type === 'toll' && cross(e.s - 4)) {
         e.done = true; this.tollCount++;
-        if (this.etcLeft >= p.tollFee) { this.etcLeft -= p.tollFee; this.tollEtc += p.tollFee; if (e.kind === 'fast') { this.pause = 1.2; this.speed = 0; e.kind = 'stop'; } this.bump(`-${vnd(p.tollFee)} ETC · còn ${vnd(this.etcLeft)}`, 'good'); }
-        else { const c = Math.round(p.tollFee * 1.2); this.tollCash += c; this.pause = 1.8; this.speed = 0; e.kind = 'stop'; this.bump(`Không đủ ETC: dừng trả tiền mặt ${vnd(c)} (+20%)`, 'bad'); }
+        if (!e.armed) { if (this.etcLeft >= p.tollFee) { this.etcLeft -= p.tollFee; this.tollEtc += p.tollFee; this.bump(`-${vnd(p.tollFee)} ETC · còn ${vnd(this.etcLeft)}`, 'good'); } else { const c = Math.round(p.tollFee * 1.2); this.tollCash += c; this.bump(`Không đủ ETC: trả tiền mặt ${vnd(c)} (+20%)`, 'bad'); } }
       }
       if (e.type === 'police') {
         const u = s - e.s;
@@ -793,7 +805,7 @@ export class DriveScene {
     const s = this.s, boat = this.mode === 'boat', e = boat ? [-CH, CH] : [...this.edges(s)];
     const nx = this.events.filter((x) => !x.done && x.s > s)[0];
     const cars = this.cars.filter((c) => c.active && !c.hit && c.s > s - 6 && c.s < s + 60 && (!c.j || c.j.sigma === 0 || c.j.sigma === c.sig)).map((c) => ({ kind: c.kind, ahead: c.s - s, x: this.carX(c) - this.cx, hw: VEH[c.kind].hw })).sort((a, b) => a.ahead - b.ahead);
-    return { phase: this.phase(), mode: this.mode, kmh: Math.round(this.kmh()), limit: this.limitAt(s), view: this.view, odo: this.odo, gear: this.gear, cruise: this.cruise, tired: this.tired, speeding: [...this.speeding], fineTotal: this.fineTotal, pulled: !!this.pulled, rests: this.rests, s, total: boat ? this.seaL : this.endS, px: this.px, lane: boat ? 0 : clamp(Math.round(this.px / LW), -1, 2), bounds: e, speed: this.speed,
+    return { phase: this.phase(), mode: this.mode, kmh: Math.round(boat ? this.speed / SEA_V * 12 * 1.852 : this.kmh()), limit: this.limitAt(s), view: this.view, odo: this.odo, gear: this.gear, cruise: this.cruise, tired: this.tired, speeding: [...this.speeding], fineTotal: this.fineTotal, pulled: !!this.pulled, rests: this.rests, s, total: boat ? this.seaL : this.endS, px: this.px, lane: boat ? 0 : clamp(Math.round(this.px / LW), -1, 2), bounds: e, speed: this.speed,
       km: this.kmDoneBefore + (boat ? s / this.seaL * this.seaKm : this.kmBetween(0, s)), kmLeft: this.kmLeft(), fuel: this.fuel, fuelUsed: this.fuelUsed, detourKm: this.detourKm, refuelL: Math.round(this.refuelL * 10) / 10,
       stationsPassed: this.stationsPassed, tollsPassed: this.tollCount, etcLeft: this.etcLeft, tollCash: this.tollCash, offChannel: this.offChan, arrived: this.arrived, elapsed: this.elapsed, laneW: LW,
       next: nx ? { type: nx.type, ahead: nx.s - s, dir: nx.dir, name: nx.name, exit: nx.exit } : null, cars, events: this.events.map((x) => ({ type: x.type, s: x.s, dir: x.dir, done: x.done, v: x.v, armed: x.armed })) };
@@ -822,7 +834,7 @@ export class DriveScene {
     for (const e of this.auxs) if (side > 0 && Math.abs(s - e.s) < 72) return null;
     for (const e of this.polices) if (side > 0 && e.armed && Math.abs(s - e.s) < 16) return null;
     const e = this.edges(s);
-    let off = (side > 0 ? e[1] : -e[0]) + (EDGE[kind] ?? (kind === 'tube' ? 5 : WIDE.has(kind) ? 8 : 4)) + (kind in EDGE || kind === 'tube' ? 0 : this.r() * (near ? 5 : 20));
+    let off = (side > 0 ? e[1] : -e[0]) + (EDGE[kind] ?? (kind === 'tube' ? 6.5 : WIDE.has(kind) ? 8 : 4)) + (kind in EDGE || kind === 'tube' ? 0 : this.r() * (near ? 5 : 20));
     if (side < 0 && this.oppF(s) > 0.02) off += HW * 2 + 3.6;
     else if (side > 0 && !near) off += 1.5;
     for (const j of this.juncs) { const u = s - j.s; if (u > -8 && u < 330 && side === (j.sigma ? -j.sigma : j.dir)) off += 2 * this.g(Math.max(0, u)) + 0.004 * Math.max(0, u - 70) ** 2 + 2; }
@@ -887,7 +899,7 @@ export class DriveScene {
       if (e.type === 'junction' && e.sigma !== 0) e.bend = Math.min(1, e.bend + dt / 1.2);
       for (const o of e.objs) { const q = e.s + o.ds, vis = q > s - 70 && q < s + AHEAD + 40; o.o.visible = vis; if (vis) { this.near(o.o, q - s); } if (vis) this.put(o.o, q, (o.base ? this.curve(q) + this.shift(q, e, 0) : this.center(q)) + o.x, o.o.position.y); }
       if (e.lights.length) { const on = Math.floor(t * 5) % 2 === 0; e.lights[0].visible = on; e.lights[1].visible = !on; }
-      if (e.arms.length) { const u = s - e.s, open = u > -24 && !(e.kind === 'stop' && this.pause > 0.3) && !(!e.done && (e.kind === 'fast' || this.etcLeft < this.opts.plan.tollFee)); e.lift += ((open ? 1 : 0) - e.lift) * Math.min(1, dt * 6); for (const a of e.arms) a.rotation.z = -e.lift * 1.35; }
+      if (e.arms.length) { const u = s - e.s, open = u > -24 && !(e.kind === 'stop' && this.pause > 0.3) && (e.done || e.armed || !(e.kind === 'fast' || this.etcLeft < this.opts.plan.tollFee)); e.lift += ((open ? 1 : 0) - e.lift) * Math.min(1, dt * 6); for (const a of e.arms) a.rotation.z = -e.lift * 1.35; }
     }
     for (const p of this.props) { const q = p.s > 1e8 ? this.endS + 5 : p.s, vis = p.mode === this.mode && q > s - 60 && q < s + AHEAD + 70; p.o.visible = vis; if (vis) { this.near(p.o, q - s); this.put(p.o, q, this.center(q) + p.x, p.o.position.y); } }
     // ---- trong hầm: tối dần, chỉ còn đèn vách
@@ -901,14 +913,14 @@ export class DriveScene {
     if (pov) {
       // Ngồi ghế lái (bên trái), nhìn qua kính chắn gió; trên phà thì đứng ở đài chỉ huy nhìn qua boong
       const yaw = this.phi + veh.rotation.y, o = this.camV;
-      if (boat) o.set(0, 5.6, 2.4); else o.set(-0.42, 2.02 + Math.sin(t * 17) * 0.006 * Math.min(1, kmh / 60), -1.2);
+      if (boat) o.set(0, 6.6, 3.0); else o.set(-0.42, 2.02 + Math.sin(t * 17) * 0.006 * Math.min(1, kmh / 60), -1.2);
       o.applyAxisAngle(THREE.Object3D.DEFAULT_UP, veh.rotation.y); o.x += this.px; o.y += veh.position.y; o.applyAxisAngle(THREE.Object3D.DEFAULT_UP, this.phi);
       this.camera.position.set(o.x + jx * 0.3, o.y + jy * 0.3, o.z);
-      this.camera.rotation.set(boat ? -0.2 : -0.045, yaw - this.pv * 0.006, veh.rotation.z * 0.5, 'YXZ');
+      this.camera.rotation.set(boat ? -0.3 : -0.045, yaw - this.pv * 0.006, veh.rotation.z * 0.5, 'YXZ');
       this.cab.wheel.rotation.z = -this.pv * 0.2; this.cab.needle.rotation.z = lerp(2.2, -2.2, clamp(kmh / 160, 0, 1));
     } else {
-      this.camera.position.set(this.px * 0.6 + jx, (boat ? (portrait ? 21 : 10) : portrait ? 9.2 : 6.4) + jy, boat ? (portrait ? 30 : 21) : portrait ? 13.5 : 13);
-      this.camera.lookAt(this.px * 0.75, boat ? 1.2 : 1.6, boat ? -22 : portrait ? -17 : -15);
+      this.camera.position.set(this.px * 0.86 + jx, (boat ? (portrait ? 17 : 9.5) : portrait ? 10.5 : 7.2) + jy, boat ? (portrait ? 25 : 20) : portrait ? 14 : 13);
+      this.camera.lookAt(this.px * 0.92, boat ? (portrait ? -4 : -2) : portrait ? -2.4 : -1.6, boat ? -22 : portrait ? -15 : -15);
     }
     this.decor.rotation.y = this.phi * 0.6;
     this.renderer.render(this.scene, this.camera);
