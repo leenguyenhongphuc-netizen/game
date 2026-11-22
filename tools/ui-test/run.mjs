@@ -184,9 +184,8 @@ for (const dev of DEVICES) {
       await page.locator('.export .pick').first().click(); await page.locator('.route').first().waitFor(); await page.locator('.route').first().scrollIntoViewIfNeeded(); await shot('xuat-khau-duong-di');
       const send = page.locator('.route .go').first(); if (await send.count() === 0) throw new Error('không có đường xuất khẩu nào gửi được');
       await send.scrollIntoViewIfNeeded(); await send.click();
-      if (await page.locator('.xr').count().then((n) => n > 0).catch(() => false) || await page.locator('.xr').waitFor({ timeout: 4000 }).then(() => true).catch(() => false))
-        await during('.xr', 'xuat-khau-hoat-canh', () => { const d = window.__ride?.debug?.(); return d ? `canh-${d.stage}` : null; }, { every: 60000, max: 6 });
-      await enter(); await dock(/Kho/); await page.getByRole('button', { name: 'Xuất khẩu' }).click(); await page.locator('.export').waitFor(); await page.waitForTimeout(600);
+      await during('.tr', 'xuat-khau-hoat-canh', () => { const d = window.__ride?.debug?.(); return d ? `canh-${d.stage}` : null; }, { every: 60000, max: 6 });
+      await page.locator('.export').waitFor({ timeout: 20000 }); await page.waitForTimeout(600);
       await page.getByRole('heading', { name: /Lô hàng đang đi/ }).scrollIntoViewIfNeeded(); await shot('xuat-khau-lo-hang'); await closeModal();
     });
     if (!QUICK) for (const [i, mode] of [[0, 'chuyen-1'], [1, 'chuyen-2'], [2, 'chuyen-3']]) await step(`du-lich-${mode}`, async () => {

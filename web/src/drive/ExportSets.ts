@@ -127,7 +127,7 @@ function driveToBorder(info: ExportInfo, v: Vehicle, highway: boolean): Act {
 function crossBorder(info: ExportInfo, v: Vehicle, icd: boolean): Act {
   const root = new THREE.Group(), S = new THREE.Group(), r = rng(hashOf(info.marketName + 'ck')), th = THEMES.bac;
   root.add(slab(th.ground)); road(S, 0x8f97a3, 11, 2); yard(S, 13, 8, 16, 30);
-  const gate = borderGate(icd ? 'Cửa khẩu quốc tế · Cảng cạn' : 'Cửa khẩu quốc tế', 6.6); gate.g.position.z = -6; gate.signs[0].position.z -= 6; root.add(gate.g, gate.signs[0]);
+  const gate = borderGate(icd ? 'Cửa khẩu · Cảng cạn' : 'Cửa khẩu quốc tế', 6.6); gate.g.position.z = -6; gate.signs[0].position.z -= 6; root.add(gate.g, gate.signs[0]);
   if (icd) for (let i = 0; i < 9; i++) { const cn = container(CONTAINER_COLORS[i % CONTAINER_COLORS.length], 12, false); prop(S, cn, -24 + (i % 3) * 2.7, Math.floor(i / 6) * 2.75, 4 + (Math.floor(i / 3) % 2) * 13, 1, 0); }
   else { prop(S, crateStack(6), 15, 0, 12, 1.2, 0.3); prop(S, boxTruck(0xf2a53a).g, 15, 0, 22, 1, 0.12); }
   if (!icd) prop(S, warehouse(12, 8, 4.4, 0xf2b25c), -14, 0, 10, 1, Math.PI / 2);

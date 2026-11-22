@@ -15,6 +15,8 @@ import { DriveGame } from './drive/DriveGame.tsx';
 import type { DrivePlan, DriveResult } from './drive/DriveGame.tsx';
 import { Icon } from './icons.tsx';
 import { ExportPanel, TradePanel } from './trade.tsx';
+import { ExportRide } from './drive/ExportRide.tsx';
+import { EXPORT_MARKETS } from '../../shared/rules.ts';
 import type { ExportSent } from './trade.tsx';
 import type { IconName } from './icons.tsx';
 import { CropGuide, KIND_VERB, StageArt, stepIcon, stepKind } from './guide.tsx';
@@ -472,6 +474,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         </div>
       )}
       {respin && <div className="overlay"><RoleWheel regionName={REGIONS[me.user.homeRegionId!].name} onDone={() => { setRespin(false); reload(); }} /></div>}
+      {exportRide && <ExportRide mode={exportRide.mode} fromName={REGIONS[me.user.homeRegionId!].name} marketName={EXPORT_MARKETS[exportRide.market].name} specialtyName={SPECIALTIES[exportRide.specialtyId].name} emoji={CROPS[SPECIALTIES[exportRide.specialtyId].crop].emoji} kg={exportRide.kg} onDone={() => { setExportRide(null); setKhoTab('xuat'); setTab('kho'); }} />}
       {ride && <TravelRide mode={ride.mode} fromRegionId={me.user.homeRegionId!} toRegionId={ride.to} km={ride.km} seconds={TRAVEL_MODES[ride.mode].seconds} onFinish={() => { setTour(ride.to); setRide(null); worldRef.current?.goHome(); }} />}
       {trip && <DriveGame fromRegionId={trip.fromRegionId} toRegionId={trip.toRegionId} plan={trip.plan} fuelL={trip.fuelL} truck={trip.truck} etc={trip.etc} cash={trip.cash} truckColor={me.user.avatar?.truck ?? '#f08a6c'} onFinish={finishTrip} onCancel={() => { setTrip(null); setToast('Đã huỷ chuyến. Xe vẫn đỗ ở chỗ cũ.'); }} />}
 
