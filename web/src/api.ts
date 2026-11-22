@@ -21,7 +21,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
 }
 
 export interface Me {
-  user: { id: number; username: string; displayName: string; cash: number; homeRegionId: string | null; homeKind?: PlotKind; coopId?: number | null; role?: Role | null; tester?: boolean; harvests?: number; roleNextSpinAt?: number | null; truckRegionId?: string | null; tourRegionId?: string | null; sightsDone?: number; fuelL?: number; etc?: number; avatar?: Avatar | null };
+  user: { id: number; username: string; displayName: string; cash: number; homeRegionId: string | null; homeKind?: PlotKind; coopId?: number | null; role?: Role | null; tester?: boolean; harvests?: number; roleNextSpinAt?: number | null; truckRegionId?: string | null; tourRegionId?: string | null; sightsDone?: number; xp?: number; level?: number; title?: string; nextXp?: number | null; prevXp?: number; energy?: number; energyMax?: number; energyFullAt?: number | null; fuelL?: number; etc?: number; avatar?: Avatar | null };
   plots: { id: number; regionId: string; isHome: boolean; kind?: PlotKind; wardName?: string | null }[];
   walkin?: { kg: number; total: number } | null;
   inventory: { specialtyId: string; quality: Quality; kg: number }[];
