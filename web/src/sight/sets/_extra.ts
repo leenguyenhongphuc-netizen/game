@@ -1,7 +1,7 @@
 // Hình khối dùng chung cho các cảnh biển, làng chài, làng nghề: thuyền thúng, dừa nước, phi lao, cờ, sóng, tranh tường…
 import * as THREE from 'three';
 import { bake } from '../../scene/World.ts';
-import { Kit, V, ball, bead, box, cone, cyl, grp, person, strip } from '../SightKit.ts';
+import { Kit, V, ball, bead, box, cone, cyl, glow, grp, person, strip } from '../SightKit.ts';
 
 export { bake };
 export type Spots = { shopSpots: THREE.Vector3[] };
@@ -55,7 +55,7 @@ export function fishingBoat(hull: number, trim: number, len = 9): THREE.Group {
 /** Sườn núi/đường đèo: tấm dốc dày bám theo một đoạn lối đi. */
 export function slab(c: number, a: THREE.Vector3, b: THREE.Vector3, width: number, thick: number, lift = 0): THREE.Mesh { return strip(c, a, b, width, thick, lift); }
 /** Mây thấp: vài khối cầu dẹt trắng. */
-export function cloud(x: number, y: number, z: number, s: number): THREE.Group { return grp(x, y, z, 0, ball(0xffffff, 0, 0, 0, s * 2.2, s * 0.7, s * 1.3), ball(0xf4f8fb, s * 1.6, s * 0.2, s * 0.3, s * 1.5, s * 0.6, s), ball(0xf4f8fb, -s * 1.5, -s * 0.1, -s * 0.2, s * 1.4, s * 0.5, s * 0.9)); }
+export function cloud(x: number, y: number, z: number, s: number): THREE.Group { const w = glow(0xffffff), w2 = glow(0xeef4f8); return grp(x, y, z, 0, ball(w, 0, 0, 0, s * 2.2, s * 0.7, s * 1.3), ball(w2, s * 1.6, s * 0.2, s * 0.3, s * 1.5, s * 0.6, s), ball(w2, -s * 1.5, -s * 0.1, -s * 0.2, s * 1.4, s * 0.5, s * 0.9)); }
 /** Con cò trắng đứng. */
 export function egret(): THREE.Group { return grp(0, 0, 0, 0, cyl(0x3a3a3a, -0.08, 0.35, 0, 0.02, 0.7), cyl(0x3a3a3a, 0.08, 0.35, 0, 0.02, 0.7), ball(0xffffff, 0, 0.9, 0, 0.2, 0.26, 0.42), cyl(0xffffff, 0, 1.3, -0.3, 0.05, 0.6), ball(0xffffff, 0, 1.62, -0.34, 0.1), cone(0xf2b020, 0, 1.6, -0.56, 0.035, 0.3).rotateX(-Math.PI / 2)); }
 /** Dù bãi biển và hai ghế nằm. */

@@ -14,9 +14,9 @@ export function haiVan(kit: Kit, _s: Sight): SightSet & Spots {
   // biển bao quanh phía đông, nam, bắc; đất liền dựng lên trên
   kit.add(box(0x1f6aa8, 0, -4.6, 0, 1900, 1, 1900));
   kit.water(SEA, 0, 0, 1900, 1900, -3, 0.9);
-  const path = [V(4, 0, 124), V(2, 2, 96), V(8, 6, 66), V(26, 10, 44), V(38, 13, 28), V(30, 16, 14), V(6, 20, 6), V(-10, 23, -8), V(0, 26, -26), V(22, 29, -44), V(30, H, -70), V(26, H, -92), V(12, H, -108), V(0, H, -109), V(0, H, -98), V(0, H, -86), V(0, H, -74), V(0, H, -64), V(-12, H, -58), V(-22, H, -62), V(-34, H, -78), V(-38, H, -92)];
+  const path = [V(4, 0, 124), V(2, 2, 96), V(8, 6, 66), V(26, 10, 44), V(38, 13, 28), V(30, 16, 14), V(6, 20, 6), V(-10, 23, -8), V(0, 26, -26), V(22, 29, -44), V(30, H, -70), V(26, H, -92), V(12, H, -108), V(0, H, -109), V(0, H, -98), V(0, H, -86), V(0, H, -74), V(0, H, -64), V(-12, H, -58), V(-22, H, -62), V(-34, H, -78), V(-36, H, -100), V(-28, H, -119)];
   // thân núi: các tấm dốc dày bám theo đường, cỏ hai bên, vách đá phía biển
-  for (let i = 0; i < 10; i++) { kit.add(slab(GRASS, path[i], path[i + 1], 40, 60, -0.35), slab(ROCK, path[i], path[i + 1], 15, 60, -0.12)); }
+  for (let i = 0; i < 10; i++) { kit.add(slab(GRASS, path[i], path[i + 1], i === 3 || i === 4 ? 22 : 34, 60, -0.35), slab(ROCK, path[i], path[i + 1], 15, 60, -0.12)); }
   kit.pave(ROAD, path, 8.6, 0, 10, 0.2, 0.03);
   for (let i = 0; i < 10; i++) { const a = path[i], b = path[i + 1], n = Math.floor(a.distanceTo(b) / 5); for (let k = 0; k < n; k++) { const p = a.clone().lerp(b, (k + 0.5) / n); kit.add(box(0xf4f1ea, p.x, p.y + 0.06, p.z, 0.2, 0.05, 1.8, Math.atan2(b.x - a.x, b.z - a.z))); } }
   // hộ lan tôn sóng và cọc tiêu đỏ trắng phía vực (phía đông), ta-luy đá phía núi
@@ -25,8 +25,8 @@ export function haiVan(kit: Kit, _s: Sight): SightSet & Spots {
     kit.along(path[i], path[i + 1], 6, 4.6, () => box(0xc9ccd0, 0, 0.62, 0, 0.12, 0.3, 6.2, Math.atan2(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z)), [i === 5 || i === 6 || i === 7 ? 1 : -1].map((s) => -s));
   }
   // dãy núi Bạch Mã – Hải Vân phía tây, rừng trên sườn
-  kit.add(mountain(0x3f7a4e, -150, -10, 150, 120, r, -3), mountain(0x4a8556, -110, 140, 120, 80, r, -3), mountain(0x3f7a4e, -210, -220, 170, 140, r, -3), mountain(0x558f5a, -60, -40, 70, 70, r, -3), mountain(0x4a8556, 20, 40, 60, 34, r, -3));
-  for (let i = 0; i < 70; i++) { const k = Math.floor(r() * 9), p = path[k].clone().lerp(path[k + 1], r()), side = r() < 0.6 ? -1 : 1, off = 7 + r() * 11; const t = tree(r, 0.9 + r() * 0.9, r() < 0.6); t.position.set(p.x + side * off, p.y - 0.4, p.z + (r() - 0.5) * 6); kit.add(t); }
+  kit.add(mountain(0x3f7a4e, -150, -10, 150, 120, r, -3), mountain(0x4a8556, -110, 140, 120, 80, r, -3), mountain(0x3f7a4e, -370, -190, 170, 140, r, -3), mountain(0x558f5a, -60, -40, 70, 70, r, -3), mountain(0x4a8556, 20, 40, 60, 34, r, -3));
+  for (let i = 0; i < 70; i++) { const k = Math.floor(r() * 9), p = path[k].clone().lerp(path[k + 1], r()), side = r() < 0.6 ? -1 : 1, off = 7 + r() * 11; const t = tree(r, 0.9 + r() * 0.9, r() < 0.6); t.position.set(p.x + side * off, p.y - 0.4, p.z + (r() - 0.5) * 6); if (Math.hypot(t.position.x - 40, t.position.z - 30) < 20 && side > 0) continue; kit.add(t); }
   for (let i = 0; i < 26; i++) { const k = Math.floor(r() * 9), p = path[k].clone().lerp(path[k + 1], r()); kit.add(rock(0x9a9084, p.x + (r() < 0.5 ? -1 : 1) * (5.6 + r() * 3), p.y + 0.2, p.z, 0.8 + r() * 1.2, 0.6 + r(), 0.8 + r(), r() * 3)); }
   // chân đèo: biển chỉ dẫn, xe máy phượt, biển báo đèo dốc
   kit.add(box(0x1f7a4a, -4.6, 3.4, 110, 0.2, 2.2, 5), cyl(0x8a8a8a, -4.6, 1.3, 108, 0.1, 2.6), cyl(0x8a8a8a, -4.6, 1.3, 112, 0.1, 2.6));
@@ -68,9 +68,9 @@ export function haiVan(kit: Kit, _s: Sight): SightSet & Spots {
   kit.add(grp(24, H, -62, 0.1, box(0xf4f1ea, 0, 1.8, 0, 2.6, 2.6, 9), box(0x2a6fbf, 0, 1.2, 0, 2.66, 0.5, 9.04), box(0x9fd0ea, 0, 2.3, 0, 2.66, 0.9, 8.2), ...[-1, 1].flatMap((s) => [cyl(0x222222, s * 1.2, 0.5, 3, 0.5, 0.3).rotateZ(Math.PI / 2), cyl(0x222222, s * 1.2, 0.5, -3, 0.5, 0.3).rotateZ(Math.PI / 2)])));
   for (let i = 0; i < 5; i++) { const p = person(i + 8); p.position.set(-4 + i * 2.2, H, -113 - (i % 2) * 1.6); p.rotation.y = Math.PI; kit.add(p); }
   // ---- đài ngắm cảnh phía tây bắc: sàn gỗ, lan can, ống nhòm
-  kit.add(cyl(0x9a7150, -39, H + 0.1, -94, 7, 0.3), cyl(0x4a4a4a, -41, H + 0.9, -99, 0.1, 1.5), box(0x3f6f8f, -41, H + 1.7, -99.2, 0.3, 0.3, 0.8));
-  for (let i = 0; i < 12; i++) { const a = Math.PI * (0.55 + i / 11 * 1.2); kit.add(cyl(0x7a5a3c, -39 + Math.cos(a) * 6.8, H + 0.7, -94 + Math.sin(a) * 6.8, 0.09, 1.2)); }
-  kit.live(label('Ngắm vịnh Lăng Cô', -39, H + 5.4, -100, '#2a7f9a', 0.7));
+  kit.add(cyl(0x9a7150, -28, H + 0.1, -121, 7, 0.3), cyl(0x4a4a4a, -32, H + 0.9, -125, 0.1, 1.5), box(0x3f6f8f, -32, H + 1.7, -125.2, 0.3, 0.3, 0.8));
+  for (let i = 0; i < 12; i++) { const a = Math.PI * (0.55 + i / 11 * 1.2); kit.add(cyl(0x7a5a3c, -28 + Math.cos(a + 1.5) * 6.8, H + 0.7, -121 + Math.sin(a + 1.5) * 6.8, 0.09, 1.2)); }
+  kit.live(label('Vịnh Lăng Cô · đầm Lập An', -60, 12, -250, '#2a7f9a', 3.4));
   // ---- phía BẮC dưới chân đèo: đầm Lập An, dải cát trắng Lăng Cô, đường sắt ôm chân núi, cầu Lăng Cô
   kit.add(box(0x6fae62, -190, -3, -420, 420, 1.4, 320), box(0x53c7c0, -130, -2.2, -330, 150, 0.2, 130), box(0xfbf3d6, -40, -2.1, -300, 26, 0.3, 230), box(0xfbf3d6, -150, -2.1, -252, 200, 0.3, 14), box(0xffffff, -24, -2.2, -300, 5, 0.2, 230));
   for (let i = 0; i < 26; i++) kit.add(box([0xf1e3b8, 0xe9c9c0, 0xbfe0e6][i % 3], -46 + r() * 10, -1.2, -400 + i * 8, 4, 2, 4), cone(0xa8482f, -46 + r() * 2, 0.4, -400 + i * 8, 3.4, 1.4));
@@ -92,15 +92,15 @@ export function haiVan(kit: Kit, _s: Sight): SightSet & Spots {
     path, half: 2.2, npcs: 9, startYaw: 0,
     stops: [
       { id: 'chan_deo', at: V(3.6, 0.5, 118), look: V(20, 26, 20) },
-      { id: 'cua_tay_ao', at: V(37, 12.8, 29), look: V(160, 2, 330) },
+      { id: 'cua_tay_ao', at: V(37, 12.8, 29), look: V(170, -6, 150) },
       { id: 'cong_ai', at: V(0, H, -109), look: V(0, H + 5, -98) },
       { id: 'de_nhat', at: V(0, H, -64), look: V(0, H + 5, -76) },
       { id: 'lo_cot', at: V(-14, H, -58.6), look: V(-19, H + 1.6, -51) },
-      { id: 'vong_canh', at: V(-38, H, -92), look: V(-60, -4, -330) },
+      { id: 'vong_canh', at: V(-28, H, -119), look: V(-70, -8, -310) },
     ],
     sky: [0x4f9fe6, 0xe8f3fa], fog: [0xdcecf4, 140, 900],
     light: { ambient: 1.55, sun: 1.7, sunColor: 0xfff4dc, sunDir: [0.5, 0.9, 0.4] },
-    shopSpots: [V(33, H, -52), V(-6, H, -116), V(-30, H, -70)],
+    shopSpots: [V(33, H, -52), V(-6, H, -116), V(-40, H, -84)],
   };
 }
 function bakeLocal(g: THREE.Group): THREE.Object3D { const p = g.position.clone(); g.position.set(0, 0, 0); const b = bakeIt(g); b.position.copy(p); return b; }

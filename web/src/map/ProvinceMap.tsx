@@ -19,6 +19,8 @@ export interface ProvinceMapData {
   peaks?: { name: string; at: LL; pass?: boolean }[];
   /** Nhãn vùng nước, tỉnh bạn, nước bạn. */
   labels: { text: string; at: LL; kind: 'sea' | 'bay' | 'next' }[];
+  /** Tuyến tàu ra đảo (nét đứt trên biển). */
+  routes?: { name: string; pts: LL[] }[];
 }
 
 // Bờ biển Đà Nẵng – Quảng Nam chấm theo các mốc thật (từ nam ra bắc): Dung Quất, Kỳ Hà, Tam Thanh, Cửa Đại, An Bàng, Non Nước,
@@ -31,7 +33,41 @@ const DA_NANG_LAND: Ring = [
   [108.03, 16.27], [107.95, 16.31], [107.85, 16.36], [107.3, 16.6], [107.3, 15.0], [108.95, 15.0],
 ];
 
+// Bờ biển Quảng Ngãi chấm theo các mốc thật (từ nam ra bắc): Sa Huỳnh, Đức Phổ, Mộ Đức, cửa Cổ Luỹ (sông Trà Khúc), Mỹ Khê, cảng Sa Kỳ,
+// mũi Ba Làng An, vịnh Dung Quất, rồi nối sang Kỳ Hà, Tam Thanh của Đà Nẵng.
+const QUANG_NGAI_LAND: Ring = [
+  [109.07, 14.3], [109.075, 14.52], [109.085, 14.6], [109.075, 14.665], [109.05, 14.72], [109.04, 14.8], [109.0, 14.88], [108.965, 14.96], [108.935, 15.05], [108.905, 15.115],
+  [108.895, 15.15], [108.91, 15.19], [108.94, 15.215], [108.948, 15.24], [108.925, 15.268], [108.885, 15.3], [108.855, 15.36], [108.835, 15.4], [108.8, 15.415], [108.77, 15.4],
+  [108.73, 15.415], [108.7, 15.44], [108.695, 15.485], [108.64, 15.51], [108.57, 15.575], [108.5, 15.68], [108.0, 15.9], [108.0, 14.3],
+];
+
 export const PROVINCE_MAPS: Record<string, ProvinceMapData> = {
+  'Quảng Ngãi': {
+    box: { lat0: 14.6, lat1: 15.55, lng0: 108.38, lng1: 109.26 },
+    land: QUANG_NGAI_LAND,
+    rivers: [
+      // Trà Khúc: Sơn Hà → Sơn Tịnh → TP Quảng Ngãi → cửa Cổ Luỹ
+      { name: 'Sông Trà Khúc', pts: [[108.42, 14.98], [108.52, 15.06], [108.64, 15.1], [108.74, 15.135], [108.8, 15.128], [108.86, 15.14], [108.9, 15.15]], label: [108.6, 15.07], width: 1.5 },
+      // Trà Bồng: thị trấn Trà Bồng → Châu Ổ → cửa Sa Cần (vịnh Dung Quất)
+      { name: 'Sông Trà Bồng', pts: [[108.44, 15.24], [108.56, 15.265], [108.68, 15.29], [108.76, 15.305], [108.81, 15.35], [108.83, 15.4]], label: [108.66, 15.315] },
+      // Sông Vệ: Nghĩa Hành → Mộ Đức → nhập cửa Cổ Luỹ
+      { name: 'Sông Vệ', pts: [[108.62, 14.84], [108.74, 14.93], [108.84, 15.02], [108.89, 15.09], [108.9, 15.15]], label: [108.73, 14.89] },
+    ],
+    islets: [
+      { name: 'Đảo Lý Sơn', at: [109.12, 15.38], rx: 0.034, ry: 0.014, rot: -12 },
+      { name: 'Đảo Bé', at: [109.085, 15.432], rx: 0.009, ry: 0.006 },
+    ],
+    towns: [
+      { name: 'TP. Quảng Ngãi', at: [108.8, 15.122], big: true }, { name: 'Cảng Sa Kỳ', at: [108.925, 15.21] },
+      { name: 'Dung Quất', at: [108.79, 15.39] }, { name: 'Đức Phổ', at: [108.96, 14.81] }, { name: 'Sa Huỳnh', at: [109.065, 14.665] },
+    ],
+    peaks: [{ name: 'Trường Sơn', at: [108.5, 14.78] }, { name: 'Mũi Ba Làng An', at: [108.955, 15.262], pass: true }],
+    labels: [
+      { text: 'Biển Đông', at: [109.14, 14.98], kind: 'sea' }, { text: 'Vịnh Dung Quất', at: [108.86, 15.455], kind: 'bay' }, { text: 'Cửa Cổ Luỹ', at: [108.955, 15.14], kind: 'bay' },
+      { text: 'Đà Nẵng', at: [108.5, 15.5], kind: 'next' }, { text: 'Gia Lai', at: [108.75, 14.64], kind: 'next' },
+    ],
+    routes: [{ name: 'Tàu cao tốc Sa Kỳ – Lý Sơn, khoảng 30 km', pts: [[108.935, 15.215], [109.0, 15.28], [109.07, 15.345], [109.1, 15.372]] }],
+  },
   'Đà Nẵng': {
     box: { lat0: 15.3, lat1: 16.3, lng0: 107.68, lng1: 108.74 },
     land: DA_NANG_LAND,
@@ -58,6 +94,7 @@ export const PROVINCE_MAPS: Record<string, ProvinceMapData> = {
       { text: 'Biển Đông', at: [108.62, 15.75], kind: 'sea' }, { text: 'Vịnh Đà Nẵng', at: [108.19, 16.14], kind: 'bay' }, { text: 'Cửa Đại', at: [108.47, 15.862], kind: 'bay' },
       { text: 'TP. Huế', at: [107.9, 16.26], kind: 'next' }, { text: 'Quảng Ngãi', at: [108.6, 15.33], kind: 'next' },
     ],
+    routes: [{ name: 'Tàu Cửa Đại – Cù Lao Chàm', pts: [[108.4, 15.88], [108.44, 15.91], [108.49, 15.94]] }],
   },
 };
 /** Tỉnh đã có bản đồ riêng. */
@@ -74,24 +111,51 @@ export interface ProvinceMapProps {
   onSelect: (sightId: string) => void;
 }
 
-/** Xếp nhãn tham lam: thử phải, trái, dưới, trên; chọn vị trí đầu tiên không đè lên ghim hay nhãn khác. */
-function placeLabels(items: { id: string; x: number; y: number; w: number }[], u: number, W: number, fixed: [number, number, number, number][] = []) {
-  const boxes: [number, number, number, number][] = [...fixed, ...items.map((p): [number, number, number, number] => [p.x - 13 * u, p.y - 13 * u, p.x + 13 * u, p.y + 13 * u])];
+type Box4 = [number, number, number, number];
+/** Xếp nhãn tham lam: thử phải, trái, dưới, trên rồi bốn góc chéo; chọn vị trí đầu tiên không đè lên ghim hay nhãn khác.
+ *  Không còn chỗ thì bỏ nhãn (ghim vẫn có số, tên nằm ở danh sách bên dưới) — trừ ghim đang chọn (`keep`). */
+function placeLabels(items: { id: string; x: number; y: number; w: number }[], u: number, W: number, fixed: Box4[] = [], keep?: string | null) {
+  const boxes: Box4[] = [...fixed, ...items.map((p): Box4 => [p.x - 13 * u, p.y - 13 * u, p.x + 17 * u, p.y + 13 * u])];
   const hit = (b: number[]) => boxes.some((o) => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]);
   const out: Record<string, { x: number; y: number; anchor: 'start' | 'end' | 'middle' }> = {};
-  for (const p of items) {
-    const h = 13 * u, g = 15 * u;
+  // ghim đang chọn xếp trước để chắc có chỗ
+  for (const p of [...items].sort((a, b) => Number(b.id === keep) - Number(a.id === keep))) {
+    const h = 13 * u, g = 19 * u, d = 13 * u;
     const cands: { x: number; y: number; anchor: 'start' | 'end' | 'middle'; b: number[] }[] = [
       { x: p.x + g, y: p.y + 4 * u, anchor: 'start', b: [p.x + g, p.y - h / 2, p.x + g + p.w, p.y + h / 2] },
-      { x: p.x - g, y: p.y + 4 * u, anchor: 'end', b: [p.x - g - p.w, p.y - h / 2, p.x - g, p.y + h / 2] },
-      { x: p.x, y: p.y + g + 9 * u, anchor: 'middle', b: [p.x - p.w / 2, p.y + g, p.x + p.w / 2, p.y + g + h] },
-      { x: p.x, y: p.y - g - 1 * u, anchor: 'middle', b: [p.x - p.w / 2, p.y - g - h, p.x + p.w / 2, p.y - g] },
+      { x: p.x - 15 * u, y: p.y + 4 * u, anchor: 'end', b: [p.x - 15 * u - p.w, p.y - h / 2, p.x - 15 * u, p.y + h / 2] },
+      { x: p.x, y: p.y + 15 * u + 9 * u, anchor: 'middle', b: [p.x - p.w / 2, p.y + 15 * u, p.x + p.w / 2, p.y + 15 * u + h] },
+      { x: p.x, y: p.y - 18 * u, anchor: 'middle', b: [p.x - p.w / 2, p.y - 18 * u - h, p.x + p.w / 2, p.y - 17 * u] },
+      { x: p.x + d, y: p.y + d + 11 * u, anchor: 'start', b: [p.x + d, p.y + d, p.x + d + p.w, p.y + d + h] },
+      { x: p.x + d, y: p.y - d - 6 * u, anchor: 'start', b: [p.x + d, p.y - d - h - 4 * u, p.x + d + p.w, p.y - d - 4 * u] },
+      { x: p.x - d, y: p.y + d + 11 * u, anchor: 'end', b: [p.x - d - p.w, p.y + d, p.x - d, p.y + d + h] },
+      { x: p.x - d, y: p.y - d - 6 * u, anchor: 'end', b: [p.x - d - p.w, p.y - d - h - 4 * u, p.x - d, p.y - d - 4 * u] },
     ];
-    const ok = cands.find((c) => c.b[0] > 2 * u && c.b[2] < W - 2 * u && !hit(c.b)) ?? cands[0];
-    boxes.push(ok.b as [number, number, number, number]);
+    const ok = cands.find((c) => c.b[0] > 2 * u && c.b[2] < W - 2 * u && !hit(c.b)) ?? (p.id === keep ? cands.find((c) => c.b[0] > 2 * u && c.b[2] < W - 2 * u) ?? cands[0] : null);
+    if (!ok) continue;
+    boxes.push(ok.b as Box4);
     out[p.id] = { x: ok.x, y: ok.y, anchor: ok.anchor };
   }
   return out;
+}
+
+/** Tách các ghim chồng lên nhau: đẩy nhau ra cho đủ khoảng, vẫn kéo nhẹ về vị trí thật; `ax, ay` giữ vị trí thật để vẽ đường dẫn. */
+function spreadPins<T extends { x: number; y: number; ax: number; ay: number }>(pins: T[], u: number, W: number, H: number, blocks: { x: number; y: number; r: number }[]): T[] {
+  const min = 27 * u;
+  for (let it = 0; it < 80; it++) {
+    for (let i = 0; i < pins.length; i++) for (let j = i + 1; j < pins.length; j++) {
+      const a = pins[i], b = pins[j]; let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+      if (d >= min) continue;
+      if (d < 0.01) { const ang = (i * 2.4) % 6.283; dx = Math.cos(ang); dy = Math.sin(ang); d = 1; }
+      const push = (min - d) / 2; a.x -= (dx / d) * push; a.y -= (dy / d) * push; b.x += (dx / d) * push; b.y += (dy / d) * push;
+    }
+    for (const p of pins) {
+      for (const o of blocks) { let dx = p.x - o.x, dy = p.y - o.y, d = Math.hypot(dx, dy); if (d >= o.r) continue; if (d < 0.01) { dx = 1; dy = -0.6; d = 1.17; } p.x += (dx / d) * (o.r - d); p.y += (dy / d) * (o.r - d); }
+      p.x += (p.ax - p.x) * 0.02; p.y += (p.ay - p.y) * 0.02;
+      p.x = Math.min(W - 16 * u, Math.max(16 * u, p.x)); p.y = Math.min(H - 16 * u, Math.max(16 * u, p.y));
+    }
+  }
+  return pins;
 }
 
 export function ProvinceMap({ province, sights, regions, currentRegionId, selectedId, onSelect }: ProvinceMapProps) {
@@ -100,14 +164,15 @@ export function ProvinceMap({ province, sights, regions, currentRegionId, select
   const pz = usePanZoom(P, 5);
   const u = pz.unit;
   const land = useMemo(() => (data ? ringPath(P, data.land) : ''), [data, P]);
-  const pins = useMemo(() => sights.map((s, i) => ({ s, n: i + 1, x: P.x(s.lng), y: P.y(s.lat) })), [sights, P]);
-  const farms = regions.filter((r) => r.province === province).map((r) => ({ r, x: P.x(r.lng), y: P.y(r.lat) }));
+  // chỉ ghim vùng trồng nằm trong khung bản đồ (tỉnh sáp nhập có vùng ở rất xa, ví dụ Đăk Hà của Quảng Ngãi)
+  const farms = useMemo(() => regions.filter((r) => r.province === province).map((r) => ({ r, x: P.x(r.lng), y: P.y(r.lat) })).filter((f) => f.x > 0 && f.x < P.w && f.y > 0 && f.y < P.h), [regions, province, P]);
+  const pins = useMemo(() => spreadPins(sights.map((s, i) => { const x = P.x(s.lng), y = P.y(s.lat); return { s, n: i + 1, x, y, ax: x, ay: y }; }), u, P.w, P.h, farms.map((f) => ({ x: f.x, y: f.y, r: 24 * u }))), [sights, P, u, farms]);
   const labels = useMemo(() => {
     const fixed: [number, number, number, number][] = [];
     for (const t of data?.towns ?? []) { const x = P.x(t.at[0]), y = P.y(t.at[1]), w = t.name.length * (t.big ? 7 : 6) * u; fixed.push([x - 8 * u - w, y - 7 * u, x + 5 * u, y + 7 * u]); }
-    for (const r of regions) if (r.province === province) { const x = P.x(r.lng), y = P.y(r.lat), w = Math.max(r.name.length, 14) * 3.2 * u; fixed.push([x - w, y - 20 * u, x + w, y + 24 * u]); }
-    return placeLabels(pins.map((p) => ({ id: p.s.id, x: p.x, y: p.y, w: p.s.name.length * 6.3 * u })), u, P.w, fixed);
-  }, [pins, u, P, data, regions, province]);
+    for (const { r, x, y } of farms) { const w = Math.max(r.name.length, 14) * 3.2 * u; fixed.push([x - w, y - 20 * u, x + w, y + 24 * u]); }
+    return placeLabels(pins.map((p) => ({ id: p.s.id, x: p.x, y: p.y, w: p.s.name.length * 6.3 * u })), u, P.w, fixed, selectedId);
+  }, [pins, u, P, data, farms, selectedId]);
   // màn ngang chỉ thấy một dải: mở đầu ở giữa cụm địa danh
   const centred = useRef(false);
   useEffect(() => { if (!centred.current && pz.landscape && pins.length) { centred.current = true; pz.focus(pins.reduce((a, p) => a + p.x, 0) / pins.length, pins.reduce((a, p) => a + p.y, 0) / pins.length, 1); } }, [pz.landscape, pins]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -145,7 +210,9 @@ export function ProvinceMap({ province, sights, regions, currentRegionId, select
           {data.rivers.map((r, i) => <path key={i} d={ringPath(P, r.pts, false)} stroke="#4aa3d8" strokeWidth={(r.width ?? 1) * 3.4 * u} />)}
           {data.rivers.map((r, i) => <path key={`h${i}`} d={ringPath(P, r.pts, false)} stroke="#bfe9ff" strokeWidth={(r.width ?? 1) * 1.2 * u} />)}
         </g>
+        {data.routes?.map((r) => <path key={r.name} d={ringPath(P, r.pts, false)} fill="none" stroke="#fff" strokeWidth={2 * u} strokeDasharray={`${5 * u} ${5 * u}`} strokeLinecap="round" pointerEvents="none"><title>{r.name}</title></path>)}
         <g className="vm-text" pointerEvents="none">
+          {data.islets?.filter((it) => it.name && !sights.some((x) => Math.abs(x.lng - it.at[0]) < 0.06 && Math.abs(x.lat - it.at[1]) < 0.04)).map((it) => <text key={it.name} x={P.x(it.at[0])} y={P.y(it.at[1] - it.ry) + 11 * u} textAnchor="middle" className="vm-peak" style={{ fontSize: 9.5 * u }}>{it.name}</text>)}
           {data.peaks?.map((m) => {
             const x = P.x(m.at[0]), y = P.y(m.at[1]);
             return (
@@ -178,6 +245,13 @@ export function ProvinceMap({ province, sights, regions, currentRegionId, select
           </g>
         ))}
         {cur && sel && <line x1={cur.x} y1={cur.y} x2={sel.x} y2={sel.y} stroke="#c0391f" strokeWidth={2.4 * u} strokeDasharray={`${7 * u} ${5 * u}`} strokeLinecap="round" pointerEvents="none" />}
+        {/* ghim bị đẩy ra khỏi chỗ thật thì có chấm và đường dẫn chỉ về đúng vị trí */}
+        {pins.filter((p) => Math.hypot(p.x - p.ax, p.y - p.ay) > 5 * u).map((p) => (
+          <g key={`lead-${p.s.id}`} pointerEvents="none">
+            <line x1={p.ax} y1={p.ay} x2={p.x} y2={p.y} stroke="#56310f" strokeWidth={1.5 * u} />
+            <circle cx={p.ax} cy={p.ay} r={2.6 * u} fill="#c0391f" stroke="#fff" strokeWidth={1 * u} />
+          </g>
+        ))}
         {pins.map(({ s, n, x, y }) => {
           const on = s.id === selectedId, l = labels[s.id];
           return (

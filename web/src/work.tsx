@@ -1,9 +1,9 @@
 // Đơn hàng theo ngày, xưởng chế biến, hồ sơ (vai trò và xã/phường).
 import { useCallback, useEffect, useState } from 'react';
-import { CROPS, NPCS, PROVINCES, REGIONS, SPECIALTIES, recipeOf } from '../../shared/catalog.ts';
-import { ORDER_PREMIUM, QUALITY_NAMES, ROLES, ROLE_INFO, fmtMoney } from '../../shared/rules.ts';
+import { CROPS, NPCS, PROVINCES, REGIONS, SPECIALTIES } from '../../shared/catalog.ts';
+import { ORDER_PREMIUM, ROLES, ROLE_INFO, fmtMoney } from '../../shared/rules.ts';
 import { api } from './api.ts';
-import type { Me, Order, Workshop } from './api.ts';
+import type { Me, Order } from './api.ts';
 import { fmtDuration, useAction } from './ui.ts';
 
 export function NpcBadge({ id }: { id: string }) {
@@ -47,65 +47,8 @@ export function OrdersPanel({ me, onChanged }: { me: Me; onChanged: () => void }
   );
 }
 
-// ------------------------------------------------------------------ xưởng chế biến
-export function WorkshopPanel({ me, priceOf, onChanged }: { me: Me; priceOf: (id: string) => number; onChanged: () => void }) {
-  const [data, setData] = useState<Workshop | null>(null);
-  const [pick, setPick] = useState('');
-  const [kg, setKg] = useState(10);
-  const [, tick] = useState(0);
-  const load = useCallback(async () => { setData(await api<Workshop>('GET', '/api/workshop')); }, []);
-  useEffect(() => { void load(); const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [load]);
-  const act = useAction(() => { void load(); onChanged(); });
-  if (!data) return <p className="hint">Đang tải…</p>;
-  const item = me.inventory.find((i) => i.specialtyId + '|' + i.quality === pick);
-  const recipe = item ? recipeOf(CROPS[SPECIALTIES[item.specialtyId].crop]) : null;
-  const now = Date.now();
-  return (
-    <div>
-      <p className="muted">Chế biến nông sản thành hàng khô, mứt, nước ép… để bán được giá hơn bán tươi. Xưởng có {data.slots} chỗ làm cùng lúc.</p>
-      {act.error && <p className="error" role="alert">{act.error}</p>}
-      <h3>Đang làm ({data.jobs.length}/{data.slots})</h3>
-      {data.jobs.length === 0 && <p className="hint">Xưởng đang trống.</p>}
-      {data.jobs.map((j) => {
-        const sp = SPECIALTIES[j.specialtyId], r = recipeOf(CROPS[sp.crop]), wait = j.readyAt - now;
-        return (
-          <div className="row row-line" key={j.id}>
-            <span className="emoji">{r.emoji}</span>
-            <div className="grow"><strong>{r.name} {sp.name}</strong><br /><small>{j.kgIn} kg tươi → {j.kgOut} kg thành phẩm</small></div>
-            <button disabled={act.busy || wait > 0} onClick={() => act.run(() => api('POST', `/api/workshop/collect/${j.id}`, {}))}>{wait > 0 ? `Còn ${fmtDuration(wait)}` : 'Lấy hàng'}</button>
-          </div>
-        );
-      })}
-      <h3>Đưa hàng vào chế biến</h3>
-      {me.inventory.length === 0 ? <p className="hint">Kho chưa có nông sản để chế biến.</p> : (
-        <div className="row">
-          <div className="row-actions">
-            <label>Nông sản<select value={pick} onChange={(e) => setPick(e.target.value)}><option value="">— Chọn —</option>
-              {me.inventory.map((i) => <option key={i.specialtyId + i.quality} value={i.specialtyId + '|' + i.quality}>{SPECIALTIES[i.specialtyId].name} · {QUALITY_NAMES[i.quality]} · {i.kg} kg</option>)}</select></label>
-            <label>Số kg<input type="number" min={1} max={item?.kg ?? 1} value={kg} onChange={(e) => setKg(Number(e.target.value))} /></label>
-          </div>
-          {item && recipe && <small className="muted">{recipe.emoji} {recipe.name}: 1 kg tươi ra {recipe.ratio} kg, bán khoảng {fmtMoney(Math.round(priceOf(item.specialtyId) * recipe.value))}/kg · làm trong {recipe.hours} giờ game.</small>}
-          <button className="primary" disabled={act.busy || !item || data.jobs.length >= data.slots}
-            onClick={() => act.run(() => api('POST', '/api/workshop/start', { specialtyId: item!.specialtyId, quality: item!.quality, kg: Math.min(Math.max(1, Math.floor(kg) || 1), item!.kg) }))}>
-            {data.jobs.length >= data.slots ? 'Xưởng hết chỗ' : 'Bắt đầu chế biến'}
-          </button>
-        </div>
-      )}
-      <h3>Thành phẩm</h3>
-      {data.products.length === 0 && <p className="hint">Chưa có thành phẩm.</p>}
-      {data.products.map((p) => {
-        const sp = SPECIALTIES[p.specialtyId], r = recipeOf(CROPS[sp.crop]);
-        return (
-          <div className="row row-line" key={p.specialtyId}>
-            <span className="emoji">{r.emoji}</span>
-            <div className="grow"><strong>{r.name} {sp.name}</strong><br /><small>{p.kg} kg</small></div>
-            <button disabled={act.busy} onClick={() => act.run(() => api('POST', '/api/workshop/sell', { specialtyId: p.specialtyId, kg: p.kg }))}>Bán hết</button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+// ------------------------------------------------------------------ xưởng chế biến (dàn máy): xem workshop.tsx
+export { WorkshopPanel } from './workshop.tsx';
 
 // ------------------------------------------------------------------ chọn xã/phường
 export function WardPicker({ province, ward, onChange }: { province: string; ward: string; onChange: (province: string, ward: string) => void }) {

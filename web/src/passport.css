@@ -1,0 +1,153 @@
+/* Hộ chiếu du lịch, giấy chứng nhận đất, cấp bậc, thể lực, túi đồ và quầy hàng. */
+
+/* ------------------------------------------------------------------ hộ chiếu */
+.pp { display: grid; gap: 10px; justify-items: center; }
+.pp-book { width: min(100%, 440px); border-radius: 10px 18px 18px 10px; background: #f7efd8; border: 2px solid #b9a06a; box-shadow: inset 10px 0 14px -10px #0005, 0 4px 0 #8a7443, 0 10px 22px #0003; position: relative; overflow: hidden; touch-action: pan-y; min-height: 420px; }
+.pp-book.closed { background: none; border: 0; box-shadow: none; }
+.pp-cover { display: grid; justify-items: center; align-content: center; gap: 10px; width: 100%; min-height: 470px; padding: 26px 18px; border-radius: 10px 20px 20px 10px; border: 0;
+  background: radial-gradient(120% 80% at 30% 10%, #2f6a4a 0%, #1d4a34 55%, #143626 100%); color: #e9c46a; box-shadow: inset 12px 0 16px -10px #000a, inset 0 0 0 3px #1d4a34, inset 0 0 0 4.5px #e9c46a88, 0 5px 0 #0d2419, 0 12px 24px #0005; font-family: 'Baloo 2', serif; text-shadow: 0 1px 0 #0006; }
+.pp-cover:active:not(:disabled) { transform: none; box-shadow: inset 12px 0 16px -10px #000a, inset 0 0 0 3px #1d4a34, inset 0 0 0 4.5px #e9c46a88, 0 5px 0 #0d2419, 0 12px 24px #0005; }
+.pp-cover-top { letter-spacing: 0.42em; font-size: 0.82rem; font-weight: 700; padding-left: 0.42em; }
+.pp-cover-title { font-size: 2rem; line-height: 1.05; font-weight: 800; letter-spacing: 0.08em; text-align: center; }
+.pp-cover-sub { font-family: 'Be Vietnam Pro', sans-serif; font-size: 0.74rem; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.85; font-weight: 500; text-align: center; }
+.pp-cover-open { margin-top: 14px; font-family: 'Be Vietnam Pro', sans-serif; font-size: 0.85rem; font-weight: 600; color: #fff6dc; background: #ffffff1c; border: 1px solid #e9c46a88; border-radius: 999px; padding: 8px 16px; }
+.pp-page { position: relative; padding: 14px 14px 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start;
+  background-image: repeating-radial-gradient(circle at 0 0, transparent 0 13px, #c9a86a1c 13px 14px), repeating-radial-gradient(circle at 100% 100%, transparent 0 17px, #7fae9a1a 17px 18px); min-height: 420px; }
+.pp-wm { position: absolute; right: -40px; bottom: 30px; opacity: 0.1; pointer-events: none; }
+.pp-h { margin: 0; font-size: 1.02rem; letter-spacing: 0.08em; color: #1d4a34; border-bottom: 2px solid #1d4a34; padding-bottom: 4px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.pp-h small { letter-spacing: 0; font-family: 'Be Vietnam Pro', sans-serif; font-weight: 600; color: #7a6547; white-space: nowrap; }
+.pp-id { display: flex; gap: 12px; align-items: flex-start; position: relative; }
+.pp-photo { width: 84px; flex: 0 0 84px; border: 2px solid #56310f; border-radius: 6px; background: #dfeaf2; box-shadow: 0 2px 0 #0002; }
+.pp-id dl { margin: 0; display: grid; gap: 5px; flex: 1; min-width: 0; }
+.pp-id dt { font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; color: #8a7443; }
+.pp-id dd { margin: 0; font-weight: 600; font-size: 0.92rem; line-height: 1.2; overflow-wrap: anywhere; }
+.pp-name { font-family: var(--display); font-size: 1.12rem !important; }
+.pp-mono { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; letter-spacing: 0.08em; color: #b3261e; }
+.pp-rank { display: flex; gap: 10px; align-items: center; background: #fffaf0cc; border: 1.5px solid #d9c690; border-radius: 12px; padding: 8px 10px; position: relative; }
+.pp-rank b { font-family: var(--display); font-size: 1rem; display: block; line-height: 1.15; }
+.pp-shield { flex: 0 0 44px; width: 44px; height: 50px; display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 1.35rem; color: #56310f; background: #ffcf3a; clip-path: polygon(50% 0, 100% 14%, 100% 55%, 50% 100%, 0 55%, 0 14%); }
+.pp-xp { height: 10px; border-radius: 6px; background: #e3cf9a; overflow: hidden; margin: 4px 0 2px; border: 1px solid #b9a06a; }
+.pp-xp i { display: block; height: 100%; background: linear-gradient(#7fdc6c, #4caf3f); border-radius: 6px; }
+.pp-perks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; position: relative; }
+.pp-perks > div { background: #fffaf0cc; border: 1.5px dashed #c9b27a; border-radius: 10px; padding: 6px 4px; text-align: center; display: grid; gap: 1px; }
+.pp-perks b { font-family: var(--display); font-size: 1.05rem; line-height: 1.1; }
+.pp-perks small { font-size: 0.68rem; line-height: 1.2; }
+.pp-count { display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.8rem; font-weight: 600; position: relative; }
+.pp-count span { background: #1d4a3414; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.pp button.pp-how { justify-self: start; min-height: 44px; font-size: 0.88rem; position: relative; }
+.pp-howbox { display: grid; gap: 8px; position: relative; }
+.pp-howbox table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.pp-howbox td { padding: 4px 2px; border-bottom: 1px dotted #c9b27a; }
+.pp-howbox td:last-child { text-align: right; font-weight: 700; color: var(--green-dark); white-space: nowrap; }
+.pp-howbox ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.pp-howbox li { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; padding: 3px 6px; border-radius: 8px; }
+.pp-howbox li span { width: 24px; height: 24px; border-radius: 50%; background: #e3cf9a; display: grid; place-items: center; font-weight: 700; font-size: 0.78rem; flex-shrink: 0; }
+.pp-howbox li b { flex: 1; font-weight: 600; }
+.pp-howbox li.on { background: #ffe9a3; } .pp-howbox li.on span { background: var(--gold); }
+.pp-howbox li.past { opacity: 0.6; }
+.pp-mrz { font-family: ui-monospace, Menlo, monospace; font-size: 0.66rem; letter-spacing: 0.1em; color: #3b2a1799; margin: 2px 0 0; overflow: hidden; white-space: nowrap; line-height: 1.5; position: relative; }
+.pp-toc { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pp .pp-toc button { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; min-height: 52px; background: #fffaf0cc; border: 1.5px solid #d9c690; box-shadow: 0 2px 0 #b9a06a; border-radius: 12px; padding: 6px 10px; font-weight: 400; }
+.pp-toc b { font-family: var(--display); display: block; line-height: 1.15; }
+.pp-toc small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-toc .grow { min-width: 0; }
+.pp-frac { font-family: var(--display); font-weight: 800; color: #1d4a34; background: #1d4a341a; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.pp-frac.full { background: var(--gold); color: #56310f; }
+.pp-tip { font-size: 0.82rem; color: #7a6547; }
+.pp-sight { display: grid; gap: 4px; border-top: 1px dashed #c9b27a; padding-top: 8px; }
+.pp-sight:first-of-type { border-top: 0; padding-top: 0; }
+.pp-sight header { display: flex; align-items: baseline; gap: 6px; }
+.pp-sight header b { font-family: var(--display); font-size: 0.98rem; flex: 1; min-width: 0; line-height: 1.15; }
+.pp-sight header small { white-space: nowrap; }
+.pp-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 4px; justify-items: center; align-items: center; }
+.pp-grid.rg { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 12px 6px; }
+.pp-grid .pp-stamp { width: 100%; max-width: 118px; height: auto; }
+.pp-grid.rg .pp-stamp { max-width: 140px; }
+.pp-stamp { display: block; mix-blend-mode: multiply; opacity: 0.9; filter: drop-shadow(0 0 0.4px currentColor); overflow: visible; }
+.pp-stamp text { fill: currentColor; font-family: 'Be Vietnam Pro', system-ui, sans-serif; }
+.pp-st-arc { font-size: 8.4px; font-weight: 700; letter-spacing: 0.06em; }
+.pp-st-b { font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif !important; font-weight: 800; }
+.pp-st-d { font-size: 9.5px; font-weight: 700; letter-spacing: 0.05em; font-family: ui-monospace, Menlo, monospace !important; }
+.pp-st-s { font-size: 8px; font-weight: 700; letter-spacing: 0.05em; }
+.pp-empty { width: 92%; max-width: 108px; aspect-ratio: 1; border-radius: 50%; border: 1.6px dashed #b9a06a99; display: grid; place-items: center; text-align: center; padding: 6px; color: #8a744399; font-size: 0.72rem; font-weight: 600; line-height: 1.2; }
+.pp-empty span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.pp-empty.big { border-width: 2.4px; border-style: double dashed; font-size: 0.76rem; align-content: center; gap: 2px; }
+.pp-empty.big small { font-size: 0.62rem; color: inherit; }
+.pp-nav { display: flex; align-items: center; gap: 10px; width: min(100%, 440px); }
+.pp .pp-nav button { width: 48px; min-height: 48px; padding: 0; font-size: 1.5rem; line-height: 1; border-radius: 50%; flex-shrink: 0; }
+.pp-pageno { flex: 1; text-align: center; display: grid; line-height: 1.2; min-width: 0; }
+.pp-pageno b { font-family: var(--display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-height: 430px) {
+  .pp-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .pp-book, .pp-page { min-height: 0; } .pp-cover { min-height: 250px; padding: 12px; gap: 4px; } .pp-cover svg { width: 76px; height: 76px; } .pp-cover-title { font-size: 1.4rem; } .pp-cover-open { margin-top: 2px; }
+  .pp-book { width: min(100%, 640px); } .pp-nav { width: min(100%, 640px); }
+}
+
+/* ------------------------------------------------------------------ giấy chứng nhận đất */
+.cert-wrap { position: fixed; inset: 0; z-index: 1100; background: #2a1a0bcc; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: max(12px, env(safe-area-inset-top)) 10px max(18px, env(safe-area-inset-bottom)); display: grid; justify-items: center; align-items: start; }
+.cert-wrap button.cert-close { position: fixed; top: max(10px, env(safe-area-inset-top)); right: 10px; z-index: 2; width: 46px; min-height: 46px; padding: 0; border-radius: 50%; font-size: 1.1rem; }
+.cert { width: min(100%, 560px); background: #fbeef0; padding: 9px; border-radius: 4px; box-shadow: 0 10px 30px #000a;
+  background-image: repeating-linear-gradient(45deg, #c9788a 0 2px, transparent 2px 7px), repeating-linear-gradient(-45deg, #c9788a 0 2px, transparent 2px 7px); background-color: #f6d9de; }
+.cert-frame { position: relative; overflow: hidden; background: #fff7f4; border: 2px solid #b3261e; outline: 1px solid #b3261e; outline-offset: -6px; padding: 20px 16px 16px; display: grid; gap: 6px; color: #2b1d12;
+  background-image: repeating-radial-gradient(circle at 50% 34%, transparent 0 15px, #e8b9c22e 15px 16px), repeating-radial-gradient(circle at 12% 88%, transparent 0 21px, #e2c79a26 21px 22px); }
+.cert-wm { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); opacity: 0.09; pointer-events: none; }
+.cert-nation { text-align: center; font-weight: 700; font-size: 0.8rem; letter-spacing: 0.06em; line-height: 1.35; position: relative; }
+.cert-nation span { font-weight: 600; letter-spacing: 0; border-bottom: 1.5px solid #2b1d12; padding-bottom: 2px; }
+.cert-emblem { display: grid; place-items: center; margin: 4px 0 0; position: relative; }
+.cert-title { text-align: center; color: #b3261e; font-family: var(--display); font-size: 1.12rem; line-height: 1.22; letter-spacing: 0.03em; margin: 2px 0; position: relative; text-wrap: balance; }
+.cert-no { text-align: center; font-size: 0.82rem; position: relative; }
+.cert-no b { font-family: ui-monospace, Menlo, monospace; color: #b3261e; letter-spacing: 0.06em; }
+.cert h3 { font-size: 0.9rem; margin: 8px 0 0; color: #7a1a14; font-family: 'Be Vietnam Pro', sans-serif; font-weight: 700; position: relative; }
+.cert dl { margin: 0; display: grid; gap: 0; position: relative; }
+.cert-row { display: grid; grid-template-columns: minmax(104px, 38%) 1fr; gap: 8px; padding: 4px 0; border-bottom: 1px dotted #b3261e55; font-size: 0.86rem; }
+.cert-row dt { color: #6b5038; } .cert-row dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.cert-owner { font-family: var(--display); font-size: 1.05rem; text-transform: uppercase; }
+.cert-sign { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 10px; position: relative; text-align: center; font-size: 0.8rem; line-height: 1.35; }
+.cert-sign p { max-width: 210px; }
+.cert-seal { width: 92px; height: 92px; color: #c0281c; opacity: 0.85; transform: rotate(-11deg); mix-blend-mode: multiply; flex-shrink: 0; }
+.cert-seal-t { font-size: 8.3px; font-weight: 700; fill: currentColor; letter-spacing: 0.04em; font-family: 'Be Vietnam Pro', sans-serif; }
+.cert-note { font-size: 0.7rem; color: #6b5038; margin-top: 8px; position: relative; line-height: 1.4; }
+.cert-game { font-size: 0.74rem; font-weight: 700; text-align: center; color: #7a1a14; border-top: 1px solid #b3261e55; padding-top: 6px; position: relative; }
+
+/* ------------------------------------------------------------------ HUD: cấp và thể lực */
+button.lvl-badge { width: 40px; height: 40px; min-height: 40px; padding: 0; border: 0; background: none; box-shadow: none; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; filter: drop-shadow(0 3px 0 #2e1905aa); }
+button.lvl-badge:active:not(:disabled) { transform: translateY(2px); box-shadow: none; }
+.lvl-n { font-family: 'Baloo 2', sans-serif; font-weight: 800; fill: #56310f; }
+button.en-bar { display: inline-flex; align-items: center; gap: 5px; height: 36px; min-height: 36px; padding: 0 10px 0 6px; border-radius: 999px; background: var(--paper); border: 2.5px solid var(--wood); box-shadow: 0 3px 0 var(--wood-dark); font-family: var(--display); font-size: 0.92rem; line-height: 1; white-space: nowrap; flex-shrink: 0; }
+button.en-bar b { font-weight: 700; } button.en-bar small { color: var(--muted); font-size: 0.72rem; }
+.en-ico { display: grid; place-items: center; color: #ffc21a; flex-shrink: 0; }
+.en-track { display: block; width: 46px; height: 9px; border-radius: 6px; background: #e3cf9a; overflow: hidden; border: 1px solid #b9a06a; }
+.en-track i { display: block; height: 100%; background: linear-gradient(#ffe168, #ffb300); border-radius: 6px; transition: width 0.3s; }
+.low .en-track i { background: linear-gradient(#ff8f6b, #d9391f); } .low .en-ico { color: #e2573c; }
+button.en-bar.low { border-color: var(--danger); animation: en-pulse 1.4s ease-in-out infinite; }
+@keyframes en-pulse { 50% { box-shadow: 0 3px 0 var(--wood-dark), 0 0 0 4px #e2573c44; } }
+@media (prefers-reduced-motion: reduce) { button.en-bar.low { animation: none; } }
+
+/* ------------------------------------------------------------------ túi đồ, quầy hàng, hết sức */
+.bag { display: grid; gap: 8px; }
+.bag h3 { margin: 8px 0 0; }
+.bag-energy { display: flex; gap: 10px; align-items: center; background: #fffaf0; border: 2px solid var(--line); border-radius: 14px; padding: 8px 12px; }
+.bag-energy b { font-family: var(--display); font-size: 1.05rem; display: block; line-height: 1.2; } .bag-energy s { color: var(--muted); font-weight: 600; }
+.bag-energy .en-track { width: 100%; height: 12px; margin: 3px 0 2px; }
+.bag-ok { color: var(--green-dark); font-weight: 600; font-size: 0.9rem; background: #e9f6d8; border-radius: 10px; padding: 6px 10px; }
+.food-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.food { display: flex; align-items: center; gap: 8px; background: #fffaf0; border: 2px solid var(--line); border-radius: 14px; padding: 6px 8px 6px 10px; }
+.food .grow { display: grid; gap: 1px; } .food b { font-family: var(--display); line-height: 1.15; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.food-en { color: #b97a00; font-weight: 700; } .food-tag { font-family: 'Be Vietnam Pro', sans-serif; font-size: 0.66rem; background: #ffe9a3; color: #7a4a00; }
+.food-acts { display: flex; gap: 6px; flex-shrink: 0; }
+.food-acts button { min-height: 44px; padding: 4px 10px; font-size: 0.82rem; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; line-height: 1.1; }
+.bag button.go, .shop-sheet button.go { background: linear-gradient(#6fd45c, var(--green)); border-color: var(--green-dark); box-shadow: 0 3px 0 var(--green-dark); color: #fff; text-shadow: 0 1px 0 #0003; }
+.shop-sheet-wrap { position: fixed; inset: 0; z-index: 1200; background: #1c110640; display: flex; align-items: flex-end; justify-content: center; }
+.shop-sheet { width: min(100%, 520px); max-height: 55%; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--paper); border: 3px solid var(--wood); border-bottom: 0; border-radius: 22px 22px 0 0; box-shadow: 0 -6px 24px #0006; padding: 10px 12px calc(max(12px, env(safe-area-inset-bottom)) + 4px); display: grid; gap: 8px; animation: sheet-up 0.22s ease-out; color: var(--ink); }
+@keyframes sheet-up { from { transform: translateY(40%); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .shop-sheet { animation: none; } }
+.shop-sheet header { display: flex; align-items: center; gap: 8px; position: sticky; top: -10px; background: var(--paper); padding: 4px 0; z-index: 1; }
+.shop-sheet header b { font-family: var(--display); font-size: 1.15rem; line-height: 1.15; }
+.shop-sheet button.shop-close { width: 44px; min-height: 44px; padding: 0; border-radius: 50%; flex-shrink: 0; }
+.shop-en { display: inline-flex; align-items: center; gap: 3px; font-family: var(--display); font-size: 0.9rem; background: #fff3c4; border: 1.5px solid #e0b93a; border-radius: 999px; padding: 2px 9px; color: #7a4a00; white-space: nowrap; }
+.shop-en.low { background: #ffe1d8; border-color: #e2573c; color: #9b2a14; }
+.hetsuc p { font-size: 0.95rem; } .hetsuc-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: #ffe1d8; color: #e2573c; flex-shrink: 0; }
+.hetsuc-acts { display: grid; gap: 8px; } .hetsuc-acts button { min-height: 48px; }
+@media (max-height: 430px) { .shop-sheet { max-height: 86%; width: min(100%, 620px); } .hetsuc-acts { grid-template-columns: 1.4fr 1fr; } }
+@media (max-width: 380px) { .food-acts { flex-direction: column; } .food-acts button { min-height: 40px; } }
+.pp-stamp.k-sight { filter: none; mix-blend-mode: normal; opacity: 0.95; }

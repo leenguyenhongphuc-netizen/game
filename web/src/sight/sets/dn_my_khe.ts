@@ -2,7 +2,7 @@
 // Từ công viên Biển Đông đi dọc lối dạo ven đường Võ Nguyên Giáp, xuống bãi cát, qua chòi cứu hộ, bến thuyền thúng rồi tới phố hải sản.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, ball, bead, box, cone, cyl, gable, grp, label, lampPost, mountain, palm, person, rock, signPost, stall } from '../SightKit.ts';
+import { Kit, V, ball, bead, box, cone, cyl, gable, glow, grp, label, lampPost, mountain, palm, person, rock, signPost, stall } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
 import { basket, baked, coracle, flagPole, pigeon, tower, umbrella, wave } from './_extra.ts';
 import type { Spots } from './_extra.ts';
@@ -20,7 +20,7 @@ export function myKhe(kit: Kit, _s: Sight): SightSet & Spots {
   // ---- đường Võ Nguyên Giáp: hai chiều, dải phân cách trồng dừa, lối dạo lát gạch hồng, lan can thấp
   kit.add(box(ROAD, -30, 0.02, 0, 18, 0.1, 1000), box(0x7fae5a, -30, 0.1, 0, 2, 0.2, 1000), box(WALK, -15, 0.3, 0, 12, 0.6, 1000), box(0xf4f1ea, -9.2, 0.75, 0, 0.5, 0.5, 1000));
   for (let z = -300; z < 300; z += 9) kit.add(box(0xf4f1ea, -25.5, 0.09, z, 0.2, 0.04, 4), box(0xf4f1ea, -34.5, 0.09, z, 0.2, 0.04, 4));
-  for (let z = -290; z < 300; z += 13) { const p = palm(r, 7 + r() * 2); p.position.set(-11, 0.6, z); kit.add(p); if (z % 2 === 0) { const q = palm(r, 6); q.position.set(-30, 0.2, z + 6); kit.add(q); } kit.add(lampPost(-19.5, 0.6, z + 6, 5.5, 0xfff3c4)); }
+  for (let z = -290; z < 300; z += 13) { const p = palm(r, 7 + r() * 2); p.position.set(-11, 0.6, z); if (![-86, -58, 100, 88].some((q) => Math.abs(z - q) < 7)) kit.add(p); if (z % 2 === 0) { const q = palm(r, 6); q.position.set(-30, 0.2, z + 6); kit.add(q); } kit.add(lampPost(-19.5, 0.6, z + 6, 5.5, 0xfff3c4)); }
   for (let i = 0; i < 10; i++) { const z = -260 + i * 56 + r() * 20, dir = i % 2 ? 1 : -1, c = [0xf4f1ea, 0xd2301e, 0x2a6fbf, 0x3a3a3a, 0x18a558][i % 5]; kit.add(grp(dir > 0 ? -25.6 : -34.4, 0.1, z, 0, box(c, 0, 0.7, 0, 1.9, 0.9, 4.2), box(0x9fd0ea, 0, 1.4, -0.2, 1.7, 0.7, 2.2), ...[-1, 1].flatMap((s) => [cyl(0x222222, s * 0.9, 0.35, 1.3, 0.35, 0.2).rotateZ(Math.PI / 2), cyl(0x222222, s * 0.9, 0.35, -1.3, 0.35, 0.2).rotateZ(Math.PI / 2)]))); }
   // dãy khách sạn cao tầng phía tây đường
   const HC = [0xf4f1ea, 0xd9e6ee, 0xf1e3b8, 0xbfd6e6, 0xe9d2c0, 0xcfe0d8];
@@ -38,7 +38,7 @@ export function myKhe(kit: Kit, _s: Sight): SightSet & Spots {
   kit.add(grp(-18, 0.66, PZ + 8, 0.6, cyl(0x7a5a3c, 0, 1.6, 0, 0.14, 3.2), box(0x2a8f6a, 0, 3.6, 0, 2.6, 1.6, 2.6), cone(0xa8482f, 0, 4.9, 0, 2.2, 1.2), ...[-0.7, 0, 0.7].map((x) => cyl(0x1f1f1f, x, 3.6, 1.32, 0.26, 0.06).rotateX(Math.PI / 2))));
   for (let i = 0; i < 46; i++) { const a = r() * 6.28, d = r() * 15, p = pigeon(i % 9 === 0 ? 0xbfc4c8 : 0xffffff); p.position.set(-4 + Math.cos(a) * d, 0.66, PZ + 4 + Math.sin(a) * d * 0.7); p.rotation.y = r() * 6; kit.add(p); }
   const flock = new THREE.Group(); for (let i = 0; i < 14; i++) { const p = pigeon(); p.position.set((r() - 0.5) * 9, r() * 3, (r() - 0.5) * 9); p.add(ball(0xffffff, 0.22, 0.2, 0, 0.26, 0.03, 0.12), ball(0xffffff, -0.22, 0.2, 0, 0.26, 0.03, 0.12)); flock.add(p); }
-  const fl = baked(flock); kit.live(fl); kit.onTick((t) => { fl.position.set(-4 + Math.cos(t * 0.5) * 13, 6.5 + Math.sin(t * 1.3) * 1.6, PZ + Math.sin(t * 0.5) * 10); fl.rotation.y = -t * 0.5; });
+  flock.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.material = glow(0xffffff); }); const fl = baked(flock); kit.live(fl); kit.onTick((t) => { fl.position.set(-4 + Math.cos(t * 0.5) * 13, 6.5 + Math.sin(t * 1.3) * 1.6, PZ + Math.sin(t * 0.5) * 10); fl.rotation.y = -t * 0.5; });
   for (let i = 0; i < 5; i++) { kit.add(box(0x7a5a3c, -16 + i * 6, 1.0, PZ + 16, 2.2, 0.12, 0.7), box(0x7a5a3c, -16 + i * 6, 1.4, PZ + 16.3, 2.2, 0.6, 0.1)); }
   const kid = person(2, 2, 0xffd23f); kid.scale.setScalar(0.7); kid.position.set(0, 0.66, PZ + 6); kid.rotation.y = 2; kit.add(kid, basket(0xf3d9a0, 0.5).translateX(0.6).translateY(0.66).translateZ(PZ + 6.6));
   kit.live(label('Công viên Biển Đông', -4, 15.6, PZ - 4, '#2a6fbf', 1.1));
@@ -63,7 +63,7 @@ export function myKhe(kit: Kit, _s: Sight): SightSet & Spots {
   kit.live(label('Cứu hộ · chỉ tắm trong vùng phao', LX, 8.2, LZ, '#d2301e', 0.7));
   // ---- bến thuyền thúng và chợ cá sáng trên cát
   const CZ = 46;
-  for (let i = 0; i < 9; i++) { const c = coracle(1.15 + r() * 0.2, 0xe2c58a, [0x6a5038, 0x2a5f8a, 0x7a5a3c][i % 3]); c.position.set(20 + (i % 3) * 4.4 + r(), 0, CZ - 4 + Math.floor(i / 3) * 4.6); if (i % 4 === 0) { c.rotation.z = 1.25; c.position.y = 0.9; } kit.add(c); }
+  for (let i = 0; i < 9; i++) { const c = coracle(1.15 + r() * 0.2, 0xe2c58a, [0x6a5038, 0x2a5f8a, 0x7a5a3c][i % 3]); c.position.set(20 + (i % 3) * 4.4 + r(), 0, CZ - 4 + Math.floor(i / 3) * 4.6); if (i === 8) { c.rotation.z = 1.25; c.position.y = 0.9; } kit.add(c); }
   for (let i = 0; i < 6; i++) { const b = basket([0xb9c8d6, 0xd9a06a, 0xc0c8cc][i % 3], 1.2); b.position.set(12 + (i % 3) * 2, 0, CZ - 2 + Math.floor(i / 3) * 2.4); kit.add(b); for (let k = 0; k < 4; k++) kit.add(rock(0xcfd8de, 12 + (i % 3) * 2 + (r() - 0.5) * 0.5, 0.62, CZ - 2 + Math.floor(i / 3) * 2.4 + (r() - 0.5) * 0.5, 0.26, 0.06, 0.1, r() * 3)); }
   for (let i = 0; i < 5; i++) { const p = person(i + 2, 1, [0x9b7fd6, 0x4aa3d8, 0xe2573c][i % 3]); p.position.set(10.6 + i * 1.8, 0, CZ + 2.8 + (i % 2)); p.rotation.y = 3; kit.add(p); }
   kit.add(grp(shore(CZ) + 9, -0.3, CZ + 6, 0.5, ball(0x2a6f9a, 0, 0.4, 0, 1.4, 0.9, 5), box(0xd2301e, 0, 0.95, 0, 2.2, 0.12, 7), box(0xf4f1ea, 0, 1.6, 1.4, 1.6, 1.2, 2)), box(0x5f8a8f, 16, 0.9, CZ + 9, 5, 0.04, 3, 0.3), cyl(0x7a5a3c, 13.6, 0.6, CZ + 8.4, 0.05, 1.2), cyl(0x7a5a3c, 18.4, 0.6, CZ + 9.6, 0.05, 1.2));
@@ -83,8 +83,8 @@ export function myKhe(kit: Kit, _s: Sight): SightSet & Spots {
       { id: 'cong_vien', at: V(-3, 0.68, -86), look: V(-4, 7, PZ - 4) },
       { id: 'bai_cat', at: V(13, 0, -39), look: V(96, 40, -500) },
       { id: 'choi_cuu_ho', at: V(19, 0, -3), look: V(LX + 2, 3.4, LZ + 2) },
-      { id: 'thuyen_thung', at: V(15.6, 0, 40), look: V(24, 0.6, CZ + 2) },
-      { id: 'pho_bien', at: V(-13.3, 0.62, 100), look: V(-4, 3, FZ + 6) },
+      { id: 'thuyen_thung', at: V(15.6, 0, 40), look: V(26, 0.2, CZ + 3) },
+      { id: 'pho_bien', at: V(-13.3, 0.62, 100), look: V(-4, 2.6, FZ + 1) },
     ],
     sky: [0x2f94ee, 0xdff3fb], fog: [0xd6eef8, 160, 900],
     light: { ambient: 1.7, sun: 1.9, sunColor: 0xfff6dc, sunDir: [0.5, 1, -0.2] },

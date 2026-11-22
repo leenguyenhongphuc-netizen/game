@@ -26,9 +26,9 @@ const MURALS: ((g: G, w: number, h: number) => void)[] = [
 ];
 export function tamThanh(kit: Kit, _s: Sight): SightSet & Spots {
   const r = kit.r, shore = (z: number) => 74 + Math.sin(z * 0.03) * 4;
-  kit.ground(SAND);
+  kit.add(box(SAND, -10, -0.5, 0, 192, 1, 1200));
   kit.add(box(0x1f78b4, 500, -1.8, 0, 800, 1, 1200)); kit.water(SEA, 500, 0, 820, 1200, -0.3, 0.86);
-  for (let z = -300; z < 300; z += 7) kit.add(box(0xffffff, shore(z) + 14 + r() * 3, -0.1, z, 1.4, 0.06, 6.4), box(0xe6d6a8, shore(z) + 6, 0.02, z, 14, 0.04, 7.2));
+  for (let z = -300; z < 300; z += 7) kit.add(box(0xffffff, shore(z) + 13 + r() * 3, -0.22, z, 1.6, 0.06, 6.4), box(0xe6d6a8, shore(z) + 6, 0.02, z, 14, 0.04, 7.2));
   const surf = [0, 1, 2].map((i) => { const m = box(0xffffff, 0, -0.2, 0, 1.4, 0.07, 500); m.userData.o = i * 12; kit.live(m); return m; }); kit.onTick((t) => surf.forEach((m) => { const k = ((t * 3 + m.userData.o) % 36) / 36; m.position.x = 128 - k * 36; m.scale.x = 0.6 + (1 - k) * 2; }));
   // sông Trường Giang phía tây, bờ bên kia có ruộng và dừa
   kit.add(box(0x3a86a0, -150, -1.5, 0, 90, 1, 1200)); kit.water(0x58a8c0, -150, 0, 92, 1200, -0.35, 0.9); kit.add(box(0x8fc66a, -420, -0.4, 0, 450, 1, 1200));
@@ -96,7 +96,7 @@ export function tamThanh(kit: Kit, _s: Sight): SightSet & Spots {
       { id: 'tuong_tranh', at: V(0.6, 0, 86), look: V(-5, 1.8, 92) },
       { id: 'thuyen_thung', at: V(0, 0, 4), look: V(-4.3, 1.3, -4) },
       { id: 'ben_ca', at: V(44, 0, -45.6), look: V(BX + 8, 1.5, BZ - 4) },
-      { id: 'bai_bien', at: V(66, 0, -76), look: V(160, 0, -120) },
+      { id: 'bai_bien', at: V(66, 0, -76), look: V(110, 0, -140) },
     ],
     sky: [0x3f9fee, 0xe6f6fb], fog: [0xdff0f6, 130, 800],
     light: { ambient: 1.75, sun: 1.8, sunColor: 0xfff6dc, sunDir: [0.3, 1, 0.3] },

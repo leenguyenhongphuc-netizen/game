@@ -20,7 +20,7 @@ function pot(kind: number, c: number, s = 1): THREE.Group {
 }
 export function thanhHa(kit: Kit, _s: Sight): SightSet & Spots {
   const r = kit.r;
-  kit.ground(GRASS);
+  kit.add(box(GRASS, 0, -0.5, -410, 900, 1, 900));
   // sông Thu Bồn phía nam: bờ kè đá, ghe chở gốm, bãi bồi lấy đất sét
   kit.add(box(0x2f7896, 0, -1.6, 190, 900, 1, 300)); kit.water(RIVER, 0, 192, 900, 300, -0.5, 0.9);
   kit.add(box(0x9a958a, 0, -0.3, 41, 900, 1, 2.4), box(0xc9a877, -60, -0.42, 47, 70, 0.3, 12), box(GRASS, 0, -0.5, 420, 900, 1.2, 160));
@@ -65,7 +65,7 @@ export function thanhHa(kit: Kit, _s: Sight): SightSet & Spots {
   const kiln = grp(KX, 0, KZ); kiln.add(box(BRICK, 0, 1.5, 0, 9, 3, 14), cyl(BRICK, 0, 3, 0, 4.5, 14, 2.6).rotateX(Math.PI / 2), box(BRICK2, 0, 2.2, 7.1, 9.6, 4.6, 0.6), cyl(0x1f1410, 0, 1.3, 7.42, 1.1, 0.1, 1.5).rotateX(Math.PI / 2), box(BRICK2, 0, 4.4, -6, 2, 5.6, 2), box(0x6a3324, 0, 7.3, -6, 2.4, 0.4, 2.4));
   for (let i = 0; i < 26; i++) kiln.add(box(r() < 0.5 ? 0x8a3f2c : 0xc96a4a, -4.52, 0.4 + r() * 2.4, -6.4 + r() * 12.8, 0.06, 0.34, 0.9), box(r() < 0.5 ? 0x8a3f2c : 0xc96a4a, -4 + r() * 8, 0.6 + r() * 3.6, 7.42, 0.9, 0.34, 0.06));
   kit.add(kiln);
-  const fire = new THREE.Mesh(new THREE.CircleGeometry(0.95, 14), new THREE.MeshBasicMaterial({ color: 0xff8a2a })); fire.position.set(KX, 1.25, KZ + 7.5); fire.scale.y = 1.3; kit.live(fire); kit.onTick((t) => { (fire.material as THREE.MeshBasicMaterial).color.setHSL(0.06 + Math.sin(t * 9) * 0.02, 1, 0.52 + Math.sin(t * 13) * 0.08); });
+  const fire = new THREE.Mesh(new THREE.CircleGeometry(0.62, 14), new THREE.MeshBasicMaterial({ color: 0xff8a2a })); fire.position.set(KX, 0.8, KZ + 7.5); fire.scale.y = 1.1; for (let i = 0; i < 4; i++) kit.add(cyl(0x4a3020, KX - 0.5 + i * 0.34, 0.3, KZ + 7.9, 0.1, 1.4).rotateX(Math.PI / 2)); kit.live(fire); kit.onTick((t) => { (fire.material as THREE.MeshBasicMaterial).color.setHSL(0.06 + Math.sin(t * 9) * 0.02, 1, 0.52 + Math.sin(t * 13) * 0.08); });
   kit.motes(26, 0xd8d0c8, 2.6, () => V(KX + (r() - 0.5), 7.6 + r() * 14, KZ - 6 + (r() - 0.5)), (p, i, _t, dt) => { p.y += dt * (1.2 + (i % 5) * 0.2); p.x += dt * 0.5; if (p.y > 24) { p.y = 7.6; p.x = KX; } });
   for (let i = 0; i < 30; i++) kit.add(cyl(0x8a6a48, KX + 7 + (i % 6) * 0.5, 0.2 + Math.floor(i / 6) * 0.36, KZ + 3, 0.17, 2.2).rotateX(Math.PI / 2));
   for (let i = 0; i < 26; i++) { const p = pot(i % 3, [FIRED, 0xc0563a, 0xdc7448, 0x8a4a34][i % 4], 0.9 + r() * 0.5); p.position.set(KX - 14 + (i % 13) * 0.8, 0, KZ + 7.4 + Math.floor(i / 13) * 1.2); kit.add(p); }

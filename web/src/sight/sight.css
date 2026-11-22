@@ -117,3 +117,5 @@
 }
 .sw.has-energy .sw-guide { top: calc(max(10px, env(safe-area-inset-top)) + 104px); }
 @media (max-height: 430px) { .sw.has-energy .sw-guide { top: calc(max(10px, env(safe-area-inset-top)) + 88px); } }
+.sw-polaroid + .sw-seal-ink { margin-top: -38px; margin-left: 124px; }
+@media (max-height: 430px) { .sw-seal { top: 24%; right: 46%; } }

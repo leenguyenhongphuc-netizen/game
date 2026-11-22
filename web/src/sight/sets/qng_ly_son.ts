@@ -21,9 +21,9 @@ export function lySon(kit: Kit, _s: Sight): SightSet & Spots {
   for (let i = 0; i < 90; i++) { const a = r() * 6.28, k = 0.99 + r() * 0.07; kit.add(rock(i % 3 ? BASALT : 0x4a4442, Math.cos(a) * RX * k, -0.2, Math.sin(a) * RZ * k, 1 + r() * 2.4, 0.6 + r() * 1.2, 1 + r() * 2, r() * 3)); }
   // núi Thới Lới (miệng núi lửa đã tắt) ở đầu đông và núi Giếng Tiền nhỏ phía tây
   kit.add(ball(0x6f8f4a, HX, 0, HZ, HR, HH, HR), ball(0x7f9a52, HX - 6, 0, HZ + 6, HR * 0.8, HH * 0.9, HR * 0.86), ball(0x6f8f4a, -96, 0, -30, 26, 15, 22));
-  kit.add(cyl(0x5a4a3a, HX + 6, HH - 2.4, HZ - 4, 16, 3, 14), cyl(0x3a2f2a, HX + 6, HH - 1.3, HZ - 4, 14.6, 1, 12.6)); // lòng chảo
-  const lake = new THREE.Mesh(new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3fc0d8, roughness: 0.2 })); lake.position.set(HX + 6, HH - 0.72, HZ - 4); lake.scale.set(13, 1, 11.2); kit.live(lake);
-  for (let i = 0; i < 26; i++) { const a = i / 26 * 6.28; kit.add(rock([0x5a4a3a, 0x6a5a48, 0x4a3f36][i % 3], HX + 6 + Math.cos(a) * 16.6, HH - 0.6 + r(), HZ - 4 + Math.sin(a) * 14.6, 2 + r() * 1.6, 1.4 + r() * 1.4, 2 + r(), r() * 3)); }
+  kit.add(cyl(0x5a4a3a, HX + 6, HH - 1.3, HZ - 4, 17, 3, 15), cyl(0x3a2f2a, HX + 6, HH - 0.3, HZ - 4, 14.6, 1, 12.6)); // lòng chảo
+  const lake = new THREE.Mesh(new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3fc0d8, roughness: 0.2 })); lake.position.set(HX + 6, HH + 0.24, HZ - 4); lake.scale.set(13, 1, 11.2); kit.live(lake);
+  for (let i = 0; i < 26; i++) { const a = i / 26 * 6.28; if (Math.hypot(HX + 6 + Math.cos(a) * 16.6 - 85, HZ - 4 + Math.sin(a) * 14.6 + 7) < 11) continue; kit.add(rock([0x5a4a3a, 0x6a5a48, 0x4a3f36][i % 3], HX + 6 + Math.cos(a) * 16.6, HH - 0.2 + r(), HZ - 4 + Math.sin(a) * 14.6, 2 + r() * 1.6, 1.4 + r() * 1.4, 2 + r(), r() * 3)); }
   for (let i = 0; i < 50; i++) { const a = r() * 6.28, d = 20 + r() * 24, x = HX + Math.cos(a) * d, z = HZ + Math.sin(a) * d; if (z < HZ - 30) continue; kit.add(ball([0x5f8a44, 0x7fa856][i % 2], x, hillY(x, z) + 0.2, z, 1.4 + r() * 1.6, 0.8 + r() * 0.6, 1.4 + r() * 1.6)); }
   // ---- lối đi
   const flat = [V(-70, 1.3, 102), V(-70, 1.3, 70), V(-70, 0, 62), V(-56, 0, 44), V(-40, 0, 24), V(-64, 0, 13), V(-74, 0, 9), V(-70, 0, -22), V(-62, 0, -50), V(-61, 0, -59), V(-22, 0, -57), V(30, 0, -60), V(58, 0, -62), V(73, 0, -61.5)];
@@ -88,7 +88,7 @@ export function lySon(kit: Kit, _s: Sight): SightSet & Spots {
   for (let i = 0; i < 14; i++) kit.add(bead([0xff7a6a, 0xffb347, 0xf29bc0, 0x9b7fd6][i % 4], CX - 30 + r() * 44, -1.3, CZ - 16 - r() * 14, 1 + r(), 0.6, 1 + r()));
   kit.live(label('Hang Câu', CX - 1, 18, CZ, '#7a6a5a', 1.1));
   // ---- đỉnh Thới Lới: cột cờ Tổ quốc, đài ngắm, lan can
-  const FX = 88, FZ = -4, FY = hillY(FX, FZ);
+  const FX = 99, FZ = -5, FY = hillY(FX, FZ);
   kit.add(cyl(0xb9b2a4, FX, FY + 0.2, FZ, 5, 0.8), cyl(0x9a958a, FX, FY + 0.8, FZ, 3, 0.6), box(0xa8322a, FX, FY + 1.6, FZ, 1.6, 1.2, 1.6));
   const fp = flagPole(18, 5.4); fp.pole.position.set(FX, FY + 2, FZ); kit.add(fp.pole); fp.flag.position.set(FX, FY + 2 + fp.flag.position.y, FZ); kit.live(fp.flag); wave(kit, fp.flag, 1.8);
   for (let i = 0; i < 10; i++) { const a = i / 10 * 6.28; kit.add(cyl(0xf4f1ea, FX + Math.cos(a) * 4.8, FY + 1, FZ + Math.sin(a) * 4.8, 0.1, 1.2)); }
@@ -113,7 +113,7 @@ export function lySon(kit: Kit, _s: Sight): SightSet & Spots {
       { id: 'am_linh_tu', at: V(-74, 0, 9), look: V(AX - 3, 4, AZ) },
       { id: 'cong_to_vo', at: V(-61, 0, -59), look: V(TX - 1, 3, TZ) },
       { id: 'hang_cau', at: V(71, 0, -61), look: V(CX + 6, 13, CZ + 1) },
-      { id: 'thoi_loi', at: V(85, hillY(85, -7) + 0.12, -7), look: V(FX + 1, FY + 14, FZ + 0.4) },
+      { id: 'thoi_loi', at: V(85, hillY(85, -7) + 0.12, -7), look: V(HX + 9, HH + 3, HZ - 2) },
       { id: 'cho_dao', at: last.clone(), look: V(MX, 2.6, MZ + 2) },
     ],
     sky: [0x4f86cc, 0xffcf96], fog: [0xf4d2a8, 150, 900],
