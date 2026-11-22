@@ -74,7 +74,7 @@ for (const dev of DEVICES) {
   const dir = join(OUT, dev.id); mkdirSync(dir, { recursive: true });
   const ctx = await browser.newContext({ viewport: { width: dev.w, height: dev.h }, deviceScaleFactor: 1, hasTouch: dev.touch, isMobile: dev.touch, geolocation: { latitude: 10.34, longitude: 106.03 }, permissions: ['geolocation'], locale: 'vi-VN' });
   const page = await ctx.newPage();
-  await page.addInitScript(() => { window.__rideStep = 0.15; }); // hoạt cảnh du lịch: cho mỗi khung hình nhảy bước dài hơn vì máy thử không có GPU
+  await page.addInitScript(() => { window.__rideStep = 0.15; window.__driveAuto = true; }); // hoạt cảnh du lịch: cho mỗi khung hình nhảy bước dài hơn vì máy thử không có GPU
   const logs = [];
   page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) logs.push(`console: ${m.text().slice(0, 200)}`); });
@@ -150,7 +150,7 @@ for (const dev of DEVICES) {
     await step('tai-khoan-thu', async () => {
       execFileSync('psql', [DB, '-qc', "update users set is_tester = true where username like 'ui\\_%'"]);
       const r = await post('/api/test/cash', { amount: 900_000_000 }); if (r.status !== 200) throw new Error(`không bật được tài khoản thử: ${r.status}`);
-      await post('/api/test/role', { role: 'thuong_lai' }); await post('/api/test/truck');
+      await post('/api/test/role', { role: 'thuong_lai' }); await post('/api/test/truck'); await post('/api/test/stock', { specialtyId: 'sau_rieng_ngu_hiep', kg: 600 }); await post('/api/test/stock', { specialtyId: 'xoai_hoa_loc', kg: 300 });
       await enter(); await page.locator('button.chip').click(); await page.locator('.tester').scrollIntoViewIfNeeded(); await shot('cong-cu-thu-nghiem'); await closeModal();
     });
     await step('xe-tai', async () => {
@@ -161,7 +161,11 @@ for (const dev of DEVICES) {
     if (!QUICK) await step('lai-xe', async () => {
       await page.locator('.trip-card button.primary').click();
       await during('.dg', 'lai-xe', () => window.__drive?.debug?.().phase ?? null, { every: 8000, max: 14, hurry: () => { const w = window.__drive, d = w?.debug?.(); if (d && d.total - d.s > 90) w.warp(d.total - 70); } });
-      await page.waitForTimeout(2500); await shot('toi-noi-sau-chuyen-xe');
+      // tới nơi: bảng "Buôn bán" tự mở để thấy ngay mua gì, bán gì
+      await page.locator('.trade').waitFor({ timeout: 20000 }); await page.waitForTimeout(800); await shot('toi-noi-buon-ban');
+      const buy = page.locator('.deal-buy .go').first(); if (await buy.count()) { await buy.scrollIntoViewIfNeeded(); await buy.click(); await page.waitForTimeout(900); await shot('thu-mua-si-xong'); }
+      await page.locator('.trade .why').first().scrollIntoViewIfNeeded(); await page.locator('.trade .why summary').first().click(); await shot('ly-do-gioi-han');
+      await closeModal(); await page.waitForTimeout(1500); await shot('toi-noi-sau-chuyen-xe');
     });
     else await step('tham-quan-nhanh', async () => { await closeModal(); await post('/api/test/role', { role: 'nong_dan' }); });
     if (!QUICK) await step('tham-quan', async () => {
@@ -170,10 +174,20 @@ for (const dev of DEVICES) {
       await page.locator('.track button').nth(4).click(); await shot('cach-trong-buoc-5');
       await page.locator('.track button').last().click(); await shot('cach-trong-thu-hoach'); await page.locator('.guide .round').click();
       await world('w.pos.set(6.2, 0, 12.2)'); await page.getByRole('button', { name: /Vào quầy trưng bày/ }).waitFor(); await shot('truoc-quay-trung-bay');
-      await page.getByRole('button', { name: /Vào quầy trưng bày/ }).click(); await shot('quay-trung-bay');
+      await page.getByRole('button', { name: /Vào quầy trưng bày/ }).click(); await page.getByRole('button', { name: /Quà, tem/ }).click(); await page.locator('.showcase').waitFor(); await shot('quay-trung-bay');
       const buy = page.getByRole('button', { name: /Mua một lô/ }); await buy.scrollIntoViewIfNeeded(); await shot('gia-dat'); await buy.click(); await page.getByText(/Bạn đã có đất/).waitFor(); await closeModal();
       await page.getByRole('button', { name: /Về nhà/ }).click(); await page.waitForTimeout(2500); await page.locator('.plot-switch').waitFor(); await shot('nhieu-vuon');
       await world('w.teleportToTile(0, 8)'); await page.locator('.ctx-btn').first().waitFor(); await shot('nhieu-vuon-dung-tren-o');
+    });
+    await step('xuat-khau', async () => {
+      await enter(); await dock(/Kho/); await page.getByRole('button', { name: 'Xuất khẩu' }).click(); await page.locator('.export').waitFor(); await shot('xuat-khau-chon-hang');
+      await page.locator('.export .pick').first().click(); await page.locator('.route').first().waitFor(); await page.locator('.route').first().scrollIntoViewIfNeeded(); await shot('xuat-khau-duong-di');
+      const send = page.locator('.route .go').first(); if (await send.count() === 0) throw new Error('không có đường xuất khẩu nào gửi được');
+      await send.scrollIntoViewIfNeeded(); await send.click();
+      if (await page.locator('.xr').count().then((n) => n > 0).catch(() => false) || await page.locator('.xr').waitFor({ timeout: 4000 }).then(() => true).catch(() => false))
+        await during('.xr', 'xuat-khau-hoat-canh', () => { const d = window.__ride?.debug?.(); return d ? `canh-${d.stage}` : null; }, { every: 60000, max: 6 });
+      await enter(); await dock(/Kho/); await page.getByRole('button', { name: 'Xuất khẩu' }).click(); await page.locator('.export').waitFor(); await page.waitForTimeout(600);
+      await page.getByRole('heading', { name: /Lô hàng đang đi/ }).scrollIntoViewIfNeeded(); await shot('xuat-khau-lo-hang'); await closeModal();
     });
     if (!QUICK) for (const [i, mode] of [[0, 'chuyen-1'], [1, 'chuyen-2'], [2, 'chuyen-3']]) await step(`du-lich-${mode}`, async () => {
       await enter(); await dock(/Du lịch/);
