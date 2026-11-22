@@ -58,3 +58,9 @@ iPhone SE (375×667), iPhone 15 dọc (393×852), iPhone 15 Pro Max (430×932), 
 ## Thêm màn mới vào bộ kiểm
 
 Trong `tools/ui-test/run.mjs`, thêm một `step(...)` gọi `shot('ten-man')` sau khi đưa giao diện tới màn đó. Nếu màn có khối nổi mới, thêm bộ chọn CSS của nó vào mảng `blocks` và các cặp cần kiểm đè nhau trong hàm `audit`.
+
+## Các móc dùng cho hoạt cảnh và màn lái xe
+
+Bộ kiểm đặt sẵn trước khi tải trang: `window.__rideStep = 0.15` (hoạt cảnh du lịch, xuất khẩu chạy nhanh), `window.__driveAuto = true` (xe tự lái theo đúng tốc độ cho phép) và `window.__drivePolice = false` (không gặp chốt cảnh sát). Muốn chụp cảnh bị phạt, tầm nhìn buồng lái hay số lùi thì dùng `window.__drive` (`setThrottle`, `setBrake`, `setGear`, `setView`, `simulate`). Trang `ride-test.html?xuat=<đường>` phát riêng hoạt cảnh xuất khẩu của từng đường (`xe_tai`, `container`, `tau_hoa`, `hang_khong`, `tau_nho`, `tau_lon`).
+
+Tài khoản thử được nạp sẵn hàng qua `/api/test/stock` để đi qua bước thu mua sỉ và xuất khẩu. Một lượt đủ 8 thiết bị mất hơn 30 phút: chạy làm hai nửa song song bằng `--only` và `--out` riêng, hoặc dùng `--nhanh` khi chỉ cần soát bố cục.
