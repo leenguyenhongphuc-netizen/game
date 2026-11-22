@@ -17,7 +17,7 @@ export const RIDE_CSS = `
 .tr-step { position: relative; display: grid; justify-items: center; gap: 2px; min-width: 0; }
 .tr-step::before { content: ''; position: absolute; top: 14px; right: 50%; width: 100%; height: 5px; background: #e6d3a3; border-radius: 3px; }
 .tr-step:first-child::before { display: none; }
-.tr-step i { position: absolute; top: 14px; right: 50%; height: 5px; border-radius: 3px; background: linear-gradient(#5fc46f, #2f9a4a); }
+.tr-step i { position: absolute; top: 14px; left: -50%; height: 5px; border-radius: 3px; background: linear-gradient(#5fc46f, #2f9a4a); }
 .tr-dot { position: relative; z-index: 1; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 1rem; line-height: 1; background: #f3e6c2; border: 2.5px solid #cdb67c; filter: grayscale(0.85); opacity: 0.8; transition: transform 0.25s, background 0.25s; }
 .tr-step em { font-style: normal; font-weight: 700; font-size: 0.66rem; line-height: 1.15; color: #8a744f; text-align: center; max-width: 100%; overflow-wrap: anywhere; }
 .tr-step.done .tr-dot { background: #dff2c8; border-color: #5fb05f; filter: none; opacity: 1; }
@@ -73,7 +73,7 @@ export function RideHud(p: {
               const fill = i === 0 ? 0 : p.finished || i <= cur ? 1 : i === cur + 1 ? p.frac : 0;
               return (
                 <li key={i} className={`tr-step ${state}`} aria-current={i === cur && !p.finished ? 'step' : undefined}>
-                  {i > 0 && <i style={{ width: `${fill * 100}%`, transform: `translateX(${-(1 - fill) * 100}%)` }} />}
+                  {i > 0 && <i style={{ width: `${fill * 100}%` }} />}
                   <span className="tr-dot" aria-hidden="true">{state === 'done' && i !== n - 1 ? '✓' : s.icon}</span>
                   <em>{s.label}</em>
                 </li>
