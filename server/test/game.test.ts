@@ -13,8 +13,10 @@ import {
   HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_MODES, glutFactor, paceFactor, stepWaitMs, travelOptions, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
   seedCost, snapCell, stepCount, urbanCoreAt, weatherAt, weatherInfo,
   speedFine, SPEED_FINES, wholesalePrice, WHOLESALE_RATIO, WHOLESALE_SUPPLY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_MAX_ACTIVE, exportModesFor, exportQuote, coopOrderRoute,
-  LIMIT_REASONS, TRAVEL_VS_TRUCK, QUALITY_MULT,
+  LIMIT_REASONS, TRAVEL_VS_TRUCK, QUALITY_MULT, taxiFare, TAXI_MAX_KM, haversineKm,
+  SIGHT_MIN_KM, SIGHT_REWARD, SUPER_DAILY_KG, SUPER_FEE, SUPER_MAX_LOTS, SUPER_MAX_LOT_KG, SUPER_MAX_RATIO, SUPER_MIN_KG, SUPER_NPC_KG, SUPER_NPC_RATIO, superPriceRange,
 } from '../../shared/rules.ts';
+import { SIGHTS, sightsOfProvince } from '../../shared/sights.ts';
 import type { Weather, WeatherKind } from '../../shared/rules.ts';
 import { DECOR_ITEMS, DEFAULT_AVATAR, DEFAULT_STYLE, HOUSE_TYPES, ROOF_COLORS, cleanName, validDecor, validStyle } from '../../shared/custom.ts';
 
@@ -1360,7 +1362,7 @@ test('nhịp chơi: người mới chờ ngắn hơn, càng thu hoạch nhiều 
 
 test('vé du lịch theo phương tiện', async () => {
   const modes = (a: string, b: string) => travelOptions(a, b).map((o) => o.mode);
-  assert.deepEqual(modes('dt_caibe', 'vl_cholach'), ['xe_khach'], 'đất liền gần chỉ có xe khách');
+  assert.deepEqual(modes('dt_caibe', 'vl_cholach'), ['xe_khach', 'taxi'], 'đất liền gần có xe khách và taxi');
   assert.deepEqual(modes('dt_caibe', 'ld_dalat'), ['xe_khach', 'tau_hoa'], 'từ 150 km có tàu hoả');
   assert.deepEqual(modes('dt_caibe', 'hn_phudien'), ['xe_khach', 'tau_hoa', 'may_bay'], 'từ 400 km có máy bay');
   assert.deepEqual(modes('gl_hoainhon', 'qng_lyson'), ['tau_thuy'], 'ra đảo gần chỉ có tàu thuỷ');
@@ -1620,4 +1622,139 @@ test('xuất khẩu: báo giá theo đường và thị trường, quyền theo 
   assert.ok(EXPORT_MARKETS[o.market as keyof typeof EXPORT_MARKETS].modes.includes(o.exportMode));
   assert.deepEqual([o.exportMode, o.market], [(await call('GET', '/api/coops/mine', undefined, trader)).body.coop.order.exportMode, o.market]);
   void QUALITY_MULT;
+});
+
+test('taxi: chỉ chặng ngắn trên đất liền, cước theo km', async () => {
+  const far = travelOptions('dt_caibe', 'ld_dalat');
+  assert.ok(far[0].km > TAXI_MAX_KM && !far.some((o) => o.mode === 'taxi'), 'quá xa thì không có taxi');
+  assert.ok(!travelOptions('gl_hoainhon', 'qng_lyson').some((o) => o.mode === 'taxi'), 'ra đảo không đi taxi');
+  const near = travelOptions('dt_caibe', 'vl_cholach');
+  const taxi = near.find((o) => o.mode === 'taxi')!, bus = near.find((o) => o.mode === 'xe_khach')!;
+  assert.equal(taxi.fare, taxiFare(taxi.km));
+  assert.ok(taxi.fare > bus.fare * 2, 'taxi đắt hơn xe khách rõ rệt');
+  assert.equal(taxiFare(10), 40000);
+  const cookie = await signup('di_taxi');
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, cookie);
+  const me0 = await meOf(cookie);
+  await db.query('update users set cash = 5000000 where id = $1', [me0.user.id]);
+  assert.deepEqual((await call('POST', '/api/travel', { regionId: 'vl_cholach', mode: 'taxi' }, cookie)).body, { cost: taxi.fare, isNew: true, mode: 'taxi' });
+  assert.equal((await meOf(cookie)).user.tourRegionId, 'vl_cholach');
+  assert.equal((await call('POST', '/api/travel/home', {}, cookie)).status, 200);
+  assert.equal((await meOf(cookie)).user.tourRegionId, null);
+});
+
+test('điểm tham quan: phải ở trong tỉnh, trả taxi và vé cổng, đi hết điểm dừng mới được thưởng một lần', async () => {
+  const hoiAn = SIGHTS.find((s) => s.id === 'dn_hoi_an')!, stops = hoiAn.stops.map((s) => s.id);
+  for (const s of SIGHTS) { assert.ok(REGIONS[Object.keys(REGIONS).find((id) => REGIONS[id].province === s.province)!], `${s.id} thuộc tỉnh có vùng trồng`); assert.ok(s.stops.length >= 4 && new Set(s.stops.map((x) => x.id)).size === s.stops.length); }
+  const cookie = await signup('khach_tham_quan');
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, cookie);
+  const me0 = await meOf(cookie);
+  await db.query('update users set cash = 5000000 where id = $1', [me0.user.id]);
+  // Ở Đồng Tháp: chưa có điểm tham quan, xem trước Đà Nẵng được nhưng không đi được.
+  const away = await call('GET', '/api/sights', undefined, cookie);
+  assert.deepEqual([away.body.province, away.body.sights.length, away.body.others], ['Đồng Tháp', 0, [{ province: 'Đà Nẵng', count: sightsOfProvince('Đà Nẵng').length }]]);
+  const preview = await call('GET', `/api/sights?province=${encodeURIComponent('Đà Nẵng')}`, undefined, cookie);
+  assert.deepEqual([preview.body.here, preview.body.sights.length], [false, sightsOfProvince('Đà Nẵng').length]);
+  const no = await call('POST', '/api/sights/dn_hoi_an/visit', {}, cookie);
+  assert.deepEqual([no.status, no.body.error], [409, 'khac_tinh']);
+  assert.match(no.body.message, /Đà Nẵng/);
+  assert.equal((await call('POST', '/api/sights/khong_co/visit', {}, cookie)).status, 404);
+  // Mua vé tới Tiên Phước (Đà Nẵng) rồi bắt taxi.
+  assert.equal((await call('POST', '/api/travel', { regionId: 'dn_tienphuoc' }, cookie)).status, 200);
+  const cash0 = (await meOf(cookie)).user.cash;
+  const list = await call('GET', '/api/sights', undefined, cookie);
+  assert.deepEqual([list.body.province, list.body.regionId, list.body.here], ['Đà Nẵng', 'dn_tienphuoc', true]);
+  const row = list.body.sights.find((s: any) => s.id === 'dn_hoi_an');
+  const r = REGIONS.dn_tienphuoc, km = Math.max(SIGHT_MIN_KM, Math.round(haversineKm(r.lat, r.lng, hoiAn.lat, hoiAn.lng)));
+  assert.deepEqual([row.km, row.taxiFare, row.visits, row.done, row.stopsSeen, row.stops.length], [km, taxiFare(km), 0, false, [], stops.length]);
+  assert.equal((await call('POST', '/api/sights/dn_hoi_an/finish', { stops }, cookie)).body.error, 'chua_vao_cong');
+  const go = await call('POST', '/api/sights/dn_hoi_an/visit', {}, cookie);
+  assert.deepEqual([go.status, go.body.km, go.body.taxiFare, go.body.entryFee, go.body.seconds > 0], [200, km, taxiFare(km), hoiAn.entryFee, true]);
+  assert.equal((await meOf(cookie)).user.cash, cash0 - taxiFare(km) - hoiAn.entryFee);
+  // Mới xem một nửa: chưa thưởng; lượt sau xem nốt là đủ.
+  const half = await call('POST', '/api/sights/dn_hoi_an/finish', { stops: [...stops.slice(0, 3), 'la', 7] }, cookie);
+  assert.deepEqual([half.body.done, half.body.firstTime, half.body.reward, half.body.stopsSeen, half.body.sightsDone, half.body.sightsTotal], [false, false, 0, stops.slice(0, 3), 0, sightsOfProvince('Đà Nẵng').length]);
+  assert.equal((await call('POST', '/api/sights/dn_hoi_an/finish', { stops }, cookie)).body.error, 'chua_vao_cong', 'mỗi lượt vào cổng chỉ chốt một lần');
+  await call('POST', '/api/sights/dn_hoi_an/visit', {}, cookie);
+  const full = await call('POST', '/api/sights/dn_hoi_an/finish', { stops: stops.slice(3) }, cookie);
+  assert.deepEqual([full.body.done, full.body.firstTime, full.body.reward, full.body.stopsSeen, full.body.sightsDone], [true, true, SIGHT_REWARD, stops, 1]);
+  await call('POST', '/api/sights/dn_hoi_an/visit', {}, cookie);
+  const again = await call('POST', '/api/sights/dn_hoi_an/finish', { stops }, cookie);
+  assert.deepEqual([again.body.done, again.body.firstTime, again.body.reward], [true, false, 0]);
+  assert.equal((await meOf(cookie)).user.cash, cash0 - 3 * (taxiFare(km) + hoiAn.entryFee) + SIGHT_REWARD);
+  const after = (await call('GET', '/api/sights', undefined, cookie)).body.sights.find((s: any) => s.id === 'dn_hoi_an');
+  assert.deepEqual([after.visits, after.done, after.stopsSeen.length], [3, true, stops.length]);
+  assert.equal((await meOf(cookie)).user.sightsDone, 1);
+  await db.query('update users set cash = 1000 where id = $1', [me0.user.id]);
+  assert.equal((await call('POST', '/api/sights/dn_my_son/visit', {}, cookie)).body.error, 'khong_du_tien');
+});
+
+test('siêu thị đặc sản: ký gửi trong khung giá, mua có giới hạn, người bán nhận tiền trừ phí, kệ nhà bán không trống', async () => {
+  const P = 'Đà Nẵng', qs = `?province=${encodeURIComponent(P)}`;
+  const seller = await signup('st_nguoi_ban', 'thuong_lai'), buyer = await signup('st_nguoi_mua');
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, seller);
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, buyer);
+  const sm = await meOf(seller), bm = await meOf(buyer);
+  await db.query('update users set cash = 50000000 where id = any($1)', [[sm.user.id, bm.user.id]]);
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'xoai_hoa_loc','A',2500)`, [sm.user.id]);
+  const ref = SPECIALTIES.xoai_hoa_loc.refPrice, range = superPriceRange(ref);
+  assert.deepEqual(range, { minPrice: ref, maxPrice: Math.floor(ref * SUPER_MAX_RATIO) });
+  const lot = { specialtyId: 'xoai_hoa_loc', grade: 'A', kg: 100, price: Math.round(ref * 1.2), province: P };
+  // Chưa tới Đà Nẵng: xem được kệ nhưng không ký gửi, không mua.
+  const view0 = await call('GET', `/api/supermarket${qs}`, undefined, seller);
+  assert.deepEqual([view0.status, view0.body.here, view0.body.feeRatio, view0.body.earned], [200, false, SUPER_FEE, 0]);
+  assert.ok(view0.body.shelves.length > 0 && view0.body.shelves.every((s: any) => s.npc && s.kg === SUPER_NPC_KG && s.price === Math.round(s.refPrice * SUPER_NPC_RATIO)), 'siêu thị luôn có kệ nhà bán');
+  assert.ok(specialtiesOfRegion('dn_tienphuoc').every((sp) => view0.body.shelves.some((s: any) => s.specialtyId === sp.id)), 'nhà bán có đủ đặc sản trong tỉnh');
+  assert.deepEqual(view0.body.consignable.find((c: any) => c.specialtyId === 'xoai_hoa_loc'), { specialtyId: 'xoai_hoa_loc', quality: 'A', kg: 2500, refPrice: ref, ...range });
+  assert.equal((await call('POST', '/api/supermarket/consign', lot, seller)).body.error, 'khac_tinh');
+  assert.equal((await call('GET', `/api/supermarket?province=${encodeURIComponent('Hà Nội')}`, undefined, seller)).status, 404);
+  // Người bán và người mua tới Đà Nẵng.
+  await call('POST', '/api/travel', { regionId: 'dn_tienphuoc' }, seller);
+  assert.equal((await call('POST', '/api/supermarket/consign', { ...lot, price: range.maxPrice + 1 }, seller)).body.error, 'gia_sai');
+  assert.equal((await call('POST', '/api/supermarket/consign', { ...lot, price: range.minPrice - 1 }, seller)).body.error, 'gia_sai');
+  assert.equal((await call('POST', '/api/supermarket/consign', { ...lot, kg: SUPER_MIN_KG - 1 }, seller)).status, 400);
+  assert.equal((await call('POST', '/api/supermarket/consign', { ...lot, kg: SUPER_MAX_LOT_KG + 1 }, seller)).status, 400);
+  assert.equal((await call('POST', '/api/supermarket/consign', { ...lot, grade: 'B' }, seller)).body.error, 'khong_du_hang');
+  const put = await call('POST', '/api/supermarket/consign', lot, seller);
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  const shelfId = put.body.shelfId;
+  assert.equal((await meOf(seller)).inventory.find((i: any) => i.specialtyId === 'xoai_hoa_loc').kg, 2400);
+  const view1 = (await call('GET', '/api/supermarket', undefined, seller)).body;
+  assert.deepEqual([view1.province, view1.here, view1.mine.length, view1.lots], [P, true, 1, 1]);
+  const first = view1.shelves.find((s: any) => s.specialtyId === 'xoai_hoa_loc');
+  assert.deepEqual([first.id, first.mine, first.npc, first.kg, first.price, first.seller], [shelfId, true, false, 100, lot.price, sm.user.displayName]);
+  assert.equal((await call('POST', '/api/supermarket/buy', { shelfId, kg: 5 }, seller)).body.error, 'hang_cua_ban');
+  assert.equal((await call('POST', '/api/supermarket/buy', { shelfId, kg: 5 }, buyer)).body.error, 'khac_tinh');
+  await call('POST', '/api/travel', { regionId: 'dn_tienphuoc' }, buyer);
+  const cashB = (await meOf(buyer)).user.cash, cashS = (await meOf(seller)).user.cash;
+  const buy = await call('POST', '/api/supermarket/buy', { shelfId, kg: 20 }, buyer);
+  assert.deepEqual([buy.status, buy.body.total, buy.body.cash, buy.body.leftTodayKg], [200, lot.price * 20, cashB - lot.price * 20, SUPER_DAILY_KG - 20]);
+  assert.equal((await meOf(buyer)).inventory.find((i: any) => i.specialtyId === 'xoai_hoa_loc').kg, 20);
+  const net = Math.round(lot.price * 20 * (1 - SUPER_FEE));
+  assert.equal((await meOf(seller)).user.cash, cashS + net);
+  const view2 = (await call('GET', '/api/supermarket', undefined, seller)).body;
+  assert.deepEqual([view2.earned, view2.mine[0].kg], [net, 80]);
+  assert.equal((await call('GET', '/api/supermarket', undefined, seller)).body.earned, 0, 'tiền bán được chỉ báo một lần');
+  // Giới hạn mua mỗi ngày tính chung cả kệ người chơi lẫn kệ nhà bán.
+  const over = await call('POST', '/api/supermarket/buy', { shelfId, kg: SUPER_DAILY_KG - 19 }, buyer);
+  assert.deepEqual([over.status, over.body.error], [409, 'het_luot']);
+  const npc = view2.shelves.find((s: any) => s.npc);
+  const nb = await call('POST', '/api/supermarket/buy', { shelfId: npc.id, kg: 10, province: P }, buyer);
+  assert.deepEqual([nb.status, nb.body.unitPrice, nb.body.leftTodayKg], [200, npc.price, 0]);
+  assert.equal((await call('GET', '/api/supermarket', undefined, buyer)).body.shelves.find((s: any) => s.id === npc.id).kg, SUPER_NPC_KG - 10);
+  assert.equal((await call('POST', '/api/supermarket/buy', { shelfId: npc.id, kg: 1, province: P }, buyer)).body.error, 'het_luot');
+  assert.equal((await call('POST', '/api/supermarket/buy', { shelfId: 'npc:khong_co', kg: 1, province: P }, seller)).status, 404);
+  assert.equal((await call('POST', '/api/supermarket/buy', { shelfId: npc.id, kg: SUPER_NPC_KG, province: P }, seller)).body.error, 'het_hang', 'nhà bán chỉ có ít hàng mỗi ngày');
+  // Mua của nhà bán rồi đem ký gửi lại không thể có lãi: giá mua 150%, trần ký gửi 160% trừ phí 5%.
+  assert.ok(SUPER_MAX_RATIO * (1 - SUPER_FEE) > SUPER_NPC_RATIO === false || SUPER_NPC_KG <= SUPER_DAILY_KG);
+  // Tối đa số lô đang bày; rút hàng về kho.
+  for (let i = 1; i < SUPER_MAX_LOTS; i++) assert.equal((await call('POST', '/api/supermarket/consign', { ...lot, kg: SUPER_MIN_KG }, seller)).status, 200);
+  assert.equal((await call('POST', '/api/supermarket/consign', { ...lot, kg: SUPER_MIN_KG }, seller)).body.error, 'het_ke');
+  assert.equal((await call('POST', '/api/supermarket/withdraw', { shelfId }, buyer)).status, 404);
+  const back = await call('POST', '/api/supermarket/withdraw', { shelfId }, seller);
+  assert.deepEqual([back.status, back.body.kg], [200, 80]);
+  assert.equal((await call('POST', '/api/supermarket/withdraw', { shelfId }, seller)).status, 404);
+  assert.equal((await meOf(seller)).inventory.find((i: any) => i.specialtyId === 'xoai_hoa_loc').kg, 2500 - 100 + 80 - (SUPER_MAX_LOTS - 1) * SUPER_MIN_KG);
+  assert.equal((await call('POST', '/api/supermarket/consign', { ...lot, kg: SUPER_MIN_KG }, seller)).status, 200);
+  for (const k of ['super_buy', 'super_consign', 'super_price']) assert.ok(LIMIT_REASONS[k].reason.length > 20);
 });

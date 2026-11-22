@@ -236,4 +236,37 @@ create table if not exists export_shipments (
 create index if not exists export_shipments_user_idx on export_shipments (user_id, id desc);
 alter table coop_orders add column if not exists export_mode text;
 alter table coop_orders add column if not exists market text;
+alter table users add column if not exists tour_region text;
+alter table users add column if not exists super_earned bigint not null default 0;
+create table if not exists sight_visits (
+  user_id bigint not null references users(id) on delete cascade,
+  sight_id text not null,
+  visits int not null default 0,
+  stops jsonb not null default '[]',
+  is_open boolean not null default false,
+  done_at timestamptz,
+  primary key (user_id, sight_id)
+);
+create table if not exists super_shelves (
+  id bigserial primary key,
+  province text not null,
+  seller_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  quality text not null,
+  kg int not null check (kg >= 0),
+  price bigint not null check (price > 0),
+  created_at timestamptz not null default now()
+);
+create index if not exists super_shelves_province_idx on super_shelves (province, price) where kg > 0;
+create table if not exists super_buys (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  province text not null,
+  seller_id bigint,
+  specialty_id text not null,
+  kg int not null check (kg > 0),
+  price bigint not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists super_buys_day_idx on super_buys (province, created_at);
 `;

@@ -149,6 +149,35 @@ Ai đi được đường nào: thương lái đi mọi đường; nhà vườn 
 
 Chưa có: xuất khẩu thành phẩm của xưởng, rủi ro dọc đường (ùn ứ cửa khẩu, trả hàng), giá thị trường nước ngoài biến động.
 
+## Ba trụ: vườn là nguồn tiền, xây dựng tự do, du lịch là nơi tiêu tiền và gặp nhau
+
+Vườn Việt khác các game thế giới ảo ở chỗ bản đồ là Việt Nam thật và hàng hoá là do người chơi làm ra, chở đi, bày bán. Ba trụ nối thành một vòng:
+
+1. **Vườn là nguồn tiền duy nhất.** Tiền chỉ sinh ra từ trồng, chế biến, buôn bán, xuất khẩu. Vé, taxi, vé vào cổng, đồ trang trí, đất, xe đều là nơi tiêu tiền. Không mở nguồn tiền nào ngoài chuỗi này (thưởng tham quan lần đầu nhỏ hơn tiền taxi và vé của chính chuyến đó).
+2. **Xây dựng tự do.** Lô đất là nơi người chơi đặt, xoay, sắp xếp đồ theo ý mình và mời nhau tới thăm. Đồ đặc trưng vùng miền mua ở nơi tới du lịch (hướng phát triển).
+3. **Du lịch là nơi tiêu tiền và gặp nhau.** Mỗi tỉnh có các điểm tham quan thật; đi hết tuyến thì ra siêu thị đặc sản, nơi hàng trên kệ do thương lái và nhà vườn chở tới ký gửi.
+
+### Taxi
+
+Phương tiện thứ năm bên cạnh xe khách, tàu hoả, máy bay, tàu thuỷ. Cước 15.000đ + 2.500đ/km (`taxiFare`), chỉ chạy trên đất liền và tối đa 200 km (`TAXI_MAX_KM`). Dùng để đi giữa hai vùng gần nhau và để đi từ vùng đang đứng tới điểm tham quan trong tỉnh. Đắt hơn xe khách nhiều lần, đổi lại là góc nhìn hàng ghế sau.
+
+### Điểm tham quan
+
+Danh mục ở `shared/sights.ts`: toạ độ thật, các điểm dừng theo đúng thứ tự đi bộ ngoài đời, mỗi điểm dừng một điều có thật. Tỉnh đầu tiên là Đà Nẵng (gồm Quảng Nam cũ): Hội An, Mỹ Sơn, Ngũ Hành Sơn, Bà Nà, Cầu Rồng, Sơn Trà, Cù Lao Chàm.
+
+- Người chơi phải đang có mặt trong tỉnh: vùng nhà, nơi xe tải đỗ, hoặc vùng vừa mua vé tới (`users.tour_region`, xoá khi gọi `POST /api/travel/home`).
+- `POST /api/sights/:id/visit` trừ cước taxi (theo km từ vùng đang đứng, ít nhất 3 km) và vé vào cổng.
+- `POST /api/sights/:id/finish` ghi các điểm dừng đã xem (cộng dồn qua nhiều lượt). Lần đầu xem đủ mọi điểm dừng được thưởng 30.000đ.
+
+### Siêu thị đặc sản (ký gửi)
+
+Mỗi tỉnh có điểm tham quan có một siêu thị ở lối ra.
+
+- **Ký gửi:** ai đang ở trong tỉnh cũng đem hàng trong kho bày lên kệ được. Giá tự đặt trong khung 100–160% giá tham chiếu; mỗi lô 5–300 kg; mỗi người tối đa 6 lô đang bày. Hàng rời kho ngay, rút về được bất cứ lúc nào.
+- **Mua:** phải đang ở trong tỉnh; mỗi người 30 kg mỗi ngày ở mỗi siêu thị. Hàng mua được tính vào sổ tem. Người bán nhận tiền ngay, trừ phí kệ 5%.
+- **Kệ nhà bán:** để siêu thị không trống khi ít người chơi, "Tiệm Ba Miền" luôn bày đặc sản của các vùng trong tỉnh và 3 đặc sản tỉnh khác xoay theo ngày, giá 150% giá tham chiếu, mỗi món 20 kg mỗi ngày cho mọi người. Kệ người chơi rẻ hơn hiện trước.
+- **Cân bằng:** mua của nhà bán ở 150% rồi ký gửi lại tối đa 160% trừ phí 5% còn 152%, lãi 2% trên tối đa 20 kg, không đáng tiền taxi. Mua hàng người chơi ở sàn 100% rồi bán tháo cho doanh nghiệp thì lỗ. Kẽ hở còn lại: mua ở sàn 100% rồi giao đơn hàng, bán hàng phương xa hay xuất khẩu sang thị trường giá cao; đã bị chặn ở 30 kg mỗi ngày mỗi siêu thị, và chợ người chơi vốn đã cho mua rẻ hơn thế. Sàn 100% còn giữ cho siêu thị không phá giá chợ và sạp ở quê.
+
 ## Vì sao có giới hạn
 
 Mỗi giới hạn có một câu lý do trong `LIMIT_REASONS` (`shared/rules.ts`) để giao diện hiện ngay cạnh con số: quà đặc sản, sức chở xe, nguồn hàng sỉ, ai được thu mua sỉ, tặng quà, đơn hàng mỗi ngày, số ô theo vai, bán tháo, hợp tác xã, đơn lớn, quyền xuất khẩu, kg tối thiểu mỗi lô, số lô cùng lúc, thị trường khó tính, số bạn.

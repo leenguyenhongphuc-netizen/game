@@ -328,13 +328,20 @@ export function glutFactor(kg24h: number): number {
 /** Quà đặc sản bán đắt hơn mọi mức thương lái trả (kể cả cộng dồn thưởng) và giới hạn số lần mua mỗi ngày, để không mua đi bán lại kiếm lời. */
 export const TRAVEL_COST = 20_000, SOUVENIR_RATIO = 1.8, SOUVENIR_MAX_KG = 5, SOUVENIR_DAILY_BUYS = 3;
 /** Phương tiện đi du lịch: giá vé = base + perKm × quãng đường; seconds là thời lượng hoạt cảnh trên đường. */
-export type TravelMode = 'xe_khach' | 'tau_hoa' | 'may_bay' | 'tau_thuy';
+export type TravelMode = 'xe_khach' | 'tau_hoa' | 'may_bay' | 'tau_thuy' | 'taxi';
 export const TRAVEL_MODES: Record<TravelMode, { name: string; icon: string; base: number; perKm: number; seconds: number }> = {
   xe_khach: { name: 'Xe khách', icon: '🚌', base: 10_000, perKm: 150, seconds: 10 },
   tau_hoa: { name: 'Tàu hoả', icon: '🚆', base: 20_000, perKm: 250, seconds: 10 },
   may_bay: { name: 'Máy bay', icon: '✈️', base: 300_000, perKm: 1500, seconds: 8 },
   tau_thuy: { name: 'Tàu thuỷ', icon: '⛴️', base: 50_000, perKm: 600, seconds: 10 },
+  taxi: { name: 'Taxi', icon: '🚕', base: 15_000, perKm: 2_500, seconds: 12 },
 };
+/** Taxi chỉ chạy chặng ngắn trên đất liền. */
+export const TAXI_MAX_KM = 200;
+/** Cước taxi cho một quãng đường (làm tròn nghìn đồng). */
+export function taxiFare(km: number): number {
+  return Math.round((TRAVEL_MODES.taxi.base + TRAVEL_MODES.taxi.perKm * Math.max(0, km)) / 1000) * 1000;
+}
 /** Các phương tiện đi được giữa hai vùng, kèm giá vé. Ra vào đảo phải đi tàu thuỷ hoặc máy bay. */
 export function travelOptions(fromRegionId: string, toRegionId: string): { mode: TravelMode; fare: number; km: number }[] {
   const a = region(fromRegionId), b = region(toRegionId);
@@ -342,10 +349,22 @@ export function travelOptions(fromRegionId: string, toRegionId: string): { mode:
   const km = Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng));
   const modes: TravelMode[] = a.island || b.island
     ? ['tau_thuy', ...(km >= 300 ? ['may_bay' as const] : [])]
-    : ['xe_khach', ...(km >= 150 ? ['tau_hoa' as const] : []), ...(km >= 400 ? ['may_bay' as const] : [])];
+    : ['xe_khach', ...(km <= TAXI_MAX_KM ? ['taxi' as const] : []), ...(km >= 150 ? ['tau_hoa' as const] : []), ...(km >= 400 ? ['may_bay' as const] : [])];
   return modes.map((mode) => ({ mode, fare: Math.round((TRAVEL_MODES[mode].base + TRAVEL_MODES[mode].perKm * km) / 1000) * 1000, km }));
 }
 export const GIFT_DAILY_LIMIT = 5, GIFT_MAX_KG = 20, REGION_SET_REWARD = 50_000;
+
+// ---------------------------------------------------------------- điểm tham quan và siêu thị đặc sản
+/** Quãng taxi ngắn nhất tới một điểm tham quan, thưởng lần đầu đi hết mọi điểm dừng, thời lượng hoạt cảnh taxi. */
+export const SIGHT_MIN_KM = 3, SIGHT_REWARD = 30_000, SIGHT_TAXI_SECONDS = 12;
+/** Siêu thị đặc sản: khung giá ký gửi so với giá tham chiếu, phí sàn, giới hạn lô và lượng mua mỗi ngày. */
+export const SUPER_MIN_RATIO = 1.0, SUPER_MAX_RATIO = 1.6, SUPER_FEE = 0.05;
+export const SUPER_MIN_KG = 5, SUPER_MAX_LOT_KG = 300, SUPER_MAX_LOTS = 6, SUPER_DAILY_KG = 30;
+/** Kệ của nhà bán (NPC) để siêu thị không bao giờ trống: giá cao hơn mọi kệ người chơi hợp lý, mỗi món ít hàng mỗi ngày. */
+export const SUPER_NPC_RATIO = 1.5, SUPER_NPC_KG = 20, SUPER_NPC_GUESTS = 3;
+export function superPriceRange(refPrice: number): { minPrice: number; maxPrice: number } {
+  return { minPrice: Math.ceil(refPrice * SUPER_MIN_RATIO), maxPrice: Math.floor(refPrice * SUPER_MAX_RATIO) };
+}
 
 // ---------------------------------------------------------------- vườn sân thượng trong phố
 /** Vườn sân thượng chỉ dùng 12 ô giữa lưới 6×5: cột 1..4, hàng 1..3. */
@@ -566,6 +585,12 @@ export const LIMIT_REASONS: Record<string, { title: string; limit: string; reaso
     reason: 'Để mỗi lô là một quyết định có cân nhắc, không phải bấm liên tục.' },
   export_grade: { title: 'Thị trường khó tính', limit: 'Nhật – Hàn và Âu – Mỹ chỉ nhận hàng Loại 1',
     reason: 'Giống ngoài đời: thị trường trả giá cao thì đòi chất lượng cao. Chăm cây đúng giờ mới có hàng Loại 1.' },
+  super_buy: { title: 'Mua ở siêu thị đặc sản', limit: `Mỗi người ${SUPER_DAILY_KG} kg mỗi ngày ở mỗi siêu thị`,
+    reason: 'Siêu thị là nơi khách du lịch mua đặc sản mang về, không phải kho sỉ. Nếu mua thoải mái thì một người vét sạch kệ rồi bán lại, khách tới sau không còn gì.' },
+  super_consign: { title: 'Ký gửi hàng lên kệ', limit: `Mỗi lô ${SUPER_MIN_KG}–${SUPER_MAX_LOT_KG} kg, mỗi người tối đa ${SUPER_MAX_LOTS} lô đang bày, phải đang ở tỉnh đó`,
+    reason: 'Kệ có hạn, chia cho nhiều người bán. Phải chở hàng tới tận nơi thì quãng đường của thương lái và nhà vườn mới có giá trị.' },
+  super_price: { title: 'Giá bán trên kệ', limit: `Từ ${Math.round(SUPER_MIN_RATIO * 100)}% đến ${Math.round(SUPER_MAX_RATIO * 100)}% giá tham chiếu, siêu thị thu phí ${Math.round(SUPER_FEE * 100)}%`,
+    reason: 'Sàn giá để siêu thị không rẻ hơn chợ và sạp ở quê, trần giá để kệ không thành đường chuyển tiền giữa các tài khoản. Phí là tiền thuê kệ.' },
   friends: { title: 'Số bạn trong xóm', limit: `Tối đa ${MAX_FRIENDS} người`,
     reason: 'Xóm hiển thị quanh vườn nhà chỉ có chừng đó lô đất.' },
 };
