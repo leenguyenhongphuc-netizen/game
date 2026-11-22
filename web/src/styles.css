@@ -395,3 +395,6 @@ button.go small { color: #eaffdf; font-size: 0.7rem; font-weight: 600; }
 .pick[aria-pressed='true'] { background: var(--gold); border-color: var(--gold-dark); box-shadow: 0 4px 0 var(--gold-dark); }
 .ship .bar { width: 100%; }
 @media (max-width: 420px) { .deal { flex-wrap: wrap; } .deal-buy { flex-direction: row; display: flex; width: 100%; } .deal-buy .go { flex: 1; } }
+.tabs { overflow-x: auto; scrollbar-width: none; padding-bottom: 5px; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { white-space: nowrap; padding: 8px 10px; flex: 1 0 auto; }
