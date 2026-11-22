@@ -107,7 +107,7 @@ export class Village {
     const label = sign(stop ? `Bến xe ${from}` : `Cổng vườn · ${from}`, stop ? '#2a7fd6' : '#2f9a4a', 6.6, 7.3, 4.7, 3.7); this.root.add(label); post(S, 0x8f97a3, 7.3, 0, 3.7, 3.9, 0.08);
     if (stop) prop(S, timeBoard(1.6, 1.0), 7.46, 2.0, -6.4, 1, Math.PI); prop(S, lampPost(4.6), 4.6, 0, -9.4, 1, Math.PI);
     if (stop) crowd(S, [[6.9, 0.16, -6.2, -1.6], [6.2, 0.16, -3.4, -1.9], [5.3, 0.16, -8.6, -1.2]], hash(from) & 7);
-    else { crowd(S, [[6.6, 0.16, -7.4, -1.4]], hash(from) & 7); prop(S, SCENERY.bush(), 6.9, 0, -4.4, 0.7); prop(S, SCENERY.leaf(), 7.2, 0, -9.6, 0.9); }
+    else { crowd(S, [[6.6, 0.16, -7.4, -1.4]], hash(from) & 7); prop(S, SCENERY.bush(), 7.4, 0, -3.2, 0.5); }
     box(S, 0x4fa86a, 4.7, 0.5, -10.6, 0.6, 0.9, 0.6); box(S, 0x3f8f52, 4.7, 0.98, -10.6, 0.66, 0.08, 0.66);
     // Vườn nhà: hàng rào, cổng, nhà, lối đi
     box(S, 0xb7e69a, 14.6, 0.03, 9.2, 12, 0.08, 13.6); box(S, 0xe9dfc8, 7.4, 0.05, 6.5, 3.4, 0.1, 1.5);
