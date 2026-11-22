@@ -227,6 +227,21 @@ for (const dev of DEVICES) {
       const buy = page.locator('.super .go:not([disabled])').first(); if (await buy.count() > 0) { await buy.click(); await page.waitForTimeout(800); }
       await page.getByRole('tab', { name: /Ký gửi/ }).click(); await page.waitForTimeout(600); await shot('sieu-thi-ky-gui'); await closeModal();
     });
+    await step('ho-chieu', async () => {
+      await enter(); await dock(/Du lịch/); await page.getByRole('button', { name: 'Hộ chiếu', exact: true }).click(); await page.locator('.pp').waitFor(); await page.waitForTimeout(500); await shot('ho-chieu-bia');
+      for (const n of ['ho-chieu-thong-tin', 'ho-chieu-muc-luc', 'ho-chieu-trang-dau']) { await page.getByRole('button', { name: 'Trang sau' }).click(); await page.waitForTimeout(500); await shot(n); }
+      await closeModal();
+      await dock(/Kho/); await page.getByRole('button', { name: 'Túi đồ', exact: true }).click(); await page.locator('.bag').waitFor(); await page.waitForTimeout(500); await shot('tui-do'); await closeModal();
+      await page.locator('.hud-top .chip').click(); await page.locator('.cert-list button').first().click(); await page.locator('.cert').waitFor(); await page.waitForTimeout(400); await shot('giay-chung-nhan-dat'); await page.locator('.cert-close').click(); await closeModal();
+    });
+    await step('xuong-may', async () => {
+      await post('/api/test/role', { role: 'xuong' }); await post('/api/test/stock', { specialtyId: 'xoai_hoa_loc', kg: 200 });
+      await enter(); await page.waitForTimeout(1500); await shot('xuong-ngoai-canh');
+      await world('w.teleportToMachine(0, 0)'); await page.waitForTimeout(800); await shot('xuong-canh-may');
+      await dock(/Kho/); await page.getByRole('button', { name: 'Xưởng', exact: true }).click(); await page.locator('.workshop').waitFor(); await page.waitForTimeout(600); await shot('xuong-dan-may');
+      const run = page.locator('.wk-actions .go:not([disabled])').first(); if (await run.count() > 0) { await run.click(); await page.waitForTimeout(600); await shot('xuong-chay-me'); }
+      await closeModal(); await post('/api/test/role', { role: 'nong_dan' });
+    });
     await step('san-thuong', async () => { await post('/api/test/role', { role: 'nong_dan' }); await enter('&santhuong=1'); await shot('san-thuong'); await world('w.teleportToTile(0, 2)'); await page.waitForTimeout(600); await shot('san-thuong-gan'); });
     await step('ban-dem', async () => { await page.goto(`${BASE}/?gio=21`); await page.waitForFunction(() => window.__vuon); await page.waitForTimeout(2500); await shot('ban-dem'); await world('w.pos.set(6.2, 0, 12.2)'); await page.waitForTimeout(600); await shot('ban-dem-truoc-sap'); });
   } catch { /* đã ghi vào báo cáo */ }

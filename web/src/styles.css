@@ -563,3 +563,5 @@ button.go.wide { width: 100%; }
 .cert-list { display: grid; gap: 6px; margin-bottom: 12px; }
 .cert-list h3 { margin: 0; }
 .cert-list button { text-align: left; min-height: 44px; }
+
+button.en-bar, button.lvl-badge { min-height: 40px; }
