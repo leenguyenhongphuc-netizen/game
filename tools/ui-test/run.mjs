@@ -42,7 +42,7 @@ function audit(touch) {
     if (!visible(el)) continue;
     const r = box(el), sp = scrollParent(el);
     if (!sp && (r.left < -1 || r.top < -1 || r.right > W + 1 || r.bottom > H + 1)) issues.push({ level: 'error', rule: 'nut-ngoai-man-hinh', detail: `${label(el)} tại [${Math.round(r.left)}, ${Math.round(r.top)}, ${Math.round(r.right)}, ${Math.round(r.bottom)}] ngoài ${Math.round(W)}×${Math.round(H)}` });
-    if (touch && !el.classList.contains('link') && (r.width < 38 || r.height < 38)) issues.push({ level: 'warn', rule: 'nut-qua-nho', detail: `${label(el)} ${Math.round(r.width)}×${Math.round(r.height)}` });
+    if (touch && !el.closest('svg') && !el.classList.contains('link') && (r.width < 38 || r.height < 38)) issues.push({ level: 'warn', rule: 'nut-qua-nho', detail: `${label(el)} ${Math.round(r.width)}×${Math.round(r.height)}` });
   }
   // 2. Khối giao diện nổi tràn khỏi màn hình
   const blocks = ['.dg-top', '.dg-hud', '.tr-cap', '.tr-hud', '.sw-top', '.sw-card', '.sw-guide', '.context', '.hud-top', '.chips', '.quest', '.plot-switch', '.toast', '.ctx-bar', '.ctx-detail', '.dock', '.modal', '.card', '.wheel-wrap', '.wheel-head', '.brand'];

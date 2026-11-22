@@ -537,7 +537,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
             )}
             {tab === 'bando' && (
               <>
-                <div className="tabs"><button aria-selected={travelTab === 'di'} onClick={() => setTravelTab('di')}>Bản đồ vùng trồng</button><button aria-selected={travelTab === 'thamquan'} onClick={() => setTravelTab('thamquan')}>Tham quan</button><button aria-selected={travelTab === 'sieuthi'} onClick={() => setTravelTab('sieuthi')}>Siêu thị</button><button aria-selected={travelTab === 'so'} onClick={() => setTravelTab('so')}>Sổ tem</button></div>
+                <div className="tabs"><button aria-selected={travelTab === 'di'} onClick={() => setTravelTab('di')}>Bản đồ</button><button aria-selected={travelTab === 'thamquan'} onClick={() => setTravelTab('thamquan')}>Tham quan</button><button aria-selected={travelTab === 'sieuthi'} onClick={() => setTravelTab('sieuthi')}>Siêu thị</button><button aria-selected={travelTab === 'so'} onClick={() => setTravelTab('so')}>Sổ tem</button></div>
                 {travelTab === 'di' && <TravelPanel me={me} startRide={startRide} startTrip={isTrader ? startTrip : undefined} touring={tour} />}
                 {travelTab === 'thamquan' && <SightsPanel me={me} refresh={reload} onGo={(t) => { setTab('vuon'); setSightTrip(t); }} />}
                 {travelTab === 'sieuthi' && <SupermarketPanel me={me} province={REGIONS[tour ?? me.user.homeRegionId!].province} refresh={reload} />}

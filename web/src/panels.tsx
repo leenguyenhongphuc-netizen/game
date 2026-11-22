@@ -125,7 +125,7 @@ export function TravelPanel({ me, startRide, startTrip, touring }: {
   const owned = new Set(me.plots.map((p) => p.regionId));
   return (
     <div>
-      <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Chọn nơi muốn đến rồi mua vé xe khách, tàu hoả, máy bay hoặc tàu thuỷ. Tới nơi bạn được dạo vườn mẫu, ghé quầy trưng bày để mua đặc sản và sưu tập tem.</p>
+      <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Chạm một ghim trên bản đồ hoặc chọn trong danh sách, rồi đi bằng xe khách, taxi, tàu hoả, máy bay hoặc tàu thuỷ. Tới nơi bạn được dạo vườn mẫu, ghé quầy trưng bày để mua đặc sản và sưu tập tem.</p>
       <VietnamMap regions={Object.values(REGIONS)} homeId={home} currentId={touring ?? home} visited={visited} owned={[...owned]} sightProvinces={SIGHT_PROVINCES} selectedId={open ?? undefined}
         onSelect={(id) => { setOpen(id); window.setTimeout(() => document.getElementById(`vung-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }} />
       <CompareCard isTrader={!!startTrip} />
