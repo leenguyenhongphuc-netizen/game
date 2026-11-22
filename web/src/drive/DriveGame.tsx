@@ -131,6 +131,9 @@ export function DriveGame(props: {
     const t = setTimeout(() => setCount((c) => c - 1), 900);
     return () => clearTimeout(t);
   }, [count, failed]);
+  // Lời nhắc cách lái chỉ hiện ít giây đầu, không che xe suốt đoạn đường.
+  const [hint, setHint] = useState(true);
+  useEffect(() => { if (count > 0) return; const t = setTimeout(() => setHint(false), 7000); return () => clearTimeout(t); }, [count <= 0]);
 
   // Tới nơi: hiện bảng tổng kết rồi báo ra ngoài đúng một lần
   useEffect(() => {
@@ -215,7 +218,7 @@ export function DriveGame(props: {
           </div>
         )}
       </div>
-      {count <= 0 && hud && hud.progress < 0.06 && !arrived && !hud.warn && <div className="dg-hint">{boat ? 'Kéo ngang, bấm ◀ ▶ hoặc phím ← → · giữ phà giữa phao đỏ và phao xanh' : 'Kéo ngang, bấm ◀ ▶ hoặc phím ← → để đổi làn · theo biển xanh và bản đồ'}</div>}
+      {count <= 0 && hud && hint && !arrived && !hud.warn && <div className="dg-hint">{boat ? 'Kéo ngang, bấm ◀ ▶ hoặc phím ← → · giữ phà giữa phao đỏ và phao xanh' : 'Kéo ngang, bấm ◀ ▶ hoặc phím ← → để đổi làn · theo biển xanh và bản đồ'}</div>}
     </div>
   );
 }
