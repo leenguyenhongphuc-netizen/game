@@ -69,6 +69,7 @@ export function SightsPanel({ me, refresh, onGo }: { me: Me; refresh: () => void
                   <small>{s.formerProvince ? `${s.formerProvince} cũ · ` : ''}{s.stopsSeen.length}/{s.stops.length} điểm dừng đã xem{s.visits > 0 ? ` · đã tới ${s.visits} lần` : ''}</small>
                 </span>
               </button>
+              <img className="sight-art" src={`/art/sights/${s.id}-s.jpg`} alt={`Tranh minh hoạ ${s.name}`} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
               <p className="sight-blurb">{s.blurb}</p>
               {sel === s.id && (
                 <ul className="sight-stops">

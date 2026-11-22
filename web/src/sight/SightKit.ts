@@ -104,7 +104,7 @@ export function signPost(text: string, x: number, y: number, z: number, bg = '#7
 export function label(text: string, x: number, y: number, z: number, bg = '#7a4a22', scale = 1): THREE.Sprite { const sp = makeSign(text, bg); sp.scale.multiplyScalar(scale); sp.position.set(x, y, z); return sp; }
 export function lampPost(x: number, y: number, z: number, h = 3.6, c = 0xffd98a): THREE.Group { return grp(x, y, z, 0, cyl(0x3d3a36, 0, h / 2, 0, 0.07, h), box(0x3d3a36, 0, h, 0, 0.5, 0.06, 0.06), ball(glow(c), 0.22, h - 0.2, 0, 0.17), ball(glow(c), -0.22, h - 0.2, 0, 0.17)); }
 // Ba dáng đèn lồng Hội An: tròn, củ tỏi (phình dưới thon trên), trái trám (hai chóp úp vào nhau). Ít mặt vì số lượng rất nhiều.
-const lathe = (pts: [number, number][]) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), 7);
+const lathe = (pts: [number, number][]) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), 6);
 const LANTERN_GEO = [
   lathe([[0.02, -1], [0.62, -0.72], [1, 0], [0.62, 0.72], [0.02, 1]]),
   lathe([[0.02, -1], [0.8, -0.78], [1, -0.2], [0.5, 0.55], [0.24, 1]]),
@@ -207,11 +207,14 @@ export function waves(): THREE.CanvasTexture {
   for (let i = 0; i < 170; i++) { const x = r() * 256, y = r() * 256, w = 14 + r() * 46, l = r(); g.strokeStyle = l < 0.5 ? `rgba(255,255,255,${0.25 + r() * 0.5})` : `rgba(70,80,90,${0.18 + r() * 0.3})`; g.lineWidth = 1.2 + r() * 2.2; g.lineCap = 'round'; for (const ox of [-256, 0, 256]) { g.beginPath(); g.moveTo(x + ox, y); g.quadraticCurveTo(x + ox + w / 2, y - 3 - r() * 3, x + ox + w, y); g.stroke(); } }
   waveTex = new THREE.CanvasTexture(c); waveTex.wrapS = waveTex.wrapT = THREE.RepeatWrapping; waveTex.colorSpace = THREE.SRGBColorSpace; return waveTex;
 }
-/** Vệt sáng đèn phản chiếu trên mặt nước (đặt sát mặt nước, kéo dài theo z hoặc x). */
+const reflCache = new Map<string, THREE.MeshBasicMaterial>();
+/** Vệt sáng đèn phản chiếu trên mặt nước (đặt sát mặt nước, kéo dài theo z hoặc x). Thêm bằng kit.add để được gộp lưới. */
 export function reflection(color: number, x: number, y: number, z: number, w: number, len: number, alongX = false, opacity = 0.5): THREE.Mesh {
-  const o = new THREE.Mesh(new THREE.PlaneGeometry(alongX ? len : w, alongX ? w : len).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, map: dot() }));
-  o.position.set(x, y, z); return o;
+  const key = `${color}|${opacity}`; let m = reflCache.get(key);
+  if (!m) { m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending }); reflCache.set(key, m); }
+  const o = new THREE.Mesh(REFL, m); o.position.set(x, y, z); o.scale.set(alongX ? len : w, 1, alongX ? w : len); return o;
 }
+const REFL = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 export function bicycle(c = 0x3f6f8f): THREE.Group {
   const g = new THREE.Group(), tor = new THREE.TorusGeometry(0.34, 0.035, 5, 12);
   for (const z of [-0.55, 0.55]) { const w = mesh(tor, mat(0x2a2a2a), 0, 0.36, z); w.rotation.y = Math.PI / 2; g.add(w); }

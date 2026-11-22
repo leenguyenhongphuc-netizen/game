@@ -1695,49 +1695,59 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     id: Number(s.id), specialtyId: s.specialty_id, quality: s.quality, kg: s.kg, arriveKg: s.arrive_kg, mode: s.mode, market: s.market,
     gatewayId: s.gateway_id, gatewayName: EXPORT_GATEWAYS.find((g) => g.id === s.gateway_id)?.name ?? '', freight: Number(s.freight), payout: Number(s.payout),
     createdAt: new Date(s.created_at).getTime(), arrivesAt: new Date(s.arrives_at).getTime(), paidAt: s.paid_at ? new Date(s.paid_at).getTime() : null,
-    status: s.paid_at ? 'da_toi' : 'dang_di',
+    status: s.paid_at ? 'da_toi' : 'dang_di', processed: !!s.processed, ...(s.processed && SPECIALTIES[s.specialty_id] ? { name: productName(s.specialty_id) } : {}),
   });
   /** Lô nào đã tới nơi thì trả tiền hàng; trả về các lô vừa được chốt. */
   async function settleExports(q: Q, userId: number) {
     const { rows } = await q.query(
       `update export_shipments set paid_at = now() where user_id = $1 and paid_at is null and arrives_at <= now() returning *`, [userId]);
-    for (const s of rows) await addCash(q, userId, Number(s.payout), `xuat_khau:${s.id}`);
+    for (const s of rows) { await addCash(q, userId, Number(s.payout), `xuat_khau:${s.id}`); await addXp(q, userId, XP.export); }
     return rows.map(shipmentOut);
   }
   async function exportContext(q: Q, userId: number) {
-    const [u, coop, active] = await Promise.all([
-      q.query('select cash, role, home_region_id, truck_region from users where id = $1', [userId]),
+    const [u, coop, active, mach] = await Promise.all([
+      q.query('select cash, role, home_region_id, truck_region, xp from users where id = $1', [userId]),
       q.query('select 1 from coop_members where user_id = $1', [userId]),
       q.query('select count(*)::int as n from export_shipments where user_id = $1 and paid_at is null', [userId]),
+      valueBonusOf(q, userId),
     ]);
-    const role: Role | null = u.rows[0].role ?? null;
-    return { cash: Number(u.rows[0].cash), role, inCoop: coop.rows.length > 0, active: active.rows[0].n as number,
-      from: (u.rows[0].home_region_id ?? null) as string | null, modes: exportModesFor(role, coop.rows.length > 0) };
+    const role: Role | null = u.rows[0].role ?? null, inCoop = coop.rows.length > 0, level = levelOf(u.rows[0].xp).level;
+    return { cash: Number(u.rows[0].cash), role, inCoop, active: active.rows[0].n as number, level, maxActive: exportMaxActive(level),
+      discount: exportDiscount(role, inCoop), valueBonus: mach,
+      from: (u.rows[0].home_region_id ?? null) as string | null, modes: exportModesFor(role, inCoop) };
   }
 
   app.get('/api/export/options', async (req) => {
     const userId = await requireUser(req);
     const justPaid = await db.tx((q) => settleExports(q, userId));
     const ctx = await exportContext(db, userId);
-    const inv = await db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]);
-    const stock = [];
+    const [inv, prod] = await Promise.all([
+      db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]),
+      db.query('select specialty_id, kg from products where user_id = $1 and kg > 0 order by specialty_id', [userId]),
+    ]);
+    const quotesFor = (specialtyId: string, ql: Quality, have: number, ref: number, processed: boolean) => {
+      const quotes = [];
+      for (const market of Object.keys(EXPORT_MARKETS) as ExportMarket[]) for (const mode of EXPORT_MARKETS[market].modes) {
+        const kg = Math.min(have, EXPORT_MODES[mode].maxKg);
+        quotes.push(exportQuote(specialtyId, ql, kg, mode, market, ctx.from!, ref, { processed, discount: ctx.discount, valueBonus: processed ? ctx.valueBonus : 0 }));
+      }
+      return quotes.sort((a, b) => Number(b.ok) - Number(a.ok) || b.net - a.net);
+    };
+    const stock = [], products = [];
     for (const i of inv.rows) {
       if (!SPECIALTIES[i.specialty_id] || !ctx.from) continue;
       const ref = await currentPrice(db, i.specialty_id);
-      const quotes = [];
-      for (const market of Object.keys(EXPORT_MARKETS) as ExportMarket[]) for (const mode of EXPORT_MARKETS[market].modes) {
-        const allowed = ctx.modes.includes(mode);
-        const kg = Math.min(i.kg, EXPORT_MODES[mode].maxKg);
-        const qt = exportQuote(i.specialty_id, i.quality, kg, mode, market, ctx.from, ref);
-        quotes.push(allowed ? qt : { ...qt, ok: false, reason: LIMIT_REASONS.export_role.limit });
-      }
-      quotes.sort((a, b) => Number(b.ok) - Number(a.ok) || b.net - a.net);
-      stock.push({ specialtyId: i.specialty_id, quality: i.quality, kg: i.kg, refPrice: ref, quotes });
+      stock.push({ specialtyId: i.specialty_id, quality: i.quality, kg: i.kg, refPrice: ref, quotes: quotesFor(i.specialty_id, i.quality, i.kg, ref, false) });
+    }
+    for (const i of prod.rows) {
+      if (!SPECIALTIES[i.specialty_id] || !ctx.from) continue;
+      const ref = await currentPrice(db, i.specialty_id);
+      products.push({ specialtyId: i.specialty_id, quality: 'A' as Quality, kg: i.kg, processed: true, name: productName(i.specialty_id), refPrice: await productRef(db, i.specialty_id), quotes: quotesFor(i.specialty_id, 'A', i.kg, ref, true) });
     }
     return {
       modes: EXPORT_MODES, markets: EXPORT_MARKETS, allowedModes: ctx.modes, role: ctx.role, inCoop: ctx.inCoop, fromRegionId: ctx.from,
-      active: ctx.active, maxActive: EXPORT_MAX_ACTIVE, stock, justPaid,
-      limits: { role: LIMIT_REASONS.export_role, min: LIMIT_REASONS.export_min, active: LIMIT_REASONS.export_active, grade: LIMIT_REASONS.export_grade },
+      active: ctx.active, maxActive: ctx.maxActive, level: ctx.level, discount: ctx.discount, stock, products, justPaid,
+      limits: { role: LIMIT_REASONS.export_role, min: LIMIT_REASONS.export_min, active: LIMIT_REASONS.export_active, grade: LIMIT_REASONS.export_grade, processed: LIMIT_REASONS.export_processed },
     };
   });
 
@@ -1746,7 +1756,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const b = (req.body ?? {}) as Record<string, unknown>;
     const sp = findSpecialty(String(b.specialtyId ?? ''));
     if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
-    const ql = quality(b.grade ?? b.quality);
+    const processed = b.processed === true;
+    const ql = processed ? 'A' : quality(b.grade ?? b.quality);
     const kg = int(b.kg, 1, 1_000_000, 'kg');
     const mode = String(b.mode ?? '') as ExportMode, market = String(b.market ?? '') as ExportMarket;
     if (!Object.hasOwn(EXPORT_MODES, mode) || !Object.hasOwn(EXPORT_MARKETS, market)) throw bad('du_lieu_sai', 'Đường xuất khẩu hoặc thị trường không hợp lệ.');
@@ -1754,17 +1765,17 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await q.query('select id from users where id = $1 for update', [userId]);
       const ctx = await exportContext(q, userId);
       if (!ctx.from) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
-      if (!ctx.modes.includes(mode)) throw bad('khong_duoc_duong_nay', `${EXPORT_MODES[mode].name}: ${LIMIT_REASONS.export_role.reason}`, 403);
-      if (ctx.active >= EXPORT_MAX_ACTIVE) throw bad('qua_nhieu_lo', `Bạn đang có ${EXPORT_MAX_ACTIVE} lô hàng trên đường, chờ một lô tới nơi đã.`, 409);
-      const qt = exportQuote(sp.id, ql, kg, mode, market, ctx.from, await currentPrice(q, sp.id));
+      if (!ctx.modes.includes(mode)) throw bad('khong_duoc_duong_nay', 'Hãy quay vòng quay nhận vai trò trước khi xuất khẩu.', 403);
+      if (ctx.active >= ctx.maxActive) throw bad('qua_nhieu_lo', `Bạn đang có ${ctx.maxActive} lô hàng trên đường, chờ một lô tới nơi đã (lên cấp sẽ gửi được nhiều lô hơn).`, 409);
+      const qt = exportQuote(sp.id, ql, kg, mode, market, ctx.from, await currentPrice(q, sp.id), { processed, discount: ctx.discount, valueBonus: processed ? ctx.valueBonus : 0 });
       if (!qt.ok) throw bad('lo_hang_sai', qt.reason ?? 'Lô hàng không hợp lệ.', 409);
       if (ctx.cash < qt.freight) throw bad('khong_du_tien', 'Bạn không đủ tiền trả cước.', 409);
-      await takeInventory(q, userId, sp.id, ql, kg);
+      if (processed) await takeProduct(q, userId, sp.id, kg); else await takeInventory(q, userId, sp.id, ql, kg);
       const arrivesAt = new Date(Date.now() + Math.max(1000, Math.round((qt.minutes * 60_000) / timeScale)));
       const ins = await q.query(
-        `insert into export_shipments (user_id, specialty_id, quality, kg, arrive_kg, mode, market, gateway_id, freight, payout, arrives_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning *`,
-        [userId, sp.id, ql, kg, qt.arriveKg, mode, market, qt.gatewayId, qt.freight, qt.payout, arrivesAt]);
+        `insert into export_shipments (user_id, specialty_id, quality, kg, arrive_kg, mode, market, gateway_id, freight, payout, arrives_at, processed)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
+        [userId, sp.id, ql, kg, qt.arriveKg, mode, market, qt.gatewayId, qt.freight, qt.payout, arrivesAt, processed]);
       await addCash(q, userId, -qt.freight, `cuoc_xuat_khau:${ins.rows[0].id}`);
       return { shipment: shipmentOut(ins.rows[0]), quote: qt, cash: ctx.cash - qt.freight };
     });
@@ -1888,6 +1899,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (!w.provinces.includes(s.province)) throw bad('khac_tinh', `Bạn cần tới ${s.province} trước rồi mới bắt taxi tới ${s.name} được.`, 409);
       const km = sightKm(w.regionIn(s.province), s), fare = taxiFare(km);
       if (w.cash < fare + s.entryFee) throw bad('khong_du_tien', 'Bạn không đủ tiền taxi và vé vào cổng.', 409);
+      const en = await energyState(q, userId);
+      if (en.cur < ENERGY_COST.stop) throw bad('het_suc', `Bạn đã hết sức để đi bộ tham quan (cần ít nhất ${ENERGY_COST.stop} thể lực, đang có ${en.cur}). Hãy ăn uống hoặc nghỉ một lúc đã.`, 409);
       await addCash(q, userId, -fare, `taxi_tham_quan:${s.id}`);
       if (s.entryFee > 0) await addCash(q, userId, -s.entryFee, `ve_tham_quan:${s.id}`);
       await q.query(
@@ -1907,15 +1920,156 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await q.query('select id from users where id = $1 for update', [userId]);
       const v = await q.query('select stops, is_open, done_at from sight_visits where user_id = $1 and sight_id = $2 for update', [userId, s.id]);
       if (!v.rows[0]?.is_open) throw bad('chua_vao_cong', 'Bạn chưa bắt taxi tới điểm tham quan này.', 409);
-      const stopsSeen = valid.filter((id) => now.includes(id) || cleanStops(v.rows[0].stops, valid).includes(id));
+      const before = cleanStops(v.rows[0].stops, valid);
+      const stopsSeen = valid.filter((id) => now.includes(id) || before.includes(id));
+      const fresh = stopsSeen.filter((id) => !before.includes(id));
       const done = stopsSeen.length === valid.length, firstTime = done && !v.rows[0].done_at;
+      const at = new Date(), stopAt = { ...((await q.query('select stop_at from sight_visits where user_id = $1 and sight_id = $2', [userId, s.id])).rows[0]?.stop_at ?? {}) } as Record<string, string>;
+      for (const id of fresh) stopAt[id] = at.toISOString();
       await q.query(
-        `update sight_visits set stops = $3::jsonb, is_open = false, done_at = case when $4 and done_at is null then now() else done_at end where user_id = $1 and sight_id = $2`,
-        [userId, s.id, JSON.stringify(stopsSeen), done]);
+        `update sight_visits set stops = $3::jsonb, stop_at = $5::jsonb, is_open = false, done_at = case when $4 and done_at is null then now() else done_at end where user_id = $1 and sight_id = $2`,
+        [userId, s.id, JSON.stringify(stopsSeen), done, JSON.stringify(stopAt)]);
       if (firstTime) await addCash(q, userId, SIGHT_REWARD, `thuong_tham_quan:${s.id}`);
+      // đi bộ tốn sức theo số điểm dừng mới; không đủ thì trừ hết phần còn lại chứ không huỷ chuyến tham quan
+      const e = await energyState(q, userId, true);
+      const energy = await setEnergy(q, userId, e, Math.max(0, e.cur - ENERGY_COST.stop * fresh.length));
+      const gain = XP.stop * fresh.length + (firstTime ? XP.sight : 0);
+      const xp = gain > 0 ? await addXp(q, userId, gain) : { xpGained: 0, ...(({ xp: x, level, title }) => ({ xp: x, level, title }))(levelOf((await q.query('select xp from users where id = $1', [userId])).rows[0].xp)), levelUp: false };
+      const newStamps = [
+        ...fresh.map((id) => ({ kind: 'stop' as const, sightId: s.id, stopId: id, name: s.stops.find((x) => x.id === id)!.name, province: s.province, at: at.getTime() })),
+        ...(firstTime ? [{ kind: 'sight' as const, sightId: s.id, name: s.name, province: s.province, at: at.getTime() }] : []),
+      ];
       const ids = sightsOfProvince(s.province).map((x) => x.id);
       const cnt = await q.query('select count(*)::int as n from sight_visits where user_id = $1 and done_at is not null and sight_id = any($2)', [userId, ids]);
-      return { ok: true, done: done || !!v.rows[0].done_at, firstTime, reward: firstTime ? SIGHT_REWARD : 0, stopsSeen, sightsDone: cnt.rows[0].n, sightsTotal: ids.length };
+      return { ok: true, done: done || !!v.rows[0].done_at, firstTime, reward: firstTime ? SIGHT_REWARD : 0, stopsSeen, sightsDone: cnt.rows[0].n, sightsTotal: ids.length, ...xp, newStamps, ...energy };
+    });
+  });
+
+  // ---------------------------------------------------------------- hộ chiếu du lịch
+  app.get('/api/passport', async (req) => {
+    const userId = await requireUser(req);
+    const [u, sv, vis, plots] = await Promise.all([
+      db.query('select display_name, created_at, xp from users where id = $1', [userId]),
+      db.query('select sight_id, stops, stop_at, done_at from sight_visits where user_id = $1', [userId]),
+      db.query('select region_id, first_at from visits where user_id = $1', [userId]),
+      db.query('select region_id, created_at from plots where user_id = $1', [userId]),
+    ]);
+    const lv = levelOf(u.rows[0].xp);
+    type Stamp = { kind: 'stop' | 'sight' | 'region'; sightId?: string; stopId?: string; regionId?: string; name: string; province: string; at: number | null };
+    const stamps: Stamp[] = [];
+    const doneSights = new Set<string>();
+    for (const r of sv.rows) {
+      const st = findSight(r.sight_id);
+      if (!st) continue;
+      const when = (r.stop_at ?? {}) as Record<string, string>;
+      for (const id of cleanStops(r.stops, st.stops.map((x) => x.id))) {
+        stamps.push({ kind: 'stop', sightId: st.id, stopId: id, name: st.stops.find((x) => x.id === id)!.name, province: st.province, at: when[id] ? new Date(when[id]).getTime() : r.done_at ? new Date(r.done_at).getTime() : null });
+      }
+      if (r.done_at) { doneSights.add(st.id); stamps.push({ kind: 'sight', sightId: st.id, name: st.name, province: st.province, at: new Date(r.done_at).getTime() }); }
+    }
+    const regionAt = new Map<string, number>();
+    for (const r of [...vis.rows.map((x) => ({ id: x.region_id as string, at: new Date(x.first_at).getTime() })), ...plots.rows.map((x) => ({ id: x.region_id as string, at: new Date(x.created_at).getTime() }))]) {
+      if (REGIONS[r.id]) regionAt.set(r.id, Math.min(regionAt.get(r.id) ?? Infinity, r.at));
+    }
+    for (const [id, at] of regionAt) stamps.push({ kind: 'region', regionId: id, name: REGIONS[id].name, province: REGIONS[id].province, at });
+    stamps.sort((x, y) => (x.at ?? 0) - (y.at ?? 0));
+    return {
+      holder: u.rows[0].display_name, issuedAt: new Date(u.rows[0].created_at).getTime(), no: `VV${String(userId).padStart(7, '0')}`,
+      xp: lv.xp, level: lv.level, title: lv.title, nextXp: lv.nextXp, prevXp: lv.prevXp, perks: levelPerks(lv.level), levels: LEVELS, xpTable: XP,
+      stamps,
+      sights: { done: doneSights.size, total: SIGHTS.length }, regions: { done: regionAt.size, total: Object.keys(REGIONS).length },
+      provinces: SIGHT_PROVINCES.map((province) => ({ province, done: sightsOfProvince(province).filter((x) => doneSights.has(x.id)).length, total: sightsOfProvince(province).length })),
+    };
+  });
+
+  // ---------------------------------------------------------------- đồ ăn thức uống, quầy hàng
+  const SHOP_OWNERS = ['cô Ba', 'chú Tư', 'bà Năm', 'dì Sáu', 'anh Hai', 'chị Bảy', 'ông Tám', 'cô Út'];
+  const itemOut = (id: string) => ({ itemId: id, name: ITEMS[id].name, emoji: ITEMS[id].emoji, price: ITEMS[id].price, energy: ITEMS[id].energy, kind: ITEMS[id].kind, ...(ITEMS[id].regional ? { regional: ITEMS[id].regional } : {}) });
+  /** 2–4 quầy mọc ngẫu nhiên ở một địa danh, đổi theo ngày (giờ Việt Nam); cùng ngày thì ai cũng thấy như nhau. */
+  function shopsOfSight(s: { id: string; province: string }, nowMs: number) {
+    const r = seeded(`quay:${s.id}:${vnDay(nowMs)}`);
+    const kinds = (Object.keys(SHOP_KINDS) as ShopKind[]).map((k) => ({ k, x: r() })).sort((a, b) => a.x - b.x).map((x) => x.k).slice(0, 2 + Math.floor(r() * 3));
+    const local = regionalItems(s.province);
+    return kinds.map((k) => {
+      const info = SHOP_KINDS[k];
+      const extra = info.regional ? local.map((id) => ({ id, x: r() })).sort((a, b) => a.x - b.x).slice(0, 3).map((x) => x.id) : [];
+      return { id: `${s.id}:${k}`, kind: k, emoji: info.emoji, name: `${info.name} ${SHOP_OWNERS[Math.floor(r() * SHOP_OWNERS.length)]}`, items: [...new Set([...extra, ...info.items])].map(itemOut) };
+    });
+  }
+  function homeShop(regionId: string) {
+    const r = REGIONS[regionId];
+    return { id: 'home', kind: 'tap_hoa' as ShopKind, emoji: SHOP_KINDS.tap_hoa.emoji, name: `Tiệm tạp hoá ${r.name}`, items: [...new Set([...HOME_SHOP_ITEMS, ...regionalItems(r.province).slice(0, 2)])].map(itemOut) };
+  }
+  const bagOf = async (q: Q, userId: number) => (await q.query('select item_id, qty from user_items where user_id = $1 and qty > 0 order by item_id', [userId])).rows.filter((x) => ITEMS[x.item_id]).map((x) => ({ itemId: x.item_id as string, qty: x.qty as number }));
+
+  app.get('/api/sights/:id/shops', async (req) => {
+    await requireUser(req);
+    const s = findSight(String((req.params as { id: string }).id));
+    if (!s) throw bad('khong_tim_thay', 'Điểm tham quan không tồn tại.', 404);
+    return { sightId: s.id, shops: shopsOfSight(s, Date.now()), bagMax: ITEM_BAG_MAX };
+  });
+  app.get('/api/shops/home', async (req) => {
+    const userId = await requireUser(req);
+    const u = await db.query('select home_region_id from users where id = $1', [userId]);
+    if (!u.rows[0].home_region_id) return { shops: [], items: [], bagMax: ITEM_BAG_MAX };
+    const e = await energyState(db, userId);
+    return { shops: [homeShop(u.rows[0].home_region_id)], items: await bagOf(db, userId), bagMax: ITEM_BAG_MAX, ...energyOut(e) };
+  });
+  app.get('/api/items', async (req) => {
+    const userId = await requireUser(req);
+    const e = await energyState(db, userId);
+    return { items: (await bagOf(db, userId)).map((x) => ({ ...x, ...itemOut(x.itemId) })), bagMax: ITEM_BAG_MAX, ...energyOut(e) };
+  });
+
+  app.post('/api/shop/buy', async (req) => {
+    const userId = await requireUser(req);
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const shopId = String(b.shopId ?? ''), itemId = String(b.itemId ?? '');
+    const qty = b.qty === undefined ? 1 : int(b.qty, 1, 10, 'qty');
+    if (!Object.hasOwn(ITEMS, itemId)) throw bad('du_lieu_sai', 'Món này không có.');
+    return db.tx(async (q) => {
+      const w = await whereabouts(q, userId, true);
+      let shop: { id: string; items: { itemId: string }[] } | undefined;
+      if (shopId === 'home') {
+        const home = (await q.query('select home_region_id from users where id = $1', [userId])).rows[0].home_region_id;
+        if (!home) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
+        shop = homeShop(home);
+      } else {
+        const s = findSight(String(b.sightId ?? shopId.split(':')[0]));
+        if (!s) throw bad('khong_tim_thay', 'Quầy hàng không tồn tại.', 404);
+        if (!w.provinces.includes(s.province)) throw bad('khac_tinh', `Bạn phải tới ${s.name} mới mua ở quầy này được.`, 409);
+        shop = shopsOfSight(s, Date.now()).find((x) => x.id === shopId);
+      }
+      if (!shop) throw bad('khong_tim_thay', 'Quầy hàng hôm nay không mở.', 404);
+      if (!shop.items.some((x) => x.itemId === itemId)) throw bad('khong_ban', 'Quầy này không bán món đó.', 409);
+      const it = ITEMS[itemId], total = it.price * qty;
+      if (w.cash < total) throw bad('khong_du_tien', 'Bạn không đủ tiền.', 409);
+      const e = await energyState(q, userId, true);
+      let energy = energyOut(e);
+      if (b.use === true) {
+        if (e.cur >= e.max) throw bad('du_suc', 'Bạn đang đầy thể lực, để dành bụng lần sau nhé (hoặc mua bỏ túi).', 409);
+        energy = await setEnergy(q, userId, e, e.cur + it.energy * qty);
+      } else {
+        const have = (await q.query('select qty from user_items where user_id = $1 and item_id = $2 for update', [userId, itemId])).rows[0]?.qty ?? 0;
+        if (have + qty > ITEM_BAG_MAX) throw bad('day_tui', `Túi chỉ đựng được ${ITEM_BAG_MAX} phần mỗi món.`, 409);
+        await q.query(`insert into user_items (user_id, item_id, qty) values ($1,$2,$3) on conflict (user_id, item_id) do update set qty = user_items.qty + excluded.qty`, [userId, itemId, qty]);
+      }
+      await addCash(q, userId, -total, `an_uong:${itemId}`);
+      return { ok: true, itemId, qty, total, cash: w.cash - total, used: b.use === true, ...energy, items: await bagOf(q, userId) };
+    });
+  });
+
+  app.post('/api/items/use', async (req) => {
+    const userId = await requireUser(req);
+    const itemId = String(((req.body ?? {}) as Record<string, unknown>).itemId ?? '');
+    if (!Object.hasOwn(ITEMS, itemId)) throw bad('du_lieu_sai', 'Món này không có.');
+    return db.tx(async (q) => {
+      const e = await energyState(q, userId, true);
+      if (e.cur >= e.max) throw bad('du_suc', 'Bạn đang đầy thể lực, chưa cần ăn uống.', 409);
+      const { rowCount } = await q.query('update user_items set qty = qty - 1 where user_id = $1 and item_id = $2 and qty >= 1', [userId, itemId]);
+      if (!rowCount) throw bad('khong_co', 'Trong túi không còn món này.', 409);
+      const energy = await setEnergy(q, userId, e, e.cur + ITEMS[itemId].energy);
+      return { ok: true, itemId, gained: energy.energy - e.cur, ...energy, items: await bagOf(q, userId) };
     });
   });
 
@@ -1933,24 +2087,25 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   async function superShelves(q: Q, userId: number, province: string) {
     const [players, npcSold] = await Promise.all([
       q.query(
-        `select s.id, s.seller_id, s.specialty_id, s.quality, s.kg, s.price, u.display_name from super_shelves s join users u on u.id = s.seller_id
+        `select s.id, s.seller_id, s.specialty_id, s.quality, s.kg, s.price, s.processed, u.display_name from super_shelves s join users u on u.id = s.seller_id
          where s.province = $1 and s.kg > 0 order by s.price, s.id limit 200`, [province]),
       q.query(
         `select specialty_id, coalesce(sum(kg),0)::int as kg from super_buys where province = $1 and seller_id is null and created_at >= date_trunc('day', now()) group by specialty_id`, [province]),
     ]);
     const sold = new Map(npcSold.rows.map((r) => [r.specialty_id as string, r.kg as number]));
-    const shelves: { id: number | string; specialtyId: string; quality: Quality; kg: number; price: number; refPrice: number; seller: string; mine: boolean; npc: boolean }[] = [];
+    const shelves: { id: number | string; specialtyId: string; quality: Quality; kg: number; price: number; refPrice: number; seller: string; mine: boolean; npc: boolean; processed: boolean; name: string }[] = [];
     for (const r of players.rows) {
       if (!SPECIALTIES[r.specialty_id]) continue;
-      shelves.push({ id: Number(r.id), specialtyId: r.specialty_id, quality: r.quality, kg: r.kg, price: Number(r.price), refPrice: await currentPrice(q, r.specialty_id), seller: r.display_name, mine: Number(r.seller_id) === userId, npc: false });
+      shelves.push({ id: Number(r.id), specialtyId: r.specialty_id, quality: r.quality, kg: r.kg, price: Number(r.price), refPrice: r.processed ? await productRef(q, r.specialty_id) : await currentPrice(q, r.specialty_id),
+        seller: r.display_name, mine: Number(r.seller_id) === userId, npc: false, processed: !!r.processed, name: r.processed ? productName(r.specialty_id) : SPECIALTIES[r.specialty_id].name });
     }
     for (const id of npcItems(province, Date.now())) {
       const left = SUPER_NPC_KG - (sold.get(id) ?? 0);
       if (left <= 0) continue;
       const ref = await currentPrice(q, id);
-      shelves.push({ id: `npc:${id}`, specialtyId: id, quality: 'A', kg: left, price: Math.round(ref * SUPER_NPC_RATIO), refPrice: ref, seller: npcSeller(province), mine: false, npc: true });
+      shelves.push({ id: `npc:${id}`, specialtyId: id, quality: 'A', kg: left, price: Math.round(ref * SUPER_NPC_RATIO), refPrice: ref, seller: npcSeller(province), mine: false, npc: true, processed: false, name: SPECIALTIES[id].name });
     }
-    shelves.sort((a, b) => a.specialtyId.localeCompare(b.specialtyId) || a.price - b.price || Number(a.npc) - Number(b.npc));
+    shelves.sort((a, b) => a.specialtyId.localeCompare(b.specialtyId) || Number(a.processed) - Number(b.processed) || a.price - b.price || Number(a.npc) - Number(b.npc));
     return shelves;
   }
   const boughtToday = async (q: Q, userId: number, province: string) => (await q.query(
@@ -1973,12 +2128,19 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     for (const i of inv.rows) {
       if (!SPECIALTIES[i.specialty_id]) continue;
       const ref = await currentPrice(db, i.specialty_id);
-      consignable.push({ specialtyId: i.specialty_id, quality: i.quality, kg: i.kg, refPrice: ref, ...superPriceRange(ref) });
+      consignable.push({ specialtyId: i.specialty_id, quality: i.quality, kg: i.kg, refPrice: ref, ...superPriceRange(ref), processed: false, name: SPECIALTIES[i.specialty_id].name });
+    }
+    const prod = await db.query('select specialty_id, kg from products where user_id = $1 and kg > 0 order by specialty_id', [userId]);
+    for (const i of prod.rows) {
+      if (!SPECIALTIES[i.specialty_id]) continue;
+      const ref = await productRef(db, i.specialty_id);
+      consignable.push({ specialtyId: i.specialty_id, quality: 'A' as Quality, kg: i.kg, refPrice: ref, ...superPriceRange(ref), processed: true, name: productName(i.specialty_id) });
     }
     const mine = shelves.filter((s) => s.mine);
+    const dailyKg = levelPerks(levelOf((await db.query('select xp from users where id = $1', [userId])).rows[0].xp).level).superDailyKg;
     return {
       province, here, shelves, mine, consignable, earned, feeRatio: SUPER_FEE,
-      boughtTodayKg: await boughtToday(db, userId, province), dailyKg: SUPER_DAILY_KG, lots: mine.length, maxLots: SUPER_MAX_LOTS, minKg: SUPER_MIN_KG, maxLotKg: SUPER_MAX_LOT_KG,
+      boughtTodayKg: await boughtToday(db, userId, province), dailyKg, lots: mine.length, maxLots: SUPER_MAX_LOTS, minKg: SUPER_MIN_KG, maxLotKg: SUPER_MAX_LOT_KG,
       limits: { buy: LIMIT_REASONS.super_buy, consign: LIMIT_REASONS.super_consign, price: LIMIT_REASONS.super_price },
     };
   });
@@ -1988,32 +2150,33 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const b = (req.body ?? {}) as Record<string, unknown>;
     const sp = findSpecialty(String(b.specialtyId ?? ''));
     if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
-    const ql = quality(b.grade ?? b.quality);
+    const processed = b.processed === true;
+    const ql = processed ? 'A' : quality(b.grade ?? b.quality);
     const kg = int(b.kg, SUPER_MIN_KG, SUPER_MAX_LOT_KG, 'kg');
     const price = int(b.price, 1, 1_000_000_000, 'price');
     return db.tx(async (q) => {
       const w = await whereabouts(q, userId, true);
       const province = superProvince(b.province ?? w.provinces.find((p) => SIGHT_PROVINCES.includes(p)));
       if (!w.provinces.includes(province)) throw bad('khac_tinh', `Bạn phải chở hàng tới ${province} mới ký gửi lên kệ được.`, 409);
-      const { minPrice, maxPrice } = superPriceRange(await currentPrice(q, sp.id));
+      const { minPrice, maxPrice } = superPriceRange(processed ? await productRef(q, sp.id) : await currentPrice(q, sp.id));
       if (price < minPrice || price > maxPrice) throw bad('gia_sai', `Giá bán phải từ ${minPrice.toLocaleString('vi-VN')}đ đến ${maxPrice.toLocaleString('vi-VN')}đ mỗi kg.`, 409);
       const lots = await q.query('select count(*)::int as n from super_shelves where seller_id = $1 and kg > 0', [userId]);
       if (lots.rows[0].n >= SUPER_MAX_LOTS) throw bad('het_ke', `Bạn đang bày ${SUPER_MAX_LOTS} lô, chờ bán bớt hoặc rút một lô về.`, 409);
-      await takeInventory(q, userId, sp.id, ql, kg);
-      const ins = await q.query('insert into super_shelves (province, seller_id, specialty_id, quality, kg, price) values ($1,$2,$3,$4,$5,$6) returning id', [province, userId, sp.id, ql, kg, price]);
-      return { ok: true, shelfId: Number(ins.rows[0].id), province };
+      if (processed) await takeProduct(q, userId, sp.id, kg); else await takeInventory(q, userId, sp.id, ql, kg);
+      const ins = await q.query('insert into super_shelves (province, seller_id, specialty_id, quality, kg, price, processed) values ($1,$2,$3,$4,$5,$6,$7) returning id', [province, userId, sp.id, ql, kg, price, processed]);
+      return { ok: true, shelfId: Number(ins.rows[0].id), province, processed };
     });
   });
 
   app.post('/api/supermarket/buy', async (req) => {
     const userId = await requireUser(req);
     const b = (req.body ?? {}) as Record<string, unknown>;
-    const kg = int(b.kg, 1, SUPER_DAILY_KG, 'kg');
+    const kg = int(b.kg, 1, levelPerks(LEVELS.length).superDailyKg, 'kg');
     const raw = b.shelfId;
     const npcId = typeof raw === 'string' && raw.startsWith('npc:') ? raw.slice(4) : null;
     return db.tx(async (q) => {
       const w = await whereabouts(q, userId, true);
-      let province: string, specialtyId: string, ql: Quality, price: number, sellerId: number | null = null;
+      let province: string, specialtyId: string, ql: Quality, price: number, sellerId: number | null = null, processed = false;
       if (npcId) {
         province = superProvince(b.province ?? w.provinces.find((p) => SIGHT_PROVINCES.includes(p)));
         if (!findSpecialty(npcId) || !npcItems(province, Date.now()).includes(npcId)) throw bad('khong_tim_thay', 'Kệ hàng không còn.', 404);
@@ -2028,25 +2191,27 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         if (!s || s.kg <= 0) throw bad('khong_tim_thay', 'Kệ hàng không còn.', 404);
         if (Number(s.seller_id) === userId) throw bad('hang_cua_ban', 'Đây là hàng bạn ký gửi; muốn lấy lại thì rút hàng về kho.', 409);
         if (s.kg < kg) throw bad('het_hang', 'Kệ này không còn đủ hàng.', 409);
-        province = s.province; specialtyId = s.specialty_id; ql = s.quality; price = Number(s.price); sellerId = Number(s.seller_id);
+        province = s.province; specialtyId = s.specialty_id; ql = s.quality; price = Number(s.price); sellerId = Number(s.seller_id); processed = !!s.processed;
       }
       if (!w.provinces.includes(province)) throw bad('khac_tinh', `Bạn phải tới ${province} mới mua ở siêu thị này được.`, 409);
       const used = await boughtToday(q, userId, province);
-      if (used + kg > SUPER_DAILY_KG) throw bad('het_luot', `Mỗi ngày chỉ mua ${SUPER_DAILY_KG} kg ở một siêu thị; hôm nay bạn còn mua được ${Math.max(0, SUPER_DAILY_KG - used)} kg.`, 409);
+      const dailyKg = levelPerks(levelOf((await q.query('select xp from users where id = $1', [userId])).rows[0].xp).level).superDailyKg;
+      if (used + kg > dailyKg) throw bad('het_luot', `Mỗi ngày chỉ mua ${dailyKg} kg ở một siêu thị; hôm nay bạn còn mua được ${Math.max(0, dailyKg - used)} kg.`, 409);
       const total = price * kg;
       if (w.cash < total) throw bad('khong_du_tien', 'Bạn không đủ tiền.', 409);
       await addCash(q, userId, -total, `sieu_thi_mua:${specialtyId}`);
-      await addInventory(q, userId, specialtyId, ql, kg);
-      await collect(q, userId, specialtyId);
+      if (processed) await addProduct(q, userId, specialtyId, kg);
+      else { await addInventory(q, userId, specialtyId, ql, kg); await collect(q, userId, specialtyId); }
       let sellerGets = 0;
       if (sellerId !== null) {
         sellerGets = Math.round(total * (1 - SUPER_FEE));
         await q.query('update super_shelves set kg = kg - $2 where id = $1', [idParam(raw), kg]);
         await addCash(q, sellerId, sellerGets, `sieu_thi_ban:${specialtyId}`);
         await q.query('update users set super_earned = super_earned + $2 where id = $1', [sellerId, sellerGets]);
+        await addXp(q, sellerId, XP.consignSold);
       }
-      await q.query('insert into super_buys (user_id, province, seller_id, specialty_id, kg, price) values ($1,$2,$3,$4,$5,$6)', [userId, province, sellerId, specialtyId, kg, price]);
-      return { ok: true, specialtyId, quality: ql, kg, unitPrice: price, total, cash: w.cash - total, leftTodayKg: SUPER_DAILY_KG - used - kg };
+      await q.query('insert into super_buys (user_id, province, seller_id, specialty_id, kg, price, processed) values ($1,$2,$3,$4,$5,$6,$7)', [userId, province, sellerId, specialtyId, kg, price, processed]);
+      return { ok: true, specialtyId, quality: ql, kg, unitPrice: price, total, cash: w.cash - total, leftTodayKg: dailyKg - used - kg, processed };
     });
   });
 
@@ -2058,8 +2223,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const s = sh.rows[0];
       if (!s || s.kg <= 0) throw bad('khong_tim_thay', 'Không tìm thấy lô hàng của bạn.', 404);
       await q.query('update super_shelves set kg = 0 where id = $1', [id]);
-      await addInventory(q, userId, s.specialty_id, s.quality, s.kg);
-      return { ok: true, specialtyId: s.specialty_id, quality: s.quality, kg: s.kg };
+      if (s.processed) await addProduct(q, userId, s.specialty_id, s.kg); else await addInventory(q, userId, s.specialty_id, s.quality, s.kg);
+      return { ok: true, specialtyId: s.specialty_id, quality: s.quality, kg: s.kg, processed: !!s.processed };
     });
   });
 
@@ -2130,6 +2295,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const ql = b.grade === undefined ? 'A' : quality(b.grade);
     await db.tx(async (q) => { await addInventory(q, userId, sp.id, ql, kg); await collect(q, userId, sp.id); });
     return { ok: true };
+  });
+
+  app.post('/api/test/energy', async (req) => {
+    const userId = await requireTester(req);
+    const value = int((req.body as any)?.value, 0, 1000, 'value');
+    return db.tx(async (q) => { const e = await energyState(q, userId, true); return setEnergy(q, userId, e, value); });
   });
 
   app.post('/api/test/season', async (req) => {

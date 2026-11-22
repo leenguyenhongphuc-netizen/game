@@ -472,3 +472,5 @@ button.go.wide { width: 100%; }
   .vmap-svg { max-height: calc(100vh - 150px); }
   .sights, .super { grid-template-columns: minmax(0, 1fr); }
 }
+
+.sight-art { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 12px; border: 2px solid var(--wood); margin: 6px 0 4px; }

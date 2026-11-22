@@ -259,15 +259,15 @@ class Lot {
       const spot = MACHINE_SPOTS[i], model = buildMachine(m), group = bake(model.root);
       group.position.set(spot.x, 0, spot.z);
       const lamp = new THREE.Mesh(GEO.ball, LAMP_MATS.idle); lamp.scale.setScalar(0.13); lamp.position.copy(model.lamp).add(group.position);
-      const done = bake(buildDoneCrate()); done.position.set(spot.x - 0.2, 0.06, spot.z + 1.25); done.visible = false;
+      const done = bake(buildDoneCrate()); done.position.set(spot.x - 0.2, 0.06, spot.z + 1.25); done.visible = false; done.traverse((o) => { o.castShadow = false; });
       const puffs: THREE.Mesh[] = [];
       if (model.steam) for (let k = 0; k < 2; k++) { const pf = new THREE.Mesh(GEO.sphere, STEAM_MAT); pf.userData.base = model.steam.clone().add(group.position); pf.userData.k = k / 2; pf.visible = false; puffs.push(pf); this.group.add(pf); }
       this.group.add(group, lamp, done);
-      if (this.slot === 0) { const tag = makeLabel(m.name, 'paper', 0.46); tag.position.set(spot.x, model.h + 0.95, spot.z); this.group.add(tag); this.signs.push(tag); }
+      if (this.slot === 0) { const tag = makeLabel(m.name, 'paper', 0.6); tag.position.set(spot.x, model.h + 1.0, spot.z); this.group.add(tag); this.signs.push(tag); }
       this.fx.push({ m, group, lamp, done, puffs, x: spot.x, z: spot.z, state: '' });
     });
-    if (this.slot === 0 && ms.length < MACHINE_SPOTS.length) { const sp = MACHINE_SPOTS[ms.length], tag = makeLabel('Chỗ đặt máy', 'paper', 0.46); tag.position.set(sp.x, 1.3, sp.z); this.group.add(tag); this.signs.push(tag); }
-    this.belt = bake(buildBeltCrates()); this.belt.position.set(-5.4, 1.04, -4.9); this.group.add(this.belt);
+    if (this.slot === 0 && ms.length < MACHINE_SPOTS.length) { const sp = MACHINE_SPOTS[ms.length], tag = makeLabel('Chỗ đặt máy', 'paper', 0.56); tag.position.set(sp.x, 1.3, sp.z); this.group.add(tag); this.signs.push(tag); }
+    this.belt = bake(buildBeltCrates()); this.belt.position.set(-5.4, 1.04, -4.9); this.belt.traverse((o) => { o.castShadow = false; }); this.group.add(this.belt);
     for (let k = 0; k < 3; k++) { const pf = new THREE.Mesh(GEO.sphere, STEAM_MAT); pf.userData.k = k / 3; this.smoke.push(pf); this.group.add(pf); }
     } else {
     // Sân đất và các ô được trồng theo vai trò

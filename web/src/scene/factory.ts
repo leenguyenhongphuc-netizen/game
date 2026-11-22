@@ -47,7 +47,7 @@ const C = {
   concrete: 0xcfd2d4, concrete2: 0xbfc3c6, line: 0xf5c518, steel: 0x8f97a3, dark: 0x4a5059, inox: 0xdfe6ee, white: 0xf5f3ee, cream: 0xf3ead6,
   roof: 0x5f8fb5, roof2: 0x4f7ea3, wood: 0xc9975a, carton: 0xd2a56c, red: 0xe2573c, green: 0x4caf3f, blue: 0x4aa3d8,
 };
-const inox = () => mat(C.inox, { rough: 0.35 });
+const inox = () => mat(C.inox); // nhám như mọi khối khác để gộp chung một lần vẽ
 
 /** Phần tĩnh của khu xưởng (chưa gộp lưới): nền, nhà xưởng mái tôn, bồn, ống khói, khu nguyên liệu, khu thành phẩm, xe nâng, đèn. */
 export function buildFactoryYard(night: boolean, roofColor: number, used: number): THREE.Group {
@@ -80,7 +80,7 @@ export function buildFactoryYard(night: boolean, roofColor: number, used: number
   for (let i = 0; i < 3; i++) g.add(mesh(GEO.box, mat(0xb9bec4), sx - sw / 3 + i * sw / 3, 3.0 - (i === 1 ? 0 : 0.18), sz + sd / 2 - 0.02, sw / 3 - 0.3, i === 1 ? 0.14 : 0.5, 0.06)); // cửa cuốn kéo lên
   const roof = mesh(GEO.box, tole, sx, 3.85, sz - 0.1, sw + 0.9, 0.16, sd + 1.3); roof.rotation.x = 0.16; g.add(roof);
   for (let i = 0; i < 12; i++) { const rib = mesh(GEO.box, tole2, sx - (sw + 0.7) / 2 + 0.4 + i * 0.8, 3.95, sz - 0.1, 0.12, 0.08, sd + 1.3); rib.rotation.x = 0.16; g.add(rib); } // sóng tôn
-  for (const x of [-2.6, 0, 2.6]) g.add(mesh(GEO.box, mat(0xbfe9ff, { rough: 0.3 }), sx + x, 2.6, sz - sd / 2 + 0.09, 1.5, 0.6, 0.03)); // ô lấy sáng
+  for (const x of [-2.6, 0, 2.6]) g.add(mesh(GEO.box, mat(0xbfe9ff), sx + x, 2.6, sz - sd / 2 + 0.09, 1.5, 0.6, 0.03)); // ô lấy sáng
   // bên trong: băng chuyền, phễu nạp, công nhân (dáng đơn giản), đèn treo
   g.add(mesh(GEO.box, mat(C.dark), sx, 0.75, sz - 0.3, 6.6, 0.12, 0.8), mesh(GEO.box, mat(0x2f3338), sx, 0.83, sz - 0.3, 6.5, 0.05, 0.62));
   for (let i = 0; i < 6; i++) g.add(mesh(GEO.box, mat(C.steel), sx - 3 + i * 1.2, 0.4, sz - 0.3, 0.1, 0.7, 0.7));
@@ -102,7 +102,7 @@ export function buildFactoryYard(night: boolean, roofColor: number, used: number
   [[-8.0, 2.4, 0], [-8.0, 3.4, 1], [-8.0, 4.4, 2], [-7.9, 2.9, 3], [-8.1, 5.6, 4]].forEach(([x, z, k], i) => {
     const y = i === 3 ? 0.78 : 0.26;
     g.add(mesh(GEO.box, mat(i % 2 ? 0x3f8fd0 : 0xd9534f), x, y, z, 0.85, 0.5, 0.85));
-    for (let n = 0; n < 5; n++) g.add(mesh(GEO.ball, mat(fruit[k], { rough: 0.7 }), x + ((n % 3) - 1) * 0.24, y + 0.32, z + (n > 2 ? 0.18 : -0.18), 0.17));
+    for (let n = 0; n < 5; n++) g.add(mesh(GEO.ball, mat(fruit[k], {}), x + ((n % 3) - 1) * 0.24, y + 0.32, z + (n > 2 ? 0.18 : -0.18), 0.17));
   });
   g.add(mesh(GEO.box, mat(C.steel), -8.0, 0.12, 6.9, 1.2, 0.14, 1.0), mesh(GEO.box, mat(C.dark), -8.5, 0.7, 6.9, 0.1, 1.2, 0.1), mesh(GEO.box, mat(C.white), -8.5, 1.35, 6.9, 0.4, 0.3, 0.12));
   g.add(mesh(GEO.box, mat(0x2f7d26), -8.0, 1.9, 1.2, 0.08, 0.6, 1.6)); // biển "Nhập nguyên liệu" (màu, chữ nằm ở nhãn nổi)
@@ -132,27 +132,27 @@ export function buildMachine(m: { kind: string; name: string }): MachineModel {
   const steel = mat(C.steel), dark = mat(C.dark), white = mat(C.white);
   g.add(mesh(GEO.box, mat(0x5d646e), 0, 0.12, 0, 2.2, 0.12, 1.6)); // bệ máy
   let steam: THREE.Vector3 | null = null, h = 2.0;
-  const panel = (x: number, y: number, z: number) => { g.add(mesh(GEO.box, dark, x, y, z, 0.42, 0.5, 0.06), mesh(GEO.box, mat(0x9be7ff, { emissive: 0x3aa8d8 }), x, y + 0.1, z + 0.035, 0.3, 0.18, 0.01), mesh(GEO.ball, mat(C.red), x - 0.09, y - 0.13, z + 0.04, 0.045), mesh(GEO.ball, mat(C.green), x + 0.09, y - 0.13, z + 0.04, 0.045)); };
+  const panel = (x: number, y: number, z: number) => { g.add(mesh(GEO.box, dark, x, y, z, 0.42, 0.5, 0.06), mesh(GEO.box, mat(0x9be7ff), x, y + 0.1, z + 0.035, 0.3, 0.18, 0.01), mesh(GEO.ball, mat(C.red), x - 0.09, y - 0.13, z + 0.04, 0.045), mesh(GEO.ball, mat(C.green), x + 0.09, y - 0.13, z + 0.04, 0.045)); };
   if (model === 'say') { // tủ sấy nhiều khay, cửa kính thấy lát trái cây
     g.add(mesh(GEO.box, white, 0, 1.2, -0.1, 1.7, 2.0, 1.1), mesh(GEO.box, mat(0xe2573c), 0, 2.24, -0.1, 1.8, 0.12, 1.2));
     g.add(mesh(GEO.box, mat(0x3b3f45), -0.25, 1.2, 0.46, 1.05, 1.7, 0.03));
-    for (let i = 0; i < 5; i++) { g.add(mesh(GEO.box, steel, -0.25, 0.52 + i * 0.34, 0.48, 1.0, 0.04, 0.03)); for (let k = 0; k < 4; k++) g.add(mesh(GEO.cyl, mat(i % 2 ? 0xffb347 : 0xffd23f, { rough: 0.7 }), -0.6 + k * 0.24, 0.58 + i * 0.34, 0.49, 0.09, 0.03, 0.03)); }
+    for (let i = 0; i < 5; i++) { g.add(mesh(GEO.box, steel, -0.25, 0.52 + i * 0.34, 0.48, 1.0, 0.04, 0.03)); for (let k = 0; k < 4; k++) g.add(mesh(GEO.cyl, mat(i % 2 ? 0xffb347 : 0xffd23f, {}), -0.6 + k * 0.24, 0.58 + i * 0.34, 0.49, 0.09, 0.03, 0.03)); }
     panel(0.6, 1.5, 0.46); g.add(mesh(GEO.box, steel, -0.82, 1.2, 0.5, 0.05, 0.5, 0.05));
     g.add(mesh(GEO.cyl, steel, 0.45, 2.55, -0.3, 0.2, 0.5, 0.2), mesh(GEO.cyl, dark, 0.45, 2.82, -0.3, 0.26, 0.06, 0.26));
     steam = new THREE.Vector3(0.45, 2.95, -0.3); h = 2.9;
   } else if (model === 'ep') { // bồn ép có phễu, vòi rót, can và chai nước
     g.add(mesh(GEO.cyl, inox(), -0.35, 1.25, -0.1, 0.62, 1.3, 0.62), mesh(GEO.cone, inox(), -0.35, 0.48, -0.1, 0.62, -0.3, 0.62), mesh(GEO.cone, inox(), -0.35, 2.15, -0.1, 0.7, -0.5, 0.7));
     for (const [dx, dz] of [[0.42, 0.42], [-0.42, 0.42], [0.42, -0.42], [-0.42, -0.42]]) g.add(mesh(GEO.cyl, steel, -0.35 + dx, 0.36, -0.1 + dz, 0.05, 0.5, 0.05));
-    for (const [x, z, c] of [[-0.5, -0.2, 0xff8a3d], [-0.2, 0, 0xffa94d], [-0.4, 0.1, 0xff8a3d]] as const) g.add(mesh(GEO.ball, mat(c, { rough: 0.7 }), x, 2.36, z, 0.17));
+    for (const [x, z, c] of [[-0.5, -0.2, 0xff8a3d], [-0.2, 0, 0xffa94d], [-0.4, 0.1, 0xff8a3d]] as const) g.add(mesh(GEO.ball, mat(c, {}), x, 2.36, z, 0.17));
     g.add(mesh(GEO.box, steel, 0.25, 0.9, 0.1, 0.5, 0.08, 0.08), mesh(GEO.box, steel, 0.5, 0.78, 0.1, 0.08, 0.3, 0.08));
-    g.add(mesh(GEO.cyl, mat(0xffb347, { rough: 0.7 }), 0.5, 0.42, 0.1, 0.2, 0.42, 0.2), mesh(GEO.cyl, white, 0.5, 0.66, 0.1, 0.08, 0.08, 0.08));
-    for (let i = 0; i < 4; i++) g.add(mesh(GEO.cyl, mat(i % 2 ? 0xffa94d : 0xffd23f, { rough: 0.7 }), 0.55 + (i % 2) * 0.22, 0.36, 0.5 + (i > 1 ? 0.2 : 0), 0.075, 0.34, 0.075), mesh(GEO.cyl, mat(C.green), 0.55 + (i % 2) * 0.22, 0.56, 0.5 + (i > 1 ? 0.2 : 0), 0.04, 0.06, 0.04));
+    g.add(mesh(GEO.cyl, mat(0xffb347, {}), 0.5, 0.42, 0.1, 0.2, 0.42, 0.2), mesh(GEO.cyl, white, 0.5, 0.66, 0.1, 0.08, 0.08, 0.08));
+    for (let i = 0; i < 4; i++) g.add(mesh(GEO.cyl, mat(i % 2 ? 0xffa94d : 0xffd23f, {}), 0.55 + (i % 2) * 0.22, 0.36, 0.5 + (i > 1 ? 0.2 : 0), 0.075, 0.34, 0.075), mesh(GEO.cyl, mat(C.green), 0.55 + (i % 2) * 0.22, 0.56, 0.5 + (i > 1 ? 0.2 : 0), 0.04, 0.06, 0.04));
     panel(0.75, 1.5, -0.3); g.add(mesh(GEO.box, steel, 0.75, 0.7, -0.33, 0.08, 1.1, 0.06));
     h = 2.5;
   } else if (model === 'rang') { // trống rang nằm ngang, ống khói, mâm làm nguội
     const drum = mesh(GEO.cyl, mat(0x7a4a2c), -0.3, 1.25, -0.15, 0.6, 1.2, 0.6); drum.rotation.z = Math.PI / 2; g.add(drum);
-    for (const x of [-0.92, 0.32]) { const r = mesh(GEO.cyl, mat(0xd9a441, { rough: 0.5 }), x, 1.25, -0.15, 0.63, 0.08, 0.63); r.rotation.z = Math.PI / 2; g.add(r); }
-    g.add(mesh(GEO.box, dark, -0.3, 0.45, -0.15, 1.3, 0.6, 0.9), mesh(GEO.box, mat(0xff7b3a, { emissive: 0xff5a1f }), -0.3, 0.4, 0.31, 0.6, 0.22, 0.02));
+    for (const x of [-0.92, 0.32]) { const r = mesh(GEO.cyl, mat(0xd9a441), x, 1.25, -0.15, 0.63, 0.08, 0.63); r.rotation.z = Math.PI / 2; g.add(r); }
+    g.add(mesh(GEO.box, dark, -0.3, 0.45, -0.15, 1.3, 0.6, 0.9), mesh(GEO.box, mat(0xff7b3a), -0.3, 0.4, 0.31, 0.6, 0.22, 0.02));
     g.add(mesh(GEO.cone, steel, -0.3, 2.1, -0.15, 0.3, -0.4, 0.3), mesh(GEO.cyl, steel, 0.25, 2.5, -0.45, 0.13, 1.5, 0.13));
     g.add(mesh(GEO.cyl, steel, 0.65, 0.62, 0.35, 0.5, 0.14, 0.5), mesh(GEO.cyl, mat(0x4a2c17), 0.65, 0.7, 0.35, 0.44, 0.04, 0.44), mesh(GEO.cyl, steel, 0.65, 0.35, 0.35, 0.07, 0.5, 0.07));
     g.add(mesh(GEO.box, mat(0xc9975a), -0.85, 0.42, 0.5, 0.5, 0.5, 0.36), mesh(GEO.box, mat(0x4a2c17), -0.85, 0.68, 0.5, 0.4, 0.04, 0.28)); // bao hạt
@@ -175,15 +175,15 @@ export function buildMachine(m: { kind: string; name: string }): MachineModel {
     h = 2.8;
   } else if (model === 'goi') { // bàn đóng gói: máy hút chân không nắp trong, cuộn màng, túi thành phẩm
     g.add(mesh(GEO.box, inox(), 0, 0.85, 0, 2.0, 0.08, 1.1)); for (const [x, z] of [[-0.9, -0.45], [0.9, -0.45], [-0.9, 0.45], [0.9, 0.45]]) g.add(mesh(GEO.box, steel, x, 0.5, z, 0.08, 0.7, 0.08));
-    g.add(mesh(GEO.box, mat(0x3f8fd0), -0.35, 1.08, -0.05, 1.0, 0.36, 0.8), mesh(GEO.box, mat(0xbfe9ff, { transparent: 0.55, rough: 0.3 }), -0.35, 1.34, -0.05, 0.9, 0.16, 0.7), mesh(GEO.box, dark, -0.35, 1.02, 0.36, 0.5, 0.14, 0.03));
-    const roll = mesh(GEO.cyl, mat(0xe9f6ff, { rough: 0.5 }), 0.6, 1.3, -0.3, 0.2, 0.6, 0.2); roll.rotation.z = Math.PI / 2; g.add(roll, mesh(GEO.box, steel, 0.6, 1.1, -0.3, 0.74, 0.4, 0.06));
-    for (let i = 0; i < 5; i++) g.add(mesh(GEO.box, mat([0xffb347, 0xe8457f, 0x7ccf4f][i % 3], { rough: 0.7 }), 0.45 + (i % 2) * 0.3, 0.93 + Math.floor(i / 2) * 0.07, 0.25, 0.26, 0.06, 0.34));
+    g.add(mesh(GEO.box, mat(0x3f8fd0), -0.35, 1.08, -0.05, 1.0, 0.36, 0.8), mesh(GEO.box, mat(0xcfefff), -0.35, 1.34, -0.05, 0.9, 0.16, 0.7), mesh(GEO.box, dark, -0.35, 1.02, 0.36, 0.5, 0.14, 0.03));
+    const roll = mesh(GEO.cyl, mat(0xe9f6ff), 0.6, 1.3, -0.3, 0.2, 0.6, 0.2); roll.rotation.z = Math.PI / 2; g.add(roll, mesh(GEO.box, steel, 0.6, 1.1, -0.3, 0.74, 0.4, 0.06));
+    for (let i = 0; i < 5; i++) g.add(mesh(GEO.box, mat([0xffb347, 0xe8457f, 0x7ccf4f][i % 3], {}), 0.45 + (i % 2) * 0.3, 0.93 + Math.floor(i / 2) * 0.07, 0.25, 0.26, 0.06, 0.34));
     g.add(mesh(GEO.box, mat(C.carton), 0.2, 0.36, 0.1, 0.6, 0.5, 0.5));
     h = 1.9;
   } else if (model === 'rua') { // máng rửa và bàn phân loại
-    g.add(mesh(GEO.box, inox(), -0.3, 0.8, 0, 1.4, 0.5, 0.9), mesh(GEO.box, mat(0x7fd3e8, { rough: 0.3 }), -0.3, 1.04, 0, 1.3, 0.03, 0.8));
+    g.add(mesh(GEO.box, inox(), -0.3, 0.8, 0, 1.4, 0.5, 0.9), mesh(GEO.box, mat(0x7fd3e8), -0.3, 1.04, 0, 1.3, 0.03, 0.8));
     for (const [x, z] of [[-0.9, -0.38], [0.3, -0.38], [-0.9, 0.38], [0.3, 0.38]]) g.add(mesh(GEO.box, steel, x, 0.35, z, 0.08, 0.5, 0.08));
-    for (let i = 0; i < 5; i++) g.add(mesh(GEO.ball, mat([0xff8a3d, 0x7ccf4f, 0xffd23f][i % 3], { rough: 0.7 }), -0.75 + i * 0.22, 1.08, (i % 2 ? 0.15 : -0.15), 0.13));
+    for (let i = 0; i < 5; i++) g.add(mesh(GEO.ball, mat([0xff8a3d, 0x7ccf4f, 0xffd23f][i % 3], {}), -0.75 + i * 0.22, 1.08, (i % 2 ? 0.15 : -0.15), 0.13));
     const ramp = mesh(GEO.box, mat(0x2f3338), 0.72, 0.95, 0, 0.9, 0.06, 0.7); ramp.rotation.z = -0.35; g.add(ramp, mesh(GEO.box, steel, 0.95, 0.42, 0, 0.08, 0.7, 0.6));
     g.add(mesh(GEO.cyl, steel, -0.3, 1.6, -0.4, 0.04, 1.2, 0.04), mesh(GEO.box, steel, -0.3, 2.18, -0.15, 0.06, 0.06, 0.5), mesh(GEO.cone, steel, -0.3, 2.06, 0.08, 0.12, 0.16, 0.12));
     h = 2.3;

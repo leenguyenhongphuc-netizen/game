@@ -234,8 +234,8 @@ export class SightScene {
   private postcardOf(i: number): { pos: THREE.Vector3; look: THREE.Vector3 } | null {
     const st = this.set.stops[i]; if (!st.look) return null;
     if (st.cam) return { pos: st.cam.clone(), look: st.look.clone() };
-    const p = this.state.pos, dx = p.x - st.look.x, dz = p.z - st.look.z, l = Math.hypot(dx, dz) || 1, back = this.camera.aspect < 1 ? 6.5 : 5.5;
-    const head = new THREE.Vector3(p.x, p.y + 1.7, p.z), want = new THREE.Vector3(p.x + dx / l * back + (-dz / l) * 1.6, p.y + 3.0, p.z + dz / l * back + (dx / l) * 1.6);
+    const p = st.at, dx = p.x - st.look.x, dz = p.z - st.look.z, l = Math.hypot(dx, dz) || 1, back = Math.min(9, Math.max(4, l * 0.45));
+    const head = new THREE.Vector3(p.x, p.y + 1.9, p.z), want = new THREE.Vector3(p.x + dx / l * back + (-dz / l) * 1.2, p.y + 3.2, p.z + dz / l * back + (dx / l) * 1.2);
     const k = this.clear(head, want); if (k < 1) want.lerpVectors(head, want, Math.max(0.25, k - 0.08));
     return { pos: want, look: st.look.clone() };
   }
@@ -247,7 +247,7 @@ export class SightScene {
     if (this.postcard) {
       // đang xem thuyết minh: máy ảnh lướt tới góc ngắm đẹp, đẩy công trình lên phần màn không bị thẻ che
       if (snap) this.camera.position.copy(this.postcard.pos); else this.camera.position.lerp(this.postcard.pos, 0.07);
-      this.camLook.lerp(this.postcard.look, snap ? 1 : 0.09); this.camera.lookAt(this.camLook); this.camera.rotateX(-(portrait ? 0.13 : 0.03));
+      this.camLook.lerp(this.postcard.look, snap ? 1 : 0.09); this.camera.lookAt(this.camLook); this.camera.rotateX(-(portrait ? 0.07 : 0.02));
       return;
     }
     const distMax = portrait ? 8.6 : 7.4, h = Math.max(1.3, 3.1 + this.pitch * 5.5);
@@ -274,6 +274,8 @@ export class SightScene {
     this.player.position.copy(st.pos); this.player.position.y += Math.abs(Math.sin(this.time * 9)) * 0.05 * this.moving; this.player.rotation.y = -this.heading;
     this.legs[0].rotation.x = sw; this.legs[1].rotation.x = -sw; this.arms[0].rotation.x = -sw * 0.8; this.arms[1].rotation.x = sw * 0.8;
     this.blob.position.set(st.pos.x, st.pos.y + 0.06, st.pos.z);
+    // máy ảnh áp sát thì ẩn nhân vật để không che công trình
+    this.player.visible = this.blob.visible = Math.hypot(this.camera.position.x - st.pos.x, this.camera.position.z - st.pos.z) > 2.4;
     for (let i = 0; i < this.npcs.length; i++) {
       const n = this.npcs[i];
       n.s += n.dir * n.sp * dt; if (n.s > n.b) { n.s = n.b; n.dir = -1; } if (n.s < n.a) { n.s = n.a; n.dir = 1; }

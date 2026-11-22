@@ -3,12 +3,12 @@
 // Chùa Cầu ở đầu TÂY Trần Phú, bắc qua một lạch nhỏ; Hội quán Phúc Kiến ở phía bắc Trần Phú về phía đông; chợ ở đầu ĐÔNG.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, ball, bead, boat, box, cone, cyl, gable, glow, grp, hip, label, lampPost, lantern, lanternString, LANTERN_COLORS, palm, person, stall, templeRoof, tree } from '../SightKit.ts';
+import { Kit, V, ball, bead, bench, bicycle, bin, boat, box, cone, cyclo, cyl, gable, glow, grp, hip, incenseUrn, label, lampPost, lantern, lanternString, LANTERN_COLORS, palm, person, potPlant, reflection, shopSign, stall, stele, templeRoof, tree, wayPost } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
 
-const WALLS = [0xe9b647, 0xf0c45a, 0xdba63c, 0xf2cf72, 0xe9b647, 0xf1e6c8], ROOFS = [0x6a4a3a, 0x77523d, 0x5f5a44, 0x6b4636], WOOD = 0x4a2c1c, WARM = 0xffd98a;
+const WALLS = [0xf0b93a, 0xf6c653, 0xe6a82e, 0xf8d476, 0xf0b93a, 0xf4e7c4], ROOFS = [0x7a4a36, 0x8a5540, 0x6a5a40, 0x74482f], MOSS = [0x5f6a44, 0x6a7350, 0x54603c], WOOD = 0x4a2c1c, WARM = 0xffd98a, SHUT = [0x3f7f6a, 0x4a6f8f, 0x3f6f5f, 0x6a5a3a];
 /** Nhà phố Hội An: tường vàng nghệ, mái ngói nâu rêu, cửa gỗ sẫm, mái hiên, đèn lồng, đôi khi có giàn hoa giấy. Mặt tiền quay về +z, gốc ở giữa chân mặt tiền. */
-export function shophouse(w: number, d: number, floors: number, r: () => number, lit = true): THREE.Group {
+export function shophouse(w: number, d: number, floors: number, r: () => number, lit = true, detail = true): THREE.Group {
   const g = new THREE.Group(), wall = WALLS[Math.floor(r() * WALLS.length)], roof = ROOFS[Math.floor(r() * ROOFS.length)], h = floors === 2 ? 6.2 : 3.9;
   g.add(box(wall, 0, h / 2, -d / 2, w - 0.12, h, d), box(0x8a7a66, 0, 0.18, 0.03, w - 0.1, 0.36, 0.1));
   g.add(gable(roof, 0, h, -d / 2, d + 0.5, 1.7, w, Math.PI / 2), box(0xf1e6c8, -w / 2 + 0.12, h + 0.5, -d / 2, 0.24, 1.3, d * 0.86), box(0xf1e6c8, w / 2 - 0.12, h + 0.5, -d / 2, 0.24, 1.3, d * 0.86));
@@ -25,15 +25,25 @@ export function shophouse(w: number, d: number, floors: number, r: () => number,
   for (const s of [-1, 1]) if (r() < 0.75) g.add(lantern(LANTERN_COLORS[Math.floor(r() * LANTERN_COLORS.length)], s * (w / 2 - 0.7), 2.45, 1.5));
   if (r() < 0.3) { const sx = r() < 0.5 ? -1 : 1; for (let i = 0; i < 5; i++) g.add(bead(i % 2 ? 0xe85aa0 : 0xf07ab8, sx * (w / 2 - 0.4 - r() * 1.4), 3.3 + r() * 1.2, 1.0 + r() * 0.8, 0.5 + r() * 0.3)); g.add(cyl(0x5a4a34, sx * (w / 2 - 0.3), 1.6, 1.3, 0.06, 3.2)); }
   if (r() < 0.35) g.add(box(0x8a6a48, (r() - 0.5) * 2, 0.3, 1.5, 0.9, 0.6, 0.5), ball(0x5cb85f, (r() - 0.5) * 2, 0.9, 1.5, 0.4));
+  if (detail) {
+    // ngói âm dương: các sống ngói chạy theo mái, loang rêu; chân tường ố mưa; cửa lá sách; bảng hiệu; chậu cây
+    const slope = Math.atan2(1.7, (d + 0.5) / 2), sl = Math.hypot(1.7, (d + 0.5) / 2), n = Math.max(3, Math.round(w / 1.5)), shut = SHUT[Math.floor(r() * SHUT.length)];
+    for (let i = 0; i < n; i++) { const x = (i + 0.5) / n * w - w / 2; g.add(box(i % 3 === 1 ? MOSS[Math.floor(r() * 3)] : shade2(roof, 0.86), x, h + 0.9, -d / 2 + (d + 0.5) / 4, 0.2, 0.1, sl).rotateX(slope)); }
+    g.add(box(shade2(wall, 0.8), 0, 0.62, 0.02, w - 0.14, 0.5, 0.06), box(0xf4ead0, 0, h - 0.16, 0.03, w - 0.1, 0.3, 0.08));
+    if (floors === 2) { const m = w > 5.4 ? 3 : 2; for (let i = 0; i < m; i++) { const x = (i - (m - 1) / 2) * (w / m) * 0.86; for (const sx of [-1, 1]) { g.add(box(shut, x + sx * 0.72, 4.9, 0.1, 0.36, 1.5, 0.05)); for (let k = 0; k < 2; k++) g.add(box(shade2(shut, 0.75), x + sx * 0.72, 4.55 + k * 0.6, 0.13, 0.3, 0.05, 0.02)); } } for (let i = 0; i < Math.round(w / 1.0); i++) g.add(box(WOOD, -w / 2 + 0.5 + i * 1.0, 4.1, 1.0, 0.06, 0.62, 0.06)); }
+    if (r() < 0.6) { const sg = shopSign(Math.min(1.8, w * 0.36), r() < 0.5 ? 0x7a2e22 : 0x2a1a12); sg.position.set((r() - 0.5) * (w - 2.4), 3.42, 1.62); g.add(sg); }
+    for (const sx of [-1, 1]) if (r() < 0.4) { const pp = potPlant([0xe85aa0, 0xffd23f, 0xf3ead2][Math.floor(r() * 3)], 0.9); pp.position.set(sx * (w / 2 - 0.5), 0, 1.75); g.add(pp); }
+  }
   return g;
 }
+const shade2 = (c: number, k: number): number => new THREE.Color(c).multiplyScalar(k).getHex();
 /** Một dãy nhà phố từ x0 tới x1; face = +1 mặt tiền quay về nam (+z), -1 quay về bắc. Bỏ trống các khoảng trong gaps. */
-export function shopRow(kit: Kit, x0: number, x1: number, zFront: number, face: number, depth: number, gaps: [number, number][], lit = true): void {
+export function shopRow(kit: Kit, x0: number, x1: number, zFront: number, face: number, depth: number, gaps: [number, number][], lit = true, detail = true): void {
   let x = x0; const r = kit.r;
   while (x < x1 - 3.6) {
     const w = Math.min(x1 - x, 4.4 + r() * 2.4), gap = gaps.find(([a, b]) => x < b && x + w > a);
-    if (gap) { if (gap[0] - x > 3.6) { const ww = gap[0] - x; const h = shophouse(ww, depth, r() < 0.7 ? 2 : 1, r, lit); h.position.set(x + ww / 2, 0, zFront); h.rotation.y = face > 0 ? 0 : Math.PI; kit.add(h); } x = gap[1]; continue; }
-    const h = shophouse(w, depth, r() < 0.68 ? 2 : 1, r, lit); h.position.set(x + w / 2, 0, zFront); h.rotation.y = face > 0 ? 0 : Math.PI; kit.add(h); x += w;
+    if (gap) { if (gap[0] - x > 3.6) { const ww = gap[0] - x; const h = shophouse(ww, depth, r() < 0.7 ? 2 : 1, r, lit, detail); h.position.set(x + ww / 2, 0, zFront); h.rotation.y = face > 0 ? 0 : Math.PI; kit.add(h); } x = gap[1]; continue; }
+    const h = shophouse(w, depth, r() < 0.68 ? 2 : 1, r, lit, detail); h.position.set(x + w / 2, 0, zFront); h.rotation.y = face > 0 ? 0 : Math.PI; kit.add(h); x += w;
   }
 }
 
@@ -41,17 +51,18 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
   const r = kit.r, STONE = 0xa9987e, QUAY = 0x8f8474;
   // ---- nền đất: bờ tây lạch, khu phố, bờ An Hội bên kia sông; nước nằm thấp hơn mặt phố
   kit.add(box(0x7f9a62, -200, -1.5, 0, 205, 3, 220), box(STONE, 22, -1.5, -24, 221, 3, 152), box(0x7f9a62, 0, -1.5, 150, 600, 3, 116), box(0x7f9a62, 240, -1.5, 0, 215, 3, 220));
-  kit.water(0x2d5f73, 0, 40, 700, 400, -1.0, 1);
+  kit.water(0x1f6f86, 0, 40, 700, 400, -1.0, 1);
+  kit.add(box(0x3fb0a0, -93, -0.96, -20, 13.2, 0.04, 120)); // lạch nước xanh ngọc dưới Chùa Cầu, khác hẳn màu đường và màu sông
   // ---- lát phố
   const lanes = [-70, -10, 50];
-  for (const z of [0, 26]) kit.add(box(0xb7a78c, 22, 0.02, z, 221, 0.1, 6.4));
+  for (const z of [0, 26]) { kit.add(box(0xa89a84, 22, 0.02, z, 221, 0.1, 6.4)); for (let x = -86; x < 132; x += 2.4) kit.add(box(0x978a75, x, 0.075, z, 0.06, 0.02, 6.2)); for (const sz of [-1, 1]) kit.add(box(0x7f7566, 22, 0.09, z + sz * 3.0, 221, 0.06, 0.3)); }
   kit.add(box(0xb09f86, 22, 0.02, 48, 221, 0.1, 7.6), box(QUAY, 22, -0.2, 52.1, 221, 0.6, 0.5));
   for (const x of lanes) kit.add(box(0xb7a78c, x, 0.02, 24, 6.4, 0.1, 54));
   kit.add(box(0xb7a78c, 100, 0.02, 24, 6.4, 0.1, 54), box(0xb7a78c, -112, 0.02, 2, 26, 0.1, 9));
   // ---- các dãy nhà
   const gaps: [number, number][] = [...lanes, 100].map((x) => [x - 3.4, x + 3.4] as [number, number]);
   shopRow(kit, -86, 132, -3.3, 1, 10, [...gaps.filter(([a]) => a < -5 || a > 60), [6, 34]]);        // bắc Trần Phú (chừa Hội quán)
-  shopRow(kit, -86, 132, 3.3, -1, 9.5, gaps); shopRow(kit, -86, 132, 22.7, 1, 9.5, gaps);            // giữa Trần Phú và Nguyễn Thái Học
+  shopRow(kit, -86, 132, 3.3, -1, 9.5, [...gaps, [11, 29]]); shopRow(kit, -86, 132, 22.7, 1, 9.5, [...gaps, [-58, -42]]);            // giữa Trần Phú và Nguyễn Thái Học
   shopRow(kit, -86, 96, 29.3, -1, 7.4, [...gaps, [-55, -45]]); shopRow(kit, -86, 96, 44.3, 1, 7.4, gaps, true); // nam Nguyễn Thái Học, lưng ra sông
   shopRow(kit, -170, -101, -4.6, 1, 9, [[-124, -116]]); shopRow(kit, -170, -101, 9.2, -1, 9, [[-124, -104]]);
   // ---- cổng phố đi bộ ở đầu tây
@@ -62,28 +73,28 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
   // ---- Chùa Cầu: bắc qua lạch (x từ -99.6 tới -86.4), thân gỗ đỏ sẫm, mái ngói âm dương, miếu nhỏ ở phía bắc
   const bx = -93, deckY = (x: number) => 0.95 * Math.max(0, 1 - ((x - bx) / 6.6) ** 2);
   for (let i = 0; i < 6; i++) { const x0 = bx - 6.6 + i * 2.2, xm = x0 + 1.1, y = deckY(xm); const pl = box(0x6b4a34, xm, y - 0.12, 0, 2.3, 0.22, 5.4); pl.rotation.z = Math.atan2(deckY(x0 + 2.2) - deckY(x0), 2.2); kit.add(pl); }
-  for (const px of [-4.4, -1.5, 1.5, 4.4]) for (const pz of [-2.3, 2.3]) kit.add(box(0x8d8478, bx + px, -0.4, pz, 0.7, 2.6, 0.7));
+  for (const px of [-4.4, -1.5, 1.5, 4.4]) for (const pz of [-2.3, 2.3]) kit.add(box(0x9a9488, bx + px, -0.4, pz, 0.8, 2.6, 0.8));
   for (const px of [-3, 0, 3]) kit.add(box(0x7f776b, bx + px, 0.25, 0, 0.5, 0.5, 5.6));
   for (const sz of [-1, 1]) {
-    kit.add(box(0x7a2e22, bx, 1.5, sz * 2.7, 12.4, 1.15, 0.16), box(0x5c2018, bx, 2.12, sz * 2.7, 12.6, 0.14, 0.26), box(0x5c2018, bx, 4.3, sz * 2.7, 12.6, 0.22, 0.24));
+    kit.add(box(0x8f2a20, bx, 1.5, sz * 2.7, 12.4, 1.15, 0.16), box(0x5c2018, bx, 2.12, sz * 2.7, 12.6, 0.14, 0.26), box(0x5c2018, bx, 4.3, sz * 2.7, 12.6, 0.22, 0.24));
     for (let i = 0; i < 7; i++) kit.add(box(0x5c2018, bx - 6 + i * 2, 2.6, sz * 2.7, 0.24, 4.2, 0.24));
     for (let i = 0; i < 6; i++) kit.add(box(0x8f3a2a, bx - 5 + i * 2, 1.5, sz * 2.74, 1.4, 0.7, 0.06));
   }
-  kit.add(gable(0x5b6652, bx, 4.4, 0, 7.4, 1.7, 13.4, Math.PI / 2), gable(0x525d4a, bx, 5.3, 0, 5.0, 1.5, 5.2, Math.PI / 2), box(0x3d443a, bx, 6.86, 0, 5.6, 0.16, 0.3), box(0x3d443a, bx, 6.14, 0, 13.8, 0.14, 0.26));
+  kit.add(gable(0x4f6b4a, bx, 4.4, 0, 7.4, 1.7, 13.4, Math.PI / 2), gable(0x446040, bx, 5.3, 0, 5.0, 1.5, 5.2, Math.PI / 2), box(0x3d443a, bx, 6.86, 0, 5.6, 0.16, 0.3), box(0x3d443a, bx, 6.14, 0, 13.8, 0.14, 0.26));
   for (const s of [-1, 1]) { const k = cone(0x3d443a, bx + s * 7.0, 6.3, 0, 0.14, 0.9); k.rotation.z = -s * 1.1; kit.add(k); for (let i = 0; i < 9; i++) kit.add(box(0x6a755f, bx - 6 + i * 1.5, 5.2, s * 1.9, 0.18, 0.1, 3.6).rotateX(s * 0.44)); }
   // hai đầu cầu: cổng xây vôi hồng xám có vòm, tượng khỉ (đầu tây) và chó (đầu đông)
   for (const s of [-1, 1]) {
     const ex = bx + s * 6.5;
-    for (const sz of [-1, 1]) kit.add(box(0xc8a79c, ex, 2.2, sz * 2.2, 0.7, 4.4, 1.3), box(0x9a4a3a, ex + s * 0.1, 1.2, sz * 3.4, 0.5, 0.5, 0.5), ball(s < 0 ? 0x8a6a4a : 0x9a8a7a, ex + s * 0.1, 1.72, sz * 3.4, 0.24, 0.3, 0.24), ball(s < 0 ? 0x8a6a4a : 0x9a8a7a, ex + s * 0.1, 2.14, sz * 3.4, 0.17));
-    kit.add(box(0xc8a79c, ex, 4.5, 0, 0.7, 0.9, 5.7), box(0x7a2e22, ex + s * 0.38, 4.45, 0, 0.08, 0.5, 2.2), box(0xd9a83a, ex + s * 0.43, 4.45, 0, 0.04, 0.24, 1.7), gable(0x5b6652, ex, 4.95, 0, 6.6, 0.9, 1.5, Math.PI / 2));
+    for (const sz of [-1, 1]) kit.add(box(0xb86a5a, ex, 2.2, sz * 2.2, 0.7, 4.4, 1.3), box(0x9a4a3a, ex + s * 0.1, 1.2, sz * 3.4, 0.5, 0.5, 0.5), ball(s < 0 ? 0x8a6a4a : 0x9a8a7a, ex + s * 0.1, 1.72, sz * 3.4, 0.24, 0.3, 0.24), ball(s < 0 ? 0x8a6a4a : 0x9a8a7a, ex + s * 0.1, 2.14, sz * 3.4, 0.17));
+    kit.add(box(0xb86a5a, ex, 4.5, 0, 0.7, 0.9, 5.7), box(0x7a2e22, ex + s * 0.38, 4.45, 0, 0.08, 0.5, 2.2), box(0xd9a83a, ex + s * 0.43, 4.45, 0, 0.04, 0.24, 1.7), gable(0x5b6652, ex, 4.95, 0, 6.6, 0.9, 1.5, Math.PI / 2));
     kit.add(lantern(0xff5a4a, ex + s * 0.5, 3.5, -1.2, 1.2), lantern(0xffb347, ex + s * 0.5, 3.5, 1.2, 1.2));
   }
-  kit.add(box(0xc8a79c, bx, 2.6, -4.6, 4.6, 3.4, 3.4), gable(0x5b6652, bx, 4.3, -4.6, 5.4, 1.3, 4.2, 0), box(0x7a2e22, bx, 2.0, -2.86, 1.6, 2.4, 0.1), box(glow(0xffb347), bx, 2.0, -2.9, 0.9, 1.8, 0.1), box(0x8d8478, bx, -0.4, -4.6, 4.8, 2.8, 3.6));
+  kit.add(box(0xd9b08a, bx, 2.6, -4.6, 4.6, 3.4, 3.4), gable(0x5b6652, bx, 4.3, -4.6, 5.4, 1.3, 4.2, 0), box(0x7a2e22, bx, 2.0, -2.86, 1.6, 2.4, 0.1), box(glow(0xffb347), bx, 2.0, -2.9, 0.9, 1.8, 0.1), box(0x8d8478, bx, -0.4, -4.6, 4.8, 2.8, 3.6));
   kit.live(label('Chùa Cầu', bx, 8.3, 0, '#5c2018', 0.9));
   // bờ kè lạch, cây, thuyền con
   for (const s of [-1, 1]) kit.add(box(QUAY, bx + s * 6.9, -0.2, 30, 0.5, 0.6, 46), box(QUAY, bx + s * 6.9, -0.2, -40, 0.5, 0.6, 72));
   const bt = boat(0x4a7f8f, 4.2, true); bt.position.set(bx + 1.5, -0.95, 14); bt.rotation.y = 0.2; kit.add(bt);
-  for (const [x, z] of [[-103, 12], [-104, -9], [-83, 9.5], [-108, 22]] as const) { const t = tree(r, 1.1, true); t.position.set(x, 0, z); kit.add(t); }
+  for (const [x, z] of [[-112, 16], [-104, -9], [-83, 9.5], [-108, 26]] as const) { const t = tree(r, 1.1, true); t.position.set(x, 0, z); kit.add(t); }
 
   // ---- Nhà cổ Tấn Ký: mặt tiền gỗ sẫm ở phía nam Nguyễn Thái Học
   const tk = grp(-50, 0, 29.3, Math.PI);
@@ -126,7 +137,7 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
   for (const s of [-1, 1]) { ab.add(box(0x5c2018, s * 2.4, 1.0, 0, 0.14, 0.14, 40)); for (let i = 0; i < 14; i++) ab.add(box(0x5c2018, s * 2.4, 0.75, -19 + i * 2.9, 0.12, 0.6, 0.12), lantern(LANTERN_COLORS[i % 7], s * 2.4, 2.6 + Math.sin(i / 13 * Math.PI) * 1.4, -19 + i * 2.9, 1.2)); }
   kit.add(ab); kit.live(label('Cầu An Hội', -72, 6.2, 60, '#5c2018', 0.8));
   // bờ An Hội: dãy nhà sáng đèn và chợ đêm
-  shopRow(kit, -150, 180, 96, -1, 9, [[-76, -68]]);
+  shopRow(kit, -150, 180, 96, -1, 9, [[-76, -68]], true, false);
   for (let x = -60; x < 150; x += 7) { kit.add(lantern(LANTERN_COLORS[Math.floor(r() * 7)], x, 3.2, 93, 1.6), lantern(LANTERN_COLORS[Math.floor(r() * 7)], x + 3, 4.0, 93.4, 1.6)); }
   kit.add(box(QUAY, 15, -0.2, 91.8, 340, 0.6, 0.5));
   // hoa đăng trôi trên sông
@@ -143,20 +154,37 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
   for (let i = 0; i < 3; i++) { const p = person(i + 3, 1); p.position.set(86 + i * 9, 0, 44.6); kit.add(p); }
   kit.add(box(0x8a6a48, 104, 0.5, 50.6, 3, 0.1, 1.6), cyl(0xffd23f, 104, 0.62, 50.6, 0.5, 0.12), cyl(0xf3ead2, 103.2, 0.64, 50.6, 0.3, 0.14), cyl(0xf3ead2, 104.8, 0.64, 50.6, 0.3, 0.14));
 
+  // ---- chi tiết đường phố: xe đạp, xích lô, ghế đá, biển chỉ đường, thùng rác, giếng cổ, bia di sản, lư hương
+  for (let x = -80; x < 128; x += 13) { if (gaps.some(([a, b]) => x > a - 3 && x < b + 3)) continue; const k = Math.floor(r() * 5), z = r() < 0.5 ? -2.55 : 2.55, o = k === 0 ? bicycle([0x3f6f8f, 0x8f3a2a, 0x2f7d6a][Math.floor(r() * 3)]) : k === 1 ? cyclo() : k === 2 ? bench(0x7a5a3c) : k === 3 ? potPlant(0xe85aa0, 1.3) : bicycle(0x555555); o.position.set(x, 0, z); o.rotation.y = Math.PI / 2 + (r() - 0.5) * 0.3; kit.add(o); }
+  for (let x = -78; x < 92; x += 17) { if (gaps.some(([a, b]) => x > a - 3 && x < b + 3)) continue; const o = r() < 0.5 ? cyclo(0x8f3a2a) : bicycle(); o.position.set(x, 0, 26 + (r() < 0.5 ? -2.5 : 2.5)); o.rotation.y = Math.PI / 2; kit.add(o); }
+  for (const [x, z] of [[-73.4, -3], [-13.4, 23], [46.6, -3], [53.4, 45]] as const) { const w = wayPost(); w.position.set(x, 0, z); kit.add(w); }
+  for (const [x, z] of [[-66, 2.7], [-6, 28.7], [56, 2.7], [70, 51]] as const) { const o = bin(); o.position.set(x, 0, z); kit.add(o); }
+  const bia = stele(); bia.position.set(-116.5, 0, -1); bia.rotation.y = -0.5; kit.add(bia);
+  // sân nhỏ đối diện nhà Tấn Ký và trước Hội quán: giếng cổ, ghế, chậu hoa
+  kit.add(box(0xa89a84, -50, 0.02, 18.2, 16, 0.1, 9.6), cyl(0x8d8478, -45.5, 0.45, 17, 0.9, 0.9), cyl(0x1f6f86, -45.5, 0.86, 17, 0.7, 0.1), box(0xa89a84, 20, 0.02, 8.2, 18, 0.1, 9.6));
+  for (const [x, z, ry] of [[-55, 15.5, 0], [-47, 14.6, 0.4], [14, 10.5, 0.2], [26, 10.5, -0.2]] as const) { const o = bench(0x8d8478); o.position.set(x, 0, z); o.rotation.y = ry; kit.add(o); }
+  for (const [x, z] of [[-57, 20], [-43.4, 20.6], [12.4, 5.6], [27.6, 5.6], [12.4, 12], [27.6, 12]] as const) { const o = potPlant(0xffd23f, 1.5); o.position.set(x, 0, z); kit.add(o); }
+  { const t = tree(r, 0.9); t.position.set(-55, 0, 18.4); kit.add(t); const u = incenseUrn(); u.position.set(20, 0, -0.4 - 2.4); u.scale.setScalar(0.9); kit.add(u); }
+  // vệt đèn phản chiếu trên sông Hoài và khói bếp
+  for (let x = -84; x < 130; x += 12) kit.add(reflection(0xffd98a, x, -0.93, 57, 1.6, 9, false, 0.35));
+  for (let x = -60; x < 150; x += 7) kit.add(reflection(LANTERN_COLORS[Math.floor(r() * 7)], x, -0.93, 87, 1.4, 8, false, 0.3));
+  kit.motes(24, 0xcfc6c0, 2.4, (i) => V([-30, 70, 118][i % 3], 9 + (i % 8), [-10, 14, 30][i % 3]), (p, i, _t, dt) => { p.y += 0.7 * dt; p.x += 0.25 * dt; if (p.y > 17) { p.y = 8.6; p.x = [-30, 70, 118][i % 3]; } });
+
   // ---- lối đi
   const path = [V(-134, 0, 3), V(-112, 0, 5), V(-103, 0, 0.6), V(-99.4, 0.1, 0), V(-96.3, 0.7, 0), V(-93, 0.95, 0), V(-89.7, 0.7, 0), V(-86.6, 0.1, 0), V(-70, 0, 0), V(-70, 0, 26), V(-10, 0, 26), V(-10, 0, 0), V(50, 0, 0), V(50, 0, 48), V(104, 0, 48)];
   return {
     path, half: 2.5, npcs: 14,
     stops: [
-      { id: 'cong', at: V(-126, 0, 3.6), look: V(-120, 4, 3) },
-      { id: 'chua_cau', at: V(-107, 0, 3.4), look: V(-95, 3.2, 0) },
-      { id: 'nha_co', at: V(-60, 0, 24.4), look: V(-50, 3.5, 29.6) },
-      { id: 'hoi_quan', at: V(3, 0, 2), look: V(19, 7, -5.4) },
-      { id: 'pho_den_long', at: V(50, 0, 9), look: V(50, 3.5, 22) },
-      { id: 'song_hoai', at: V(50, 0, 48.6), look: V(20, 0, 78) },
-      { id: 'cho', at: V(92, 0, 49), look: V(108, 4.5, 40) },
+      { id: 'cong', at: V(-126, 0, 3.6), look: V(-120, 4.4, 3), cam: V(-134.5, 2.4, 4.2) },
+      { id: 'chua_cau', at: V(-107, 0, 3.4), look: V(-93.5, 3.0, 0), cam: V(-104.5, 2.3, 15.5) },
+      { id: 'nha_co', at: V(-56, 0, 24.4), look: V(-50, 3.4, 29.6), cam: V(-50, 3.3, 13.9) },
+      { id: 'hoi_quan', at: V(14, 0, 1.6), look: V(20, 6.4, -5.4), cam: V(20, 2.6, 11.6) },
+      { id: 'pho_den_long', at: V(50, 0, 9), look: V(50, 3.8, 24), cam: V(50, 2.5, 2.2) },
+      { id: 'song_hoai', at: V(50, 0, 48.6), look: V(30, -0.5, 84), cam: V(57.5, 4.4, 50.6) },
+      { id: 'cho', at: V(92, 0, 49), look: V(108, 5, 38), cam: V(80.5, 4.4, 51.2) },
     ],
-    sky: [0x232a5e, 0xf0a070], fog: [0x77607f, 70, 330],
-    light: { ambient: 1.25, ambientColor: 0xc9c2ee, sun: 0.9, sunColor: 0xffb48a, sunDir: [-0.9, 0.5, 0.3] },
+    shopSpots: [{ at: V(-62, 0, -2.3), ry: 0 }, { at: V(-22, 0, 28.3), ry: Math.PI }, { at: V(34, 0, 2.3), ry: Math.PI }, { at: V(47.6, 0, 27), ry: Math.PI / 2 }, { at: V(70, 0, 45.4), ry: 0 }, { at: V(-114, 0, 7.4), ry: Math.PI }],
+    sky: [0x27306a, 0xf5a66e], fog: [0x8a6f8a, 90, 380], fill: 0.7,
+    light: { ambient: 1.55, ambientColor: 0xd6cff2, sun: 1.1, sunColor: 0xffbf96, sunDir: [-0.7, 0.55, 0.5] },
   };
 }
