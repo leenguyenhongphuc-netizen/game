@@ -7,7 +7,9 @@ import { makeSign } from '../drive/RideKit.ts';
 export const V = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(x, y, z);
 export type Tick = (time: number, dt: number, player: PlayerState) => void;
 export interface PlayerState { pos: THREE.Vector3; s: number; seg: number; near: string | null }
-export interface SightStopAt { id: string; at: THREE.Vector3; /** Vật cần nhìn khi mở thuyết minh. */ look?: THREE.Vector3 }
+export interface SightStopAt { id: string; at: THREE.Vector3; /** Vật cần nhìn khi mở thuyết minh. */ look?: THREE.Vector3; /** Chỗ đặt máy ảnh "bưu thiếp" khi mở thuyết minh; bỏ trống thì tự tính sau lưng nhân vật. */ cam?: THREE.Vector3 }
+/** Chỗ đặt một quầy hàng trong cảnh; ry là hướng mặt quầy (0 = quay về +z). */
+export interface ShopSpot { at: THREE.Vector3; ry?: number }
 export interface SightSet {
   /** Lối đi: các điểm nối tiếp, y là cao độ mặt đường. */
   path: THREE.Vector3[];
@@ -23,6 +25,12 @@ export interface SightSet {
   /** Gọi khi người chơi mở thuyết minh một điểm dừng (ví dụ cho rồng phun lửa). */
   onStop?: (id: string) => void;
   npcs?: number;
+  /** Các chỗ đặt quầy hàng (xe nước, gánh hàng rong…) theo thứ tự ưu tiên; bỏ trống thì tự rải dọc lối đi. */
+  shopSpots?: ShopSpot[];
+  /** Trang trí bầu trời: tự chọn theo độ sáng của trời (sao, trăng khi tối; mây, chim khi sáng) hoặc tắt. */
+  skyDecor?: 'auto' | 'none';
+  /** Cường độ đèn hắt ngược hướng nắng để mặt khuất của công trình không tối sầm (mặc định 0.45). */
+  fill?: number;
 }
 
 const glowCache = new Map<number, THREE.MeshBasicMaterial>();
@@ -95,8 +103,20 @@ export function signPost(text: string, x: number, y: number, z: number, bg = '#7
 /** Biển chữ lơ lửng (tên công trình). */
 export function label(text: string, x: number, y: number, z: number, bg = '#7a4a22', scale = 1): THREE.Sprite { const sp = makeSign(text, bg); sp.scale.multiplyScalar(scale); sp.position.set(x, y, z); return sp; }
 export function lampPost(x: number, y: number, z: number, h = 3.6, c = 0xffd98a): THREE.Group { return grp(x, y, z, 0, cyl(0x3d3a36, 0, h / 2, 0, 0.07, h), box(0x3d3a36, 0, h, 0, 0.5, 0.06, 0.06), ball(glow(c), 0.22, h - 0.2, 0, 0.17), ball(glow(c), -0.22, h - 0.2, 0, 0.17)); }
-/** Đèn lồng treo: quả lụa phát sáng có chóp và tua. */
-export function lantern(color: number, x: number, y: number, z: number, s = 1): THREE.Group { return grp(x, y, z, 0, bead(glow(color), 0, 0, 0, 0.27 * s, 0.33 * s, 0.27 * s), box(0x3b2a17, 0, 0.32 * s, 0, 0.14 * s, 0.08 * s, 0.14 * s), box(0xc0281e, 0, -0.44 * s, 0, 0.05 * s, 0.24 * s, 0.05 * s)); }
+// Ba dáng đèn lồng Hội An: tròn, củ tỏi (phình dưới thon trên), trái trám (hai chóp úp vào nhau). Ít mặt vì số lượng rất nhiều.
+const lathe = (pts: [number, number][]) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), 7);
+const LANTERN_GEO = [
+  lathe([[0.02, -1], [0.62, -0.72], [1, 0], [0.62, 0.72], [0.02, 1]]),
+  lathe([[0.02, -1], [0.8, -0.78], [1, -0.2], [0.5, 0.55], [0.24, 1]]),
+  lathe([[0.02, -1], [1, 0], [0.02, 1]]),
+];
+/** Đèn lồng treo: quả lụa phát sáng có đai gỗ và tua. Dáng (tròn, củ tỏi, trái trám) chọn theo màu. */
+export function lantern(color: number, x: number, y: number, z: number, s = 1): THREE.Group {
+  const k = (color >> 3) % 3, g = grp(x, y, z);
+  const body = mesh(LANTERN_GEO[k], glow(color), 0, 0, 0, (k === 2 ? 0.2 : 0.24) * s, (k === 2 ? 0.36 : k === 1 ? 0.32 : 0.26) * s, (k === 2 ? 0.2 : 0.24) * s);
+  g.add(body, box(0x3b2a17, 0, 0.3 * s, 0, 0.1 * s, 0.07 * s, 0.1 * s), box(0x3b2a17, 0, -0.3 * s, 0, 0.09 * s, 0.05 * s, 0.09 * s), box(0xc0281e, 0, -0.46 * s, 0, 0.035 * s, 0.26 * s, 0.035 * s));
+  return g;
+}
 export const LANTERN_COLORS = [0xff5a4a, 0xffb347, 0xffe066, 0x7fe0c0, 0xff8fc8, 0xb59bff, 0x6ec8ff];
 /** Dây đèn lồng giăng giữa hai điểm, võng xuống ở giữa. */
 export function lanternString(a: THREE.Vector3, b: THREE.Vector3, n: number, r: () => number, sag = 0.7, s = 1): THREE.Group {
@@ -146,9 +166,10 @@ export class Kit {
   ground(c: number, size = 900, y = 0, x = 0, z = 0): void { this.add(box(c, x, y - 0.5, z, size, 1, size)); }
   /** Mặt nước phẳng hơi bóng, gợn nhẹ bằng cách trôi lên xuống. */
   water(c: number, x: number, z: number, w: number, d: number, y = -0.35, opacity = 0.92): THREE.Mesh {
-    const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.25, metalness: 0.1, transparent: opacity < 1, opacity });
+    const tex = waves().clone(); tex.needsUpdate = true; tex.repeat.set(Math.max(1, w / 26), Math.max(1, d / 26));
+    const m = new THREE.MeshStandardMaterial({ color: c, map: tex, roughness: 0.22, metalness: 0.15, transparent: opacity < 1, opacity });
     const o = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), m); o.position.set(x, y, z); this.live(o);
-    this.onTick((t) => { o.position.y = y + Math.sin(t * 0.9) * 0.03; }); return o;
+    this.onTick((t) => { o.position.y = y + Math.sin(t * 0.9) * 0.03; tex.offset.set(t * 0.012, t * 0.02); }); return o;
   }
   /** Lát đường theo cả lối đi. */
   pave(c: C, path: THREE.Vector3[], width: number, from = 0, to = path.length - 1, thick = 0.12, lift = 0.02): void { for (let i = from; i < to; i++) this.add(strip(c, path[i], path[i + 1], width, thick, lift)); }
@@ -174,4 +195,103 @@ export function dot(): THREE.CanvasTexture {
   const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d')!, gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
   gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
   dotTex = new THREE.CanvasTexture(c); return dotTex;
+}
+
+// ------------------------------------------------------------------ bổ sung: nước có vân, chi tiết đường phố, người đi bộ, quầy hàng
+let waveTex: THREE.CanvasTexture | null = null;
+/** Hoạ tiết gợn sóng xám–trắng, lặp được; nhân với màu nước. */
+export function waves(): THREE.CanvasTexture {
+  if (waveTex) return waveTex;
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d')!; g.fillStyle = '#c9c9c9'; g.fillRect(0, 0, 256, 256);
+  const r = rng(77);
+  for (let i = 0; i < 170; i++) { const x = r() * 256, y = r() * 256, w = 14 + r() * 46, l = r(); g.strokeStyle = l < 0.5 ? `rgba(255,255,255,${0.25 + r() * 0.5})` : `rgba(70,80,90,${0.18 + r() * 0.3})`; g.lineWidth = 1.2 + r() * 2.2; g.lineCap = 'round'; for (const ox of [-256, 0, 256]) { g.beginPath(); g.moveTo(x + ox, y); g.quadraticCurveTo(x + ox + w / 2, y - 3 - r() * 3, x + ox + w, y); g.stroke(); } }
+  waveTex = new THREE.CanvasTexture(c); waveTex.wrapS = waveTex.wrapT = THREE.RepeatWrapping; waveTex.colorSpace = THREE.SRGBColorSpace; return waveTex;
+}
+/** Vệt sáng đèn phản chiếu trên mặt nước (đặt sát mặt nước, kéo dài theo z hoặc x). */
+export function reflection(color: number, x: number, y: number, z: number, w: number, len: number, alongX = false, opacity = 0.5): THREE.Mesh {
+  const o = new THREE.Mesh(new THREE.PlaneGeometry(alongX ? len : w, alongX ? w : len).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, map: dot() }));
+  o.position.set(x, y, z); return o;
+}
+export function bicycle(c = 0x3f6f8f): THREE.Group {
+  const g = new THREE.Group(), tor = new THREE.TorusGeometry(0.34, 0.035, 5, 12);
+  for (const z of [-0.55, 0.55]) { const w = mesh(tor, mat(0x2a2a2a), 0, 0.36, z); w.rotation.y = Math.PI / 2; g.add(w); }
+  g.add(box(c, 0, 0.62, 0, 0.05, 0.05, 1.0), box(c, 0, 0.5, -0.2, 0.05, 0.5, 0.05).rotateX(0.5), box(c, 0, 0.62, 0.5, 0.05, 0.7, 0.05).rotateX(-0.25), box(0x2a2a2a, 0, 0.96, 0.4, 0.5, 0.04, 0.04), box(0x4a2c1c, 0, 0.9, -0.25, 0.16, 0.06, 0.26), box(0x9a7150, 0, 0.95, 0.72, 0.36, 0.26, 0.26));
+  return g;
+}
+/** Xích lô: ghế khách phía trước có mui, người đạp phía sau. */
+export function cyclo(c = 0x2f7d6a): THREE.Group {
+  const g = bicycle(0x555555); g.position.z = -0.7; const o = new THREE.Group(); o.add(g);
+  const tor = new THREE.TorusGeometry(0.34, 0.035, 5, 12);
+  for (const x of [-0.5, 0.5]) { const w = mesh(tor, mat(0x2a2a2a), x, 0.36, 0.75); w.rotation.y = Math.PI / 2; o.add(w); }
+  o.add(box(c, 0, 0.55, 0.75, 0.9, 0.16, 0.9), box(0xc0281e, 0, 0.75, 0.6, 0.8, 0.26, 0.5), box(c, 0, 0.95, 0.32, 0.86, 0.6, 0.1), box(c, 0, 1.6, 0.6, 0.96, 0.06, 0.9), box(0x3a3a3a, -0.46, 1.25, 0.3, 0.04, 0.7, 0.04), box(0x3a3a3a, 0.46, 1.25, 0.3, 0.04, 0.7, 0.04));
+  return o;
+}
+export function bench(c = 0x9a8f80): THREE.Group { return grp(0, 0, 0, 0, box(c, 0, 0.45, 0, 1.7, 0.1, 0.5), box(c, -0.7, 0.22, 0, 0.14, 0.44, 0.44), box(c, 0.7, 0.22, 0, 0.14, 0.44, 0.44)); }
+export function potPlant(flower = 0xe85aa0, s = 1): THREE.Group { return grp(0, 0, 0, 0, cyl(0xa8562f, 0, 0.26 * s, 0, 0.3 * s, 0.52 * s), ball(0x4c9f55, 0, 0.78 * s, 0, 0.42 * s, 0.36 * s, 0.42 * s), bead(flower, 0.16 * s, 0.98 * s, 0.1 * s, 0.13 * s), bead(flower, -0.2 * s, 0.92 * s, -0.08 * s, 0.12 * s), bead(flower, 0, 1.04 * s, -0.16 * s, 0.11 * s)); }
+/** Bia đá có mái che nhỏ. */
+export function stele(c = 0x8d8478): THREE.Group { return grp(0, 0, 0, 0, box(c, 0, 0.2, 0, 1.2, 0.4, 0.7), box(shade(c, 1.12), 0, 1.15, 0, 0.8, 1.5, 0.16), ball(shade(c, 1.12), 0, 1.9, 0, 0.4, 0.22, 0.08)); }
+/** Lư hương đồng, có khói nhang (đốm đỏ). */
+export function incenseUrn(c = 0x8a6a2a): THREE.Group { const g = grp(0, 0, 0, 0, box(0x8d8478, 0, 0.3, 0, 1.1, 0.6, 1.1), ball(c, 0, 0.95, 0, 0.5, 0.42, 0.5), cyl(c, 0, 1.3, 0, 0.52, 0.1)); for (const [x, z] of [[-0.12, 0], [0.1, 0.1], [0, -0.12]] as const) g.add(box(0x7a2e22, x, 1.6, z, 0.025, 0.6, 0.025), bead(glow(0xff5a3a), x, 1.92, z, 0.035)); for (const sx of [-1, 1]) g.add(cyl(c, sx * 0.4, 0.5, 0, 0.06, 0.3)); return g; }
+/** Cờ đỏ sao vàng trên cột. */
+export function flag(h = 7): THREE.Group { return grp(0, 0, 0, 0, cyl(0xcfd6e0, 0, h / 2, 0, 0.06, h), box(0xd8281e, 0.75, h - 0.5, 0, 1.5, 1.0, 0.03), bead(glow(0xffd23f), 0.75, h - 0.5, 0.03, 0.2, 0.2, 0.02), bead(glow(0xffd23f), 0.75, h - 0.5, -0.03, 0.2, 0.2, 0.02)); }
+/** Bảng chỉ dẫn hai cánh trên cột. */
+export function wayPost(a = 0x2f7d6a, b = 0x7a4a22): THREE.Group { return grp(0, 0, 0, 0, cyl(0x5a4a34, 0, 1.3, 0, 0.07, 2.6), box(a, 0.42, 2.3, 0, 0.9, 0.26, 0.05), box(b, -0.42, 1.95, 0, 0.9, 0.26, 0.05), box(0xf3ead2, 0.42, 2.3, 0.03, 0.6, 0.06, 0.01), box(0xf3ead2, -0.42, 1.95, 0.03, 0.6, 0.06, 0.01)); }
+/** Thùng rác đôi. */
+export function bin(): THREE.Group { return grp(0, 0, 0, 0, cyl(0x2f7d26, -0.24, 0.42, 0, 0.2, 0.84), cyl(0xe2a33c, 0.24, 0.42, 0, 0.2, 0.84), box(0x3a3a3a, 0, 0.9, 0, 0.9, 0.06, 0.4)); }
+/** Bảng hiệu gỗ treo ngang (không chữ, có vạch giả chữ thếp vàng). */
+export function shopSign(w = 1.8, bg = 0x2a1a12, fg = 0xd9a83a): THREE.Group { const g = grp(0, 0, 0, 0, box(bg, 0, 0, 0, w, 0.42, 0.06)); const n = Math.max(2, Math.round(w / 0.42)); for (let i = 0; i < n; i++) g.add(box(fg, (i - (n - 1) / 2) * (w * 0.8 / n), 0, 0.04, w * 0.5 / n, 0.2, 0.02)); return g; }
+/** Mây thấp ít mặt. */
+export function cloud(s = 1, c = 0xffffff): THREE.Group { return grp(0, 0, 0, 0, bead(c, 0, 0, 0, 7 * s, 2.4 * s, 4 * s), bead(c, 5 * s, 0.6 * s, 1, 5 * s, 2.2 * s, 3.4 * s), bead(c, -5.4 * s, 0.2 * s, -1, 4.6 * s, 1.8 * s, 3 * s)); }
+
+export interface Walker { g: THREE.Group; legs: THREE.Object3D[]; arms: THREE.Object3D[] }
+/** Người đi bộ có tay chân rời để đung đưa theo bước. Chưa gộp lưới: nơi gọi tự gộp từng phần. */
+export function walker(i: number): Walker {
+  const g = new THREE.Group(), skin = [0xf2c69c, 0xe8b88a, 0xf6d3ae][i % 3], shirt = SHIRTS[i % SHIRTS.length], pants = [0x4a5160, 0x6b5140, 0x3f5566, 0x8a8f9a][i % 4], hat = i % 4;
+  const body = new THREE.Group(); body.add(cyl(shirt, 0, 1.08, 0, 0.27, 0.66, 0.2), ball(shirt, 0, 1.4, 0, 0.28, 0.15, 0.21), ball(skin, 0, 1.66, 0, 0.25));
+  if (hat === 1) body.add(cone(0xf3e2ae, 0, 1.96, 0, 0.56, 0.32)); else if (hat === 2) body.add(ball(SHIRTS[(i + 2) % 8], 0, 1.82, 0, 0.26, 0.16, 0.26), box(SHIRTS[(i + 2) % 8], 0, 1.8, -0.26, 0.3, 0.04, 0.2)); else body.add(ball([0x3b2a17, 0x5a3d22][i % 2], 0, 1.76, 0.04, 0.27, 0.21, 0.26));
+  if (i % 5 === 0) body.add(box(0x2a2a2a, 0, 1.2, -0.24, 0.16, 0.12, 0.1)); // máy ảnh đeo cổ
+  if (i % 5 === 2) body.add(box(SHIRTS[(i + 3) % 8], 0, 1.2, 0.24, 0.36, 0.44, 0.16)); // ba lô
+  g.add(body); const legs: THREE.Object3D[] = [], arms: THREE.Object3D[] = [];
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Group(); leg.position.set(sx * 0.13, 0.76, 0); leg.add(cyl(pants, 0, -0.38, 0, 0.1, 0.76), box(0x4a3a2a, 0, -0.74, -0.05, 0.17, 0.08, 0.28)); legs.push(leg);
+    const arm = new THREE.Group(); arm.position.set(sx * 0.34, 1.34, 0); arm.add(cyl(shirt, 0, -0.24, 0, 0.075, 0.5), ball(skin, 0, -0.5, 0, 0.08)); arms.push(arm);
+    g.add(leg, arm);
+  }
+  return { g, legs, arms };
+}
+
+/** Mô hình quầy hàng theo loại: nuoc_mia, hang_rong, ca_phe, tap_hoa, dac_san, luu_niem (loại lạ dùng quầy đặc sản). Mặt quầy quay về +z. */
+export function shopModel(kind: string, r: () => number): THREE.Group {
+  const g = new THREE.Group();
+  if (kind === 'nuoc_mia' || kind === 'nuoc') {
+    g.add(box(0x3f9f6a, 0, 0.75, 0, 1.6, 0.9, 0.8), box(0xcfd6e0, 0, 1.24, 0, 1.66, 0.08, 0.86), box(0xcfd6e0, -0.35, 1.6, 0, 0.5, 0.6, 0.5), cyl(0x8a8f9a, -0.35, 1.6, 0.28, 0.16, 0.1).rotateX(Math.PI / 2));
+    for (let i = 0; i < 5; i++) g.add(cyl(0xb7c95a, 0.5 + (i % 2) * 0.12, 1.7, -0.25 + i * 0.1, 0.045, 1.5).rotateZ(0.12 * (i - 2)));
+    for (const x of [0.1, 0.36]) g.add(cyl(0xe8f0c0, x, 1.4, 0.24, 0.07, 0.2));
+    for (const x of [-0.6, 0.6]) { const w = mesh(new THREE.TorusGeometry(0.28, 0.04, 5, 10), mat(0x2a2a2a), x, 0.3, 0.42); g.add(w); }
+    g.add(cyl(0x5a4a34, 0.75, 1.5, -0.38, 0.03, 1.6), cyl(0x5a4a34, -0.75, 1.5, -0.38, 0.03, 1.6), box(0xffd23f, 0, 2.3, 0, 1.9, 0.06, 1.1), box(0x2f7d26, 0, 2.22, 0.56, 1.9, 0.2, 0.04));
+  } else if (kind === 'hang_rong') {
+    // gánh hàng rong: đòn gánh, hai thúng, người bán ngồi ghế thấp
+    g.add(box(0x7a5a3c, 0, 1.0, 0, 2.2, 0.05, 0.06));
+    for (const s of [-1, 1]) { g.add(cyl(0xc9a66b, s * 0.95, 0.3, 0, 0.42, 0.36), cyl(0x5a4a34, s * 0.95, 0.66, 0, 0.02, 0.7)); for (let i = 0; i < 6; i++) g.add(bead([0xff8a3d, 0xffd23f, 0x7ccf4f, 0xf3ead2][Math.floor(r() * 4)], s * 0.95 + (r() - 0.5) * 0.5, 0.52, (r() - 0.5) * 0.5, 0.11)); }
+    const p = person(4, 1, 0x8a5a9a); p.scale.setScalar(0.82); p.position.set(0, -0.28, -0.6); g.add(p, box(0xd8281e, 0, 0.14, -0.6, 0.36, 0.28, 0.36));
+  } else if (kind === 'ca_phe') {
+    g.add(box(0x6b4a34, 0, 0.55, -0.5, 1.5, 1.1, 0.6), box(0x2a1a12, 0, 1.12, -0.5, 1.6, 0.06, 0.7), cyl(0xcfd6e0, -0.4, 1.36, -0.5, 0.11, 0.42), cone(0xcfd6e0, -0.4, 1.66, -0.5, 0.13, 0.16), cyl(0xf3ead2, 0.2, 1.22, -0.5, 0.07, 0.14), cyl(0xf3ead2, 0.45, 1.22, -0.45, 0.07, 0.14));
+    for (const [x, z] of [[-0.7, 0.5], [0.7, 0.6]] as const) { g.add(cyl(0xd8281e, x, 0.22, z, 0.2, 0.44), cyl(0x3f6fbf, x + 0.5 * Math.sign(x) * -1, 0.14, z + 0.3, 0.16, 0.28)); }
+    g.add(box(0x8a6a48, 0, 0.36, 0.55, 0.5, 0.05, 0.5), cyl(0x5a4a34, 0, 0.18, 0.55, 0.04, 0.36), cyl(0xf3ead2, 0, 0.44, 0.55, 0.06, 0.1));
+    g.add(cyl(0x5a4a34, 0, 1.3, -0.9, 0.04, 2.6), cone(0xc0281e, 0, 2.5, -0.5, 1.5, 0.5));
+  } else if (kind === 'tap_hoa') {
+    g.add(box(0xf1e6c8, 0, 1.3, -0.7, 2.6, 2.6, 0.2), box(0x4aa3d8, 0, 2.5, 0, 2.8, 0.08, 1.7), box(0x2f6f9f, 0, 2.38, 0.84, 2.8, 0.26, 0.04), box(0x9a7150, 0, 0.45, 0.2, 2.4, 0.9, 0.7));
+    for (let j = 0; j < 3; j++) { g.add(box(0x9a7150, 0, 1.2 + j * 0.45, -0.56, 2.3, 0.05, 0.3)); for (let i = 0; i < 8; i++) g.add(box([0xe2573c, 0xffd23f, 0x4aa3d8, 0x7ccf4f, 0xf3ead2, 0xff8a3d][Math.floor(r() * 6)], -1 + i * 0.28, 1.36 + j * 0.45, -0.56, 0.18, 0.26, 0.16)); }
+    for (let i = 0; i < 5; i++) g.add(cyl([0x6ec8ff, 0xffe066, 0xff8fc8][i % 3], -0.9 + i * 0.4, 1.02, 0.2, 0.06, 0.24));
+    for (const s of [-1, 1]) g.add(cyl(0x7a5a3c, s * 1.3, 1.25, 0.8, 0.04, 2.5));
+  } else if (kind === 'luu_niem') {
+    g.add(box(0x7a4a22, 0, 0.5, 0, 2.0, 1.0, 0.9), box(0xc0281e, 0, 1.02, 0, 2.1, 0.05, 1.0), box(0x7a4a22, 0, 2.3, 0, 2.2, 0.08, 1.2));
+    for (const s of [-1, 1]) g.add(cyl(0x7a5a3c, s * 1.0, 1.15, 0.45, 0.04, 2.3), cyl(0x7a5a3c, s * 1.0, 1.15, -0.45, 0.04, 2.3));
+    for (let i = 0; i < 5; i++) g.add(lantern(LANTERN_COLORS[(i * 2) % 7], -0.8 + i * 0.4, 1.95, 0.55, 0.6));
+    for (let i = 0; i < 4; i++) g.add(cone(0xf3e2ae, -0.7 + i * 0.45, 1.14, 0.1, 0.2, 0.12), box([0x4aa3d8, 0xe2573c, 0xffd23f, 0x7ccf4f][i], -0.7 + i * 0.45, 1.16, -0.25, 0.22, 0.22, 0.04));
+  } else {
+    const st = stall([0xe2573c, 0x2f7d6a, 0xffb347][Math.floor(r() * 3)], r); g.add(st); g.add(box(0x7a4a22, 0, 2.62, 1.05, 1.6, 0.3, 0.05), box(0xffd23f, 0, 2.62, 1.08, 1.2, 0.12, 0.02));
+    for (let i = 0; i < 3; i++) g.add(box(0xc9a66b, -0.7 + i * 0.7, 0.2, 0.9, 0.5, 0.4, 0.4));
+  }
+  return g;
 }
