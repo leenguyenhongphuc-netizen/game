@@ -218,7 +218,7 @@ export class RideScene {
   private quality?: Quality;
   private frame() {
     if (this.disposed || !this.act) return;
-    if (this.quality && !this.quality.tick()) { this.clock.getDelta(); return; }
+    if (this.quality && !this.quality.tick()) { if (!this.quality.throttled) this.clock.getDelta(); return; }
     // __rideStep: chỉ dùng khi tự kiểm trên máy không có GPU, cho phép mỗi khung hình nhảy bước dài hơn
     const cap = (window as unknown as { __rideStep?: number }).__rideStep ?? 0.05;
     const dt = this.paused ? (this.clock.getDelta(), 0) : Math.min(this.clock.getDelta(), cap), last = this.index === this.plan.length - 1;

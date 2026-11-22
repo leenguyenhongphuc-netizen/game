@@ -65,6 +65,9 @@ export class Quality {
   private raisedAt = 0;      // lần nâng bậc gần nhất
   private backoff = 6;       // phải mượt bao nhiêu giây mới nâng; nâng hụt thì gấp đôi
   private shown = 0; private disposed = false;
+  private half = false; private halfUntil = 0; private skip = false;
+  /** Lần tick vừa rồi trả false vì đang chủ động chạy nửa nhịp (30 khung/giây) chứ không phải vì cảnh bị che: cảnh KHÔNG được bỏ thời gian đã trôi. */
+  throttled = false;
   private renderer: WebGLRenderer; private opts: QualityOptions;
 
   constructor(renderer: WebGLRenderer, opts: QualityOptions) {
@@ -72,6 +75,8 @@ export class Quality {
     stack.push(this);
     (window as unknown as { __perf?: () => PerfStats | null }).__perf = () => stack[stack.length - 1]?.stats() ?? null;
     this.opts.onLevel?.(this.level);
+    // iOS hay thu hồi ngữ cảnh đồ hoạ khi chuyển ứng dụng: three.js tự nạp lại tài nguyên, ở đây đặt lại cỡ khung và bóng đổ để không còn màn đen.
+    renderer.domElement.addEventListener('webglcontextrestored', () => { if (this.disposed) return; this.last = 0; this.apply(); renderer.shadowMap.needsUpdate = true; this.opts.onLevel?.(this.level); });
   }
 
   /** Cảnh này có đang là cảnh trên cùng không (cảnh bị che thì đừng vẽ). */
@@ -95,7 +100,10 @@ export class Quality {
   /** Gọi ở đầu mỗi khung hình. Trả false nếu cảnh đang bị che hoặc tab ẩn: bỏ qua khung này. */
   tick(now = performance.now()): boolean {
     if (this.disposed) return false;
+    this.throttled = false;
     if (!this.active) { this.last = 0; return false; }
+    // Máy không giữ nổi nhịp nhanh dù đã ở bậc thấp nhất: chạy đều 30 khung/giây (khung đều dễ chịu hơn khung giật).
+    if (this.half) { if (now > this.halfUntil) { this.half = false; this.skip = false; } else { this.skip = !this.skip; if (this.skip) { this.throttled = true; return false; } } }
     const dt = this.last ? now - this.last : 0; this.last = now;
     if (dt > 0 && dt < 1000) { // khung dài cả giây là do chuyển tab, nạp cảnh: không tính
       this.acc += dt; this.n++;
@@ -110,6 +118,7 @@ export class Quality {
   private adapt(now: number) {
     if (this.avg > SLOW_MS) {
       this.calm = 0;
+      if (this.level === 3 && !this.half && this.avg < 60 && now >= this.hold) { this.half = true; this.halfUntil = now + 30_000; this.hold = now + 2000; }
       if (now >= this.hold && this.level < 3) {
         // vừa nâng xong đã chậm lại: mức đó quá sức máy, lần sau phải mượt lâu gấp đôi mới thử nâng
         if (this.raisedAt && now - this.raisedAt < 12_000) this.backoff = Math.min(600, this.backoff * 2.5);
@@ -132,7 +141,7 @@ export class Quality {
       document.body.appendChild(box);
     }
     const s = this.stats(); if (s.fps === this.shown && box.textContent) return; this.shown = s.fps;
-    box.textContent = `${s.name} ${s.fps} fps ${s.ms} ms\nbậc ${s.level}${s.locked ? ' (cố định)' : ''} · x${s.pixelRatio} · ${(s.pixels / 1e6).toFixed(2)} Mpx\n${s.calls} lần vẽ · ${Math.round(s.triangles / 1000)}k tam giác`;
+    box.textContent = `${s.name} ${s.fps} fps ${s.ms} ms\nbậc ${s.level}${s.locked ? ' (cố định)' : ''}${this.half ? ' · nhịp 30' : ''} · x${s.pixelRatio} · ${(s.pixels / 1e6).toFixed(2)} Mpx\n${s.calls} lần vẽ · ${Math.round(s.triangles / 1000)}k tam giác`;
   }
 
   dispose() {

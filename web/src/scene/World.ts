@@ -345,6 +345,7 @@ class Lot {
       if (cur?.key === key) continue;
       if (cur) { this.plantLayer.remove(cur.group); freeBaked(cur.group); }
       const group = bake(buildPlant(crop, stage, p.id * 7 + p.tile));
+      if (IS_MOBILE) group.traverse((o) => { o.castShadow = false; }); // trên di động cây trồng không đổ bóng thật: bớt một lượt vẽ cho mỗi ô
       const l = tileLocal(p.tile); group.position.set(l.x, 0, l.z); group.userData.sway = p.tile * 0.7;
       this.plantLayer.add(group); this.plants.set(p.tile, { key, group, born: time });
     }
@@ -818,7 +819,7 @@ export class World {
   private frame() {
     if (this.disposed) return;
     // bị hoạt cảnh khác che kín hoặc tab ẩn: nghỉ hẳn; đang mở bảng (paused): chỉ vẽ ~8 khung/giây cho phần nền lộ ra
-    if (!this.quality.tick()) { this.clock.getDelta(); return; }
+    if (!this.quality.tick()) { if (!this.quality.throttled) this.clock.getDelta(); return; }
     this.frameNo++;
     if (this.paused && !this.opts.demo && this.frameNo % 8 !== 0) return;
     const dt = Math.min(this.clock.getDelta(), 0.05), t = this.clock.elapsedTime, now = Date.now() + (this.state?.clockOffset ?? 0);

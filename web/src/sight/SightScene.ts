@@ -3,6 +3,9 @@
 import * as THREE from 'three';
 import { IS_MOBILE, Quality, debugScene, rendererParams } from '../perf.ts';
 import { bake } from '../scene/World.ts';
+import { bakeColored } from '../scene/batch.ts';
+/** Địa danh đã rà: vật sống chỉ chuyển động theo cả cụm nên gộp được. */
+const COLLAPSE_LIVE = new Set(['dn_hoi_an']);
 import { gradient } from '../drive/RideKit.ts';
 import { Kit, V, ball, box, cyl, cone, glow, dot, walker, shopModel, cloud, label, infoBoard, bench, potPlant } from './SightKit.ts';
 import type { PlayerState, SightSet, ShopSpot } from './SightKit.ts';
@@ -50,6 +53,16 @@ export class SightScene {
     this.cum = [0]; for (let i = 1; i < s.path.length; i++) this.cum.push(this.cum[i - 1] + s.path[i].distanceTo(s.path[i - 1])); this.total = this.cum[this.cum.length - 1];
     this.furnish();
     this.collectBlockers();
+    // Vật "sống" chỉ chuyển động theo cả cụm (thuyền dập dềnh…): gộp các khối màu trơn bên trong từng cụm để mỗi cụm còn vài lần vẽ.
+    if (COLLAPSE_LIVE.has(this.sight.id)) for (const child of [...this.kit.dyn.children]) {
+      if (!(child as THREE.Group).isGroup || child.userData.keepParts) continue;
+      const parts: THREE.Mesh[] = []; child.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && !Array.isArray(m.material) && !(m.material as THREE.MeshStandardMaterial).map && !(m.material as THREE.Material).transparent) parts.push(m); });
+      if (parts.length < 4) continue;
+      child.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(child.matrixWorld).invert(), tmp = new THREE.Group();
+      for (const m of parts) { const c = new THREE.Mesh(m.geometry, m.material); c.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld)); tmp.add(c); m.removeFromParent(); }
+      for (const m of [...bakeColored(tmp, false).children]) child.add(m);
+    }
     this.scene.add(bake(this.kit.stat), this.kit.dyn);
     this.buildSky();
     // chiều dài cộng dồn của lối đi
@@ -287,7 +300,7 @@ export class SightScene {
   private zoom(fov: number, snap: boolean) { const f = snap ? fov : this.camera.fov + (fov - this.camera.fov) * 0.08; if (Math.abs(f - this.camera.fov) > 0.01) { this.camera.fov = f; this.camera.updateProjectionMatrix(); } }
   private frame = (now: number) => {
     if (this.disposed) return; this.raf = requestAnimationFrame(this.frame);
-    if (!this.quality.tick(now)) { this.last = now; return; }
+    if (!this.quality.tick(now)) { if (!this.quality.throttled) this.last = now; return; }
     const dt = Math.min(0.05, (now - this.last) / 1000); this.last = now; this.time += dt;
     this.step(dt);
     const st = this.state, sw = Math.sin(this.time * 9) * 0.7 * this.moving;
