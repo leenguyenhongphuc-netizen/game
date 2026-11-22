@@ -30,7 +30,12 @@ import type { ShopKind } from '../../shared/items.ts';
 import { DECOR_ITEMS, HOUSE_TYPES, validAvatar, validDecor, validStyle } from '../../shared/custom.ts';
 import type { DecorPlacement, PlotStyle } from '../../shared/custom.ts';
 import { SIGHTS, SIGHT_PROVINCES, sight as findSight, sightsOfProvince } from '../../shared/sights.ts';
+import { cleanUpgrades, growFx, isSeedTrait, xpFor } from '../../shared/progress.ts';
+import type { GrowFx, XpSource } from '../../shared/progress.ts';
+import { applyImport, logXp, registerProgress, useSeed } from './progress.ts';
 import type { Db, Q } from './db.ts';
+import { registerVehicles } from './vehicles.ts';
+import { registerShopping } from './shopping.ts';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 const SESSION_DAYS = 30;
@@ -137,8 +142,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const wardOk = (province: unknown, name: unknown): province is string =>
     typeof province === 'string' && typeof name === 'string' && Object.hasOwn(WARDS, province) && WARDS[province].includes(name);
   /** Thời gian chờ bước kế, đã tính thời tiết của vùng. */
-  const waitMs = (sp: (typeof SPECIALTIES)[string], regionId: string, now: number, harvests: number) =>
-    Math.max(1000, Math.round((stepWaitMs(sp, timeScale) * weatherOf(regionId, now).growth) / paceOf(harvests)));
+  const waitMs = (sp: (typeof SPECIALTIES)[string], regionId: string, now: number, harvests: number, fx: GrowFx = growFx()) =>
+    Math.max(1000, Math.round((stepWaitMs(sp, timeScale) * fx.weather(weatherOf(regionId, now).growth) * fx.waitMult) / paceOf(harvests)));
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024, trustProxy: !!opts.trustProxy });
   await app.register(cookie);
   if (opts.rateLimit !== false) await app.register(rateLimit, { max: 300, timeWindow: '1 minute' });
@@ -173,7 +178,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     await q.query('insert into ledger (user_id, delta, reason) values ($1,$2,$3)', [userId, delta, reason]);
   }
   /** Cộng điểm kinh nghiệm; trả về cấp sau khi cộng và có lên cấp không. */
-  async function addXp(q: Q, userId: number, n: number) {
+  async function addXp(q: Q, userId: number, n0: number, source: XpSource = 'khac') {
+    // ghi sổ EXP theo nguồn và áp trần mỗi ngày của nguồn đó
+    const n = await logXp(q, userId, source, n0);
     const { rows } = await q.query('update users set xp = xp + $2 where id = $1 returning xp', [userId, n]);
     const after = levelOf(rows[0].xp), before = levelOf(rows[0].xp - n);
     return { xpGained: n, xp: after.xp, level: after.level, title: after.title, levelUp: after.level > before.level };
@@ -225,12 +232,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   async function collect(q: Q, userId: number, specialtyId: string) {
     const ins = await q.query('insert into collection (user_id, specialty_id) values ($1,$2) on conflict do nothing', [userId, specialtyId]);
     if (!ins.rowCount) return;
+    await addXp(q, userId, xpFor('tem'), 'tem');
     const regionId = SPECIALTIES[specialtyId].regionId;
     const ids = specialtiesOfRegion(regionId).map((sp) => sp.id);
     const have = await q.query('select count(*)::int as n from collection where user_id = $1 and specialty_id = any($2::text[])', [userId, ids]);
     if (have.rows[0].n < ids.length) return;
     const rw = await q.query('insert into collection_rewards (user_id, region_id) values ($1,$2) on conflict do nothing', [userId, regionId]);
-    if (rw.rowCount) await addCash(q, userId, REGION_SET_REWARD, `bo_suu_tap:${regionId}`);
+    if (rw.rowCount) { await addCash(q, userId, REGION_SET_REWARD, `bo_suu_tap:${regionId}`); await addXp(q, userId, xpFor('bo_tem'), 'bo_tem'); }
   }
   /** Hệ số được mùa mất giá: tính cả lượng đã bán 24 giờ qua lẫn diện tích đang trồng trên toàn máy chủ. */
   async function glutOf(q: Q, specialtyId: string): Promise<number> {
@@ -329,8 +337,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       energyState(db, userId),
     ]);
     const user = u.rows[0], lv = levelOf(user.xp);
+    const vehMe = await veh.meOut(db, userId), equipped = await shopping.equippedOf(db, userId);
     return {
       user: {
+        ...vehMe, equipped,
         id: user.id, username: user.username, displayName: user.display_name, cash: user.cash, homeRegionId: user.home_region_id,
         homeKind: plots.rows.find((p) => p.is_home)?.kind ?? null, coopId: coop.rows[0]?.coop_id ?? null, role: user.role ?? null,
         roleNextSpinAt: user.role && user.role_assigned_at ? new Date(user.role_assigned_at).getTime() + SEASON_MS : null,
@@ -430,7 +440,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (!ROLES.includes(role)) throw new Error('pickRole trả về vai trò không hợp lệ');
       await q.query('update users set role = $2, role_assigned_at = $3, truck_region = home_region_id where id = $1', [userId, role, new Date(now)]);
       await ensureStarter(q, userId);
-      return { role, weights, nextSpinAt: now + SEASON_MS };
+      const xp = await addXp(q, userId, xpFor('quay_vai'), 'quay_vai');
+      return { role, weights, nextSpinAt: now + SEASON_MS, ...xp };
     });
   });
 
@@ -451,7 +462,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await addCash(q, userId, -price, `mua_dat:${r.id}`);
       await addCash(q, userId, -fees.registration, `le_phi_truoc_ba:${r.id}`);
       await addCash(q, userId, -fees.certificate, `phi_cap_giay:${r.id}`);
-      const xp = await addXp(q, userId, XP.land);
+      const xp = await addXp(q, userId, XP.land, 'mua_dat');
       return { plotId: plot.rows[0].id, price, fees, total: price + fees.total, certificateNo: certNo(Number(plot.rows[0].id), r.id), ...xp };
     });
   });
@@ -460,13 +471,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const userId = await requireUser(req);
     const plotId = idParam((req.params as any).id);
     const { rows } = await db.query(
-      `select p.id, p.user_id, p.region_id, p.is_home, p.kind, p.ward_name, p.ward_province, p.style, p.decor, u.display_name, u.role as owner_role, u.avatar as owner_avatar
+      `select p.id, p.user_id, p.region_id, p.is_home, p.kind, p.ward_name, p.ward_province, p.style, p.decor, p.upgrades, u.display_name, u.role as owner_role, u.avatar as owner_avatar
        from plots p join users u on u.id = p.user_id where p.id = $1`, [plotId]);
     const p = rows[0];
     if (!p) throw bad('khong_tim_thay', 'Không tìm thấy lô đất.', 404);
     if (p.owner_role === 'xuong' && p.is_home) await db.tx((q) => ensureStarter(q, Number(p.user_id)));
     const [tiles, stall, mach] = await Promise.all([
-      db.query('select id, tile, specialty_id, step_index, step_ready_at, late_count from plantings where plot_id = $1 order by tile', [plotId]),
+      db.query('select id, tile, specialty_id, step_index, step_ready_at, late_count, trait from plantings where plot_id = $1 order by tile', [plotId]),
       db.query(`select id, specialty_id, quality, kg, price from listings where seller_id = $1 and status = 'open' order by id desc limit 50`, [p.user_id]),
       p.owner_role === 'xuong' && p.is_home ? machinesOf(db, Number(p.user_id)) : Promise.resolve(null),
     ]);
@@ -474,12 +485,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       ...(mach ? { factory: { machines: mach.map((m) => ({ id: m.id, kind: m.kind, name: m.name, emoji: m.emoji, level: m.level, slots: m.slots, busy: m.jobs.length, support: m.support })) } } : {}),
       plot: {
         id: p.id, regionId: p.region_id, isHome: p.is_home, kind: p.kind, wardName: p.ward_name, wardProvince: p.ward_province, ownerName: p.display_name, mine: p.user_id === userId,
-        ownerRole: p.owner_role ?? null, style: styleOut(p.style), decor: decorOut(p.decor), ownerAvatar: avatarOut(p.owner_avatar),
+        ownerRole: p.owner_role ?? null, style: styleOut(p.style), decor: decorOut(p.decor), ownerAvatar: avatarOut(p.owner_avatar), upgrades: cleanUpgrades(p.upgrades),
         ...(p.user_id === userId ? { ownedHouses: ownedOut(p.style) } : {}),
       },
       plantings: tiles.rows.map((t) => ({
         id: t.id, tile: t.tile, specialtyId: t.specialty_id, stepIndex: t.step_index,
-        stepReadyAt: new Date(t.step_ready_at).getTime(), lateCount: t.late_count,
+        stepReadyAt: new Date(t.step_ready_at).getTime(), lateCount: t.late_count, trait: isSeedTrait(t.trait) ? t.trait : null,
       })),
       stall: stall.rows.map((l) => ({ id: l.id, specialtyId: l.specialty_id, quality: l.quality, kg: l.kg, price: l.price })),
       now: Date.now(),
@@ -536,7 +547,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
     return db.tx(async (q) => {
       const u = await q.query('select cash, role, harvests from users where id = $1 for update', [userId]);
-      const p = await q.query('select region_id, kind from plots where id = $1 and user_id = $2', [plotId, userId]);
+      const p = await q.query('select region_id, kind, upgrades from plots where id = $1 and user_id = $2', [plotId, userId]);
       if (!p.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy lô đất của bạn.', 404);
       if (!u.rows[0].role) throw bad('chua_co_vai', 'Hãy quay vòng quay để nhận vai trò trước khi trồng.', 409);
       if (u.rows[0].role === 'xuong') throw bad('xuong_khong_trong', 'Chủ xưởng không trồng trọt: lô đất của bạn là nhà xưởng. Hãy mua nông sản ở sạp, chợ hoặc siêu thị về chế biến.', 409);
@@ -544,16 +555,21 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         throw bad('o_bi_khoa', u.rows[0].role === 'nong_dan' ? 'Vườn sân thượng chỉ trồng được 12 ô ở giữa.' : 'Vai trò của bạn chỉ có vườn nhỏ 8 ô ở giữa.', 409);
       }
       if (p.rows[0].region_id !== sp.regionId) throw bad('sai_vung', `${sp.name} chỉ trồng được ở ${REGIONS[sp.regionId].name}.`, 409);
-      const cost = seedCost(sp);
+      // trồng bằng gói giống lai (kết quả lai tạo giống) thì không tốn tiền giống
+      const trait = isSeedTrait(b.seed) ? b.seed : null;
+      if (b.seed !== undefined && b.seed !== null && !trait) throw bad('du_lieu_sai', 'Loại giống lai không tồn tại.');
+      const cost = trait ? 0 : seedCost(sp);
       if (u.rows[0].cash < cost) throw bad('khong_du_tien', 'Bạn không đủ tiền mua giống.', 409);
-      const ready = new Date(Date.now() + waitMs(sp, sp.regionId, Date.now(), u.rows[0].harvests));
+      const ready = new Date(Date.now() + waitMs(sp, sp.regionId, Date.now(), u.rows[0].harvests, growFx(p.rows[0].upgrades, trait)));
       const ins = await q.query(
-        `insert into plantings (plot_id, tile, specialty_id, step_index, step_ready_at) values ($1,$2,$3,1,$4)
-         on conflict (plot_id, tile) do nothing returning id`, [plotId, tile, sp.id, ready]);
+        `insert into plantings (plot_id, tile, specialty_id, step_index, step_ready_at, trait) values ($1,$2,$3,1,$4,$5)
+         on conflict (plot_id, tile) do nothing returning id`, [plotId, tile, sp.id, ready, trait]);
       if (!ins.rows[0]) throw bad('o_da_trong', 'Ô đất này đang có cây.', 409);
+      if (trait && !(await useSeed(q, userId, sp.id, trait))) throw bad('het_giong', 'Bạn không còn gói giống lai này.', 409);
       const en = await spendEnergy(q, userId, ENERGY_COST.plant, 'trồng cây');
-      await addCash(q, userId, -cost, `giong:${sp.id}`);
-      return { plantingId: ins.rows[0].id, cost, ...en };
+      if (cost > 0) await addCash(q, userId, -cost, `giong:${sp.id}`);
+      const xp = await addXp(q, userId, xpFor('trong'), 'trong');
+      return { plantingId: ins.rows[0].id, cost, trait, ...en, ...xp };
     });
   });
 
@@ -562,7 +578,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const plantingId = idParam((req.params as any).id);
     return db.tx(async (q) => {
       const { rows } = await q.query(
-        `select g.id, g.specialty_id, g.step_index, g.step_ready_at, g.late_count, p.region_id, u.harvests
+        `select g.id, g.specialty_id, g.step_index, g.step_ready_at, g.late_count, g.trait, p.upgrades, p.region_id, u.harvests
          from plantings g join plots p on p.id = g.plot_id join users u on u.id = p.user_id
          where g.id = $1 and p.user_id = $2 for update of g`, [plantingId, userId]);
       const g = rows[0];
@@ -571,22 +587,24 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const now = Date.now();
       const readyAt = new Date(g.step_ready_at).getTime();
       if (now < readyAt) throw bad('chua_den_luc', 'Chưa đến lúc làm bước này.', 409);
-      const late = g.late_count + (now > readyAt + lateGraceMs ? 1 : 0);
+      const fx = growFx(g.upgrades, g.trait);
+      const late = g.late_count + (now > readyAt + lateGraceMs * fx.graceMult ? 1 : 0);
       if (g.step_index >= stepCount(sp) - 1) {
         const en = await spendEnergy(q, userId, ENERGY_COST.harvest, 'thu hoạch');
-        const ql = qualityFromLate(late);
-        const h = harvestKg(sp.crop, now);
+        const ql = fx.forceA ? 'A' : qualityFromLate(late);
+        const h0 = harvestKg(sp.crop, now), h = { ...h0, kg: Math.round(h0.kg * fx.yieldMult) };
         await q.query('delete from plantings where id = $1', [plantingId]);
         await addInventory(q, userId, sp.id, ql, h.kg);
         await collect(q, userId, sp.id);
         await q.query('update users set harvests = harvests + 1 where id = $1', [userId]);
-        const xp = await addXp(q, userId, XP.harvest);
+        const xp = await addXp(q, userId, XP.harvest, 'thu_hoach');
         return { harvested: { specialtyId: sp.id, quality: ql, kg: h.kg, inSeason: h.inSeason }, ...en, ...xp };
       }
       const en = await spendEnergy(q, userId, ENERGY_COST.care, 'chăm cây');
-      const next = new Date(now + waitMs(sp, g.region_id, now, g.harvests));
+      const next = new Date(now + waitMs(sp, g.region_id, now, g.harvests, fx));
       await q.query('update plantings set step_index = step_index + 1, step_ready_at = $2, late_count = $3 where id = $1', [plantingId, next, late]);
-      return { stepIndex: g.step_index + 1, stepReadyAt: next.getTime(), lateCount: late, ...en };
+      const xp = await addXp(q, userId, xpFor('cham'), 'cham');
+      return { stepIndex: g.step_index + 1, stepReadyAt: next.getTime(), lateCount: late, ...en, ...xp };
     });
   });
 
@@ -616,7 +634,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         `select count(*)::int as n from ledger where user_id = $1 and reason like 'cham_giup:%' and created_at >= date_trunc('day', now())`, [userId]);
       if (used.rows[0].n >= HELP_DAILY_LIMIT) throw bad('het_luot', `Hôm nay bạn đã chăm giúp đủ ${HELP_DAILY_LIMIT} lượt.`, 409);
       await spendEnergy(q, userId, ENERGY_COST.help, 'chăm giúp');
-      await addXp(q, userId, XP.help);
+      await addXp(q, userId, XP.help, 'giup');
       const late = g.late_count + (now > readyAt + lateGraceMs ? 1 : 0);
       if (isHarvest) {
         // Phụ thu hoạch: chủ vườn nhận phần lớn, người phụ được chia một phần làm quà vườn.
@@ -693,6 +711,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (f.requested_by === userId) throw bad('da_ket_ban', 'Bạn đã gửi lời mời rồi, hãy chờ người kia chấp nhận.', 409);
       await ensureFriendRoom(q, a, c);
       await q.query(`update friendships set status = 'accepted', accepted_at = now() where user_a = $1 and user_b = $2`, [a, c]);
+      await addXp(q, userId, xpFor('ket_ban'), 'ket_ban');
       return { status: 'accepted' };
     });
   });
@@ -787,12 +806,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await takeInventory(q, userId, sp.id, ql, kg);
       const now = Date.now();
       const ref = await currentPrice(q, sp.id);
-      if (u.rows[0].role !== 'thuong_lai') {
+      // Vai khác tự lái xe chở hàng tới vùng khác thì cũng bán được giá tại nơi xe đỗ như thương lái.
+      const drove = !!u.rows[0].truck_region && u.rows[0].truck_region !== u.rows[0].home_region_id;
+      if (u.rows[0].role !== 'thuong_lai' && !drove) {
         // Không phải thương lái: chỉ bán tháo được, giá thấp và không có thưởng nào.
         const unit = Math.round((ref * DUMP_RATIO * QUALITY_MULT[ql]) / 100) * 100;
         await q.query('insert into npc_sales (user_id, specialty_id, kg) values ($1,$2,$3)', [userId, sp.id, kg]);
         await addCash(q, userId, unit * kg, `ban_thao:${sp.id}`);
-        return { unitPrice: unit, total: unit * kg, mods: {}, npcId: npcOf('thuong_lai').id, dump: true };
+        const xp = await addXp(q, userId, xpFor('ban_dn', unit * kg), 'ban_dn');
+        return { unitPrice: unit, total: unit * kg, mods: {}, npcId: npcOf('thuong_lai').id, dump: true, ...xp };
       }
       // Thương lái bán tại nơi xe đang đỗ: hàng của vùng đó là giá tại vườn, hàng vùng khác là hàng phương xa.
       const market: string = u.rows[0].truck_region ?? u.rows[0].home_region_id;
@@ -800,7 +822,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const unit = npcPrice(ref, ql, sp.regionId, market, mods);
       await q.query('insert into npc_sales (user_id, specialty_id, kg) values ($1,$2,$3)', [userId, sp.id, kg]);
       await addCash(q, userId, unit * kg, `ban_thuong_lai:${sp.id}`);
-      return { unitPrice: unit, total: unit * kg, mods, npcId: npcOf('thuong_lai').id, dump: false, marketRegionId: market };
+      const xp = await addXp(q, userId, xpFor('ban_dn', unit * kg), 'ban_dn');
+      return { unitPrice: unit, total: unit * kg, mods, npcId: npcOf('thuong_lai').id, dump: false, marketRegionId: market, ...xp };
     });
   });
 
@@ -839,7 +862,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const ins = await q.query(
         'insert into listings (seller_id, specialty_id, quality, kg, price) values ($1,$2,$3,$4,$5) returning id',
         [userId, sp.id, ql, kg, price]);
-      return { listingId: ins.rows[0].id };
+      const xp = await addXp(q, userId, xpFor('bay_sap'), 'bay_sap');
+      return { listingId: ins.rows[0].id, ...xp };
     });
   });
 
@@ -862,7 +886,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await addCash(q, l.seller_id, total, `ban_cho:${listingId}`);
       await addInventory(q, userId, l.specialty_id, l.quality, kg);
       await collect(q, userId, l.specialty_id);
-      return { total };
+      await addXp(q, l.seller_id, xpFor('ban_sap', total), 'ban_sap');
+      const xp = await addXp(q, userId, xpFor('mua_sap', total), 'mua_sap');
+      return { total, ...xp };
     });
   });
 
@@ -956,7 +982,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (!ins.rows[0]) throw bad('ten_da_dung', 'Tên hợp tác xã này đã có người dùng.', 409);
       await q.query('insert into coop_members (coop_id, user_id) values ($1,$2)', [ins.rows[0].id, userId]);
       await addCash(q, userId, -COOP_CREATE_COST, `lap_htx:${ins.rows[0].id}`);
-      return { coopId: ins.rows[0].id };
+      const xp = await addXp(q, userId, xpFor('htx_lap'), 'htx_lap');
+      return { coopId: ins.rows[0].id, ...xp };
     });
   });
 
@@ -1046,7 +1073,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         const all = await q.query('select user_id, value from coop_contribs where order_id = $1 order by user_id', [o.id]);
         for (const r of all.rows) await addCash(q, r.user_id, Math.round(r.value * COOP_ORDER_BONUS), `thuong_don:${o.id}`);
       }
-      return { paid: value, completed, ...orderRoute(o) };
+      const xp = await addXp(q, userId, xpFor('htx_gop', value), 'htx_gop');
+      return { paid: value, completed, ...orderRoute(o), ...xp };
     });
   });
 
@@ -1086,7 +1114,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const count = await q.query('select count(*)::int as n from coop_members where coop_id = $1', [coopId]);
       if (count.rows[0].n >= COOP_MAX_MEMBERS) throw bad('htx_day', `Hợp tác xã đã đủ ${COOP_MAX_MEMBERS} thành viên.`, 409);
       await q.query('insert into coop_members (coop_id, user_id) values ($1,$2)', [coopId, userId]);
-      return { ok: true };
+      const xp = await addXp(q, userId, xpFor('htx_vao'), 'htx_vao');
+      return { ok: true, ...xp };
     });
   });
 
@@ -1125,7 +1154,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await addCash(q, userId, -option.fare, `ve:${option.mode}:${r.id}`);
       await q.query('update users set tour_region = $2 where id = $1', [userId, r.id]);
       const isNew = !been.owns && !been.visited;
-      const xp = isNew ? await addXp(q, userId, XP.region) : null;
+      const xp = isNew ? await addXp(q, userId, XP.region, 'vung_moi') : null;
       return { cost: option.fare, isNew, mode: option.mode, ...(xp ?? {}) };
     });
   });
@@ -1155,7 +1184,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await addCash(q, userId, -unit * kg, `qua_dac_san:${sp.id}`);
       await addInventory(q, userId, sp.id, 'A', kg);
       await collect(q, userId, sp.id);
-      return { unitPrice: unit, total: unit * kg };
+      const xp = await addXp(q, userId, xpFor('qua_luu_niem'), 'qua_luu_niem');
+      return { unitPrice: unit, total: unit * kg, ...xp };
     });
   });
 
@@ -1188,7 +1218,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await collect(q, toId, sp.id);
       const ins = await q.query(
         'insert into gifts (from_id, to_id, specialty_id, quality, kg, message) values ($1,$2,$3,$4,$5,$6) returning id', [userId, toId, sp.id, ql, kg, message]);
-      return { giftId: ins.rows[0].id };
+      const xp = await addXp(q, userId, xpFor('qua'), 'qua');
+      return { giftId: ins.rows[0].id, ...xp };
     });
   });
 
@@ -1231,13 +1262,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   /** Các máy của một xưởng kèm mẻ đang chạy trên từng máy. Mẻ cũ chưa gắn máy được xếp vào máy chế biến đầu tiên. */
   async function machinesOf(q: Q, userId: number) {
     const [m, j] = await Promise.all([
-      q.query('select id, kind, level from machines where user_id = $1 order by id', [userId]),
+      q.query('select id, kind, level, origin from machines where user_id = $1 order by id', [userId]),
       q.query('select id, machine_id, specialty_id, kg_in, kg_out, ready_at from process_jobs where user_id = $1 order by id', [userId]),
     ]);
     const list = m.rows.filter((r) => isMachine(r.kind)).map((r) => {
       const kind = r.kind as MachineKind, info = MACHINES[kind], st = machineStats(kind, r.level);
-      return { id: Number(r.id), kind, name: info.name, emoji: info.emoji, level: r.level as number, slots: st.slots, time: st.time, recipes: info.recipes, support: info.slots === 0,
-        bonus: info.bonus ?? null, upgradeCost: r.level < MACHINE_MAX_LEVEL ? machineUpgradeCost(kind, r.level) : null, jobs: [] as ReturnType<typeof jobOut>[] };
+      return applyImport({ id: Number(r.id), kind, name: info.name, emoji: info.emoji, level: r.level as number, slots: st.slots, time: st.time, recipes: info.recipes, support: info.slots === 0,
+        bonus: info.bonus ?? null, upgradeCost: r.level < MACHINE_MAX_LEVEL ? machineUpgradeCost(kind, r.level) : null, jobs: [] as ReturnType<typeof jobOut>[] }, r.origin);
     });
     const orphan: ReturnType<typeof jobOut>[] = [];
     for (const r of j.rows) {
@@ -1312,7 +1343,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (Number(u.rows[0].cash) < MACHINES[kind].price) throw bad('khong_du_tien', 'Bạn không đủ tiền mua máy.', 409);
       await addCash(q, userId, -MACHINES[kind].price, `mua_may:${kind}`);
       const ins = await q.query('insert into machines (user_id, kind) values ($1,$2) returning id', [userId, kind]);
-      return { ok: true, machineId: Number(ins.rows[0].id), kind, price: MACHINES[kind].price, cash: Number(u.rows[0].cash) - MACHINES[kind].price };
+      return { ok: true, machineId: Number(ins.rows[0].id), kind, price: MACHINES[kind].price, cash: Number(u.rows[0].cash) - MACHINES[kind].price, ...(await addXp(q, userId, xpFor('mua_may'), 'mua_may')) };
     });
   });
 
@@ -1331,7 +1362,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (Number(u.rows[0].cash) < cost) throw bad('khong_du_tien', 'Bạn không đủ tiền nâng cấp máy.', 409);
       await addCash(q, userId, -cost, `nang_may:${kind}`);
       await q.query('update machines set level = level + 1 where id = $1', [id]);
-      return { ok: true, machineId: id, level: m.rows[0].level + 1, cost, ...machineStats(kind, m.rows[0].level + 1), cash: Number(u.rows[0].cash) - cost };
+      const xp = await addXp(q, userId, xpFor('nang_may'), 'nang_may');
+      // `level` ở đây là cấp của máy; cấp nhân vật nằm ở playerLevel
+      return { ...xp, playerLevel: xp.level, ok: true, machineId: id, level: m.rows[0].level + 1, cost, ...machineStats(kind, m.rows[0].level + 1), cash: Number(u.rows[0].cash) - cost };
     });
   });
 
@@ -1362,7 +1395,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       // hàng loại thấp ra ít thành phẩm hơn; có kho lạnh thì thiệt ít đi
       const gradeMult = 1 - (1 - QUALITY_MULT[ql]) * (1 - bonus.grade);
       // Làm tròn xuống để chia nhỏ mẻ không được lợi; mẻ quá ít thì từ chối.
-      const kgOut = Math.floor(kg * recipe.ratio * gradeMult * (1 + bonus.yield) + 1e-9);
+      const kgOut = Math.floor(kg * recipe.ratio * gradeMult * (1 + bonus.yield) * (1 + host.yieldBonus) + 1e-9);
       if (kgOut < 1) throw bad('qua_it', `Cần ít nhất ${Math.ceil(1 / (recipe.ratio * gradeMult * (1 + bonus.yield)))} kg để chế biến một mẻ.`, 409);
       const fee = WORKSHOP_RUN_FEE_PER_KG * kg;
       if (Number(u.rows[0].cash) < fee) throw bad('khong_du_tien', 'Bạn không đủ tiền điện và bảo trì cho mẻ này.', 409);
@@ -1373,7 +1406,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const readyAt = new Date(Date.now() + Math.round(ms));
       const ins = await q.query(
         'insert into process_jobs (user_id, specialty_id, kg_in, kg_out, ready_at, machine_id) values ($1,$2,$3,$4,$5,$6) returning id', [userId, sp.id, kg, kgOut, readyAt, host.id]);
-      return { jobId: ins.rows[0].id, machineId: host.id, recipeId: recipe.id, kgOut, fee, readyAt: readyAt.getTime(), ...en };
+      const xp = await addXp(q, userId, xpFor('che_bien'), 'che_bien');
+      return { jobId: ins.rows[0].id, machineId: host.id, recipeId: recipe.id, kgOut, fee, readyAt: readyAt.getTime(), ...en, ...xp };
     });
   });
 
@@ -1387,7 +1421,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (Date.now() < new Date(j.ready_at).getTime()) throw bad('chua_xong', 'Mẻ hàng chưa chế biến xong.', 409);
       await q.query('delete from process_jobs where id = $1', [jobId]);
       await addProduct(q, userId, j.specialty_id, j.kg_out);
-      const xp = await addXp(q, userId, XP.process);
+      const xp = await addXp(q, userId, XP.process, 'lay_me');
       return { specialtyId: j.specialty_id, kg: j.kg_out, name: productName(j.specialty_id), ...xp };
     });
   });
@@ -1406,7 +1440,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const pack = await valueBonusOf(q, userId);
       const unit = Math.round(((await currentPrice(q, sp.id)) * recipeOf(CROPS[sp.crop]).value * (1 + bonus) * (1 + pack)) / 100) * 100;
       await addCash(q, userId, unit * kg, `ban_che_bien:${sp.id}`);
-      return { unitPrice: unit, total: unit * kg, npcId: npcOf('che_bien').id };
+      const xp = await addXp(q, userId, xpFor('ban_thanh_pham', unit * kg), 'ban_thanh_pham');
+      return { unitPrice: unit, total: unit * kg, npcId: npcOf('che_bien').id, ...xp };
     });
   });
   async function addProduct(q: Q, userId: number, specialtyId: string, kg: number) {
@@ -1492,10 +1527,14 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       }
       const reward = await orderReward(q, order.items);
       await addCash(q, userId, reward, `don_hang:${slot}`);
-      const xp = await addXp(q, userId, XP.order);
+      const xp = await addXp(q, userId, XP.order, 'giao_don');
       return { reward, ...xp };
     });
   });
+
+  // xe cộ, giấy phép lái xe, trạm dừng nghỉ và mua sắm nằm ở vehicles.ts, shopping.ts
+  const veh = registerVehicles(app, { db, requireUser, requireTester: (r) => requireTester(r), bad, addCash, energyState, setEnergy, bagOf: (q, u) => bagOf(q, u) });
+  const shopping = registerShopping(app, { db, requireUser, bad, addCash, provincesOf: async (q, u) => (await whereabouts(q, u)).provinces, licensesOf: veh.licensesOf });
 
   // ---------------------------------------------------------------- chuyến xe của thương lái
   const round1 = (v: number) => Math.round(v * 10) / 10;
@@ -1510,7 +1549,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const amount = int((req.body as any)?.amount, 10_000, 5_000_000, 'amount');
     return db.tx(async (q) => {
       const u = await q.query('select cash, role, etc from users where id = $1 for update', [userId]);
-      if (u.rows[0].role !== 'thuong_lai') throw bad('chi_thuong_lai', 'Chỉ thương lái mới có xe tải để nạp ETC.', 403);
+      if (!(await veh.truck(q, userId)).has) throw bad('chua_co_xe', 'Bạn chưa có xe để nạp ETC. Hãy mua xe trước.', 403);
       if (u.rows[0].cash < amount) throw bad('khong_du_tien', 'Bạn không đủ tiền để nạp ETC.', 409);
       await addCash(q, userId, -amount, 'nap_etc');
       await q.query('update users set etc = etc + $2 where id = $1', [userId, amount]);
@@ -1525,10 +1564,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     if (!Number.isFinite(want) || want <= 0) throw bad('du_lieu_sai', 'Số lít xăng không hợp lệ.');
     return db.tx(async (q) => {
       const u = await q.query('select cash, role, fuel_l from users where id = $1 for update', [userId]);
-      if (u.rows[0].role !== 'thuong_lai') throw bad('chi_thuong_lai', 'Chỉ thương lái mới có xe tải để đổ xăng.', 403);
-      const have = Number(u.rows[0].fuel_l), room = round1(TRUCK.tankL - have);
-      if (room <= 0) throw bad('binh_day', 'Bình xăng đã đầy.', 409);
-      const liters = round1(Math.min(want, room)), cost = Math.round(liters * TRUCK.fuelPrice);
+      const mine = await veh.truck(q, userId), tk = mine.tk;
+      if (!mine.has) throw bad('chua_co_xe', 'Bạn chưa có xe để nạp nhiên liệu. Hãy mua xe trước.', 403);
+      const have = Number(u.rows[0].fuel_l), room = round1(tk.tankL - have);
+      if (room <= 0) throw bad('binh_day', tk.power === 'dien' ? 'Pin đã đầy.' : 'Bình xăng đã đầy.', 409);
+      const liters = round1(Math.min(want, room)), cost = Math.round(liters * tk.parkPrice);
       if (u.rows[0].cash < cost) throw bad('khong_du_tien', 'Bạn không đủ tiền đổ xăng.', 409);
       if (cost > 0) await addCash(q, userId, -cost, 'do_xang');
       const fuelL = round1(have + liters);
@@ -1543,16 +1583,17 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     if (!to) throw bad('du_lieu_sai', 'Vùng trồng không tồn tại.');
     return db.tx(async (q) => {
       const u = await q.query('select cash, role, home_region_id, truck_region, fuel_l, etc from users where id = $1 for update', [userId]);
-      if (u.rows[0].role !== 'thuong_lai') throw bad('chi_thuong_lai', 'Chỉ thương lái mới có xe chở hàng đi vùng khác.', 403);
+      const mine = await veh.truck(q, userId), tk = mine.tk;
+      if (!mine.has) throw bad('chua_co_xe', 'Bạn chưa có xe chở hàng. Hãy mua một chiếc xe (và thi bằng lái) trước khi đi vùng khác.', 403);
       const from: string | null = u.rows[0].truck_region ?? u.rows[0].home_region_id;
       if (!from || !findRegion(from)) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
       if (from === to.id) throw bad('du_lieu_sai', 'Xe của bạn đang ở vùng này rồi.');
       if (!(Number(u.rows[0].fuel_l) > 0)) throw bad('het_xang', 'Xe đã hết xăng, hãy đổ xăng trước khi đi.', 409);
-      const plan = tripPlan(from, to.id);
+      const plan = veh.planFor(mine.spec, from, to.id);
       const en = await spendEnergy(q, userId, tripEnergy(plan.km), 'lái chuyến xe này');
       const ins = await q.query(
         'insert into trips (user_id, from_region, to_region, min_seconds) values ($1,$2,$3,$4) returning id', [userId, from, to.id, plan.seconds]);
-      return { tripId: ins.rows[0].id, fromRegionId: from, toRegionId: to.id, plan, fuelL: Number(u.rows[0].fuel_l), etc: u.rows[0].etc, cash: u.rows[0].cash, truck: TRUCK, energyCost: tripEnergy(plan.km), ...en };
+      return { tripId: ins.rows[0].id, fromRegionId: from, toRegionId: to.id, plan, fuelL: Number(u.rows[0].fuel_l), etc: u.rows[0].etc, cash: u.rows[0].cash, truck: tk, energyCost: tripEnergy(plan.km), ...en };
     });
   });
 
@@ -1567,8 +1608,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const t = rows[0];
       if (!t) throw bad('khong_tim_thay', 'Không tìm thấy chuyến xe đang chạy.', 404);
       if (Date.now() - new Date(t.started_at).getTime() < t.min_seconds * 1000 * tripMinFactor) throw bad('chua_toi_noi', 'Xe chưa tới nơi.', 409);
-      const plan = tripPlan(t.from_region, t.to_region), road = roadKm(plan.km, plan.needsBoat);
-      const refuelL = num(body.refuelL, 0, TRUCK.tankL * 4), detourKm = num(body.detourKm, 0, road);
+      const mine = await veh.truck(q, userId), tk = mine.tk;
+      const plan = veh.planFor(mine.spec, t.from_region, t.to_region), road = roadKm(plan.km, plan.needsBoat);
+      const refuelMax = Math.max(tk.tankL * 4, plan.fuelNeededL * 1.5);
+      const refuelL = Math.min(refuelMax, num(body.refuelL, 0, refuelMax) + veh.chargedKwh(body, tk)), detourKm = num(body.detourKm, 0, road);
       // Các lần bị công an dừng xe vì quá tốc độ: mỗi lần phạt theo khung của Nghị định 168/2024.
       const fines = (Array.isArray(body.speeding) ? body.speeding.slice(0, 6) : [])
         .map((v) => Math.round(num(v, 0, 200)))
@@ -1576,25 +1619,30 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         .filter((x) => x.f)
         .map((x) => ({ overKmh: x.overKmh, fine: x.f!.fine, points: x.f!.points, label: x.f!.label }));
       const have = Number(u.rows[0].fuel_l);
-      const used = ((road + detourKm) * TRUCK.lPer100km) / 100;
+      const used = ((road + detourKm) * tk.lPer100km) / 100;
       // Thiếu xăng giữa đường: gọi cứu hộ, phần thiếu tính giá cao hơn.
       const rescueL = Math.max(0, used - have - refuelL);
       let cash: number = u.rows[0].cash, etc: number = u.rows[0].etc;
-      const fuelCost = Math.min(cash, Math.round(refuelL * TRUCK.fuelPrice + rescueL * TRUCK.fuelPrice * TRUCK.rescueMult));
+      const fuelCost = Math.min(cash, Math.round(refuelL * tk.fuelPrice + rescueL * tk.fuelPrice * tk.rescueMult));
       if (fuelCost > 0) { await addCash(q, userId, -fuelCost, `xang:${t.to_region}`); cash -= fuelCost; }
       // Phí đường: trừ ETC trước; thiếu thì trả tiền mặt có phụ thu.
       const tollCost = plan.tolls * plan.tollFee, tollFromEtc = Math.min(etc, tollCost);
-      const tollCash = Math.min(cash, Math.round((tollCost - tollFromEtc) * (1 + TRUCK.etcCashSurcharge)));
+      const tollCash = Math.min(cash, Math.round((tollCost - tollFromEtc) * (1 + tk.etcCashSurcharge)));
       if (tollCash > 0) { await addCash(q, userId, -tollCash, `phi_duong:${t.to_region}`); cash -= tollCash; }
       etc -= tollFromEtc;
       const fineCost = Math.min(cash, fines.reduce((sum, f) => sum + f.fine, 0));
       if (fineCost > 0) { await addCash(q, userId, -fineCost, `phat_toc_do:${tripId}`); cash -= fineCost; }
-      const fuelL = round1(Math.min(TRUCK.tankL, Math.max(0, have + refuelL + rescueL - used)));
+      const fuelL = round1(Math.min(tk.tankL, Math.max(0, have + refuelL + rescueL - used)));
       await q.query('update trips set finished_at = now() where id = $1', [tripId]);
       await q.query('update users set truck_region = $2, fuel_l = $3, etc = $4, cargo_used = 0 where id = $1', [userId, t.to_region, fuelL, etc]);
       const firstVisit = await q.query('insert into visits (user_id, region_id) values ($1,$2) on conflict do nothing', [userId, t.to_region]);
-      if (firstVisit.rowCount && !(await q.query('select 1 from plots where user_id = $1 and region_id = $2', [userId, t.to_region])).rows[0]) await addXp(q, userId, XP.region);
-      return { regionId: t.to_region, fuelUsedL: round1(used), fuelCost, rescueL: round1(rescueL), tollCost: tollFromEtc + tollCash, tollFromEtc, fuelL, etc, cash, fineCost, fines };
+      if (firstVisit.rowCount && !(await q.query('select 1 from plots where user_id = $1 and region_id = $2', [userId, t.to_region])).rows[0]) await addXp(q, userId, XP.region, 'vung_moi');
+      const ex = await veh.afterTrip(q, userId, plan, body, cash);
+      // EXP chuyến xe: phần cố định cộng theo quãng đường; chạy đúng tốc độ được thưởng thêm
+      const tripKm = REGIONS[t.from_region] && REGIONS[t.to_region] ? haversineKm(REGIONS[t.from_region].lat, REGIONS[t.from_region].lng, REGIONS[t.to_region].lat, REGIONS[t.to_region].lng) : 0;
+      if (!fines.length) await addXp(q, userId, xpFor('chuyen_xe_sach'), 'chuyen_xe_sach');
+      const xpTrip = await addXp(q, userId, xpFor('chuyen_xe', Math.round(tripKm)), 'chuyen_xe');
+      return { regionId: t.to_region, fuelUsedL: round1(used), fuelCost, rescueL: round1(rescueL), tollCost: tollFromEtc + tollCash, tollFromEtc, fuelL, etc, fineCost, fines, ...xpTrip, unit: tk.unit, vehicleKind: tk.kind, ...ex };
     });
   });
 
@@ -1622,7 +1670,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const truckAt: string | null = trader ? (u.truck_region ?? home) : null;
     const now = Date.now();
     const used = trader ? await cargoUsed(db, userId) : 0;
-    const free = trader ? Math.max(0, TRUCK.cargoKg - used) : 0;
+    const cap = (await veh.truck(db, userId)).tk.cargoKg;
+    const free = trader ? Math.max(0, cap - used) : 0;
     const here = truckAt === r.id;
     const canBuy = trader && here;
     const whyNot = canBuy ? null : !trader ? LIMIT_REASONS.wholesale_role.reason : `Xe tải của bạn đang ở ${findRegion(truckAt ?? '')?.name ?? 'nơi khác'}. Hãy lái xe tới ${r.name} để thu mua sỉ.`;
@@ -1656,7 +1705,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     sell.sort((a, b) => b.diffPerKg * b.kg - a.diffPerKg * a.kg);
     return {
       regionId: r.id, homeRegionId: home, truckRegionId: truckAt, role: u.role ?? null, here, canBuy, whyNot, canSellHere: trader && here,
-      cargo: { capacityKg: trader ? TRUCK.cargoKg : 0, usedKg: used, freeKg: free },
+      cargo: { capacityKg: trader ? cap : 0, usedKg: used, freeKg: free },
       buy, sell, limits: { cargo: LIMIT_REASONS.wholesale_cargo, supply: LIMIT_REASONS.wholesale_supply, souvenir: LIMIT_REASONS.souvenir }, compare: TRAVEL_VS_TRUCK,
     };
   });
@@ -1666,14 +1715,16 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const b = (req.body ?? {}) as Record<string, unknown>;
     const sp = findSpecialty(String(b.specialtyId ?? ''));
     if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
-    const kg = int(b.kg, 1, TRUCK.cargoKg, 'kg');
+    const kg = int(b.kg, 1, 1_000_000, 'kg');
     return db.tx(async (q) => {
       const u = (await q.query('select cash, role, home_region_id, truck_region from users where id = $1 for update', [userId])).rows[0];
       if (u.role !== 'thuong_lai') throw bad('chi_thuong_lai', 'Chỉ thương lái có xe tải mới thu mua sỉ được.', 403);
       const at: string | null = u.truck_region ?? u.home_region_id;
       if (!at) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
       if (sp.regionId !== at) throw bad('khac_vung', `Xe của bạn đang ở ${findRegion(at)?.name}. Chỉ thu mua sỉ được đặc sản của vùng xe đang đỗ.`, 409);
-      const used = await cargoUsed(q, userId, true), free = TRUCK.cargoKg - used;
+      const cap = (await veh.truck(q, userId)).tk.cargoKg;
+      if (kg > cap) throw bad('du_lieu_sai', `Xe của bạn chỉ chở được ${cap} kg mỗi lần.`);
+      const used = await cargoUsed(q, userId, true), free = cap - used;
       if (kg > free) throw bad('day_xe', `Thùng xe chỉ còn chở thêm được ${Math.max(0, free)} kg.`, 409);
       // Khoá theo (vùng, đặc sản) để hai thương lái không mua vượt nguồn hàng trong ngày.
       await q.query('select pg_advisory_xact_lock(hashtext($1))', [`si:${at}:${sp.id}`]);
@@ -1686,7 +1737,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await collect(q, userId, sp.id);
       await q.query('insert into wholesale_buys (user_id, region_id, specialty_id, kg, unit_price) values ($1,$2,$3,$4,$5)', [userId, at, sp.id, kg, unit]);
       await q.query('update users set cargo_used = $2, cargo_day = $3 where id = $1', [userId, used + kg, dayString(vnDay(Date.now()))]);
-      return { unitPrice: unit, total: unit * kg, cash: u.cash - unit * kg, cargo: { capacityKg: TRUCK.cargoKg, usedKg: used + kg, freeKg: free - kg }, supplyLeftKg: left - kg };
+      const xpBuy = await addXp(q, userId, xpFor('mua_si', unit * kg), 'mua_si');
+      return { ...xpBuy, unitPrice: unit, total: unit * kg, cash: u.cash - unit * kg, cargo: { capacityKg: cap, usedKg: used + kg, freeKg: free - kg }, supplyLeftKg: left - kg };
     });
   });
 
@@ -1701,7 +1753,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   async function settleExports(q: Q, userId: number) {
     const { rows } = await q.query(
       `update export_shipments set paid_at = now() where user_id = $1 and paid_at is null and arrives_at <= now() returning *`, [userId]);
-    for (const s of rows) { await addCash(q, userId, Number(s.payout), `xuat_khau:${s.id}`); await addXp(q, userId, XP.export); }
+    for (const s of rows) { await addCash(q, userId, Number(s.payout), `xuat_khau:${s.id}`); await addXp(q, userId, XP.export, 'xuat_toi'); }
     return rows.map(shipmentOut);
   }
   async function exportContext(q: Q, userId: number) {
@@ -1766,7 +1818,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const ctx = await exportContext(q, userId);
       if (!ctx.from) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
       if (!ctx.modes.includes(mode)) throw bad('khong_duoc_duong_nay', 'Hãy quay vòng quay nhận vai trò trước khi xuất khẩu.', 403);
-      if (ctx.active >= ctx.maxActive) throw bad('qua_nhieu_lo', `Bạn đang có ${ctx.maxActive} lô hàng trên đường, chờ một lô tới nơi đã (lên cấp sẽ gửi được nhiều lô hơn).`, 409);
+      if (ctx.active >= ctx.maxActive) throw bad('qua_nhieu_lo', `Bạn đang có ${ctx.maxActive} lô hàng cùng đi một lúc, nhiều bất thường; hãy chờ vài lô tới nơi rồi gửi tiếp.`, 409);
       const qt = exportQuote(sp.id, ql, kg, mode, market, ctx.from, await currentPrice(q, sp.id), { processed, discount: ctx.discount, valueBonus: processed ? ctx.valueBonus : 0 });
       if (!qt.ok) throw bad('lo_hang_sai', qt.reason ?? 'Lô hàng không hợp lệ.', 409);
       if (ctx.cash < qt.freight) throw bad('khong_du_tien', 'Bạn không đủ tiền trả cước.', 409);
@@ -1777,7 +1829,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
         [userId, sp.id, ql, kg, qt.arriveKg, mode, market, qt.gatewayId, qt.freight, qt.payout, arrivesAt, processed]);
       await addCash(q, userId, -qt.freight, `cuoc_xuat_khau:${ins.rows[0].id}`);
-      return { shipment: shipmentOut(ins.rows[0]), quote: qt, cash: ctx.cash - qt.freight };
+      const xp = await addXp(q, userId, xpFor('xuat_gui'), 'xuat_gui');
+      return { shipment: shipmentOut(ins.rows[0]), quote: qt, cash: ctx.cash - qt.freight, ...xp };
     });
   });
 
@@ -1807,7 +1860,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         owned.push(style.house);
       }
       await q.query('update plots set style = $2 where id = $1', [plotId, JSON.stringify({ ...style, owned })]);
-      return { style, ownedHouses: owned, cost };
+      const xp = await addXp(q, userId, xpFor('trang_tri'), 'trang_tri');
+      return { style, ownedHouses: owned, cost, ...xp };
     });
   });
 
@@ -1827,7 +1881,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (u.rows[0].cash < cost) throw bad('khong_du_tien', 'Bạn không đủ tiền mua thêm đồ trang trí.', 409);
       if (cost > 0) await addCash(q, userId, -cost, `trang_tri:${plotId}`);
       await q.query('update plots set decor = $2 where id = $1', [plotId, JSON.stringify(items)]);
-      return { decor: items, cost };
+      const xp = await addXp(q, userId, xpFor('trang_tri'), 'trang_tri');
+      return { decor: items, cost, ...xp };
     });
   });
 
@@ -1877,8 +1932,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const from = (province && w.regionIn(province)) || w.regionId;
     const seen = await db.query('select sight_id, visits, stops, done_at from sight_visits where user_id = $1', [userId]);
     const by = new Map(seen.rows.map((r) => [r.sight_id as string, r]));
+    const ride = await shopping.rideOf(db, userId);
     const sights = (province ? sightsOfProvince(province) : []).map((s) => {
-      const route = routeTo(from, s), v = by.get(s.id);
+      const route = shopping.applyRide(routeTo(from, s), ride), v = by.get(s.id);
       return { ...s, km: route.km, taxiFare: route.total, route, visits: v?.visits ?? 0, done: !!v?.done_at, stopsSeen: cleanStops(v?.stops, s.stops.map((x) => x.id)) };
     });
     return {
@@ -1894,7 +1950,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     return db.tx(async (q) => {
       const w = await whereabouts(q, userId, true);
       if (!w.provinces.includes(s.province)) throw bad('khac_tinh', `Bạn cần tới ${s.province} trước rồi mới bắt taxi tới ${s.name} được.`, 409);
-      const route = routeTo(w.regionIn(s.province), s), km = route.km, fare = route.total;
+      const route = shopping.applyRide(routeTo(w.regionIn(s.province), s), await shopping.rideOf(q, userId)), km = route.km, fare = route.total;
       if (w.cash < fare + s.entryFee) throw bad('khong_du_tien', route.legs.some((l) => l.mode === 'tau_thuy') ? 'Bạn không đủ tiền taxi, vé tàu và vé vào cổng.' : 'Bạn không đủ tiền taxi và vé vào cổng.', 409);
       const en = await energyState(q, userId);
       if (en.cur < ENERGY_COST.stop) throw bad('het_suc', `Bạn đã hết sức để đi bộ tham quan (cần ít nhất ${ENERGY_COST.stop} thể lực, đang có ${en.cur}). Hãy ăn uống hoặc nghỉ một lúc đã.`, 409);
@@ -1931,7 +1987,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const e = await energyState(q, userId, true);
       const energy = await setEnergy(q, userId, e, Math.max(0, e.cur - ENERGY_COST.stop * fresh.length));
       const gain = XP.stop * fresh.length + (firstTime ? XP.sight : 0);
-      const xp = gain > 0 ? await addXp(q, userId, gain) : { xpGained: 0, ...(({ xp: x, level, title }) => ({ xp: x, level, title }))(levelOf((await q.query('select xp from users where id = $1', [userId])).rows[0].xp)), levelUp: false };
+      for (let i = 1; i < fresh.length; i++) await addXp(q, userId, 0, 'diem_dung');
+      const xp = gain > 0 ? await addXp(q, userId, gain, fresh.length ? 'diem_dung' : 'dia_danh') : { xpGained: 0, ...(({ xp: x, level, title }) => ({ xp: x, level, title }))(levelOf((await q.query('select xp from users where id = $1', [userId])).rows[0].xp)), levelUp: false };
       const newStamps = [
         ...fresh.map((id) => ({ kind: 'stop' as const, sightId: s.id, stopId: id, name: s.stops.find((x) => x.id === id)!.name, province: s.province, at: at.getTime() })),
         ...(firstTime ? [{ kind: 'sight' as const, sightId: s.id, name: s.name, province: s.province, at: at.getTime() }] : []),
@@ -2031,6 +2088,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         const home = (await q.query('select home_region_id from users where id = $1', [userId])).rows[0].home_region_id;
         if (!home) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
         shop = homeShop(home);
+      } else if (shopId.startsWith('rest:')) {
+        shop = await veh.restShop(q, userId, shopId);
       } else {
         const s = findSight(String(b.sightId ?? shopId.split(':')[0]));
         if (!s) throw bad('khong_tim_thay', 'Quầy hàng không tồn tại.', 404);
@@ -2161,7 +2220,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (lots.rows[0].n >= SUPER_MAX_LOTS) throw bad('het_ke', `Bạn đang bày ${SUPER_MAX_LOTS} lô, chờ bán bớt hoặc rút một lô về.`, 409);
       if (processed) await takeProduct(q, userId, sp.id, kg); else await takeInventory(q, userId, sp.id, ql, kg);
       const ins = await q.query('insert into super_shelves (province, seller_id, specialty_id, quality, kg, price, processed) values ($1,$2,$3,$4,$5,$6,$7) returning id', [province, userId, sp.id, ql, kg, price, processed]);
-      return { ok: true, shelfId: Number(ins.rows[0].id), province, processed };
+      const xp = await addXp(q, userId, xpFor('ky_gui'), 'ky_gui');
+      return { ok: true, shelfId: Number(ins.rows[0].id), province, processed, ...xp };
     });
   });
 
@@ -2205,10 +2265,11 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         await q.query('update super_shelves set kg = kg - $2 where id = $1', [idParam(raw), kg]);
         await addCash(q, sellerId, sellerGets, `sieu_thi_ban:${specialtyId}`);
         await q.query('update users set super_earned = super_earned + $2 where id = $1', [sellerId, sellerGets]);
-        await addXp(q, sellerId, XP.consignSold);
+        await addXp(q, sellerId, XP.consignSold, 'ky_gui_ban');
       }
       await q.query('insert into super_buys (user_id, province, seller_id, specialty_id, kg, price, processed) values ($1,$2,$3,$4,$5,$6,$7)', [userId, province, sellerId, specialtyId, kg, price, processed]);
-      return { ok: true, specialtyId, quality: ql, kg, unitPrice: price, total, cash: w.cash - total, leftTodayKg: dailyKg - used - kg, processed };
+      const xp = await addXp(q, userId, xpFor('mua_sieu_thi'), 'mua_sieu_thi');
+      return { ok: true, specialtyId, quality: ql, kg, unitPrice: price, total, cash: w.cash - total, leftTodayKg: dailyKg - used - kg, processed, ...xp };
     });
   });
 
@@ -2237,8 +2298,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   app.post('/api/test/truck', async (req) => {
     const userId = await requireTester(req);
     const etc = 2_000_000;
-    await db.query('update users set fuel_l = $2, etc = $3 where id = $1', [userId, TRUCK.tankL, etc]);
-    return { fuelL: TRUCK.tankL, etc };
+    const fuelL = await veh.testFill(userId);
+    await db.query('update users set etc = $2 where id = $1', [userId, etc]);
+    return { fuelL, etc };
   });
 
   app.post('/api/test/cash', async (req) => {
@@ -2305,6 +2367,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     await db.query('update users set role = null, role_assigned_at = null where id = $1', [userId]);
     return { ok: true };
   });
+
+  registerProgress(app, { db, timeScale, bad, requireUser, addCash, addXp, addInventory, takeInventory, addProduct, takeProduct, currentPrice, ensureStarter, requireTester: (r) => requireTester(r) });
 
   app.get('/api/health', async () => ({ ok: true }));
 

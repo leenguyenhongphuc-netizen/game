@@ -293,4 +293,81 @@ alter table process_jobs add column if not exists machine_id bigint;
 alter table super_shelves add column if not exists processed boolean not null default false;
 alter table super_buys add column if not exists processed boolean not null default false;
 alter table export_shipments add column if not exists processed boolean not null default false;
+create table if not exists vehicles (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  kind text not null,
+  energy numeric not null default 0,
+  odo_km numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists vehicles_user_idx on vehicles (user_id, id);
+alter table vehicles add column if not exists price_paid bigint not null default 0;
+alter table users add column if not exists vehicle_id bigint;
+create table if not exists user_licenses (
+  user_id bigint not null references users(id) on delete cascade,
+  cls text not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, cls)
+);
+create table if not exists user_goods (
+  user_id bigint not null references users(id) on delete cascade,
+  item_id text not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, item_id)
+);
+alter table users add column if not exists equipped jsonb;
+-- tiến trình nhân vật: sổ EXP, phần thưởng đã nhận, nâng cấp đất, giống lai, máy nhập khẩu, hộp quà, nhật ký dung hợp
+create table if not exists xp_log (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  source text not null,
+  xp int not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists xp_log_user_idx on xp_log (user_id, created_at);
+create table if not exists progress_claims (
+  user_id bigint not null references users(id) on delete cascade,
+  kind text not null,
+  ref text not null,
+  created_at timestamptz not null default now(),
+  primary key (user_id, kind, ref)
+);
+alter table plots add column if not exists upgrades jsonb not null default '{}';
+alter table plantings add column if not exists trait text;
+alter table machines add column if not exists origin text;
+create table if not exists machine_imports (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  import_id text not null,
+  cost bigint not null,
+  ordered_at timestamptz not null default now(),
+  port_at timestamptz not null,
+  cleared_at timestamptz not null,
+  arrive_at timestamptz not null,
+  installed_at timestamptz
+);
+create index if not exists machine_imports_user_idx on machine_imports (user_id, id);
+create table if not exists user_seeds (
+  user_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  trait text not null,
+  qty int not null check (qty >= 0),
+  primary key (user_id, specialty_id, trait)
+);
+create table if not exists gift_boxes (
+  user_id bigint not null references users(id) on delete cascade,
+  box_id text not null,
+  qty int not null check (qty >= 0),
+  value bigint not null,
+  primary key (user_id, box_id)
+);
+create table if not exists fusion_log (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  recipe_id text not null,
+  success boolean not null,
+  detail jsonb,
+  created_at timestamptz not null default now()
+);
 `;

@@ -443,3 +443,79 @@ Game là một thế giới 3D phủ kín màn hình; người chơi điều khi
 3. Nguồn giá nào được coi là đáng tin cho tác tử?
 4. Người chơi thành phố có nên được chọn vai thương lái ngay từ đầu thay vì nhận vườn?
 5. Mỗi vùng có giới hạn số lô đất không (đất khan hiếm thì có giá trị, nhưng người đến sau thiệt)?
+
+## Xe cộ, giấy phép lái xe, xe điện
+
+- **Ai cũng mua được xe chở hàng** (không riêng thương lái), miễn có bằng lái đúng hạng, đủ cấp và đủ tiền. Danh mục nằm ở `shared/vehicles.ts`: ba gác máy 300 kg, bán tải 700 kg, tải nhẹ 990 kg, tải 1,9 tấn, 3,5 tấn, 8 tấn, 15 tấn (3 chân), đầu kéo + sơ mi rơ moóc 28 tấn; bản thùng lạnh cho xe từ 990 kg trở lên; bản chạy điện cho bán tải, tải nhẹ 990 kg và tải 3,5 tấn. Không dùng tên hãng thật.
+- **Xe mặc định** của thương lái (và người chơi cũ) là tải nhẹ 990 kg, cấp kèm bằng B; thông số lấy từ hằng `TRUCK` (sức chở đã đổi từ 500 kg lên 990 kg). Xe được cấp miễn phí bán lại không ra tiền, để không đổi vai lấy xe rồi bán.
+- **Sức chở khi thu mua sỉ** lấy theo chiếc xe đang dùng. Nguồn hàng sỉ mỗi vùng vẫn là `WHOLESALE_SUPPLY_KG` mỗi đặc sản mỗi ngày, nên xe rất lớn chưa phát huy hết — cần cân lại nguồn hàng nếu muốn xe 8 tấn trở lên có ý nghĩa.
+- **Vai khác tự lái xe tới vùng khác** thì bán hàng theo giá nơi xe đỗ như thương lái (không còn chỉ bán tháo). Thu mua sỉ vẫn chỉ thương lái làm được. Đây là thay đổi cân bằng cần chơi thử: nhà vườn có xe sẽ bán được giá hàng phương xa.
+- **Giấy phép lái xe** theo Luật Trật tự, an toàn giao thông đường bộ 2024: B1 (mô tô ba bánh), A1 (mô tô đến 125 cm³), B (ô tô tải có khối lượng toàn bộ theo thiết kế đến 3.500 kg), C1 (trên 3.500 đến 7.500 kg), C (trên 7.500 kg), CE (kéo rơ moóc). Game xếp hạng theo **khối lượng toàn bộ** chứ không theo tải trọng chở, nên xe tải 1,9 tấn (toàn bộ gần 5 tấn) cần bằng C1. Bằng cao lái được xe của bằng thấp cùng nhóm (C gồm C1 và B; CE gồm C). "Thi bằng" trong game là nộp lệ phí khi đủ cấp; câu hỏi luật do giao diện đảm nhiệm. *Chưa đối chiếu nguyên văn điều luật.*
+- **Phí đường theo 5 nhóm xe** của trạm BOT/ETC (hệ số 1 – 1,4 – 2,1 – 3,4 – 5,1 so với nhóm 1); xe ba gác không vào cao tốc nên không mất phí đường nhưng đi lâu hơn. *Hệ số là ước lượng, không phải biểu phí của một trạm cụ thể.*
+- **Tốc độ tối đa trên cao tốc** theo loại xe trong game: xe tới 3,5 tấn chạy theo biển (tới 120), xe tải nặng và đầu kéo tối đa 80–90. *Đơn giản hoá: ngoài đời tốc độ trên cao tốc theo biển báo, giới hạn theo loại xe áp dụng cho đường khác.*
+- **Phí đăng kiểm, bảo hiểm, bảo dưỡng** quy ra tiền theo cây số, trừ khi chuyến xe tới nơi (`upkeepCost`).
+- **Xe điện**: đắt hơn bản xăng dầu khoảng 35%, tiền điện mỗi 100 km rẻ hơn hẳn (sạc nhanh DC 3.900đ/kWh, sạc chậm ở nhà 2.700đ/kWh, so với xăng 21.000đ/lít, dầu 19.000đ/lít), tầm hoạt động ngắn hơn và phải dừng sạc ở trạm (ngoài đời khoảng 35 phút từ 10% lên 80%). Trạm sạc thưa hơn trạm xăng: có ở mọi trạm dừng nghỉ và thêm các trụ lẻ cách nhau khoảng 120 km. Hết pin giữa đường thì gọi cứu hộ như hết xăng. *Giá điện, dung lượng pin và mức tiêu hao là số tròn theo mặt bằng chung, chưa lấy từ một mẫu xe cụ thể.*
+- **Thùng lạnh**: hiện mới có trong danh mục (giá, tải trọng, tiêu hao); **chưa có tác dụng** ở máy chủ vì hàng thu mua sỉ vốn đã là loại 1.
+
+## Trạm dừng nghỉ
+
+- Kế hoạch chuyến (`tripPlanFor`) có `restStops`: cứ khoảng 90 km đường bộ một trạm, gọi tên theo cây số ("Trạm dừng nghỉ Km 180") vì **chưa đối chiếu được tên trạm thật** trên từng tuyến. Mỗi trạm có cửa hàng tiện lợi và quán ăn (đồ ăn uống phổ thông cộng đặc sản của tỉnh trạm đó), nhà vệ sinh miễn phí, cây xăng và trụ sạc.
+- **Giờ lái xe**: luật 2024 quy định không lái liên tục quá 4 giờ, không quá 10 giờ một ngày và 48 giờ một tuần. Game quy đổi theo quãng đường với tốc độ trung bình 60 km/h: cứ 240 km phải nghỉ một lần (`restsNeeded`). Tới nơi mà nghỉ thiếu thì mỗi lần thiếu mất thêm 6 thể lực kèm lời nhắc. Game chưa áp giới hạn 10 giờ mỗi ngày và 48 giờ mỗi tuần.
+- Ghé nhà vệ sinh hồi 2 thể lực ("tỉnh táo"); ăn uống hồi theo món. Mua tại trạm khi đang chạy qua `/api/shop/buy` với `shopId` dạng `rest:<mã chuyến>:<km>`, hoặc gửi gộp trong `rests` khi kết thúc chuyến.
+
+## Mua sắm
+
+- Danh mục ở `shared/shop.ts`: quần áo (áo bà ba, áo dài, áo tứ thân, thổ cẩm Tây Nguyên và Tây Bắc, áo tơi, đồ hiện đại), nón mũ (nón bài thơ, nón quai thao, nón ngựa…), phụ kiện (khăn rằn, gùi, quang gánh…), kiểu nhà (cấp bốn, nhà ống, nhà rường, nhà dài, nhà rông, trình tường, nhà nổi, biệt thự vườn), nội thất, đồ sân vườn, xe cá nhân (xe đạp, xe máy, xe máy điện, ô tô con xăng và điện).
+- **Đồ đặc trưng vùng miền chỉ bán ở tỉnh đó**: phải tới nơi (vùng nhà, nơi đang tham quan hoặc nơi xe đỗ thuộc tỉnh) mới mua được. Tỉnh gắn cho từng món là theo hiểu biết chung, chưa đối chiếu nguồn.
+- Mỗi ô (áo, nón, phụ kiện, nhà, xe) dùng một món; món đầu tiên mua cho một ô thì dùng luôn.
+- **Xe cá nhân thay taxi**: có xe riêng (và bằng lái hợp lệ: A1 cho xe máy, B cho ô tô) thì các chặng taxi tới địa danh chỉ tốn tiền xăng hoặc điện, nếu xe đi nổi quãng đó (xe đạp tới 12 km, xe máy điện tới 70 km…). Chặng tàu ra đảo không đổi.
+- Hệ thống cũ ở mục Trang trí (3 kiểu nhà, 4 kiểu nón, màu áo, đồ sân) **giữ nguyên**; đồ mua ở đây mới được lưu sở hữu và ô đang dùng, phía giao diện chưa có mô hình 3D cho chúng.
+
+## Cấp bậc và EXP toàn game
+
+Mọi hoạt động đều có điểm kinh nghiệm (EXP), ghi vào sổ `xp_log` theo nguồn. Bảng nguồn nằm ở `XP_RULES` trong `shared/progress.ts`; giao diện đọc qua `GET /api/progress` (`xpRules`, kèm số EXP đã nhận hôm nay của từng nguồn).
+
+| Nhóm | Việc (EXP mỗi lần · trần mỗi ngày) |
+|---|---|
+| Trồng trọt | trồng 2 · 60; chăm một bước 1 · 80; thu hoạch 5; giúp vườn bạn 2; nâng cấp đất 40 |
+| Bán hàng | bán doanh nghiệp 2 + 1 cho mỗi 200.000đ (tối đa +20) · 150; bày sạp 1 · 10; sạp có người mua 2 + theo giá trị · 100; mua sạp bạn 1 + theo giá trị · 40; thu mua sỉ 2 + theo giá trị · 60 |
+| Vận chuyển | hoàn thành chuyến xe 10 + 1 cho mỗi 50 km (tối đa +30); không bị phạt thêm 10; tới vùng mới 30; mua đất 100 |
+| Siêu thị, xuất khẩu | ký gửi 3 · 18; hàng ký gửi bán được 5 · 100; mua siêu thị 1 · 10; gửi lô xuất khẩu 10 · 100; lô tới nơi 40; giao đơn 15 |
+| Xưởng | chạy mẻ 3 · 45; lấy mẻ 8; bán thành phẩm 2 + theo giá trị · 150; mua máy 30; nâng máy 30; lắp máy nhập khẩu 120 |
+| Kết nối, trang trí | tặng quà 3 · 15; kết bạn 10 · 30; lập hợp tác xã 80; vào hợp tác xã 20 · 20; góp đơn 4 + theo giá trị · 120; trang trí 3 · 15; nhận vai 20 |
+| Sưu tập, tham quan | tem mới 3; đủ bộ tem một vùng 40; check-in điểm dừng 10; tham quan trọn địa danh 50 |
+| Dung hợp | thành công 25; chưa thành 5 · 25; bán hộp quà 3 + theo giá trị · 150 |
+
+Chống cày: việc lặp rẻ (trồng, chăm, bày sạp, ký gửi…) có trần EXP mỗi ngày theo giờ Việt Nam; EXP theo giá trị giao dịch có trần mỗi lần và trần ngày, nên hai tài khoản mua qua bán lại không đẩy cấp nhanh được. Ăn uống, xem bảng, đi vé không có EXP.
+
+**30 cấp.** Mười cấp đầu giữ nguyên ngưỡng cũ (0 → 7.000); cấp 11–30 lên tới 270.000 EXP. Bảng `LEVEL_UNLOCKS` ghi mỗi cấp mở gì, chỉ gồm những thứ máy chủ thật sự kiểm: thể lực tối đa (+10 mỗi cấp, trần 250), lượng mua siêu thị mỗi ngày (+5 kg mỗi cấp), cấp nâng đất (cấp 2/3/4/5 cần nhân vật cấp 3/6/10/15), lai giống (cấp 4, 7, 11), hộp quà (cấp 6, 9, 13), ghép máy (cấp 8), xuất khẩu hộp quà (cấp 10), máy nhập khẩu (cấp 5, 6, 9, 12). Mỗi cấp có tiền thưởng 20.000đ × cấp, **nhận bằng tay** ở bảng tiến trình (không tự cộng, để số dư không đổi bất ngờ giữa một giao dịch).
+
+**Nhiệm vụ ngày.** Mỗi người mỗi ngày có 3 việc: hai việc theo vai, một việc chung, cố định theo (người, ngày). Tiến độ đếm số dòng sổ EXP trong ngày của các nguồn liên quan. Thưởng EXP và tiền, tăng 5% mỗi cấp.
+
+**Thành tựu.** 24 mốc dài hạn, đếm theo sổ EXP (nên chỉ tính từ khi có sổ), riêng mốc cấp, địa danh, vùng trồng đọc số có sẵn.
+
+## Nâng cấp theo vai
+
+- **Nhà vườn và thương lái (có đất trồng):** bốn hạng mục nâng cho cả thửa, mỗi hạng mục 5 cấp, giá gốc × 1, 2, 4, 7, 11. Cải tạo đất (300.000đ, +5% sản lượng mỗi cấp), tưới nhỏ giọt (500.000đ, −5% thời gian chờ mỗi cấp), nhà màng (1.200.000đ, bớt 15% mức chậm lớn do thời tiết xấu mỗi cấp), cảm biến (800.000đ, nới 20% thời gian trước khi bị tính chăm trễ mỗi cấp). Tác dụng áp ngay vào chỗ tính thời gian chờ, sản lượng và hạng chất lượng. Khi bạn chăm giúp vườn người khác, bước kế chưa tính nâng cấp của chủ vườn (đơn giản hoá).
+- **Chủ xưởng:** nâng cấp máy như cũ, thêm máy nhập khẩu và ghép máy (mục dưới). Lô nhà xưởng không có hạng mục đất.
+- **Thương lái:** chưa có nâng cấp kho và giấy phép kinh doanh (chưa làm).
+
+## Máy nhập khẩu
+
+Bốn máy ngoại, nêu xuất xứ theo nước (Nhật Bản, Hàn Quốc, Ý, Đức), không gắn hãng thật. Máy ngoại chạy nhanh hơn máy nội 35–45% và ra thêm 6–8% thành phẩm; là một máy thuộc loại sẵn có nên dùng chung công thức, chỗ đặt và giới hạn mỗi loại 2 máy. Chưa có công thức riêng chỉ máy ngoại làm được.
+
+Đặt mua trả ngay: giá máy + cước biển (60.000đ mỗi phút hải trình) + thuế nhập khẩu 2% + thuế giá trị gia tăng 10% + phí thông quan 500.000đ. Máy về qua ba chặng có mốc thời gian để phát hoạt cảnh: tàu container về cảng (16–36 phút), thông quan (6 phút), xe đầu kéo về xưởng (4 phút); tới nơi phải bấm lắp. Tối đa 2 máy đang trên đường. Thuế phí là mức đơn giản hoá, ngoài đời tuỳ mã hàng và hiệp định thương mại.
+
+## Dung hợp
+
+Ba hệ, đều ghi rõ tỉ lệ thành công trong dữ liệu trả về: tỉ lệ gốc + 1,5 điểm phần trăm mỗi cấp nhân vật + 15 điểm nếu mua vật tư tăng cường (giá bằng nửa chi phí công thức), trần 95%. Thất bại được trả lại một nửa nguyên liệu; tiền vật tư thì mất.
+
+- **Lai tạo giống (nhà vườn, thương lái):** hai đặc sản khác nhau cùng loại cây hoặc cùng nhóm cây, hàng Loại 1. Ra 4 gói giống của đặc sản thứ nhất; mỗi gói trồng một ô không tốn tiền giống. Chín sớm (20 kg mỗi loại, 200.000đ, gốc 60%, cấp 4): mỗi bước nhanh hơn 25%. Năng suất cao (30 kg, 400.000đ, 50%, cấp 7): +30% sản lượng. Thượng hạng (40 kg, 800.000đ, 40%, cấp 11): luôn Loại 1 và +10% sản lượng. Giống lai không tạo hạng chất lượng mới; giá trị nằm ở sản lượng, tốc độ và việc chắc chắn đạt Loại 1 (điều kiện của thị trường khó tính).
+- **Phối hộp quà (chủ xưởng):** 2, 3 hoặc 4 loại thành phẩm khác nhau (hộp ba miền cần ba miền khác nhau) + tiền bao bì → 10, 15 hoặc 24 hộp, tổng giá trị bằng 125%, 145%, 170% giá các thành phẩm bỏ vào. Hộp nằm trong kho hộp quà riêng; bán cho doanh nghiệp quà tặng đủ giá, hoặc xuất khẩu được thêm 20% khi gom từ 20 hộp và đạt cấp 10. Hộp quà **chưa** lên được kệ siêu thị và chưa đi qua hệ lô hàng xuất khẩu (bán xuất khẩu là nhận tiền ngay).
+- **Ghép máy (chủ xưởng, cấp 8):** hai máy chế biến cùng loại, cùng cấp, cùng xuất xứ, đang rảnh + linh kiện (25% giá nâng cấp) → một máy cao hơn một cấp, gốc 70%. Thất bại giữ nguyên cả hai máy. Chưa có dây chuyền liên hoàn ghép từ hai máy khác loại.
+
+Cân bằng và kẽ hở còn lại: giống năng suất cao cộng dồn với cải tạo đất cấp 5 cho +62% sản lượng, chưa chơi thử để cân với hiện tượng được mùa mất giá; hộp quà thượng hạng lãi tối đa 70% trước chi phí bao bì và rủi ro 40% hỏng ở cấp thấp, chưa có trần bán mỗi ngày; EXP nhiệm vụ ngày và thành tựu không có trần ngày vì bản thân chúng đã giới hạn số lần.
+
+## Xuất khẩu: bỏ trần số lô theo cấp
+
+Trần "số lô đang trên đường" theo cấp đã bỏ (chỉ còn mức chặn 20 lô để tránh gửi dồn bất thường). Giới hạn thật là lượng hàng trong kho và mức tối thiểu mỗi đường. Tàu container viễn dương nhận hàng lẻ ghép container từ 200 kg: phí cố định bằng một phần tư, cước mỗi kg gấp ba; máy chủ tự lấy cách tính rẻ hơn giữa hàng lẻ và nguyên container (điểm hoà vốn khoảng 9 tấn).
