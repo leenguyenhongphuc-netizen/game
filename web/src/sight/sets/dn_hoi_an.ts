@@ -3,8 +3,9 @@
 // Chùa Cầu ở đầu TÂY Trần Phú, bắc qua một lạch nhỏ; Hội quán Phúc Kiến ở phía bắc Trần Phú về phía đông; chợ ở đầu ĐÔNG.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, ball, bead, bench, bicycle, bin, boat, box, cone, cyclo, cyl, gable, glow, grp, hip, incenseUrn, label, lampPost, lantern, lanternString, LANTERN_COLORS, palm, person, potPlant, reflection, shopSign, stall, stele, templeRoof, tree, wayPost } from '../SightKit.ts';
+import { Kit, V, ball, bead, bench, bicycle, bin, boat, box, cone, cyclo, cyl, gable, glow, grp, hip, incenseUrn, label, photoMat, photoPlane, lampPost, lantern, lanternString, LANTERN_COLORS, palm, person, potPlant, reflection, shopSign, stall, stele, templeRoof, tree, wayPost } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
+import { bake } from '../../scene/World.ts';
 
 const WALLS = [0xf0b93a, 0xf6c653, 0xe6a82e, 0xf8d476, 0xf0b93a, 0xf4e7c4], ROOFS = [0x7a4a36, 0x8a5540, 0x6a5a40, 0x74482f], MOSS = [0x5f6a44, 0x6a7350, 0x54603c], WOOD = 0x4a2c1c, WARM = 0xffd98a, SHUT = [0x3f7f6a, 0x4a6f8f, 0x3f6f5f, 0x6a5a3a];
 // ---- mặt tiền dán ảnh nét cao: /art/tex/hoi-an-pho.jpg là dải nhà phố nhìn thẳng (2048×581), dùng bốn căn giữa.
@@ -88,73 +89,84 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
   const r = kit.r, STONE = 0xa9987e, QUAY = 0x8f8474;
   FAC = new Facades();
   // ---- nền đất: bờ tây lạch, khu phố, bờ An Hội bên kia sông; nước nằm thấp hơn mặt phố
-  kit.add(box(0x7f9a62, -200, -1.5, 0, 205, 3, 220), box(STONE, 22, -1.5, -24, 221, 3, 152), box(0x7f9a62, 0, -1.5, 150, 600, 3, 116), box(0x7f9a62, 240, -1.5, 0, 215, 3, 220));
+  kit.add(box(0x7f9a62, -205, -1.5, 0, 205, 3, 220), box(STONE, 24.5, -1.5, -24, 216, 3, 152), box(0x7f9a62, 0, -1.5, 150, 600, 3, 116), box(0x7f9a62, 240, -1.5, 0, 215, 3, 220));
   kit.water(0x1f6f86, 0, 40, 700, 400, -1.0, 1);
-  kit.add(box(0x3fb0a0, -93, -0.96, -20, 13.2, 0.04, 120)); // lạch nước xanh ngọc dưới Chùa Cầu, khác hẳn màu đường và màu sông
+  kit.add(box(0x2f8f8c, -93, -0.96, -20, 19.4, 0.04, 120)); // lạch nước xanh ngọc dưới Chùa Cầu, khác hẳn màu đường và màu sông
   // ---- lát phố
   const lanes = [-70, -10, 50];
-  for (const z of [0, 26]) { kit.add(box(0xa89a84, 22, 0.02, z, 221, 0.1, 6.4)); for (let x = -86; x < 132; x += 2.4) kit.add(box(0x978a75, x, 0.075, z, 0.06, 0.02, 6.2)); for (const sz of [-1, 1]) kit.add(box(0x7f7566, 22, 0.09, z + sz * 3.0, 221, 0.06, 0.3)); }
-  kit.add(box(0xb09f86, 22, 0.02, 48, 221, 0.1, 7.6), box(QUAY, 22, -0.2, 52.1, 221, 0.6, 0.5));
+  for (const z of [0, 26]) { kit.add(box(0xa89a84, 24.5, 0.02, z, 216, 0.1, 6.4)); for (let x = -77; x < 132; x += 2.4) kit.add(box(0x978a75, x, 0.075, z, 0.06, 0.02, 6.2)); for (const sz of [-1, 1]) kit.add(box(0x7f7566, 24.5, 0.09, z + sz * 3.0, 216, 0.06, 0.3)); }
+  kit.add(box(0xb09f86, 24.5, 0.02, 48, 216, 0.1, 7.6), box(QUAY, 24.5, -0.2, 52.1, 216, 0.6, 0.5));
   for (const x of lanes) kit.add(box(0xb7a78c, x, 0.02, 24, 6.4, 0.1, 54));
-  kit.add(box(0xb7a78c, 100, 0.02, 24, 6.4, 0.1, 54), box(0xb7a78c, -112, 0.02, 2, 26, 0.1, 9));
+  kit.add(box(0xb7a78c, 100, 0.02, 24, 6.4, 0.1, 54), box(0xa89a84, -114.5, 0.02, 2, 24, 0.1, 9));
   // ---- các dãy nhà
   const gaps: [number, number][] = [...lanes, 100].map((x) => [x - 3.4, x + 3.4] as [number, number]);
-  shopRow(kit, -86, 132, -3.3, 1, 10, [...gaps.filter(([a]) => a < -5 || a > 60), [6, 34]]);        // bắc Trần Phú (chừa Hội quán)
-  shopRow(kit, -86, 132, 3.3, -1, 9.5, [...gaps, [11, 29]]); shopRow(kit, -86, 132, 22.7, 1, 9.5, [...gaps, [-58, -42]]);            // giữa Trần Phú và Nguyễn Thái Học
-  shopRow(kit, -86, 96, 29.3, -1, 7.4, [...gaps, [-55, -45]]); shopRow(kit, -86, 96, 44.3, 1, 7.4, gaps, true); // nam Nguyễn Thái Học, lưng ra sông
-  shopRow(kit, -170, -101, -4.6, 1, 9, [[-124, -116]]); shopRow(kit, -170, -101, 9.2, -1, 9, [[-124, -104]]);
+  shopRow(kit, -77.5, 132, -3.3, 1, 10, [...gaps.filter(([a]) => a < -5 || a > 60), [6, 34]]);        // bắc Trần Phú (chừa Hội quán)
+  shopRow(kit, -77.5, 132, 3.3, -1, 9.5, [...gaps, [11, 29]]); shopRow(kit, -77.5, 132, 22.7, 1, 9.5, [...gaps, [-58, -42]]);            // giữa Trần Phú và Nguyễn Thái Học
+  shopRow(kit, -77.5, 96, 29.3, -1, 7.4, [...gaps, [-55, -45]]); shopRow(kit, -77.5, 96, 44.3, 1, 7.4, gaps, true); // nam Nguyễn Thái Học, lưng ra sông
+  shopRow(kit, -170, -103.5, -4.6, 1, 9, [[-124, -116]]); shopRow(kit, -170, -103.5, 9.2, -1, 9, [[-124, -104]]);
   // ---- cổng phố đi bộ ở đầu tây
   kit.add(cyl(WOOD, -120, 2.6, -1.6, 0.22, 5.2), cyl(WOOD, -120, 2.6, 7.6, 0.22, 5.2), box(WOOD, -120, 5.0, 3, 0.3, 0.5, 10), box(0x6a4a3a, -120, 5.5, 3, 1.2, 0.16, 10.6));
   kit.add(lanternString(V(-120, 4.7, -1.4), V(-120, 4.7, 7.4), 5, r, 0.3));
   kit.live(label('Phố cổ Hội An', -120, 6.6, 3, '#7a2e22', 1.0));
 
-  // ---- Chùa Cầu: bắc qua lạch (x từ -99.6 tới -86.4), thân gỗ đỏ sẫm, mái ngói âm dương, miếu nhỏ ở phía bắc
-  const bx = -93, deckY = (x: number) => 0.95 * Math.max(0, 1 - ((x - bx) / 6.6) ** 2);
-  for (let i = 0; i < 6; i++) { const x0 = bx - 6.6 + i * 2.2, xm = x0 + 1.1, y = deckY(xm); const pl = box(0x6b4a34, xm, y - 0.12, 0, 2.3, 0.22, 5.4); pl.rotation.z = Math.atan2(deckY(x0 + 2.2) - deckY(x0), 2.2); kit.add(pl); }
-  for (const px of [-4.4, -1.5, 1.5, 4.4]) for (const pz of [-2.3, 2.3]) kit.add(box(0x9a9488, bx + px, -0.4, pz, 0.8, 2.6, 0.8));
-  for (const px of [-3, 0, 3]) kit.add(box(0x7f776b, bx + px, 0.25, 0, 0.5, 0.5, 5.6));
-  for (const sz of [-1, 1]) {
-    kit.add(box(0x8f2a20, bx, 1.5, sz * 2.7, 12.4, 1.15, 0.16), box(0x5c2018, bx, 2.12, sz * 2.7, 12.6, 0.14, 0.26), box(0x5c2018, bx, 4.3, sz * 2.7, 12.6, 0.22, 0.24));
-    for (let i = 0; i < 7; i++) kit.add(box(0x5c2018, bx - 6 + i * 2, 2.6, sz * 2.7, 0.24, 4.2, 0.24));
-    for (let i = 0; i < 6; i++) kit.add(box(0x8f3a2a, bx - 5 + i * 2, 1.5, sz * 2.74, 1.4, 0.7, 0.06));
-  }
-  kit.add(gable(0x4f6b4a, bx, 4.4, 0, 7.4, 1.7, 13.4, Math.PI / 2), gable(0x446040, bx, 5.3, 0, 5.0, 1.5, 5.2, Math.PI / 2), box(0x3d443a, bx, 6.86, 0, 5.6, 0.16, 0.3), box(0x3d443a, bx, 6.14, 0, 13.8, 0.14, 0.26));
-  for (const s of [-1, 1]) { const k = cone(0x3d443a, bx + s * 7.0, 6.3, 0, 0.14, 0.9); k.rotation.z = -s * 1.1; kit.add(k); for (let i = 0; i < 9; i++) kit.add(box(0x6a755f, bx - 6 + i * 1.5, 5.2, s * 1.9, 0.18, 0.1, 3.6).rotateX(s * 0.44)); }
-  // hai đầu cầu: cổng xây vôi hồng xám có vòm, tượng khỉ (đầu tây) và chó (đầu đông)
+  // ---- Chùa Cầu: hai tấm ảnh nét cao hai mặt bên (đã cắt nền, vòm và ô cửa trong suốt) kẹp lõi khối: sàn đi qua được, trụ đá, mái rêu, hai tháp cổng gạch.
+  // Ảnh 2048×575; bỏ dải nước dưới cùng (lấy tới 83%). Cả cầu rộng 30 m: nhịp gỗ từ bx-10.25 tới bx+10.25, tháp cổng hai đầu rộng 4.75 m.
+  const bx = -93, BW = 30, BH = 7.0, BZ = 2.75, deck = 0.36, RED_WOOD = 0x6b2a1e, MOSSY = 0x55633a, BRICK = 0xa85a44;
+  const cauMat = photoMat('hoi-an-chua-cau.webp', { whiteKey: 226, glow: 0.3, fallback: RED_WOOD });
+  for (const sz of [-1, 1]) { const pl = photoPlane(cauMat, BW, BH, [0, 0, 1, 0.832]); pl.position.set(bx, -1.0, sz * BZ); if (sz < 0) pl.rotation.y = Math.PI; kit.live(pl); }
+  // lõi: sàn gỗ, trần, mái hai dốc màu ngói rêu nằm lọt giữa hai tấm ảnh, trụ đá dưới sàn
+  kit.add(box(0x7a5a3c, bx, deck - 0.1, 0, 20.6, 0.2, BZ * 2 - 0.1), box(0x8d8478, bx, deck - 0.45, 0, 20.6, 0.5, BZ * 2 - 0.3), box(0x3a2418, bx, 2.85, 0, 20.4, 0.12, BZ * 2 - 0.2));
+  kit.add(gable(MOSSY, bx, 2.9, 0, BZ * 2 - 0.2, 1.5, 20.4, Math.PI / 2), gable(0x4c5a33, bx, 3.5, 0, BZ * 2 - 0.6, 1.0, 7.4, Math.PI / 2));
+  for (const px of [-7.4, -3.3, 2.6, 6.7]) kit.add(box(0x7f776b, bx + px, -0.5, 0, 1.3, 1.4, BZ * 2 - 0.5));
   for (const s of [-1, 1]) {
-    const ex = bx + s * 6.5;
-    for (const sz of [-1, 1]) kit.add(box(0xb86a5a, ex, 2.2, sz * 2.2, 0.7, 4.4, 1.3), box(0x9a4a3a, ex + s * 0.1, 1.2, sz * 3.4, 0.5, 0.5, 0.5), ball(s < 0 ? 0x8a6a4a : 0x9a8a7a, ex + s * 0.1, 1.72, sz * 3.4, 0.24, 0.3, 0.24), ball(s < 0 ? 0x8a6a4a : 0x9a8a7a, ex + s * 0.1, 2.14, sz * 3.4, 0.17));
-    kit.add(box(0xb86a5a, ex, 4.5, 0, 0.7, 0.9, 5.7), box(0x7a2e22, ex + s * 0.38, 4.45, 0, 0.08, 0.5, 2.2), box(0xd9a83a, ex + s * 0.43, 4.45, 0, 0.04, 0.24, 1.7), gable(0x5b6652, ex, 4.95, 0, 6.6, 0.9, 1.5, Math.PI / 2));
-    kit.add(lantern(0xff5a4a, ex + s * 0.5, 3.5, -1.2, 1.2), lantern(0xffb347, ex + s * 0.5, 3.5, 1.2, 1.2));
+    // tháp cổng gạch: hai vách dày hai bên lối đi, lanh tô, tầng mái dưới, chòi gạch và mái chóp trên
+    const ex = bx + s * 12.6;
+    for (const sz of [-1, 1]) kit.add(box(BRICK, ex, 1.2, sz * 2.3, 4.6, 4.4, 0.7));
+    kit.add(box(BRICK, ex, 3.05, 0, 4.6, 0.7, 2.9), box(MOSSY, ex, 3.55, 0, 5.3, 0.3, 5.3), box(BRICK, ex, 4.3, 0, 3.0, 1.3, 4.4), hip(MOSSY, ex, 4.95, 0, 4.4, 0.9, 5.3));
+    // tượng khỉ (đầu tây) và chó (đầu đông) trên bệ đá hai bên lối vào
+    for (const sz of [-1, 1]) kit.add(box(0x8d8478, ex + s * 2.8, 0.3, sz * 2.2, 0.6, 0.6, 0.6), ball(s < 0 ? 0x8a6a4a : 0x9a8a7a, ex + s * 2.8, 0.86, sz * 2.2, 0.24, 0.3, 0.24), ball(s < 0 ? 0x8a6a4a : 0x9a8a7a, ex + s * 2.8, 1.28, sz * 2.2, 0.17));
+    kit.add(lantern(0xff5a4a, ex + s * 2.5, 2.5, -1.1, 1.1), lantern(0xffb347, ex + s * 2.5, 2.5, 1.1, 1.1));
   }
-  kit.add(box(0xd9b08a, bx, 2.6, -4.6, 4.6, 3.4, 3.4), gable(0x5b6652, bx, 4.3, -4.6, 5.4, 1.3, 4.2, 0), box(0x7a2e22, bx, 2.0, -2.86, 1.6, 2.4, 0.1), box(glow(0xffb347), bx, 2.0, -2.9, 0.9, 1.8, 0.1), box(0x8d8478, bx, -0.4, -4.6, 4.8, 2.8, 3.6));
-  kit.live(label('Chùa Cầu', bx, 8.3, 0, '#5c2018', 0.9));
+  // miếu nhỏ phía bắc cầu (thờ Bắc Đế Trấn Vũ)
+  kit.add(box(0xd9b08a, bx, 2.0, -4.9, 4.2, 3.2, 3.2), gable(MOSSY, bx, 3.6, -4.9, 5.0, 1.2, 4.0, 0), box(0x7f776b, bx, -0.4, -4.9, 4.4, 2.2, 3.4));
+  kit.live(label('Chùa Cầu', bx, 8.4, 0, '#5c2018', 0.9));
   // bờ kè lạch, cây, thuyền con
-  for (const s of [-1, 1]) kit.add(box(QUAY, bx + s * 6.9, -0.2, 30, 0.5, 0.6, 46), box(QUAY, bx + s * 6.9, -0.2, -40, 0.5, 0.6, 72));
-  const bt = boat(0x4a7f8f, 4.2, true); bt.position.set(bx + 1.5, -0.95, 14); bt.rotation.y = 0.2; kit.add(bt);
-  for (const [x, z] of [[-112, 16], [-104, -9], [-83, 9.5], [-108, 26]] as const) { const t = tree(r, 1.1, true); t.position.set(x, 0, z); kit.add(t); }
+  for (const s of [-1, 1]) kit.add(box(QUAY, bx + s * 9.6, -0.2, 30, 0.5, 0.6, 46), box(QUAY, bx + s * 9.6, -0.2, -40, 0.5, 0.6, 72));
+  const bt = boat(0x4a7f8f, 4.2, true); bt.position.set(bx + 3.5, -0.95, 15); bt.rotation.y = 0.2; kit.add(bt);
+  for (const [x, z] of [[-112, 16], [-106, -9], [-80.5, 9.5], [-108, 26]] as const) { const t = tree(r, 1.1, true); t.position.set(x, 0, z); kit.add(t); }
 
-  // ---- Nhà cổ Tấn Ký: mặt tiền gỗ sẫm ở phía nam Nguyễn Thái Học
-  const tk = grp(-50, 0, 29.3, Math.PI);
-  tk.add(box(0xe9d9b0, 0, 3.1, -4, 9.6, 6.2, 8), gable(0x5f5a44, 0, 6.2, -4, 8.6, 1.8, 9.8, Math.PI / 2), box(WOOD, 0, 1.5, 0.06, 9.0, 3.0, 0.14), box(0x2a1a12, 0, 1.3, 0.12, 2.0, 2.5, 0.08));
-  for (const s of [-1, 1]) tk.add(box(0x3a2216, s * 3.0, 1.5, 0.14, 2.2, 2.2, 0.06), box(glow(WARM), s * 3.0, 1.7, 0.1, 1.5, 1.2, 0.04), cyl(WOOD, s * 4.5, 1.7, 1.4, 0.12, 3.4), lantern(0xff5a4a, s * 2.2, 2.7, 1.3, 1.3));
-  const aw = box(0x5f5a44, 0, 3.5, 0.9, 9.6, 0.14, 2.0); aw.rotation.x = 0.3; tk.add(aw, box(0x2a1a12, 0, 4.4, 0.1, 3.6, 0.8, 0.08), box(0xd9a83a, 0, 4.4, 0.15, 3.0, 0.36, 0.04));
-  for (let i = 0; i < 4; i++) tk.add(box(0x3f6f5f, -3.3 + i * 2.2, 5.3, 0.06, 1.2, 1.1, 0.1));
-  kit.add(tk); kit.live(label('Nhà cổ Tấn Ký', -50, 7.4, 28.6, '#4a2c1c', 0.8));
+  // ---- Nhà cổ Tấn Ký: mặt tiền là ảnh nét cao (1280×825) dán trước thân nhà; mái dốc khối phía sau cùng màu ngói rêu. Ảnh lỗi thì hiện lại khối cũ.
+  const tk = grp(-50, 0, 29.3, Math.PI), TW = 11, TH = TW * 825 / 1280, eave = TH * 0.77;
+  const tkOld = new THREE.Group();
+  tkOld.add(box(WOOD, 0, 1.5, 0.06, 9.0, 3.0, 0.14), box(0x2a1a12, 0, 1.3, 0.12, 2.0, 2.5, 0.08), box(0x2a1a12, 0, 4.4, 0.1, 3.6, 0.8, 0.08), box(0xd9a83a, 0, 4.4, 0.15, 3.0, 0.36, 0.04));
+  for (let i = 0; i < 4; i++) tkOld.add(box(0x3f6f5f, -3.3 + i * 2.2, 5.3, 0.06, 1.2, 1.1, 0.1));
+  const tkFall = bake(tkOld); tkFall.visible = false; tk.add(tkFall);
+  const tkMat = photoMat('hoi-an-tan-ky.webp', { glow: 0.3, fallback: 0x4a2c1c, onError: () => { tkFall.visible = true; tkFace.visible = false; } });
+  const tkFace = photoPlane(tkMat, TW, TH); tkFace.position.z = 0.1;
+  const tkBody = new THREE.Group(); tkBody.add(box(0xe0b040, 0, eave / 2, -4, TW - 0.5, eave, 8), gable(MOSSY, 0, eave, -4, 8.4, TH - eave - 0.1, TW - 0.3, Math.PI / 2));
+  for (const s of [-1, 1]) tkBody.add(box(0x9a9488, s * (TW / 2 - 0.2), TH * 0.42, -4, 0.4, TH * 0.84, 8.2));
+  kit.add(grp(-50, 0, 29.3, Math.PI, tkBody)); tk.add(tkFace); kit.live(tk); kit.live(label('Nhà cổ Tấn Ký', -50, TH + 1.3, 28.6, '#4a2c1c', 0.8));
 
-  // ---- Hội quán Phúc Kiến: cổng tam quan hồng, nhiều tầng mái ngói xanh, sân trong và chính điện phía sau
-  const hq = grp(20, 0, -5.4);
-  const PINK = 0xe79a98, TILE = 0x3f8a68, RED = 0xb8322a;
-  hq.add(box(PINK, 0, 2.8, 0, 6.2, 5.6, 1.2), box(PINK, -7.2, 2.1, 0, 5.4, 4.2, 1.0), box(PINK, 7.2, 2.1, 0, 5.4, 4.2, 1.0), box(0xf4e9dc, 0, 5.75, 0, 6.6, 0.3, 1.5));
-  for (const [x, w, h] of [[0, 2.6, 3.6], [-7.2, 2.0, 2.8], [7.2, 2.0, 2.8]] as const) hq.add(box(0x2a1a12, x, h / 2, 0.02, w, h, 1.3), cyl(0x2a1a12, x, h, 0.02, w / 2, 1.3).rotateX(Math.PI / 2), box(RED, x, h / 2 - 0.2, 0.3, w * 0.9, h - 0.4, 0.1));
-  hq.add(templeRoof(TILE, 0, 5.9, 0, 8.2, 1.3, 3.0, RED), box(PINK, 0, 7.9, 0, 4.2, 1.5, 0.9), templeRoof(TILE, 0, 8.6, 0, 6.0, 1.2, 2.6, RED), box(PINK, 0, 10.3, 0, 2.4, 1.0, 0.7), templeRoof(TILE, 0, 10.8, 0, 4.0, 1.1, 2.2, RED));
-  for (const s of [-1, 1]) hq.add(templeRoof(TILE, s * 7.2, 4.2, 0, 6.6, 1.1, 2.6, RED), box(0xf4e9dc, s * 3.6, 2.4, 0.1, 0.5, 4.8, 1.3), ball(0xd8d2c4, s * 4.2, 0.9, 2.4, 0.6, 0.9, 0.6), box(0x8d8478, s * 4.2, 0.2, 2.4, 1.0, 0.4, 1.0), lantern(0xff5a4a, s * 1.9, 4.6, 1.0, 1.5));
-  hq.add(box(RED, 0, 7.9, 0.5, 2.6, 0.9, 0.08), box(0xd9a83a, 0, 7.9, 0.56, 2.1, 0.44, 0.04));
+  // ---- Hội quán Phúc Kiến: cổng tam quan là hai tấm ảnh nét cao (1280×739, ba vòm trong suốt) kẹp lõi hồng dày 1 m; nhìn xuyên vòm thấy sân trong và chính điện.
+  const hq = grp(20, 0, -5.4), hqLive = grp(20, 0, -5.4);
+  const PINK = 0xe58f95, TILE = 0x2f9a4a, RED = 0xb8322a, GW = 20, GH = GW * 739 / 1280, gx = (px: number) => (px / 1280 - 0.5) * GW, gy = (py: number) => (1 - py / 739) * GH;
+  const hqOld = new THREE.Group();
+  hqOld.add(box(PINK, 0, 2.8, 0, 6.2, 5.6, 1.2), box(PINK, -7.2, 2.1, 0, 5.4, 4.2, 1.0), box(PINK, 7.2, 2.1, 0, 5.4, 4.2, 1.0), templeRoof(TILE, 0, 5.9, 0, 8.2, 1.3, 3.0, RED), box(PINK, 0, 7.9, 0, 4.2, 1.5, 0.9), templeRoof(TILE, 0, 8.6, 0, 6.0, 1.2, 2.6, RED));
+  for (const s of [-1, 1]) hqOld.add(templeRoof(TILE, s * 7.2, 4.2, 0, 6.6, 1.1, 2.6, RED));
+  const hqFall = bake(hqOld); hqFall.visible = false; hqLive.add(hqFall);
+  const hqFaces: THREE.Mesh[] = [];
+  const hqMat = photoMat('hoi-an-phuc-kien.webp', { glow: 0.28, fallback: PINK, onError: () => { hqFall.visible = true; hqFaces.forEach((f) => { f.visible = false; }); } });
+  for (const sz of [-1, 1]) { const f = photoPlane(hqMat, GW, GH); f.position.z = sz * 0.55; if (sz < 0) f.rotation.y = Math.PI; hqFaces.push(f); hqLive.add(f); }
+  // lõi dày giữa hai tấm: bốn trụ, ba lanh tô trên vòm, khối giữa cao, các băng mái ngói xanh (nằm lọt trong hai tấm để không che ảnh)
+  for (const [x0, x1, top] of [[0, 150, 400], [340, 485, 250], [795, 940, 250], [1130, 1280, 400]] as const) hq.add(box(PINK, (gx(x0) + gx(x1)) / 2, gy(top) / 2, 0, gx(x1) - gx(x0), gy(top), 1.0));
+  for (const [x0, x1, a, b] of [[150, 340, 400, 478], [485, 795, 190, 372], [940, 1130, 400, 478]] as const) hq.add(box(PINK, (gx(x0) + gx(x1)) / 2, (gy(a) + gy(b)) / 2, 0, gx(x1) - gx(x0), gy(a) - gy(b), 1.0));
+  hq.add(box(TILE, gx(640), gy(150), 0, gx(955) - gx(325), 0.5, 1.0), box(TILE, gx(200), gy(355), 0, gx(385) - gx(20), 0.45, 1.0), box(TILE, gx(1080), gy(355), 0, gx(385) - gx(20), 0.45, 1.0));
+  for (const s of [-1, 1]) hq.add(ball(0xd8d2c4, s * 2.9, 0.9, 2.4, 0.6, 0.9, 0.6), box(0x8d8478, s * 2.9, 0.2, 2.4, 1.0, 0.4, 1.0), lantern(0xff5a4a, s * 1.6, 4.4, 1.0, 1.4));
   // sân trong + chính điện
   hq.add(box(0xb7a78c, 0, 0.03, -11, 22, 0.1, 20), box(0xd9c7a0, 0, 3, -23, 16, 6, 8), templeRoof(TILE, 0, 6, -23, 19, 2.4, 11, RED), box(RED, 0, 1.6, -18.9, 5, 3.2, 0.14), box(glow(0xffb347), 0, 1.6, -18.84, 3, 2.6, 0.1));
   for (const s of [-1, 1]) { hq.add(cyl(RED, s * 4, 2.2, -18.4, 0.3, 4.4), cyl(RED, s * 7, 2.2, -18.4, 0.3, 4.4), box(PINK, s * 11.4, 2, -11, 0.6, 4, 20)); const t = tree(r, 0.9); t.position.set(s * 7, 0, -9); hq.add(t); }
   hq.add(cyl(0x8d8478, 0, 0.5, -10, 1.6, 1.0), ball(0x6b7a5a, 0, 1.5, -10, 0.9, 1.1, 0.9));
-  kit.add(hq); kit.live(label('Hội quán Phúc Kiến', 20, 13.3, -5.4, '#b8322a', 0.9));
+  kit.add(hq); kit.live(hqLive); kit.live(label('Hội quán Phúc Kiến', 20, GH + 1.4, -5.4, '#b8322a', 0.9));
 
   // ---- đèn lồng giăng ngang phố
   for (let x = -80; x < 130; x += 9) if (!gaps.some(([a, b]) => x > a - 2 && x < b + 2)) kit.add(lanternString(V(x, 5.4, -3.1), V(x, 5.4, 3.1), 4, r, 0.5));
@@ -210,19 +222,19 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
 
   kit.live(FAC.build()); FAC = null;
   // ---- lối đi
-  const path = [V(-134, 0, 3), V(-112, 0, 5), V(-103, 0, 0.6), V(-99.4, 0.1, 0), V(-96.3, 0.7, 0), V(-93, 0.95, 0), V(-89.7, 0.7, 0), V(-86.6, 0.1, 0), V(-70, 0, 0), V(-70, 0, 26), V(-10, 0, 26), V(-10, 0, 0), V(50, 0, 0), V(50, 0, 48), V(104, 0, 48)];
+  const path = [V(-134, 0, 3), V(-116, 0, 4), V(-110.5, 0, 0.3), V(-107.8, 0.2, 0), V(-103.4, deck, 0), V(-82.6, deck, 0), V(-78.2, 0.2, 0), V(-76, 0, 0), V(-70, 0, 0), V(-70, 0, 26), V(-10, 0, 26), V(-10, 0, 0), V(50, 0, 0), V(50, 0, 48), V(104, 0, 48)];
   return {
     path, half: 2.5, npcs: 14,
     stops: [
       { id: 'cong', at: V(-126, 0, 3.6), look: V(-120, 4.4, 3), cam: V(-134.5, 2.4, 4.2) },
-      { id: 'chua_cau', at: V(-107, 0, 3.4), look: V(-93.5, 3.0, 0), cam: V(-104.5, 2.3, 15.5) },
-      { id: 'nha_co', at: V(-56, 0, 24.4), look: V(-50, 3.4, 29.6), cam: V(-50, 3.3, 13.9) },
-      { id: 'hoi_quan', at: V(14, 0, 1.6), look: V(20, 6.4, -5.4), cam: V(20, 2.6, 11.6) },
+      { id: 'chua_cau', at: V(-113.5, 0, 3.6), look: V(bx, 2.3, 0), cam: V(bx - 1.5, 3.2, 24.5) },
+      { id: 'nha_co', at: V(-56, 0, 24.4), look: V(-50, 3.5, 29.2), cam: V(-50, 3.4, 13.7) },
+      { id: 'hoi_quan', at: V(14, 0, 1.6), look: V(20, 5.6, -5.4), cam: V(20, 3.2, 12.4) },
       { id: 'pho_den_long', at: V(50, 0, 9), look: V(50, 3.8, 24), cam: V(50, 2.5, 2.2) },
       { id: 'song_hoai', at: V(50, 0, 48.6), look: V(30, -0.5, 84), cam: V(57.5, 4.4, 50.6) },
       { id: 'cho', at: V(92, 0, 49), look: V(108, 5, 38), cam: V(80.5, 4.4, 51.2) },
     ],
-    shopSpots: [{ at: V(-62, 0, -2.3), ry: 0 }, { at: V(-22, 0, 28.3), ry: Math.PI }, { at: V(34, 0, 2.3), ry: Math.PI }, { at: V(47.6, 0, 27), ry: Math.PI / 2 }, { at: V(70, 0, 45.4), ry: 0 }, { at: V(-114, 0, 7.4), ry: Math.PI }],
+    shopSpots: [{ at: V(-62, 0, -2.3), ry: 0 }, { at: V(-22, 0, 28.3), ry: Math.PI }, { at: V(34, 0, 2.3), ry: Math.PI }, { at: V(47.6, 0, 27), ry: Math.PI / 2 }, { at: V(70, 0, 45.4), ry: 0 }, { at: V(-121, 0, 8.6), ry: Math.PI }],
     sky: [0x27306a, 0xf5a66e], fog: [0x8a6f8a, 90, 380], fill: 0.7,
     light: { ambient: 1.55, ambientColor: 0xd6cff2, sun: 1.1, sunColor: 0xffbf96, sunDir: [-0.7, 0.55, 0.5] },
   };

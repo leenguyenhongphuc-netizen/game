@@ -300,3 +300,35 @@ export function shopModel(kind: string, r: () => number): THREE.Group {
   }
   return g;
 }
+
+// ------------------------------------------------------------------ ảnh cắt nền dán lên tấm phẳng (công trình chính nét cao)
+export interface PhotoOpts {
+  /** Coi điểm ảnh gần trắng (mọi kênh > ngưỡng, 0–255) là trong suốt — dùng khi ảnh còn nền trắng dưới vòm. */
+  whiteKey?: number;
+  /** Độ tự sáng (0–1) để ảnh không tối sầm khi cảnh là chiều tối. */
+  glow?: number;
+  /** Màu thay thế khi ảnh không tải được (tấm phẳng thành mảng màu trơn). */
+  fallback?: number;
+  /** Gọi khi ảnh lỗi, để cảnh hiện lại khối dựng cũ. */
+  onError?: () => void;
+}
+/** Chất liệu ảnh cắt nền: alphaTest 0.5, hai mặt, sRGB, lọc bất đẳng hướng tối đa, có mipmap. Texture tự giải phóng khi rời cảnh. */
+export function photoMat(file: string, opts: PhotoOpts = {}): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0, alphaTest: 0.5, side: THREE.DoubleSide, transparent: false });
+  const img = new Image(); img.decoding = 'async';
+  img.onload = () => {
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; const g = c.getContext('2d', { willReadFrequently: true })!; g.drawImage(img, 0, 0);
+    if (opts.whiteKey) { const d = g.getImageData(0, 0, c.width, c.height), a = d.data, k = opts.whiteKey; for (let i = 0; i < a.length; i += 4) if (a[i] > k && a[i + 1] > k && a[i + 2] > k) a[i + 3] = 0; g.putImageData(d, 0, 0); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.userData = { own: true };
+    m.map = t; if (opts.glow) { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = t; m.emissiveIntensity = opts.glow; } m.needsUpdate = true;
+  };
+  img.onerror = () => { m.color.set(opts.fallback ?? 0x9a8f80); m.alphaTest = 0; m.needsUpdate = true; opts.onError?.(); };
+  img.src = `${import.meta.env.BASE_URL}art/tex/${file}`;
+  return m;
+}
+/** Tấm phẳng đứng dán một phần ảnh: (x0,y0)–(x1,y1) tính theo tỉ lệ 0–1 từ góc TRÊN-TRÁI của ảnh. Tâm đáy tấm ở gốc, mặt quay về +z. */
+export function photoPlane(m: THREE.Material, w: number, h: number, crop: [number, number, number, number] = [0, 0, 1, 1]): THREE.Mesh {
+  const g = new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0), uv = g.attributes.uv as THREE.BufferAttribute, [x0, y0, x1, y1] = crop;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, x0 + uv.getX(i) * (x1 - x0), (1 - y1) + uv.getY(i) * (y1 - y0));
+  return new THREE.Mesh(g, m);
+}
