@@ -1,0 +1,46 @@
+/* Giao diện phủ trên cảnh đi bộ tham quan. Tự chứa, không phụ thuộc styles.css. */
+.sw { position: fixed; left: var(--vx, 0px); top: var(--vy, 0px); width: var(--vw, 100%); height: var(--vh, 100%); z-index: 1000; background: #1c2433; overflow: hidden; font-family: 'Be Vietnam Pro', system-ui, sans-serif; color: #3b2a17; user-select: none; -webkit-user-select: none; touch-action: none; }
+.sw-scene { position: absolute; inset: 0; touch-action: none; }
+.sw button { font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 700; font-size: 0.95rem; min-height: 44px; padding: 6px 14px; background: #f6e7bd; color: #3b2a17; border: 2.5px solid #7a4a22; border-radius: 14px; box-shadow: 0 4px 0 #56310f; cursor: pointer; }
+.sw button:active { transform: translateY(3px); box-shadow: 0 1px 0 #56310f; }
+.sw button.sw-go { background: #4caf3f; border-color: #2f7d26; color: #fff; box-shadow: 0 4px 0 #1f5a19; flex: 1 1 auto; }
+.sw-top { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); display: flex; gap: 8px; align-items: flex-start; pointer-events: none; }
+.sw-top > * { pointer-events: auto; }
+.sw-bar { flex: 1 1 auto; min-width: 0; max-width: 460px; box-sizing: border-box; background: #fff8e4; border: 3px solid #7a4a22; border-radius: 20px; box-shadow: 0 4px 0 #56310f, 0 10px 22px #0003; padding: 6px 12px 8px; }
+.sw-title { display: flex; align-items: center; gap: 6px; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 800; font-size: clamp(0.92rem, 3.9vw, 1.1rem); line-height: 1.2; min-width: 0; }
+.sw-title span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sw-title small { margin-left: auto; flex-shrink: 0; font-family: 'Be Vietnam Pro', sans-serif; font-weight: 700; font-size: 0.74rem; color: #7a5a36; white-space: nowrap; padding-left: 6px; }
+.sw-dots { list-style: none; margin: 6px 0 0; padding: 0; display: flex; gap: 5px; }
+.sw-dots li { flex: 1 1 0; max-width: 34px; height: 24px; border-radius: 9px; display: grid; place-items: center; font-weight: 800; font-size: 0.74rem; background: #f3e6c2; border: 2px solid #cdb67c; color: #8a744f; }
+.sw-dots li.done { background: #dff2c8; border-color: #5fb05f; color: #2f7d26; }
+.sw-dots li.next { background: #ffd95e; border-color: #7a4a22; color: #3b2a17; box-shadow: 0 0 0 3px #ffd95e55; }
+.sw-leave { flex: 0 0 auto; }
+.sw-guide { position: absolute; top: calc(max(10px, env(safe-area-inset-top)) + 86px); left: 50%; transform: translateX(-50%); max-width: calc(100% - 24px); box-sizing: border-box; display: flex; align-items: center; gap: 8px; background: #7a4a22; color: #fff7d6; border: 3px solid #56310f; border-radius: 999px; padding: 3px 14px 3px 8px; font-weight: 600; font-size: 0.86rem; box-shadow: 0 3px 0 #2e1905; pointer-events: none; }
+.sw-guide span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sw-guide b { color: #ffd95e; }
+.sw-guide i { flex: 0 0 26px; height: 26px; display: grid; place-items: center; font-style: normal; background: #ffd95e; color: #56310f; border-radius: 50%; font-size: 0.9rem; }
+.sw-guide i { rotate: -90deg; }
+.sw-guide small { flex-shrink: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sw-hint { position: absolute; left: 50%; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 70px); transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; text-align: center; background: #fff8e4ee; border: 2.5px solid #7a4a22; border-radius: 14px; padding: 8px 14px; font-weight: 600; font-size: 0.86rem; pointer-events: none; }
+.sw-stick { position: absolute; width: 104px; height: 104px; margin: -52px 0 0 -52px; border-radius: 50%; background: #fff8e455; border: 3px solid #fff8e4aa; pointer-events: none; }
+.sw-stick i { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: #fff8e4; border: 3px solid #7a4a22; box-shadow: 0 3px 0 #56310f; }
+.sw-flash { position: absolute; inset: 0; background: #fff; pointer-events: none; animation: sw-flash 0.5s ease-out forwards; }
+@keyframes sw-flash { from { opacity: 0.9; } to { opacity: 0; } }
+.sw-card { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(14px, env(safe-area-inset-bottom)); width: min(460px, calc(100% - 20px)); box-sizing: border-box; max-height: 46%; overflow-y: auto; background: #fff6dc; border: 3px solid #7a4a22; border-radius: 22px; box-shadow: 0 6px 0 #56310f, 0 14px 30px #0006; padding: 10px 14px 12px; animation: sw-rise 0.22s ease-out; }
+@keyframes sw-rise { from { transform: translate(-50%, 24px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+.sw-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sw-card h2 { margin: 0; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 800; font-size: 1.15rem; line-height: 1.2; min-width: 0; flex: 1 1 auto; }
+.sw-num { flex: 0 0 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: #ffd23f; border: 2.5px solid #56310f; font-family: 'Baloo 2', sans-serif; font-weight: 800; }
+.sw-stamp { flex-shrink: 0; font-weight: 800; font-size: 0.74rem; color: #2f7d26; border: 2.5px solid #2f7d26; border-radius: 8px; padding: 1px 7px; rotate: -6deg; animation: sw-stamp 0.35s ease-out; white-space: nowrap; }
+@keyframes sw-stamp { from { scale: 2.2; opacity: 0; } to { scale: 1; opacity: 1; } }
+.sw-card p { margin: 8px 0 10px; font-size: 0.92rem; line-height: 1.45; }
+.sw-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sw-actions button { flex: 1 1 120px; }
+@media (max-height: 430px) {
+  .sw-bar { padding: 4px 10px 5px; max-width: 360px; }
+  .sw-dots { margin-top: 3px; } .sw-dots li { height: 20px; }
+  .sw-guide { top: max(10px, env(safe-area-inset-top)); left: auto; right: calc(max(10px, env(safe-area-inset-right)) + 96px); transform: none; max-width: calc(100% - 500px); }
+  .sw-card { left: auto; right: max(10px, env(safe-area-inset-right)); transform: none; bottom: max(8px, env(safe-area-inset-bottom)); width: min(340px, 44%); max-height: calc(100% - 76px); animation: none; padding: 8px 12px 10px; }
+  .sw-card p { font-size: 0.84rem; margin: 6px 0 8px; }
+  .sw-hint { bottom: max(10px, env(safe-area-inset-bottom)); }
+}

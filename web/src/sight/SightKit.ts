@@ -36,6 +36,9 @@ export function box(c: C, x: number, y: number, z: number, sx: number, sy: numbe
 export function cyl(c: C, x: number, y: number, z: number, r: number, h: number, rz = r): THREE.Mesh { return mesh(GEO.cyl, M(c), x, y, z, r, h, rz); }
 export function cone(c: C, x: number, y: number, z: number, r: number, h: number, rz = r): THREE.Mesh { return mesh(GEO.cone, M(c), x, y, z, r, h, rz); }
 export function ball(c: C, x: number, y: number, z: number, sx: number, sy = sx, sz = sx): THREE.Mesh { return mesh(GEO.sphere, M(c), x, y, z, sx, sy, sz); }
+const LOW = new THREE.IcosahedronGeometry(1, 0);
+/** Khối cầu ít mặt cho vật nhỏ, số lượng nhiều (đèn lồng, trái cây, hoa). */
+export function bead(c: C, x: number, y: number, z: number, sx: number, sy = sx, sz = sx): THREE.Mesh { return mesh(LOW, M(c), x, y, z, sx, sy, sz); }
 export function grp(x: number, y: number, z: number, ry = 0, ...kids: THREE.Object3D[]): THREE.Group { const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ry; if (kids.length) g.add(...kids); return g; }
 
 // Lăng trụ tam giác đơn vị: rộng 1 theo x, cao 1, sâu 1 theo z, nóc chạy dọc z. Dùng làm mái hai dốc.
@@ -93,7 +96,7 @@ export function signPost(text: string, x: number, y: number, z: number, bg = '#7
 export function label(text: string, x: number, y: number, z: number, bg = '#7a4a22', scale = 1): THREE.Sprite { const sp = makeSign(text, bg); sp.scale.multiplyScalar(scale); sp.position.set(x, y, z); return sp; }
 export function lampPost(x: number, y: number, z: number, h = 3.6, c = 0xffd98a): THREE.Group { return grp(x, y, z, 0, cyl(0x3d3a36, 0, h / 2, 0, 0.07, h), box(0x3d3a36, 0, h, 0, 0.5, 0.06, 0.06), ball(glow(c), 0.22, h - 0.2, 0, 0.17), ball(glow(c), -0.22, h - 0.2, 0, 0.17)); }
 /** Đèn lồng treo: quả lụa phát sáng có chóp và tua. */
-export function lantern(color: number, x: number, y: number, z: number, s = 1): THREE.Group { return grp(x, y, z, 0, ball(glow(color), 0, 0, 0, 0.26 * s, 0.32 * s, 0.26 * s), cyl(0x3b2a17, 0, 0.3 * s, 0, 0.09 * s, 0.07 * s), cyl(0xc0281e, 0, -0.42 * s, 0, 0.03 * s, 0.24 * s)); }
+export function lantern(color: number, x: number, y: number, z: number, s = 1): THREE.Group { return grp(x, y, z, 0, bead(glow(color), 0, 0, 0, 0.27 * s, 0.33 * s, 0.27 * s), box(0x3b2a17, 0, 0.32 * s, 0, 0.14 * s, 0.08 * s, 0.14 * s), box(0xc0281e, 0, -0.44 * s, 0, 0.05 * s, 0.24 * s, 0.05 * s)); }
 export const LANTERN_COLORS = [0xff5a4a, 0xffb347, 0xffe066, 0x7fe0c0, 0xff8fc8, 0xb59bff, 0x6ec8ff];
 /** Dây đèn lồng giăng giữa hai điểm, võng xuống ở giữa. */
 export function lanternString(a: THREE.Vector3, b: THREE.Vector3, n: number, r: () => number, sag = 0.7, s = 1): THREE.Group {
@@ -111,7 +114,7 @@ export function boat(c: number, len = 5, lit = false): THREE.Group {
 export function stall(awning: number, r: () => number): THREE.Group {
   const g = new THREE.Group(); g.add(box(0x9a7150, 0, 0.5, 0, 2.2, 1, 1.1), box(awning, 0, 2.3, 0.2, 2.6, 0.08, 1.8), box(0xf3ead2, 0, 2.25, 1.05, 2.6, 0.24, 0.05));
   for (const s of [-1, 1]) g.add(cyl(0x7a5a3c, s * 1.15, 1.15, 0.9, 0.05, 2.3));
-  for (let i = 0; i < 6; i++) g.add(ball([0xff8a3d, 0xffd23f, 0x7ccf4f, 0xe2573c][Math.floor(r() * 4)], -0.8 + (i % 3) * 0.8, 1.14, -0.2 + Math.floor(i / 3) * 0.4, 0.2));
+  for (let i = 0; i < 6; i++) g.add(bead([0xff8a3d, 0xffd23f, 0x7ccf4f, 0xe2573c][Math.floor(r() * 4)], -0.8 + (i % 3) * 0.8, 1.14, -0.2 + Math.floor(i / 3) * 0.4, 0.2));
   return g;
 }
 

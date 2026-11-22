@@ -20,7 +20,7 @@ export class SightScene {
   private state: PlayerState; private heading = 0; private yaw = 0; private pitch = 0.2; private moving = 0;
   private move = new THREE.Vector2(); private keys = new Set<string>();
   private cum: number[] = []; private total = 0;
-  private markers: { ring: THREE.Mesh; beam: THREE.Mesh; s: number }[] = [];
+  private markers: { ring: THREE.Mesh; beam: THREE.Mesh; num: THREE.Sprite; s: number }[] = [];
   private npcs: { g: THREE.Group; s: number; dir: number; off: number; a: number; b: number; sp: number }[] = [];
   private nearIdx: number | null = null; private dismissed: number | null = null; private lookAt: THREE.Vector3 | null = null;
   private seen: Set<string>; private autoWait = 0; private hudT = 0; private disposed = false;
@@ -69,7 +69,7 @@ export class SightScene {
       const ring = new THREE.Mesh(ringG, new THREE.MeshBasicMaterial({ color: done ? 0x7ccf4f : 0xffd23f, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide })); ring.position.copy(st.at).y += 0.12;
       const beam = new THREE.Mesh(beamG, new THREE.MeshBasicMaterial({ color: done ? 0x9be07a : 0xffe680, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); beam.position.copy(st.at).y += 2.5;
       const num = numberSprite(i + 1, done); num.position.copy(st.at).y += 3.4;
-      this.scene.add(ring, beam, num); this.markers.push({ ring, beam, s: this.project(st.at).s });
+      this.scene.add(ring, beam, num); this.markers.push({ ring, beam, num, s: this.project(st.at).s });
     });
   }
   private buildNpcs(n: number) {
@@ -90,7 +90,7 @@ export class SightScene {
     const path = this.set.path; let best = { s: 0, q: path[0].clone(), d: 1e9, seg: 0 };
     for (let i = 0; i < path.length - 1; i++) {
       const a = path[i], b = path[i + 1], dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1e-6;
-      const t = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2), qx = a.x + dx * t, qz = a.z + dz * t, qy = a.y + (b.y - a.y) * t;
+      const t = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2)), qx = a.x + dx * t, qz = a.z + dz * t, qy = a.y + (b.y - a.y) * t;
       let d = Math.hypot(p.x - qx, p.z - qz); if (prefer >= 0) d += Math.abs(i - prefer) > 1 ? Math.abs(qy - p.y) * 1.5 + (Math.abs(i - prefer) > 2 ? 0.6 : 0) : 0;
       if (d < best.d) best = { s: this.cum[i] + (this.cum[i + 1] - this.cum[i]) * t, q: new THREE.Vector3(qx, qy, qz), d, seg: i };
     }
@@ -155,6 +155,9 @@ export class SightScene {
     const p = this.state.pos, portrait = this.camera.aspect < 1, dist = portrait ? 6.4 : 5.6, h = 2.3 + this.pitch * 5;
     const cx = p.x - Math.sin(this.yaw) * dist * Math.cos(this.pitch * 0.6), cz = p.z + Math.cos(this.yaw) * dist * Math.cos(this.pitch * 0.6);
     const want = new THREE.Vector3(cx, p.y + h, cz);
+    // giữ camera trong hành lang lối đi để không chui vào nhà hai bên; bị ép lại gần thì nâng cao lên
+    const pr = this.project(want, this.state.seg), lim = this.set.half + 0.7;
+    if (pr.d > lim) { const k = lim / pr.d; want.x = pr.q.x + (want.x - pr.q.x) * k; want.z = pr.q.z + (want.z - pr.q.z) * k; want.y += (dist - Math.hypot(want.x - p.x, want.z - p.z)) * 0.3; }
     if (snap) this.camera.position.copy(want); else this.camera.position.lerp(want, 0.18);
     const ahead = 9, ly = p.y + 2.5 - this.pitch * 3.2 + (portrait ? 1.3 : 0.5);
     this.camera.lookAt(p.x + Math.sin(this.yaw) * ahead, ly, p.z - Math.cos(this.yaw) * ahead);
@@ -172,7 +175,7 @@ export class SightScene {
       const a = this.at(n.s, n.g.position); n.g.position.x += -a.dir.z * n.off; n.g.position.z += a.dir.x * n.off; n.g.position.y += Math.abs(Math.sin(this.time * 6 + n.off * 9)) * 0.04;
       n.g.rotation.y = -Math.atan2(a.dir.x * n.dir, -a.dir.z * n.dir);
     }
-    this.markers.forEach((m, i) => { const k = 1 + Math.sin(this.time * 3 + i) * 0.08; m.ring.scale.set(k, 1, k); m.beam.rotation.y = this.time * 0.6; });
+    this.markers.forEach((m, i) => { m.beam.visible = m.num.visible = this.nearIdx !== i; const k = 1 + Math.sin(this.time * 3 + i) * 0.08; m.ring.scale.set(k, 1, k); m.beam.rotation.y = this.time * 0.6; });
     for (const t of this.kit.ticks) t(this.time, dt, st);
     this.placeCamera();
     this.renderer.render(this.scene, this.camera);

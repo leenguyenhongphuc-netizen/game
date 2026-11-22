@@ -86,8 +86,8 @@ function buildCabin(): { shell: THREE.Group; wheel: THREE.Group; meter: THREE.Me
   box(S, lining, 0, 1.58, -0.86, 1.7, 0.08, 0.14); box(S, trim, 0, 1.3, 1.52, 1.7, 0.7, 0.08); box(S, seat, 0, 0.95, 1.42, 1.56, 0.1, 0.24);
   // ghế trước (tài xế bên trái), tựa đầu, ghế sau
   for (const s of [-1, 1]) {
-    box(S, seat, s * 0.4, 0.52, -0.42, 0.52, 0.16, 0.56); const b = mesh(GEO.box, mat(seat), s * 0.4, 0.92, -0.12, 0.52, 0.74, 0.14); b.rotation.x = 0.1; S.add(b);
-    box(S, seatHi, s * 0.4, 0.92, -0.045, 0.4, 0.56, 0.02); box(S, seat, s * 0.4, 1.4, -0.08, 0.28, 0.2, 0.11); post(S, 0x8f97a3, s * 0.4, 1.26, -0.08, 0.1, 0.02);
+    box(S, seat, s * 0.4, 0.52, -0.42, 0.52, 0.16, 0.56); const b = mesh(GEO.box, mat(seat), s * 0.42, 0.87, -0.12, 0.48, 0.62, 0.14); b.rotation.x = 0.1; S.add(b);
+    box(S, seatHi, s * 0.42, 0.87, -0.045, 0.38, 0.46, 0.02); box(S, seat, s * 0.42, 1.31, -0.08, 0.24, 0.16, 0.1); post(S, 0x8f97a3, s * 0.42, 1.18, -0.08, 0.08, 0.02);
     box(S, 0x4a5160, s * 0.4, 0.7, -0.03, 0.3, 0.18, 0.03);
   }
   box(S, seat, 0, 0.5, 0.95, 1.6, 0.18, 0.62); box(S, seatHi, -0.4, 0.6, 0.93, 0.62, 0.03, 0.5);
@@ -297,8 +297,8 @@ export class TaxiCabin implements Act {
     const k = 1 - Math.exp(-dt * 9); this.yaw += (this.yawT - this.yaw) * k; this.pitch += (this.pitchT - this.pitch) * k;
     const curve = dC(this.dist + 6) - dC(this.dist - 6), mv = this.speed / SPEED, cam = c.camera;
     const fov = c.portrait ? 82 : 64; if (cam.fov !== fov || cam.near !== 0.06) { cam.fov = fov; cam.near = 0.06; cam.updateProjectionMatrix(); }
-    cam.position.set(0.36 - curve * 0.25 * mv, 1.23 + Math.sin(c.time * 23) * 0.004 * mv + Math.sin(c.time * 7.3) * 0.006 * mv, 0.86);
-    cam.rotation.order = 'YXZ'; cam.rotation.set(-this.pitch - 0.03, this.yaw + 0.05, -curve * 1.6 * mv + Math.sin(c.time * 5.1) * 0.004 * mv);
+    cam.position.set(0.17 - curve * 0.25 * mv, 1.36 + Math.sin(c.time * 23) * 0.004 * mv + Math.sin(c.time * 7.3) * 0.006 * mv, 0.86);
+    cam.rotation.order = 'YXZ'; cam.rotation.set(-this.pitch - 0.1, this.yaw + 0.04, -curve * 1.6 * mv + Math.sin(c.time * 5.1) * 0.004 * mv);
     this.cabin.wheel.rotation.z = curve * 7 * mv;
   }
 }

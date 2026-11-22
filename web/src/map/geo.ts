@@ -20,40 +20,45 @@ export function ringPath(p: Proj, r: Ring, close = true): string {
 
 export interface View { x: number; y: number; w: number; h: number }
 /**
- * Kéo, chụm hai ngón, lăn chuột để xem bản đồ. Trả về khung nhìn (viewBox), tỉ lệ đơn vị SVG trên một điểm ảnh,
- * và hàm `tap` để phân biệt chạm với kéo.
+ * Kéo, chụm hai ngón, lăn chuột để xem bản đồ. Khung nhìn (viewBox) luôn cùng tỉ lệ với phần tử nên không bị méo hay thừa lề;
+ * `tap` phân biệt chạm với kéo.
  */
 export function usePanZoom(full: { w: number; h: number }, maxZoom = 8) {
   const ref = useRef<SVGSVGElement | null>(null);
-  const [view, setView] = useState<View>({ x: 0, y: 0, w: full.w, h: full.h });
-  const [px, setPx] = useState(1); // số đơn vị SVG ứng với 1 điểm ảnh khi chưa phóng
+  const [size, setSize] = useState({ w: 360, h: 360 * full.h / full.w });
+  const ar = size.w / size.h;
+  // khung nhìn rộng nhất: phủ kín phần tử mà không lòi ra ngoài bản đồ (màn ngang thì thấy trọn bề ngang, kéo dọc để xem tiếp)
+  const base = ar >= full.w / full.h ? { w: full.w, h: full.w / ar } : { w: full.h * ar, h: full.h };
+  const [raw, setView] = useState<View | null>(null);
   const st = useRef({ pts: new Map<number, { x: number; y: number }>(), moved: 0, dist: 0 });
-  const clamp = (v: View): View => {
-    const w = Math.min(full.w, Math.max(full.w / maxZoom, v.w)), h = w * full.h / full.w;
+  const clamp = (v: { x: number; y: number; w: number }): View => {
+    const w = Math.min(base.w, Math.max(base.w / maxZoom, v.w)), h = w / ar;
     return { w, h, x: Math.min(full.w - w, Math.max(0, v.x)), y: Math.min(full.h - h, Math.max(0, v.y)) };
   };
+  const view = clamp(raw ?? { w: base.w, x: (full.w - base.w) / 2, y: (full.h - base.h) / 2 });
   useEffect(() => {
     const el = ref.current; if (!el) return;
-    const measure = () => { const r = el.getBoundingClientRect(); if (r.width > 0) setPx(full.w / r.width); };
+    const measure = () => { const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0) setSize((s) => (Math.abs(s.w - r.width) < 0.5 && Math.abs(s.h - r.height) < 0.5 ? s : { w: r.width, h: r.height })); };
     measure();
     const ro = new ResizeObserver(measure); ro.observe(el);
     return () => ro.disconnect();
-  }, [full.w]);
-  const zoomAt = (f: number, cx?: number, cy?: number) => setView((v) => {
-    const el = ref.current, r = el?.getBoundingClientRect();
+  }, []);
+  const cur = useRef(view); cur.current = view;
+  const zoomAt = (f: number, cx?: number, cy?: number) => {
+    const v = cur.current, r = ref.current?.getBoundingClientRect();
     const ax = r && cx !== undefined ? (cx - r.left) / r.width : 0.5, ay = r && cy !== undefined ? (cy - r.top) / r.height : 0.5;
-    const w = Math.min(full.w, Math.max(full.w / maxZoom, v.w / f)), h = w * full.h / full.w;
-    return clamp({ w, h, x: v.x + (v.w - w) * ax, y: v.y + (v.h - h) * ay });
-  });
-  const focus = (sx: number, sy: number, zoom: number) => setView(() => { const w = full.w / zoom, h = full.h / zoom; return clamp({ w, h, x: sx - w / 2, y: sy - h / 2 }); });
+    const w = Math.min(base.w, Math.max(base.w / maxZoom, v.w / f)), h = w / ar;
+    setView(clamp({ w, x: v.x + (v.w - w) * ax, y: v.y + (v.h - h) * ay }));
+  };
+  const focus = (sx: number, sy: number, zoom: number) => { const w = base.w / zoom; setView(clamp({ w, x: sx - w / 2, y: sy - w / ar / 2 })); };
   const handlers = {
     onPointerDown: (e: React.PointerEvent) => { st.current.pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (st.current.pts.size === 1) st.current.moved = 0; st.current.dist = 0; (e.currentTarget as Element).setPointerCapture?.(e.pointerId); },
     onPointerMove: (e: React.PointerEvent) => {
       const s = st.current, prev = s.pts.get(e.pointerId); if (!prev) return;
-      const r = ref.current!.getBoundingClientRect();
+      const r = ref.current!.getBoundingClientRect(), v = cur.current;
       if (s.pts.size === 1) {
         const dx = e.clientX - prev.x, dy = e.clientY - prev.y; s.moved += Math.abs(dx) + Math.abs(dy);
-        setView((v) => clamp({ ...v, x: v.x - dx * v.w / r.width, y: v.y - dy * v.h / r.height }));
+        if (s.moved > 4) setView(clamp({ w: v.w, x: v.x - dx * v.w / r.width, y: v.y - dy * v.h / r.height }));
       } else if (s.pts.size === 2) {
         s.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
         const [a, b] = [...s.pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -72,6 +77,6 @@ export function usePanZoom(full: { w: number; h: number }, maxZoom = 8) {
     const r = ref.current!.getBoundingClientRect();
     return [view.x + (e.clientX - r.left) * view.w / r.width, view.y + (e.clientY - r.top) * view.h / r.height];
   };
-  const zoom = full.w / view.w;
-  return { ref, view, zoom, unit: px / zoom, handlers, tap, zoomAt, focus, reset: () => setView({ x: 0, y: 0, w: full.w, h: full.h }) };
+  /** zoom: so với khi thấy trọn bề ngang bản đồ; unit: số đơn vị SVG ứng với một điểm ảnh. */
+  return { ref, view, zoom: full.w / view.w, unit: view.w / size.w, handlers, tap, zoomAt, focus, landscape: ar > full.w / full.h * 1.15, atMin: view.w >= base.w - 0.5, reset: () => setView(null) };
 }

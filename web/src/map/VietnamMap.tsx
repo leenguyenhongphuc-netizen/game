@@ -1,5 +1,5 @@
 // Bản đồ Việt Nam: đường bờ biển, biên giới thật (Natural Earth), ghim từng vùng trồng theo toạ độ thật.
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { haversineKm } from '../../../shared/rules.ts';
 import { makeProj, ringPath, usePanZoom } from './geo.ts';
 import { NEIGHBOR_LAND, VN_ISLANDS, VN_MAIN } from './vn-outline.ts';
@@ -36,7 +36,7 @@ const PLACE_LABELS: { name: string; lng: number; lat: number; dx?: number; dy?: 
   { name: 'Cù Lao Chàm', lng: 108.51, lat: 15.95, dx: 9, dy: -4, anchor: 'start', minZoom: 1.6 },
   { name: 'Hà Nội', lng: 105.85, lat: 21.03, minZoom: 99 },
 ];
-const COUNTRY_LABELS: [string, number, number][] = [['TRUNG QUỐC', 107.6, 23.35], ['LÀO', 103.6, 18.6], ['CAM-PU-CHIA', 104.7, 12.6], ['THÁI LAN', 102.5, 15.6]];
+const COUNTRY_LABELS: [string, number, number][] = [['TRUNG QUỐC', 107.6, 23.35], ['LÀO', 103.6, 18.6], ['CAM-PU-CHIA', 104.7, 12.6], ['THÁI LAN', 103.0, 15.6]];
 const ZONE_COLOR: Record<string, string> = { bac: '#5b8def', trung: '#e58a2b', taynguyen: '#b0522d', nam: '#2f9e55', dao: '#12a5b8' };
 
 export function VietnamMap({ regions, homeId, currentId, visited, owned = [], sightProvinces, selectedId, onSelect }: VietnamMapProps) {
@@ -45,6 +45,9 @@ export function VietnamMap({ regions, homeId, currentId, visited, owned = [], si
   const seen = useMemo(() => (visited instanceof Set ? visited : new Set(visited)), [visited]);
   const pins = useMemo(() => regions.map((r) => ({ r, x: P.x(r.lng), y: P.y(r.lat) })), [regions]);
   const cur = pins.find((p) => p.r.id === currentId), sel = pins.find((p) => p.r.id === selectedId);
+  // màn ngang chỉ thấy một khúc đất nước: mở đầu ở chỗ người chơi đang đứng
+  const centred = useRef(false);
+  useEffect(() => { if (!centred.current && pz.landscape && cur) { centred.current = true; pz.focus(cur.x, cur.y, 1); } }, [pz.landscape, cur]); // eslint-disable-line react-hooks/exhaustive-deps
   const km = cur && sel && cur !== sel ? Math.round(haversineKm(cur.r.lat, cur.r.lng, sel.r.lat, sel.r.lng)) : 0;
 
   const onClick = (e: React.MouseEvent) => {
@@ -61,7 +64,7 @@ export function VietnamMap({ regions, homeId, currentId, visited, owned = [], si
 
   return (
     <div className="vmap">
-      <svg ref={pz.ref} className="vmap-svg" viewBox={`${pz.view.x} ${pz.view.y} ${pz.view.w} ${pz.view.h}`} style={{ aspectRatio: `${P.w} / ${P.h}` }}
+      <svg ref={pz.ref} className="vmap-svg" viewBox={`${pz.view.x} ${pz.view.y} ${pz.view.w} ${pz.view.h}`} style={{ aspectRatio: `${P.w} / ${P.h}` }} preserveAspectRatio="xMidYMid slice"
         role="group" aria-label="Bản đồ Việt Nam và các vùng trồng" {...pz.handlers} onClick={onClick}>
         <defs>
           <pattern id="vm-wave" width="46" height="22" patternUnits="userSpaceOnUse">
@@ -81,20 +84,11 @@ export function VietnamMap({ regions, homeId, currentId, visited, owned = [], si
           {COUNTRY_LABELS.map(([n, lng, lat]) => <text key={n} x={P.x(lng)} y={P.y(lat)} className="vm-country" textAnchor="middle">{n}</text>)}
           <text x={P.x(111.3)} y={P.y(13.4)} className="vm-sea" textAnchor="middle" style={{ fontSize: 17 * u }}>Biển Đông</text>
           <text x={P.x(112)} y={P.y(17.3) - 6 * u} className="vm-isle" textAnchor="middle"><tspan x={P.x(112)}>Quần đảo Hoàng Sa</tspan><tspan x={P.x(112)} dy={13 * u}>(Việt Nam)</tspan></text>
-          <text x={P.x(113.5)} y={P.y(7.75) - 13 * u} className="vm-isle" textAnchor="middle"><tspan x={P.x(113.5)}>Quần đảo Trường Sa</tspan><tspan x={P.x(113.5)} dy={13 * u}>(Việt Nam)</tspan></text>
-          {PLACE_LABELS.filter((l) => z >= l.minZoom).map((l) => (
+          <text x={P.x(112.9)} y={P.y(7.75) - 13 * u} className="vm-isle" textAnchor="middle"><tspan x={P.x(112.9)}>Quần đảo Trường Sa</tspan><tspan x={P.x(112.9)} dy={13 * u}>(Việt Nam)</tspan></text>
+          {PLACE_LABELS.filter((l) => z >= l.minZoom && !((showNames || l.name === 'Lý Sơn') && regions.some((r) => r.name.includes(l.name)))).map((l) => (
             <text key={l.name} x={P.x(l.lng) + (l.dx ?? 0) * u} y={P.y(l.lat) + (l.dy ?? 4) * u} className="vm-isle" textAnchor={l.anchor ?? 'middle'} style={{ fontSize: 10.5 * u }}>{l.name}</text>
           ))}
         </g>
-        {cur && sel && cur !== sel && (
-          <g pointerEvents="none">
-            <line x1={cur.x} y1={cur.y} x2={sel.x} y2={sel.y} stroke="#c0391f" strokeWidth={2.4 * u} strokeDasharray={`${7 * u} ${5 * u}`} strokeLinecap="round" />
-            <g transform={`translate(${(cur.x + sel.x) / 2} ${(cur.y + sel.y) / 2})`}>
-              <rect x={-26 * u} y={-10 * u} width={52 * u} height={20 * u} rx={10 * u} fill="#fff6dc" stroke="#c0391f" strokeWidth={1.6 * u} />
-              <text className="vm-km" textAnchor="middle" y={4.2 * u} style={{ fontSize: 11.5 * u }}>{km} km</text>
-            </g>
-          </g>
-        )}
         {order.map(({ r, x, y }) => {
           const s = state(r.id), on = r.id === selectedId, big = on || s === 'home' || s === 'here';
           const rad = (big ? 8.5 : 6) * u, label = showNames || big;
@@ -113,10 +107,19 @@ export function VietnamMap({ regions, homeId, currentId, visited, owned = [], si
             </g>
           );
         })}
+        {cur && sel && cur !== sel && (
+          <g pointerEvents="none">
+            <line x1={cur.x} y1={cur.y} x2={sel.x} y2={sel.y} stroke="#c0391f" strokeWidth={2.4 * u} strokeDasharray={`${7 * u} ${5 * u}`} strokeLinecap="round" />
+            <g transform={`translate(${(cur.x + sel.x) / 2} ${(cur.y + sel.y) / 2})`}>
+              <rect x={-26 * u} y={-10 * u} width={52 * u} height={20 * u} rx={10 * u} fill="#fff6dc" stroke="#c0391f" strokeWidth={1.6 * u} />
+              <text className="vm-km" textAnchor="middle" y={4.2 * u} style={{ fontSize: 11.5 * u }}>{km} km</text>
+            </g>
+          </g>
+        )}
       </svg>
       <div className="vmap-zoom">
         <button type="button" aria-label="Phóng to" onClick={() => pz.zoomAt(1.6)}>+</button>
-        <button type="button" aria-label="Thu nhỏ" onClick={() => pz.zoomAt(1 / 1.6)} disabled={z <= 1.01}>−</button>
+        <button type="button" aria-label="Thu nhỏ" onClick={() => pz.zoomAt(1 / 1.6)} disabled={pz.atMin}>−</button>
         {cur && <button type="button" aria-label="Về chỗ tôi đang đứng" onClick={() => pz.focus(cur.x, cur.y, 3.2)}>◎</button>}
       </div>
       <ul className="vmap-legend" aria-label="Chú giải">

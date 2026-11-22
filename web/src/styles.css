@@ -401,3 +401,74 @@ button.go small { color: #eaffdf; font-size: 0.7rem; font-weight: 600; }
 @media (max-height: 430px) {
   .dock button .ico { width: 24px; height: 24px; margin: 0; }
 }
+
+/* bản đồ, tham quan, siêu thị */
+.vmap { position: relative; border: 3px solid var(--wood); border-radius: 18px; overflow: hidden; background: #9ed6ee; box-shadow: 0 4px 0 var(--wood-dark); margin: 8px 0; }
+.vmap-svg { display: block; width: 100%; max-height: min(70vh, 640px); touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none; }
+.vmap-svg:active { cursor: grabbing; }
+.vmap-svg text { font-family: 'Be Vietnam Pro', system-ui, sans-serif; }
+.vm-country { fill: #a39a78; font-weight: 700; letter-spacing: 0.12em; }
+.vm-sea { fill: #2f7fae; font-family: var(--display) !important; font-style: italic; font-weight: 700; letter-spacing: 0.08em; }
+.vm-isle { fill: #1f5f86; font-weight: 600; paint-order: stroke; stroke: #dff3fb; stroke-width: 0.25em; stroke-linejoin: round; }
+.vm-river { fill: #1f6f9f; font-style: italic; font-weight: 600; paint-order: stroke; stroke: #eef9e2; stroke-width: 0.25em; stroke-linejoin: round; }
+.vm-peak { fill: #5a4424; font-weight: 600; paint-order: stroke; stroke: #e6f3d2; stroke-width: 0.25em; stroke-linejoin: round; }
+.vm-town { fill: #3b2a17; font-weight: 600; paint-order: stroke; stroke: #f3f8e4; stroke-width: 0.28em; stroke-linejoin: round; }
+.vm-name { fill: #3b2a17; font-weight: 600; paint-order: stroke; stroke: #fff6dc; stroke-width: 0.3em; stroke-linejoin: round; }
+.vm-name.strong { font-weight: 800; }
+.vm-km { fill: #c0391f; font-weight: 800; }
+.vm-pin, .pm-pin { cursor: pointer; outline: none; }
+.vm-pin:focus-visible circle, .pm-pin:focus-visible circle { stroke: #c0391f; }
+.pm-num { fill: #fff; font-weight: 800; }
+.vmap-zoom { position: absolute; right: 8px; top: 8px; display: grid; gap: 6px; }
+.vmap-zoom button { width: 44px; min-height: 44px; padding: 0; font-size: 1.4rem; line-height: 1; background: var(--paper); }
+.vmap-legend { list-style: none; margin: 0; padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.78rem; background: var(--paper); border-top: 2px solid var(--line); color: var(--ink); }
+.vmap-legend li { display: flex; align-items: center; gap: 5px; }
+.vmap-legend i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--wood-dark); display: inline-block; }
+.vmap-legend i.home { background: #e2573c; } .vmap-legend i.here { background: #2f7d26; } .vmap-legend i.owned { background: #ffcf3a; } .vmap-legend i.seen { background: #e58a2b; } .vmap-legend i.new { background: #fffdf4; }
+.vmap-tip { margin: 0; padding: 4px 10px 8px; font-size: 0.78rem; color: var(--muted); background: var(--paper); }
+.pmap .vmap-svg { max-height: min(62vh, 560px); }
+
+.sights { display: grid; gap: 6px; }
+.sight-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sight { border: 2px solid var(--line); border-radius: 16px; background: #fffdf4; padding: 8px 10px; display: grid; gap: 6px; scroll-margin: 8px; }
+.sight.on { border-color: var(--gold-dark); box-shadow: 0 3px 0 var(--gold-dark); }
+.sight.done { background: #f3fae8; }
+.sight-head { display: flex; align-items: center; gap: 8px; text-align: left; background: none; border: 0; box-shadow: none; padding: 0; min-height: 44px; width: 100%; }
+.sight-head .grow { display: grid; gap: 1px; flex: 1; min-width: 0; }
+.sight-head strong { font-family: var(--display); font-size: 1.08rem; line-height: 1.15; }
+.sight-head small { color: var(--muted); font-family: 'Be Vietnam Pro', sans-serif; font-weight: 400; }
+.sight-num { flex: 0 0 24px; height: 24px; border-radius: 50%; background: var(--wood-dark); color: #fff; font-size: 0.8rem; font-weight: 800; display: grid; place-items: center; }
+.sight.done .sight-num { background: var(--green-dark); }
+.sight-blurb { font-size: 0.9rem; line-height: 1.4; }
+.sight-stops { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.sight-stops li { display: flex; align-items: center; gap: 5px; font-size: 0.8rem; padding: 3px 9px 3px 4px; border-radius: 999px; background: var(--paper-2); }
+.sight-stops li span { width: 18px; height: 18px; border-radius: 50%; background: #fff; display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; }
+.sight-stops li.seen { background: #d7f0c2; }
+.sight-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.sight-facts { display: grid; gap: 1px; font-size: 0.84rem; }
+.sight-foot button.go { flex-shrink: 0; }
+.sight-others h3 { margin: 8px 0 6px; }
+
+.super { display: grid; gap: 6px; }
+.super h3 { margin-top: 6px; }
+.super-earned { background: #e7f6d5; border: 2px solid var(--green); border-radius: 12px; padding: 8px 10px; font-weight: 600; }
+.shelf small .up { color: var(--danger); } .shelf small .down { color: var(--green-dark); }
+.shelf-empty { text-align: center; border: 2px dashed var(--line); border-radius: 16px; padding: 18px 12px; background: #fffdf4; display: grid; gap: 4px; justify-items: center; }
+.shelf-empty span { font-size: 2.2rem; filter: grayscale(0.6); }
+.shelf-empty p { font-family: var(--display); font-size: 1.05rem; }
+.shelf-empty small { color: var(--muted); }
+.consign { display: grid; gap: 8px; border: 2px solid var(--line); border-radius: 16px; background: #fffdf4; padding: 10px 12px; }
+.slide { display: grid; gap: 2px; font-size: 0.92rem; }
+.slide input[type='range'] { width: 100%; min-height: 40px; accent-color: var(--green-dark); }
+.slide small { color: var(--muted); }
+.slide-ends { display: flex; justify-content: space-between; }
+.consign-sum { margin: 0; display: grid; gap: 2px; font-size: 0.92rem; }
+.consign-sum div { display: flex; justify-content: space-between; gap: 8px; }
+.consign-sum dd { margin: 0; font-weight: 600; }
+.consign-sum .net { border-top: 2px dashed var(--line); padding-top: 4px; font-family: var(--display); font-size: 1.05rem; }
+.consign-sum .net dd { color: var(--green-dark); font-weight: 800; }
+button.go.wide { width: 100%; }
+@media (max-height: 430px) {
+  .vmap-svg { max-height: calc(100vh - 150px); }
+  .sights, .super { grid-template-columns: minmax(0, 1fr); }
+}
