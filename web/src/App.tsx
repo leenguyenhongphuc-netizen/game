@@ -249,6 +249,14 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [marketTab, setMarketTab] = useState<'cho' | 'gia'>('cho');
   const [xomTab, setXomTab] = useState<'ban' | 'htx' | 'qua'>('ban');
   const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua'>('kho');
+  type FactoryView = { machines: { id: number | string; kind: string; name: string; level?: number; slots?: number; jobs?: { recipeId?: string; doneAt?: number; done?: boolean }[] }[] };
+  const [factory, setFactory] = useState<FactoryView | null>(null);
+  const isWorkshop = me?.user.role === 'xuong';
+  useEffect(() => {
+    if (!isWorkshop) { setFactory(null); return; }
+    if (tab !== 'vuon') return;
+    void api('GET', '/api/workshop').then((w) => setFactory({ machines: (w.machines ?? []).map((m: { id: number; kind: string; name: string; level: number; slots: number; jobs?: { recipeId?: string; readyAt?: number }[] }) => ({ id: m.id, kind: m.kind, name: m.name, level: m.level, slots: m.slots, jobs: (m.jobs ?? []).map((j) => ({ recipeId: j.recipeId, doneAt: j.readyAt })) })) })).catch(() => undefined);
+  }, [isWorkshop, tab]);
   const [unseen, setUnseen] = useState(0);
   const [friendList, setFriendList] = useState<Friends['friends']>([]);
   const [, tick] = useState(0);
@@ -283,9 +291,9 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     regionId: tour ?? village?.center.plot.regionId ?? me.user.homeRegionId!, clockOffset: offset, weather: tour ? weatherAt(tour, Date.now()).kind : village?.weather?.kind,
     lots: Array.from({ length: SLOT_COUNT }, (_, i) => {
       const l = lots[i];
-      return l ? { plotId: l.plot.id, ownerName: l.plot.ownerName, mine: l.plot.mine, friend: l.plot.friend, kind: l.plot.kind, ownerRole: l.plot.ownerRole ?? null, style: l.plot.style, decor: l.plot.decor, avatar: l.plot.ownerAvatar, plantings: l.plantings, stall: l.stall } : null;
+      return l ? { plotId: l.plot.id, ownerName: l.plot.ownerName, mine: l.plot.mine, friend: l.plot.friend, kind: l.plot.kind, ownerRole: l.plot.ownerRole ?? null, style: l.plot.style, decor: l.plot.decor, avatar: l.plot.ownerAvatar, factory: l.plot.mine && l.plot.isHome && !tour ? factory : undefined, plantings: l.plantings, stall: l.stall } : null;
     }),
-  }), [village, lots, offset, me.user.homeRegionId, tour]);
+  }), [village, lots, offset, me.user.homeRegionId, tour, factory]);
 
   const now = Date.now() + offset;
   const center = tour ? lots[0] : village?.center;
@@ -356,6 +364,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const quest: [string, string] = tour ? (isTrader && me.user.truckRegionId === tour ? ['🚚', `Đi buôn ở ${REGIONS[tour].name}: ghé quầy trước cổng để thu mua và bán hàng`] : ['🧳', `Tham quan ${REGIONS[tour].name}: dạo vườn mẫu, ghé quầy trước cổng`])
     : !center ? ['⏳', 'Đang mở xóm…']
     : !mine ? ['👋', `Đang thăm vườn ${center.plot.ownerName}`]
+    : isWorkshop && center.plot.isHome ? ['⚙️', 'Xưởng của bạn: mua nông sản làm nguyên liệu, tới một máy để chạy mẻ chế biến rồi bán cho siêu thị hoặc xuất khẩu']
     : center.plantings.length === 0 ? ['🌱', 'Chạy vào vườn, đứng lên một ô đất và chọn giống để trồng']
     : ready.length > 0 ? ['⭐', `Chạy tới ${ready.length} ô có dấu vàng để chăm cây`]
     : (() => {
@@ -457,6 +466,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
               {ctx.kind === 'stall' && ctxLot && (
                 <button className="ctx-btn go" onClick={() => setTab(tour ? 'trungbay' : ctxLot.plot.mine ? 'kho' : 'sap')}>{tour ? '🏪 Vào quầy trưng bày' : ctxLot.plot.mine ? '🧺 Mở kho & sạp' : `🛒 Xem sạp của ${ctxLot.plot.ownerName}`}</button>
               )}
+              {ctx.kind === 'machine' && ctxLot?.plot.mine && <button className="ctx-btn go" onClick={() => { setKhoTab('xuong'); setTab('kho'); }}>{ctx.machineId === null ? '🛒 Mua thêm máy' : '⚙️ Mở xưởng'}</button>}
               {ctx.kind === 'truck' && <button className="ctx-btn go" onClick={() => { worldRef.current?.enterTruck(); setDriving(true); }}>🚚 Lên xe tải</button>}
               {ctx.kind === 'empty-lot' && <button className="ctx-btn go" onClick={() => setTab('ban')}>🧑‍🤝‍🧑 Mời bạn về làm hàng xóm</button>}
             </div>

@@ -110,7 +110,7 @@ for (const dev of DEVICES) {
     });
     await step('vong-quay', async () => { await page.getByRole('button', { name: /Xác nhận và nhận vườn/ }).click(); await page.getByRole('button', { name: 'Quay', exact: true }).waitFor(); await shot('vong-quay'); });
     await step('vong-quay-ket-qua', async () => { await page.getByRole('button', { name: 'Quay', exact: true }).click(); await page.getByRole('button', { name: 'Vào xóm' }).waitFor({ timeout: 40000 }); await shot('vong-quay-ket-qua'); });
-    await step('xom', async () => { await page.getByRole('button', { name: 'Vào xóm' }).click(); await page.waitForFunction(() => window.__vuon); await page.waitForTimeout(2500); await shot('xom'); });
+    await step('xom', async () => { execFileSync('psql', [DB, '-qc', "update users set role = 'nong_dan' where username like 'ui\\_%' and role = 'xuong'"]); await page.getByRole('button', { name: 'Vào xóm' }).click(); await page.waitForFunction(() => window.__vuon); await page.waitForTimeout(2500); await shot('xom'); });
     await step('dung-tren-o-trong', async () => { await world('w.teleportToTile(0, 8)'); await page.locator('.ctx-btn').first().waitFor(); await shot('dung-tren-o-trong'); });
     await step('chon-giong', async () => { await page.locator('.ctx-btn.go').click(); await page.locator('.seed').first().waitFor(); await shot('chon-giong'); });
     await step('cay-dang-lon', async () => { await page.locator('.seed:not([disabled])').first().click(); await page.waitForTimeout(1200); await shot('cay-dang-lon'); await page.locator('.ctx-btn').first().click(); await shot('chi-tiet-cay'); });

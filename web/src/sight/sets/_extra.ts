@@ -24,10 +24,10 @@ export function nipa(r: () => number, h = 6): THREE.Group {
   for (let i = 0; i < n; i++) {
     const a = (i / n) * 6.28 + r() * 0.5, tilt = 0.18 + r() * 0.42, hh = h * (0.7 + r() * 0.5);
     const f = grp(Math.cos(a) * 0.3, 0, Math.sin(a) * 0.3, -a); f.rotation.z = -tilt;
-    f.add(cyl(0x6f8a3a, 0, hh / 2, 0, 0.07, hh), ball([0x2f7d3a, 0x3f9548, 0x57a84a][i % 3], 0, hh * 0.62, 0, 0.16, hh * 0.44, 0.75));
+    f.add(box(0x6f8a3a, 0, hh / 2, 0, 0.1, hh, 0.1), bead([0x2f7d3a, 0x3f9548, 0x57a84a][i % 3], 0, hh * 0.62, 0, 0.16, hh * 0.44, 0.8));
     g.add(f);
   }
-  g.add(ball(0x4a3a26, 0, 0.1, 0, 0.9, 0.35, 0.9)); return g;
+  g.add(bead(0x4a3a26, 0, 0.1, 0, 0.9, 0.35, 0.9)); return g;
 }
 /** Cây phi lao: thân mảnh, tán thưa hình tháp. */
 export function casuarina(r: () => number, h = 8): THREE.Group {
