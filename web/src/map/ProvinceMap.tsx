@@ -43,7 +43,7 @@ const QUANG_NGAI_LAND: Ring = [
 
 export const PROVINCE_MAPS: Record<string, ProvinceMapData> = {
   'Quảng Ngãi': {
-    box: { lat0: 14.6, lat1: 15.55, lng0: 108.38, lng1: 109.26 },
+    box: { lat0: 14.6, lat1: 15.6, lng0: 108.4, lng1: 109.44 },
     land: QUANG_NGAI_LAND,
     rivers: [
       // Trà Khúc: Sơn Hà → Sơn Tịnh → TP Quảng Ngãi → cửa Cổ Luỹ
@@ -61,9 +61,9 @@ export const PROVINCE_MAPS: Record<string, ProvinceMapData> = {
       { name: 'TP. Quảng Ngãi', at: [108.8, 15.122], big: true }, { name: 'Cảng Sa Kỳ', at: [108.925, 15.21] },
       { name: 'Dung Quất', at: [108.79, 15.39] }, { name: 'Đức Phổ', at: [108.96, 14.81] }, { name: 'Sa Huỳnh', at: [109.065, 14.665] },
     ],
-    peaks: [{ name: 'Trường Sơn', at: [108.5, 14.78] }, { name: 'Mũi Ba Làng An', at: [108.955, 15.262], pass: true }],
+    peaks: [{ name: 'Trường Sơn', at: [108.52, 14.78] }],
     labels: [
-      { text: 'Biển Đông', at: [109.14, 14.98], kind: 'sea' }, { text: 'Vịnh Dung Quất', at: [108.86, 15.455], kind: 'bay' }, { text: 'Cửa Cổ Luỹ', at: [108.955, 15.14], kind: 'bay' },
+      { text: 'Biển Đông', at: [109.22, 14.98], kind: 'sea' }, { text: 'Vịnh Dung Quất', at: [108.88, 15.46], kind: 'bay' }, { text: 'Mũi Ba Làng An', at: [109.03, 15.25], kind: 'bay' }, { text: 'Cửa Cổ Luỹ', at: [108.97, 15.14], kind: 'bay' },
       { text: 'Đà Nẵng', at: [108.5, 15.5], kind: 'next' }, { text: 'Gia Lai', at: [108.75, 14.64], kind: 'next' },
     ],
     routes: [{ name: 'Tàu cao tốc Sa Kỳ – Lý Sơn, khoảng 30 km', pts: [[108.935, 15.215], [109.0, 15.28], [109.07, 15.345], [109.1, 15.372]] }],
@@ -170,6 +170,7 @@ export function ProvinceMap({ province, sights, regions, currentRegionId, select
   const labels = useMemo(() => {
     const fixed: [number, number, number, number][] = [];
     for (const t of data?.towns ?? []) { const x = P.x(t.at[0]), y = P.y(t.at[1]), w = t.name.length * (t.big ? 7 : 6) * u; fixed.push([x - 8 * u - w, y - 7 * u, x + 5 * u, y + 7 * u]); }
+    for (const m of data?.peaks ?? []) { const x = P.x(m.at[0]), y = P.y(m.at[1]), w = m.name.length * 2.8 * u; fixed.push([x - w, y - 8 * u, x + w, y + 17 * u]); }
     for (const { r, x, y } of farms) { const w = Math.max(r.name.length, 14) * 3.2 * u; fixed.push([x - w, y - 20 * u, x + w, y + 24 * u]); }
     return placeLabels(pins.map((p) => ({ id: p.s.id, x: p.x, y: p.y, w: p.s.name.length * 6.3 * u })), u, P.w, fixed, selectedId);
   }, [pins, u, P, data, farms, selectedId]);
@@ -212,8 +213,8 @@ export function ProvinceMap({ province, sights, regions, currentRegionId, select
         </g>
         {data.routes?.map((r) => <path key={r.name} d={ringPath(P, r.pts, false)} fill="none" stroke="#fff" strokeWidth={2 * u} strokeDasharray={`${5 * u} ${5 * u}`} strokeLinecap="round" pointerEvents="none"><title>{r.name}</title></path>)}
         <g className="vm-text" pointerEvents="none">
-          {data.islets?.filter((it) => it.name && !sights.some((x) => Math.abs(x.lng - it.at[0]) < 0.06 && Math.abs(x.lat - it.at[1]) < 0.04)).map((it) => <text key={it.name} x={P.x(it.at[0])} y={P.y(it.at[1] - it.ry) + 11 * u} textAnchor="middle" className="vm-peak" style={{ fontSize: 9.5 * u }}>{it.name}</text>)}
-          {data.peaks?.map((m) => {
+          {data.islets?.filter((it) => it.name && !sights.some((x) => Math.abs(x.lng - it.at[0]) < 0.07 && Math.abs(x.lat - it.at[1]) < 0.07)).map((it) => <text key={it.name} x={P.x(it.at[0])} y={P.y(it.at[1] - it.ry) + 11 * u} textAnchor="middle" className="vm-peak" style={{ fontSize: 9.5 * u }}>{it.name}</text>)}
+          {data.peaks?.filter((m) => !sights.some((x) => Math.abs(x.lng - m.at[0]) < 0.07 && Math.abs(x.lat - m.at[1]) < 0.05)).map((m) => {
             const x = P.x(m.at[0]), y = P.y(m.at[1]);
             return (
               <g key={m.name}>
@@ -240,7 +241,8 @@ export function ProvinceMap({ province, sights, regions, currentRegionId, select
           <g key={r.id} pointerEvents="none">
             <circle cx={x} cy={y} r={7 * u} fill={r.id === currentRegionId ? '#2f7d26' : '#ffcf3a'} stroke="#56310f" strokeWidth={1.6 * u} />
             <text x={x} y={y + 3.6 * u} textAnchor="middle" style={{ fontSize: 9 * u }}>🌱</text>
-            <text x={x} y={y - 11 * u} textAnchor="middle" className="vm-name strong" style={{ fontSize: 10 * u }}>{r.name}</text>
+            {/* vùng trồng trùng chỗ với một địa danh (đảo Lý Sơn) thì nhường nhãn cho địa danh */}
+            {!pins.some((p) => Math.hypot(p.ax - x, p.ay - y) < 26 * u) && <text x={x} y={y - 11 * u} textAnchor="middle" className="vm-name strong" style={{ fontSize: 10 * u }}>{r.name}</text>}
             {r.id === currentRegionId && <text x={x} y={y + 19 * u} textAnchor="middle" className="vm-name" style={{ fontSize: 9.5 * u }}>Bạn đang ở đây</text>}
           </g>
         ))}

@@ -257,7 +257,7 @@ export function WorkshopPanel({ me, priceOf, onChanged, onOpen }: { me: Me; pric
                   <div className="grow">
                     <strong>{c.name}</strong>
                     <small>{c.note}</small>
-                    <small className="muted">{c.slots ? `${c.slots} mẻ cùng lúc · làm ${c.recipes.map((id) => recipeOfId(id)?.name ?? id).join(', ')}` : `Phụ trợ: ${bonusText(c.bonus)}`}{c.owned > 0 ? ` · đang có ${c.owned}` : ''}</small>
+                    <small className="muted">{c.slots ? `${c.slots} mẻ cùng lúc · ` : ''}{c.owned > 0 ? `đang có ${c.owned}` : 'chưa có'}</small>
                   </div>
                   <button type="button" className="go" disabled={act.busy || !c.canBuy} onClick={() => act.run(() => api('POST', '/api/workshop/machines/buy', { kind: c.kind }))}>{fmtMoney(c.price)}<small>{c.canBuy ? 'mua máy' : why || 'chưa mua được'}</small></button>
                 </div>

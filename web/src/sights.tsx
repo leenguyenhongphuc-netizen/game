@@ -93,7 +93,7 @@ export function SightsPanel({ me, refresh, onGo }: { me: Me; refresh: () => void
               <div className="sight-foot">
                 <span className="sight-facts"><span>🚕 {s.km} km · {fmtMoney(s.taxiFare)}</span><span>🎟️ {s.entryFee > 0 ? fmtMoney(s.entryFee) : 'vào cửa tự do'}</span></span>
                 {here
-                  ? <button type="button" className="go" disabled={act.busy || me.user.cash < total} onClick={() => go(s)}>🚕 Bắt taxi tới đây<small>{me.user.cash < total ? 'không đủ tiền' : `hết ${fmtMoney(total)}`}</small></button>
+                  ? <button type="button" className="go" disabled={act.busy || me.user.cash < total} onClick={() => go(s)}>{s.kind === 'dao' ? '⛴️ Đi tàu ra đảo' : '🚕 Bắt taxi tới đây'}<small>{me.user.cash < total ? 'không đủ tiền' : `hết ${fmtMoney(total)}`}</small></button>
                   : <small className="muted">Tới {data.province} mới đi được</small>}
               </div>
             </li>

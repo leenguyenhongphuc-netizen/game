@@ -189,7 +189,7 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
                 <button key={m} className={b ? 'pick' : 'pick off'} aria-pressed={market === m} onClick={() => setMarket(m)}>
                   <span className="emoji" aria-hidden="true">{mk.icon}</span><strong>{mk.name}</strong>
                   <small>giá ×{mk.priceMult}{mk.processedOnly ? ' · chỉ hàng chế biến, hàng khô' : mk.gradeA ? ' · tươi: chỉ Loại 1' : ''}</small>
-                  <small className={b ? 'up' : 'down'}>{b ? `lãi tới ${fmtMoney(b.net)}` : 'lô này chưa đi được'}</small>
+                  <small className={b ? 'up' : 'down'}>{b ? `lãi tới ${fmtMoney(b.net)}` : mk.processedOnly && !item.processed ? 'không nhận hàng tươi' : mk.gradeA && !item.processed && item.quality !== 'A' ? 'không nhận loại này' : 'lô chưa đủ kg'}</small>
                 </button>
               );
             })}

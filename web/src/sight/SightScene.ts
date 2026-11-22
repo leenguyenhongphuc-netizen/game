@@ -164,6 +164,7 @@ export class SightScene {
     for (let i = spots.length; i < list.length; i++) {
       // tự rải: tránh sát điểm dừng, đặt ở mép lối đi, quay mặt vào lối
       let sAt = this.total * ((i + 0.5) / list.length) * 0.86 + 6; for (let k = 0; k < 8 && this.markers.some((m) => Math.abs(m.s - sAt) < 7); k++) sAt += 5;
+      for (let k = 0; k < 12 && Math.abs(this.at(sAt).dir.y) > 0.12; k++) sAt = Math.min(this.total - 4, sAt + 4); // không đặt quầy trên bậc thang, dốc
       const a = this.at(sAt), side = i % 2 ? 1 : -1, nx = -a.dir.z, nz = a.dir.x, off = s.half + 0.9;
       spots.push({ at: new THREE.Vector3(a.p.x + nx * off * side, a.p.y, a.p.z + nz * off * side), ry: Math.atan2(-nx * side, -nz * side) });
     }
@@ -308,7 +309,7 @@ export class SightScene {
     for (const f of this.skyTicks) f(this.time, dt);
     // quầy hàng gần nhất
     if (this.shopAt.length) { let near: number | null = null; this.shopAt.forEach((q, i) => { if (Math.hypot(q.x - st.pos.x, q.z - st.pos.z) < 4.2 && Math.abs(q.y - st.pos.y) < 3) near = i; }); if (near !== this.shopIdx) { this.shopIdx = near; this.cb.onShop?.(near); } }
-    this.markers.forEach((m, i) => { m.beam.visible = m.num.visible = this.nearIdx !== i; const k = 1 + Math.sin(this.time * 3 + i) * 0.08; m.ring.scale.set(k, 1, k); m.beam.rotation.y = this.time * 0.6; });
+    this.markers.forEach((m, i) => { m.beam.visible = m.num.visible = this.nearIdx !== i && !this.seen.has(this.set.stops[i].id) && this.camera.position.distanceToSquared(m.num.position) > 30; const k = 1 + Math.sin(this.time * 3 + i) * 0.08; m.ring.scale.set(k, 1, k); m.beam.rotation.y = this.time * 0.6; });
     for (const t of this.kit.ticks) t(this.time, dt, st);
     this.placeCamera();
     this.renderer.render(this.scene, this.camera);

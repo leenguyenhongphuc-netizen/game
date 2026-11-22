@@ -498,7 +498,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       )}
       {respin && <div className="overlay"><RoleWheel regionName={REGIONS[me.user.homeRegionId!].name} onDone={() => { setRespin(false); reload(); }} /></div>}
       {exportRide && <ExportRide mode={exportRide.mode} fromName={REGIONS[me.user.homeRegionId!].name} marketName={EXPORT_MARKETS[exportRide.market].name} specialtyName={SPECIALTIES[exportRide.specialtyId].name} emoji={CROPS[SPECIALTIES[exportRide.specialtyId].crop].emoji} kg={exportRide.kg} onDone={() => { setExportRide(null); setKhoTab('xuat'); setTab('kho'); }} />}
-      {sightTrip && <TravelRide mode="taxi" fromRegionId={tour ?? me.user.homeRegionId!} toRegionId={tour ?? me.user.homeRegionId!} toName={sightTrip.sight.name} fare={sightTrip.taxiFare} km={sightTrip.km} seconds={Math.max(14, sightTrip.seconds)}
+      {sightTrip && <TravelRide mode={sightTrip.sight.kind === 'dao' ? 'tau_thuy' : 'taxi'} fromRegionId={tour ?? me.user.homeRegionId!} toRegionId={tour ?? me.user.homeRegionId!} toName={sightTrip.sight.name} fare={sightTrip.taxiFare} km={sightTrip.km} seconds={Math.max(14, sightTrip.seconds)}
         sideHint={sightTrip.sight.kind === 'dao' || sightTrip.sight.kind === 'chua' ? 'bien' : sightTrip.sight.kind === 'cau' ? 'song' : sightTrip.sight.kind === 'pho_co' ? 'pho' : 'nui'}
         onFinish={() => { const t = sightTrip; setSightShops([]); void api('GET', `/api/sights/${t.sight.id}/shops`).then((d) => setSightShops(d.shops ?? [])).catch(() => undefined); setSightWalk(t); setSightTrip(null); }} />}
       {sightWalk && <SightWalk sightId={sightWalk.sight.id} seen={sightWalk.sight.stopsSeen} shops={sightShops} onShop={(id) => setShopOpen(id)} energy={me.user.energy !== undefined ? { value: me.user.energy, max: me.user.energyMax ?? 100 } : undefined} onExit={(r) => {
@@ -535,7 +535,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                 {khoTab === 'don' && <OrdersPanel me={me} onChanged={reload} />}
                 {khoTab === 'xuat' && <ExportPanel me={me} refresh={reload} onSent={(x) => { setTab('vuon'); setExportRide(x); }} />}
                 {khoTab === 'mua' && <TradePanel me={me} regionId={me.user.homeRegionId!} refresh={reload} openStock={() => setKhoTab('kho')} />}
-                {khoTab === 'xuong' && (me.user.role === 'xuong' ? <WorkshopPanel me={me} priceOf={priceOf} onChanged={reload} /> : <p className="hint">Chỉ Chủ xưởng mới chế biến được. Bạn là {ROLE_INFO[me.user.role!].name}: hãy bán nông sản tươi cho chủ xưởng qua sạp, hoặc chờ mùa sau quay lại vai trò.</p>)}
+                {khoTab === 'xuong' && (me.user.role === 'xuong' ? <WorkshopPanel me={me} priceOf={priceOf} onChanged={reload} onOpen={(w) => { if (w === 'cho') setTab('cho'); else if (w === 'xuatkhau') setKhoTab('xuat'); else { setTravelTab('sieuthi'); setTab('bando'); } }} /> : <p className="hint">Chỉ Chủ xưởng mới chế biến được. Bạn là {ROLE_INFO[me.user.role!].name}: hãy bán nông sản tươi cho chủ xưởng qua sạp, hoặc chờ mùa sau quay lại vai trò.</p>)}
               </>
             )}
             {tab === 'toi' && <div className="cert-list"><h3>Giấy chứng nhận quyền sử dụng đất</h3>{me.plots.map((p) => <button key={p.id} onClick={() => setCert(p.id)}>📜 {p.isHome ? 'Thửa nhà' : 'Thửa'} ở {REGIONS[p.regionId].name}{p.wardName ? ` · ${p.wardName}` : ''}</button>)}</div>}
