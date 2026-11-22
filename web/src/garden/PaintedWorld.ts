@@ -138,9 +138,9 @@ export class PaintedWorld {
   }
 
   // ------------------------------------------------------------ khung nhìn
-  private scale() { return (this.focus ? Math.min(this.zoomBase, Math.min(this.w / 44, this.h / 30) / S) : this.zoomBase * this.zoom); }
+  private scale() { return (this.focus ? Math.min(this.zoomBase, Math.min(this.w / 37, this.h / 27) / S) : this.zoomBase * this.zoom); }
   private origin() {
-    const k = S * this.scale(), c = this.focus ? { x: 0, z: -1.5 } : this.cam;
+    const k = S * this.scale(), c = this.focus ? { x: 0, z: -2.5 } : this.cam;
     return { x: this.w / 2 - (c.x - c.z) * k + this.pan.x, y: this.h * 0.56 - (c.x + c.z) * k / 2 + this.pan.y };
   }
   private resize() {
@@ -385,7 +385,7 @@ export class PaintedWorld {
     g.globalAlpha = 1;
     if (s.label) {
       if (s.img === 'cong') { // viết tên vườn lên tấm bảng trống của cổng
-        const size = Math.max(8, Math.min(w * 0.085, w * 0.62 / Math.max(4, s.label.length) * 1.7)); g.font = `700 ${size}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#5a3412'; g.fillText(s.label, x + w * 0.5, y + h * 0.335, w * 0.4);
+        const size = Math.max(7, Math.min(w * 0.075, w * 0.34 / Math.max(4, s.label.length) * 1.75)); g.save(); g.translate(x + w * 0.475, y + h * 0.505); g.rotate(0.13); g.font = `700 ${size}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#5a3412'; g.fillText(s.label, 0, 0, w * 0.33); g.restore();
       } else this.pill(s.label, p.x, y - 4, s.labelBg ?? '#f6e3b4', Math.max(10, Math.round(0.6 * k)));
     }
   }
