@@ -608,7 +608,15 @@ export class DriveScene {
     let warn: string | null = null;
     if (boat) warn = this.offChan ? 'Lệch luồng' : null;
     else if (this.fuel <= 0) warn = 'Hết xăng! Sẽ tốn phí cứu hộ';
-    else { const roadLeft = this.kmBetween(this.s, this.endS); if (range < roadLeft) { const st = this.stations.find((e) => !e.done && e.s > this.s); warn = st ? `Xăng không đủ tới nơi · ghé trạm ⛽ bên phải sau ${Math.max(1, Math.round(this.kmBetween(this.s, st.s)))} km` : 'Xăng không đủ tới nơi'; } }
+    else {
+      // Chỉ nhắc khi buộc phải ghé trạm kế tiếp, và khi trạm đã gần — không treo cảnh báo suốt chuyến.
+      const ahead = this.stations.filter((e) => !e.done && e.s > this.s), st = ahead[0];
+      const toNext = st ? this.kmBetween(this.s, st.s) : Infinity;
+      const toAfter = ahead[1] ? this.kmBetween(this.s, ahead[1].s) : this.kmBetween(this.s, this.endS);
+      if (st && range < toNext) warn = `Xăng chỉ còn ~${Math.round(range)} km · trạm ⛽ còn ${Math.max(1, Math.round(toNext))} km`;
+      else if (st && range < toAfter && toNext <= 25) warn = `Sắp cạn xăng · ghé trạm ⛽ bên phải sau ${Math.max(1, Math.round(toNext))} km`;
+      else if (!st && range < this.kmBetween(this.s, this.endS)) warn = 'Xăng không đủ tới nơi';
+    }
     return { progress: clamp(1 - left / Math.max(1, this.opts.plan.km), 0, 1), kmh: Math.round(boat ? this.speed / SEA_V * 28 : this.speed / BASE * 80), mode: this.mode, phase: this.phase(), kmLeft: Math.max(0, left), fuel: this.fuel, range, etcLeft: this.etcLeft, spent: Math.round(Math.round(this.refuelL * 10) / 10 * tk.fuelPrice) + this.tollCash, detourKm: this.detourKm, refuelL: Math.round(this.refuelL * 10) / 10, nav: this.nav(), warn };
   }
   /** Dùng cho kiểm thử. */

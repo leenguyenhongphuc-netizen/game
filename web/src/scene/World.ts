@@ -136,8 +136,8 @@ type Sky = { top: number; sky: number; sun: number; sunI: number; dir: [number, 
 function skyFor(hour: number): Sky {
   if (hour >= 7 && hour < 16.5) return { top: 0x8fd0f5, sky: 0xdff3fb, sun: 0xfff2d8, sunI: 2.1, dir: [12, 24, 10], hemiSky: 0xfafcff, hemiGround: 0xd6e6b0, hemiI: 1.35, night: false };
   if ((hour >= 5.3 && hour < 7) || (hour >= 16.5 && hour < 18.6)) return { top: 0xf7a98a, sky: 0xffe2bd, sun: 0xffbd7a, sunI: 2.0, dir: [22, 11, 9], hemiSky: 0xffe6cf, hemiGround: 0xc9b98a, hemiI: 1.2, night: false };
-  // Đêm trăng sáng: vẫn đủ rõ và tươi, chỉ ngả xanh nhẹ.
-  return { top: 0x1f2f66, sky: 0x5a78c4, sun: 0xdfe6ff, sunI: 1.7, dir: [-10, 22, 10], hemiSky: 0xcfd9ff, hemiGround: 0x7f93b0, hemiI: 1.55, night: true };
+  // Đêm trăng: ngả xanh rõ để thấy là đêm, nhưng vẫn đủ sáng để chơi.
+  return { top: 0x1f2f66, sky: 0x5a78c4, sun: 0xb9c8ff, sunI: 1.05, dir: [-10, 22, 10], hemiSky: 0xa9b8f0, hemiGround: 0x5c7096, hemiI: 1.2, night: true };
 }
 function gradient(top: number, bottom: number): THREE.CanvasTexture {
   const c = document.createElement('canvas'); c.width = 4; c.height = 256;

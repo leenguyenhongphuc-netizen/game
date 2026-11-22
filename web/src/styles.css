@@ -295,7 +295,7 @@ button.primary.spin-btn { width: min(240px, 70vw); font-size: 1.3rem; }
   .guide .facts { grid-column: 1; grid-template-columns: 1fr 1fr; }
   .guide .facts > div { padding: 3px 4px; }
   .guide .track { grid-column: 1; flex-wrap: wrap; overflow: visible; padding-bottom: 4px; }
-  .guide .track button { flex: 1 0 40px; min-height: 40px; }
+  .guide .track button { flex: 0 0 40px; min-height: 40px; }
   .guide .step-card { grid-column: 2; grid-row: 2 / span 2; grid-template-columns: 104px 1fr; }
   .guide .step-nav { display: none; }
   .truck-actions { grid-template-columns: repeat(4, 1fr); }
