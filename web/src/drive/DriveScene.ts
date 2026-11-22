@@ -303,6 +303,10 @@ export class DriveScene {
   private birds: { b: ReturnType<typeof bird>; a: number; r: number; h: number; w: number }[] = []; private decor!: THREE.Group; private m4 = new THREE.Matrix4(); private camV = new THREE.Vector3(); private fovNow = 50;
 
   constructor(container: HTMLElement, opts: DriveOptions) {
+    // Chuyến dài có nhiều trạm thu phí hơn số trạm dựng được trên đường (tối đa 6): gộp phí theo chặng
+    // để tổng tiền trên màn lái khớp với tổng máy chủ tính theo kế hoạch.
+    const pt = opts.plan.tolls | 0;
+    if (pt > 6) opts = { ...opts, plan: { ...opts.plan, tolls: 6, tollFee: Math.round((pt * opts.plan.tollFee) / 6 / 1000) * 1000 } };
     this.container = container; this.opts = opts;
     const plan = opts.plan, T = clamp(plan.seconds || 30, 20, 90);
     const from = REGIONS[opts.fromRegionId], to = REGIONS[opts.toRegionId];
@@ -439,7 +443,7 @@ export class DriveScene {
       add(limitPost(e.v), 4, HW + 1.7); add(limitPost(e.v), 4, -HW - 1.5); add(limitPost(e.v, ROAD_LIMITS.highwayMin), 170, HW + 1.7);
     } else if (e.type === 'toll') {
       add(limitPost(ROAD_LIMITS.toll), -70, HW + 1.7);
-      add(gantry(HW, [{ text: `Trạm thu phí · ${vnd(this.opts.plan.tollFee)}`, x: 0, w: 9, bg: BLUE }]), -96, 0);
+      add(gantry(HW, [{ text: `Thu phí chặng · ${vnd(this.opts.plan.tollFee)}`, x: 0, w: 9, bg: BLUE }]), -96, 0);
       const t = tollPlaza(); e.arms = t.arms; add(t.root, 0, 0);
     } else if (e.kind === 'tunnel') { add(tunnel(), 0, 0); add(roadside('Hầm đường bộ', BLUE, 5), -70, HW + 2.2); }
     else { const river = box(0x6cc5e0, 0, 0, 0, 700, 0.06, 64, { rough: 0.25 }); river.castShadow = false; river.position.y = -0.02; add(river, 0, 0); add(pylon(), -15, 0); add(pylon(), 15, 0); add(roadside('Cầu vượt sông', BLUE, 5), -70, HW + 2.2); }
