@@ -1,6 +1,7 @@
 // Bộ đồ nghề dùng chung của hoạt cảnh du lịch và xuất khẩu: bảng màu từng miền, gộp lưới, nền trời, biển chữ, cây cối nhà cửa.
 // Tách riêng khỏi màn lái xe để hai phần thay đổi độc lập.
 import * as THREE from 'three';
+import { bakeColored } from '../scene/batch.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Zone } from '../../../shared/catalog.ts';
 import { GEO, mat, mesh } from '../scene/plants.ts';
@@ -15,20 +16,7 @@ export const THEMES: Record<Zone, Theme> = {
 };
 
 /** Gộp các khối cùng chất liệu thành một lưới (bản rút gọn, đủ dùng cho vật trang trí). */
-export function bake(root: THREE.Group, shadow = false): THREE.Group {
-  root.updateMatrixWorld(true);
-  const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
-  root.traverse((o) => {
-    const m = o as THREE.Mesh; if (!m.isMesh) return;
-    const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
-    g.applyMatrix4(m.matrixWorld);
-    for (const n of Object.keys(g.attributes)) if (n !== 'position' && n !== 'normal') g.deleteAttribute(n);
-    const k = m.material as THREE.Material; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k)!.push(g);
-  });
-  const out = new THREE.Group();
-  for (const [material, geos] of buckets) { const m = new THREE.Mesh(mergeGeometries(geos, false), material); m.castShadow = shadow; m.receiveShadow = false; out.add(m); }
-  return out;
-}
+export function bake(root: THREE.Group, shadow = false): THREE.Group { return bakeColored(root, shadow); }
 export function gradient(top: number, bottom: number): THREE.CanvasTexture {
   const c = document.createElement('canvas'); c.width = 4; c.height = 256;
   const g = c.getContext('2d')!, grad = g.createLinearGradient(0, 0, 0, 256);

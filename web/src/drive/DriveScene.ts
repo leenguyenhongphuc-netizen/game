@@ -1,6 +1,7 @@
 // Màn lái xe tải của Thương lái: rời làng, lên cao tốc ba làn, theo biển rẽ ở nút giao, ghé trạm xăng,
 // qua trạm thu phí ETC, ra đường tỉnh tới cổng chào. Chặng biển đi theo luồng có phao số.
 import * as THREE from 'three';
+import { bakeColored } from '../scene/batch.ts';
 import { IS_MOBILE, Quality, debugScene, rendererParams } from '../perf.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { REGIONS } from '../../../shared/catalog.ts';
@@ -77,20 +78,7 @@ export const THEMES: Record<Zone, Theme> = {
 const SEA_KINDS = ['islet', 'ghe', 'islet', 'seastone'];
 
 /** Gộp các khối cùng chất liệu thành một lưới (bản rút gọn, đủ dùng cho vật trang trí). */
-export function bake(root: THREE.Group, shadow = false): THREE.Group {
-  root.updateMatrixWorld(true);
-  const buckets = new Map<THREE.Material, THREE.BufferGeometry[]>();
-  root.traverse((o) => {
-    const m = o as THREE.Mesh; if (!m.isMesh) return;
-    const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
-    g.applyMatrix4(m.matrixWorld);
-    for (const n of Object.keys(g.attributes)) if (n !== 'position' && n !== 'normal') g.deleteAttribute(n);
-    const k = m.material as THREE.Material; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k)!.push(g);
-  });
-  const out = new THREE.Group();
-  for (const [material, geos] of buckets) { const m = new THREE.Mesh(mergeGeometries(geos, false), material); m.castShadow = shadow; m.receiveShadow = false; out.add(m); }
-  return out;
-}
+export function bake(root: THREE.Group, shadow = false): THREE.Group { return bakeColored(root, shadow); }
 export function gradient(top: number, bottom: number): THREE.CanvasTexture {
   const c = document.createElement('canvas'); c.width = 4; c.height = 256;
   const g = c.getContext('2d')!, grad = g.createLinearGradient(0, 0, 0, 256);
@@ -286,7 +274,7 @@ export class DriveScene {
   private ground: THREE.Mesh; private sea: THREE.Mesh; private mountains = new THREE.Group();
   private roadA: THREE.Mesh; private roadB: THREE.Mesh; private lineL: THREE.Mesh; private lineR: THREE.Mesh;
   private median: THREE.Mesh; private barrier: THREE.Mesh; private opp: THREE.Mesh; private guard: THREE.Mesh;
-  private dashes: THREE.Mesh[] = []; private buoys: THREE.Group[] = [];
+  private dashes!: THREE.InstancedMesh; private dashO = new THREE.Object3D(); private buoys: THREE.Group[] = [];
   private scen: Scen[] = []; private cars: Car[] = []; private oncoming: { obj: THREE.Group; s: number; lane: number }[] = [];
   private props: { o: THREE.Object3D; s: number; x: number; mode: Mode }[] = [];
   private sparks: { m: THREE.Mesh; v: THREE.Vector3; life: number }[] = [];
@@ -361,7 +349,7 @@ export class DriveScene {
     this.opp = strip(0x7f8690); this.median = strip(0x6fb56a); this.roadB = strip(0x7f8690); this.roadA = strip(THEMES[this.zf].road);
     this.lineL = strip(0xfbf3df, false); this.lineR = strip(0xfbf3df, false); this.barrier = strip(0xd9dde2, false); this.guard = strip(0xc5cbd3, false);
     this.scene.add(this.ground, this.sea, this.mountains);
-    for (let i = 0; i < 46; i++) { const d = mesh(GEO.box, mat(0xffffff), 0, 0.03, 0, 0.2, 0.02, 3.0); d.castShadow = false; d.receiveShadow = false; this.dashes.push(d); this.world.add(d); }
+    this.dashes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.02, 3.0), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), 46); this.dashes.frustumCulled = false; this.dashes.castShadow = false; this.dashes.receiveShadow = false; this.dashes.count = 0; this.world.add(this.dashes);
     for (let i = 0; i < 26; i++) { const b = bake(buoy(i % 2 ? 0x2faa5a : 0xe0342b)); b.scale.setScalar(0.75); this.buoys.push(b); this.world.add(b); }
     for (let i = 0; i < 9; i++) { const a = -0.9 + i * 0.225, h = 26 + this.r() * 26; const m = mesh(new THREE.ConeGeometry(22 + this.r() * 16, h, 7), mat(0xa9cbbd, { rough: 1 }), Math.sin(a) * 230, h / 2 - 3, -170 - Math.cos(a) * 60); m.castShadow = false; this.mountains.add(m); }
 
@@ -375,6 +363,15 @@ export class DriveScene {
     this.cab = cabin(color); this.cab.root.visible = false; this.camera.add(this.cab.root);
     this.posts = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.95, 0.14), new THREE.MeshStandardMaterial({ color: 0xeef0f3, roughness: 0.6 }), 96); this.posts.frustumCulled = false; this.posts.castShadow = false; this.world.add(this.posts);
     this.truck.traverse((o) => { if ((o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry === GEO.cyl && Math.abs(o.rotation.z - Math.PI / 2) < 0.01) this.wheels.push(o); });
+    { // gộp phần thân xe đứng yên (thùng, ca-bin, hàng trên xe) thành một lưới; bánh xe và đèn phanh giữ riêng vì có chuyển động/bật tắt
+      this.truck.updateMatrixWorld(true);
+      const inv = new THREE.Matrix4().copy(this.truck.matrixWorld).invert(), keep = new Set<THREE.Object3D>([...this.wheels, ...this.brakeL]), stat = new THREE.Group(), gone: THREE.Mesh[] = [];
+      this.truck.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && !keep.has(o) && o.visible && !Array.isArray(m.material)) gone.push(m); });
+      if (gone.length > 4) {
+        for (const m of gone) { const c = new THREE.Mesh(m.geometry, m.material); c.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld)); stat.add(c); m.removeFromParent(); }
+        for (const m of [...bakeColored(stat, true).children]) this.truck.add(m);
+      }
+    }
     this.world.add(this.truck, this.boat);
     // Bể cảnh vật, xe cộ, hạt bụi
     const all: Record<string, Prefab> = { ...SCENERY, ...EXTRA, ...MORE };
@@ -640,7 +637,7 @@ export class DriveScene {
     this.truck.visible = !boat; this.boat.visible = boat; this.ground.visible = !boat; this.sea.visible = boat; this.mountains.visible = !boat && THEMES[this.zf].mountains !== null;
     for (const m of [this.roadA, this.roadB, this.lineL, this.lineR, this.median, this.barrier, this.opp, this.guard, this.posts]) m.visible = !boat;
     for (const b of this.birds) b.b.root.visible = boat;
-    for (const d of this.dashes) d.visible = false; for (const b of this.buoys) b.visible = boat;
+    this.dashes.count = 0; for (const b of this.buoys) b.visible = boat;
     for (const it of this.scen) { it.active = false; it.obj.visible = false; }
     for (const c of this.cars) { c.active = false; c.obj.visible = false; }
     for (const o of this.oncoming) o.obj.visible = false;
@@ -1033,13 +1030,15 @@ export class DriveScene {
     });
     // Vạch kẻ làn
     const first = Math.floor((s - 12) / 8) * 8;
-    for (let i = 0; i < this.dashes.length; i += 2) {
-      const q = first + (i / 2) * 8, a = this.dashes[i], b = this.dashes[i + 1];
-      let zone = q < -6 || q > this.endS + 12; for (const j of this.juncs) { const u = q - j.s; if (u > -2 && u < 74) zone = true; } for (const e of this.tolls) if (Math.abs(q - e.s) < 10) zone = true;
-      const wide = this.halfAt(q) > HW - 0.2; a.visible = !zone; b.visible = !zone && wide;
-      if (zone) continue; const c = this.center(q), rot = -Math.atan(this.slope(q));
-      this.put(a, q, c + (wide ? -LW / 2 : 0), 0.03); a.rotation.y = rot; if (wide) { this.put(b, q, c + LW / 2, 0.03); b.rotation.y = rot; }
-    }
+    { let nd = 0; const d = this.dashO;
+      for (let i = 0; i < 46; i += 2) {
+        const q = first + (i / 2) * 8;
+        let zone = q < -6 || q > this.endS + 12; for (const j of this.juncs) { const u = q - j.s; if (u > -2 && u < 74) zone = true; } for (const e of this.tolls) if (Math.abs(q - e.s) < 10) zone = true;
+        if (zone) continue; const wide = this.halfAt(q) > HW - 0.2, c = this.center(q), rot = -Math.atan(this.slope(q));
+        this.put(d, q, c + (wide ? -LW / 2 : 0), 0.03); d.rotation.y = rot; d.updateMatrix(); this.dashes.setMatrixAt(nd++, d.matrix);
+        if (wide) { this.put(d, q, c + LW / 2, 0.03); d.rotation.y = rot; d.updateMatrix(); this.dashes.setMatrixAt(nd++, d.matrix); }
+      }
+      this.dashes.count = nd; this.dashes.instanceMatrix.needsUpdate = true; }
     // Cọc tôn lượn sóng dọc dải phân cách và lan can phải
     { let n = 0; const f0 = Math.floor((s - 12) / 6) * 6, m4 = this.m4;
       for (let i = 0; i < 34 && n < 94; i++) { const q = f0 + i * 6, c = this.center(q), e = this.edges(q), z = -(q - s);

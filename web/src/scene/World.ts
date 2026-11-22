@@ -220,6 +220,7 @@ class Lot {
   }
 
   private rebuild(kind: 'empty' | 'farm' | 'roof') {
+    this.merged = null; this.mergedKey = '';
     freeBaked(this.group); this.group.clear(); this.plants.clear(); this.markers.clear(); this.fx = []; this.belt = null; this.smoke = []; this.label = null; this.labelText = ''; this.npc = null; this.signs = [];
     const data = this.data, style = data?.style ?? null, tiles = data ? lotTiles(data) : [];
     const roofColor = hex(style?.roof, ROOFS[this.slot % 5]), wallColor = hex(style?.wall, [0xfff6e2, 0xffeceb, 0xeef6ff, 0xf1f9e4, 0xfff8d6][this.slot % 5]), awning = hex(style?.awning, ROOFS[this.slot % 5]);
@@ -320,6 +321,7 @@ class Lot {
     this.built = kind;
   }
 
+  private merged: THREE.Group | null = null; private mergedKey = '';
   setData(data: LotData | null, time: number) {
     this.data = data;
     const want = data ? (data.kind === 'rooftop' ? 'roof' : 'farm') : this.slot === 0 ? 'none' : 'empty';
@@ -347,6 +349,19 @@ class Lot {
       this.plantLayer.add(group); this.plants.set(p.tile, { key, group, born: time });
     }
     for (const [tile, cur] of this.plants) if (!seen.has(tile)) { this.plantLayer.remove(cur.group); freeBaked(cur.group); this.plants.delete(tile); }
+    if (this.slot !== 0) { // vườn hàng xóm: gộp mọi cây thành một lưới (một lần vẽ thay vì mỗi ô một lần), không đổ bóng
+      const sig = [...this.plants].map(([t, c]) => `${t}:${c.key}`).join(',');
+      if (sig !== this.mergedKey) {
+        if (this.merged) { this.group.remove(this.merged); freeBaked(this.merged); this.merged = null; }
+        this.mergedKey = sig;
+        if (this.plants.size) {
+          const tmp = new THREE.Group();
+          for (const c of this.plants.values()) { const k = c.group.clone(); k.scale.setScalar(1); k.rotation.set(0, 0, 0); tmp.add(k); }
+          this.merged = bake(tmp); this.merged.position.copy(this.plantLayer.position); this.group.add(this.merged);
+        }
+      }
+      this.plantLayer.visible = false;
+    }
     const kinds = [...new Set(data.stall.map((l) => SPECIALTIES[l.specialtyId].crop))].slice(0, 4);
     // hàng trên sạp chỉ dựng lại khi món bày đổi (trước đây dựng lại mỗi lần tải dữ liệu, 15 giây một lần, và không nhả lưới cũ)
     if (kinds.join(',') === this.goodsKey && this.goods.children.length === (kinds.length ? 1 : 0)) return;
@@ -562,12 +577,15 @@ export class World {
     for (let i = 0; i < 8; i++) {
       const c = new THREE.Group(), r = rng(100 + i);
       for (let k = 0; k < 4; k++) { const b = mesh(GEO.ball, mat(this.sky.night ? 0x5a6a99 : 0xffffff, { rough: 1 }), k * 2.2 - 3 + r(), r() * 0.8, r() * 1.5, 2 + r() * 1.3, 1.1 + r() * 0.5, 1.8); b.castShadow = false; b.receiveShadow = false; c.add(b); }
-      c.position.set(-90 + i * 26, 30 + r() * 8, -60 + r() * 60); c.userData.speed = 0.6 + r() * 0.6; this.clouds.push(c); this.scene.add(c);
+      const cb = bake(c); cb.traverse((o) => { o.castShadow = false; o.receiveShadow = false; });
+      cb.position.set(-90 + i * 26, 30 + r() * 8, -60 + r() * 60); cb.userData.speed = 0.6 + r() * 0.6; this.clouds.push(cb); this.scene.add(cb);
     }
     for (let i = 0; i < 4; i++) {
       const g = new THREE.Group(), col = mat(i % 2 ? 0xffffff : 0xd98a4a);
-      g.add(mesh(GEO.ball, col, 0, 0.32, 0, 0.27, 0.25, 0.33), mesh(GEO.ball, col, 0, 0.6, 0.22, 0.15), mesh(GEO.cone, mat(0xffa51e), 0, 0.58, 0.39, 0.05, 0.12, 0.05), mesh(GEO.box, mat(0xe0342b), 0, 0.77, 0.22, 0.05, 0.11, 0.14), mesh(GEO.cone, col, 0, 0.46, -0.33, 0.11, 0.27, 0.11));
-      (g.children[2] as THREE.Mesh).rotation.x = Math.PI / 2;
+      const cbody = new THREE.Group(), chead = new THREE.Group(), beak = mesh(GEO.cone, mat(0xffa51e), 0, -0.02, 0.17, 0.05, 0.12, 0.05); beak.rotation.x = Math.PI / 2;
+      cbody.add(mesh(GEO.ball, col, 0, 0.32, 0, 0.27, 0.25, 0.33), mesh(GEO.cone, col, 0, 0.46, -0.33, 0.11, 0.27, 0.11));
+      chead.add(mesh(GEO.ball, col, 0, 0, 0, 0.15), beak, mesh(GEO.box, mat(0xe0342b), 0, 0.17, 0, 0.05, 0.11, 0.14));
+      const chb = bake(chead); chb.position.set(0, 0.6, 0.22); g.add(bake(cbody), chb); // thân và đầu gộp lại: 2 lần vẽ thay vì 5
       g.position.set(-8 + i * 0.7, 0, 7 - i * 0.3);
       this.chickens.push({ obj: g, target: g.position.clone(), wait: i * 0.7, speed: 1.2 + i * 0.15 }); this.scene.add(g);
     }
@@ -730,6 +748,7 @@ export class World {
     const t = this.clock.elapsedTime;
     const zone = REGIONS[state.regionId]?.zone ?? 'nam';
     for (let i = 0; i < SLOT_COUNT; i++) { this.lots[i].zone = zone; this.lots[i].setData(state.lots[i] ?? null, t); }
+    for (let i = 1; i < SLOT_COUNT; i++) this.lots[i].group.traverse((o) => { if (o.castShadow) o.castShadow = false; }); // chỉ thửa đang xem đổ bóng thật
     this.colliders = [...this.lots.flatMap((l) => l.colliders()), ...this.envColliders];
   }
 
