@@ -10,7 +10,7 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; width: 100%; }
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: manipulation; }
-body { margin: 0; background: #9fd9f2; overflow: hidden; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
+body { margin: 0; background: #9fd9f2; overflow: hidden; overflow: clip; overscroll-behavior: none; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; }
 input, textarea { -webkit-user-select: text; user-select: text; }
 h1, h2, h3, p { margin: 0; }
 h1, h2, h3 { font-family: var(--display); line-height: 1.15; }
@@ -44,7 +44,7 @@ label { display: grid; gap: 4px; font-weight: 600; font-size: 0.9rem; }
 
 /* cảnh 3D phủ kín, giao diện nổi lên trên */
 /* Khung game bám theo phần màn hình đang nhìn thấy (xem viewport.ts), không theo khung trang. */
-.game { position: fixed; left: var(--vx, 0px); top: var(--vy, 0px); width: var(--vw, 100%); height: var(--vh, 100%); overflow: hidden; }
+.game { position: fixed; left: var(--vx, 0px); top: var(--vy, 0px); width: var(--vw, 100%); height: var(--vh, 100%); overflow: hidden; overflow: clip; }
 .center { position: fixed; left: var(--vx, 0px); top: var(--vy, 0px); width: var(--vw, 100%); height: var(--vh, 100%); }
 .scene { position: absolute; inset: 0; }
 .scene-fail { position: absolute; inset: 40% 24px auto; text-align: center; background: var(--paper); border-radius: 14px; padding: 16px; }

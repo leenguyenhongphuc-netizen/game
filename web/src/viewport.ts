@@ -12,6 +12,12 @@ export function watchViewport() {
     root.classList.toggle('zoomed', (vv?.scale ?? 1) > 1.02);
   };
   fit();
+  // Khung game không bao giờ được cuộn: scrollIntoView ở phần tử con có thể đẩy cả khung lệch lên, làm HUD trượt khỏi màn.
+  document.addEventListener('scroll', (e) => {
+    const t = e.target as (Element | Document);
+    const el = t instanceof Document ? t.scrollingElement : t;
+    if (el && (el === document.scrollingElement || el === document.body || (el instanceof HTMLElement && el.classList.contains('game'))) && (el.scrollTop !== 0 || el.scrollLeft !== 0)) { el.scrollTop = 0; el.scrollLeft = 0; }
+  }, true);
   vv?.addEventListener('resize', fit);
   vv?.addEventListener('scroll', fit);
   window.addEventListener('resize', fit);
