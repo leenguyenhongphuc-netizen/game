@@ -26,6 +26,7 @@ export type StepKind = 'dat' | 'trong' | 'tuoi' | 'bon' | 'co' | 'tia' | 'gian' 
 /** Loại động tác của một bước, đoán theo tên bước — quyết định hoạt ảnh minh hoạ. */
 export function stepKind(name: string): StepKind {
   const n = name.toLowerCase();
+  if (/^(làm|chuẩn bị|cày|xới|lên) (đất|luống|liếp|mô)|^đào hố/.test(n)) return 'dat';
   if (/thu hoạch|thu hái|gặt|nhổ/.test(n)) return 'thu';
   if (/sơ chế|phơi|sấy/.test(n)) return 'phoi';
   if (/thụ phấn/.test(n)) return 'ong';

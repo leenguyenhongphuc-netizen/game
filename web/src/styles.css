@@ -229,7 +229,7 @@ button.primary.spin-btn { width: min(240px, 70vw); font-size: 1.3rem; }
   .dock { bottom: max(4px, env(safe-area-inset-bottom)); padding: 4px; }
   .dock button { min-height: 44px; font-size: 0.66rem; padding: 2px 6px; }
   .dock button span { font-size: 1.1rem; }
-  .ctx-bar, .ctx-detail { bottom: calc(max(4px, env(safe-area-inset-bottom)) + 66px); }
+  .ctx-bar, .ctx-detail { bottom: calc(max(4px, env(safe-area-inset-bottom)) + 72px); }
   .ctx-detail { max-height: calc(100% - 130px); }
   /* cửa sổ chiếm trọn màn hình, tạm ẩn các thanh phía sau */
   .has-modal .hud, .has-modal .dock { display: none; }
@@ -398,3 +398,6 @@ button.go small { color: #eaffdf; font-size: 0.7rem; font-weight: 600; }
 .tabs { overflow-x: auto; scrollbar-width: none; padding-bottom: 5px; }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs button { white-space: nowrap; padding: 8px 10px; flex: 1 0 auto; }
+@media (max-height: 430px) {
+  .dock button .ico { width: 24px; height: 24px; margin: 0; }
+}
