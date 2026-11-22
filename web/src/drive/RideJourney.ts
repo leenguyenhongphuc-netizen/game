@@ -13,6 +13,7 @@ const SPECS: Record<RideMode, Spec> = {
   xe_khach: { speed: 30, half: 5.2, radius: 18, height: 6, look: 1.6, wide: 1.4 },
   tau_hoa: { speed: 34, half: 19, radius: 31, height: 10, look: 2, wide: 1.4 },
   may_bay: { speed: 95, half: 9, radius: 22, height: 5, look: 1, wide: 8.4 },
+  taxi: { speed: 30, half: 2.2, radius: 12, height: 4, look: 1.2, wide: 1.4 }, // taxi có cảnh riêng (TaxiRide), dòng này chỉ để đủ kiểu
   tau_thuy: { speed: 22, half: 8.6, radius: 27, height: 11, look: 3.2, wide: 2.8 },
 };
 const CRUISE = 62; // độ cao bay bằng, phía trên tầng mây

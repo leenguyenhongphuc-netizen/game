@@ -10,7 +10,7 @@ import {
 } from './RideParts.ts';
 import type { Sea } from './RideParts.ts';
 
-export type RideMode = 'xe_khach' | 'tau_hoa' | 'may_bay' | 'tau_thuy';
+export type RideMode = 'xe_khach' | 'tau_hoa' | 'may_bay' | 'tau_thuy' | 'taxi';
 
 export interface Ctx {
   camera: THREE.PerspectiveCamera;
@@ -27,6 +27,8 @@ export interface Act {
   root: THREE.Group;
   fog: [number, number];
   update(t: number, dt: number, c: Ctx): void;
+  /** Gỡ phần nghe sự kiện riêng của cảnh (nếu có) khi cảnh kết thúc. */
+  dispose?(): void;
 }
 
 export const hash = (s: string) => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7);
@@ -118,9 +120,11 @@ export class Village {
     backdrop(S, this.root, zone, r);
     this.root.add(bake(S, true));
 
-    const raw = mode === 'xe_khach' ? buildBus() : mode === 'may_bay' ? buildTaxi() : buildMinibus();
-    [this.door, this.sideX, this.half, this.high] = mode === 'xe_khach' ? [-4.1, 1.3, 5.1, 3.8] : mode === 'may_bay' ? [0.3, 0.9, 2.2, 2.0] : [-1.5, 1.07, 2.9, 2.9];
-    this.car = bake(raw, true); this.car.position.set(1.9, 0, 120); this.root.add(this.car, this.w.g);
+    const cab = mode === 'may_bay' || mode === 'taxi';
+    const raw = mode === 'xe_khach' ? buildBus() : cab ? buildTaxi() : buildMinibus();
+    [this.door, this.sideX, this.half, this.high] = mode === 'xe_khach' ? [-4.1, 1.3, 5.1, 3.8] : cab ? [0.3, 0.9, 2.2, 2.0] : [-1.5, 1.07, 2.9, 2.9];
+    this.car = bake(raw, true); if (mode === 'taxi') this.car.add(sign('TAXI', '#1f7a3a', 1.5, 0, 2.25, 0.1));
+    this.car.position.set(1.9, 0, 120); this.root.add(this.car, this.w.g);
     this.w.g.position.copy(this.path[0]); this.w.g.rotation.y = -Math.PI / 2;
     this.pts1 = [V3(10.4, 0, 8.4), V3(8.6, 3.2, 8.2), V3(4, 0, -8.2), V3(0, 0, 0)]; this.signs = [label];
     const z0 = 1.4 - this.door;
@@ -130,7 +134,7 @@ export class Village {
   first(): Act {
     const D = 4.6;
     return {
-      stage: 1, caption: `Ra bến xe ${this.from}`, duration: D, root: this.root, fog: [90, 300],
+      stage: 1, caption: this.mode === 'taxi' ? `Ra đầu ngõ ${this.from} gọi taxi` : `Ra bến xe ${this.from}`, duration: D, root: this.root, fog: [90, 300],
       update: (t, _dt, c) => {
         const u = seg(t, 0.25, D - 0.55);
         this.w.walk(this.path, u, c.time);
@@ -144,7 +148,7 @@ export class Village {
     const D = 5, stop = 1.4 - this.door, m = this.mode;
     const where = m === 'tau_hoa' ? 'ga' : m === 'may_bay' ? 'sân bay' : 'bến cảng';
     return {
-      stage: 2, caption: m === 'xe_khach' ? `Xe khách giường nằm tới đón ở bến xe ${this.from}` : `Xe đưa ra ${where} ${this.from}`, duration: D, root: this.root, fog: [90, 300],
+      stage: 2, caption: m === 'taxi' ? `Taxi tới đón, lên xe ngồi hàng ghế sau` : m === 'xe_khach' ? `Xe khách giường nằm tới đón ở bến xe ${this.from}` : `Xe đưa ra ${where} ${this.from}`, duration: D, root: this.root, fog: [90, 300],
       update: (t, _dt, c) => {
         const arrive = seg(t, 0, 1.8), leave = Math.max(0, t - 3.4);
         this.car.position.z = stop + 52 * (1 - arrive) ** 2 - 6.5 * leave * leave;

@@ -1,4 +1,4 @@
-// Trang thử riêng cho hoạt cảnh du lịch: /ride-test.html?ride=xe_khach|tau_hoa|may_bay|tau_thuy&from=...&to=...&seconds=10
+// Trang thử riêng cho hoạt cảnh du lịch: /ride-test.html?ride=xe_khach|tau_hoa|may_bay|tau_thuy|taxi&from=...&to=...&seconds=10 (taxi: &toName=...&fare=85000&km=30&side=bien|song|nui|pho)
 // và hoạt cảnh xuất khẩu: /ride-test.html?xuat=xe_tai|container|tau_hoa|hang_khong|tau_nho|tau_lon&kg=500
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -23,6 +23,7 @@ function Test() {
     <TravelRide
       mode={(q.get('ride') ?? 'xe_khach') as RideMode} fromRegionId={q.get('from') ?? 'dt_caibe'} toRegionId={q.get('to') ?? 'ld_dalat'}
       km={Number(q.get('km') ?? 320)} seconds={Number(q.get('seconds') ?? 10)}
+      toName={q.get('toName') ?? undefined} fare={q.get('fare') ? Number(q.get('fare')) : undefined} sideHint={(q.get('side') ?? undefined) as 'bien' | 'song' | 'nui' | 'pho' | undefined}
       onFinish={finish}
     />
   );

@@ -10,12 +10,19 @@ import { cloud } from './RideParts.ts';
 import { Journey } from './RideJourney.ts';
 import { Airport, BusStation, Port, TrainStation, Village } from './RideSets.ts';
 import type { Act, Ctx, RideMode } from './RideSets.ts';
+import { TaxiCabin, TaxiStop } from './TaxiRide.ts';
+import type { SideHint } from './TaxiRide.ts';
 
 export type { RideMode };
 export interface RideOptions {
   mode: RideMode; fromRegionId: string; toRegionId: string;
   /** Thời lượng riêng của chặng "trên đường" (giây). */
   seconds: number;
+  /** Ghi đè tên nơi đến (đi tới điểm tham quan chứ không phải vùng trồng). */
+  toName?: string;
+  /** Taxi: quãng đường, giá cước cho đồng hồ tính tiền, cảnh bên phải đường. */
+  km?: number; fare?: number; sideHint?: SideHint;
+  onMeter?: (dong: number) => void;
   /** Tiến độ chặng trên đường, 0..1. */
   onTick?: (progress: number) => void;
   /** Gọi mỗi khi sang cảnh mới: số hiệu cảnh, phụ đề, thứ tự trong kịch bản (từ 0) và tổng số cảnh. */
@@ -57,7 +64,7 @@ export class RideScene {
   private plan: (() => Act)[] = [];
   private index = -1;
   private act: Act | null = null;
-  private journey: Journey | null = null;
+  private journey: Journey | TaxiCabin | null = null;
   private actT = 0;
   private time = 0;
   private arrived = false;
@@ -83,7 +90,7 @@ export class RideScene {
     this.container = container; this.opts = opts;
     const seconds = Math.min(30, Math.max(6, opts.seconds || 10)), mode = opts.mode;
     const from = REGIONS[opts.fromRegionId], to = REGIONS[opts.toRegionId];
-    const zA: Zone = from?.zone ?? 'nam', zB: Zone = to?.zone ?? 'nam', fromName = from?.name ?? 'Nơi đi', toName = to?.name ?? 'Nơi đến';
+    const zA: Zone = from?.zone ?? 'nam', zB: Zone = to?.zone ?? 'nam', fromName = from?.name ?? 'Nơi đi', toName = opts.toName ?? to?.name ?? 'Nơi đến';
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -114,7 +121,7 @@ export class RideScene {
 
     // Kịch bản: mỗi mục dựng cảnh của mình khi tới lượt
     let village: Village | null = null;
-    const vehicleName = mode === 'xe_khach' ? 'Xe khách' : mode === 'tau_hoa' ? 'Tàu hoả' : mode === 'may_bay' ? 'Máy bay' : 'Tàu thuỷ';
+    const vehicleName = mode === 'taxi' ? 'Taxi' : mode === 'xe_khach' ? 'Xe khách' : mode === 'tau_hoa' ? 'Tàu hoả' : mode === 'may_bay' ? 'Máy bay' : 'Tàu thuỷ';
     const seed = [...(opts.fromRegionId + opts.toRegionId + mode)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7);
     if (opts.plan) this.plan = opts.plan;
     else {
@@ -122,11 +129,19 @@ export class RideScene {
     if (mode === 'tau_hoa') this.plan.push(() => new TrainStation(zA, fromName, false).depart());
     if (mode === 'may_bay') this.plan.push(() => new Airport(zA, fromName, false).depart());
     if (mode === 'tau_thuy') this.plan.push(() => new Port(zA, fromName, false).depart());
+    if (mode === 'taxi') {
+      const km = opts.km ?? 20;
+      this.plan.push(() => (this.journey = new TaxiCabin({
+        host: container, zone: zB, toName, km, seconds: Math.max(9, seconds), fare: opts.fare ?? Math.round((12_000 + km * 2500) / 1000) * 1000, side: opts.sideHint, seed,
+        caption: `Ngồi ghế sau taxi tới ${toName} · kéo màn hình để nhìn hai bên đường`, onTick: (p) => this.opts.onTick?.(p), onMeter: (d) => this.opts.onMeter?.(d),
+      })), () => new TaxiStop(zB, toName).arrive());
+    } else {
     this.plan.push(() => (this.journey = new Journey({
       mode, zoneA: zA, zoneB: zB, fromIsland: !!from?.island, toIsland: !!to?.island, seconds, seed,
       caption: `${vehicleName} đang trên đường tới ${toName}`, onTick: (p) => this.opts.onTick?.(p),
     })));
     this.plan.push(() => mode === 'xe_khach' ? new BusStation(zB, toName).arrive() : mode === 'tau_hoa' ? new TrainStation(zB, toName, true).arrive() : mode === 'may_bay' ? new Airport(zB, toName, true).arrive() : new Port(zB, toName, true).arrive());
+    }
     }
 
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(container); this.resize();
@@ -147,6 +162,8 @@ export class RideScene {
     const prev = this.act;
     this.index++;
     const act = this.plan[this.index]();
+    prev?.dispose?.();
+    if (this.camera.near !== 0.5) { this.camera.near = 0.5; this.camera.rotation.order = 'XYZ'; this.resize(); } // cảnh trong xe đổi ống kính, trả lại cho cảnh sau
     if (prev && prev.root !== act.root) { this.scene.remove(prev.root); disposeTree(prev.root); }
     if (!act.root.parent) this.scene.add(act.root);
     this.act = act; this.actT = 0;
@@ -217,9 +234,13 @@ export class RideScene {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /** Taxi: -1 nhìn trái, 0 nhìn thẳng, 1 nhìn phải. */
+  look(dir: number) { if (this.journey instanceof TaxiCabin && this.act === this.journey) this.journey.look(dir); }
+
   dispose() {
     if (this.disposed) return; this.disposed = true;
     this.renderer.setAnimationLoop(null); this.ro.disconnect();
+    this.act?.dispose?.();
     if (this.act) disposeTree(this.act.root);
     disposeTree(this.clouds);
     (this.scene.background as THREE.Texture | null)?.dispose?.();
