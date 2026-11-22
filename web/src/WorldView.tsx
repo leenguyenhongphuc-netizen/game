@@ -5,19 +5,13 @@ import type { Context, WorldState } from './scene/World.ts';
 import type { Planting } from './api.ts';
 import { sampleFactory } from './scene/factory.ts';
 import type { FactoryData } from './scene/factory.ts';
-import { PaintedView } from './garden/PaintedView.tsx';
-import { hasPaintedPref, isPainted, setPaintedPref } from './garden/pref.ts';
-import './garden/garden.css';
 
 type ViewProps = {
   state: WorldState; demo?: boolean; paused?: boolean; worldRef?: MutableRefObject<World | null>;
   onContext?: (ctx: Context) => void; onReady?: (lot: number, planting: Planting) => void;
 };
-/** Chọn trình hiển thị vườn: tranh vẽ nhìn chéo (?tranh=1 hoặc localStorage vv-tranh=1) hay 3D (mặc định). Màn chào luôn dùng 3D. */
+/** Khung vườn: luôn dùng thế giới 3D. */
 export function WorldView(props: ViewProps) {
-  const [painted, setPainted] = useState(() => !props.demo && isPainted());
-  useEffect(() => { const on = (e: Event) => setPainted(!props.demo && !!(e as CustomEvent).detail); window.addEventListener('vv-tranh', on); return () => window.removeEventListener('vv-tranh', on); }, [props.demo]);
-  if (painted) return <PaintedView state={props.state} paused={props.paused} worldRef={props.worldRef} onContext={props.onContext} onReady={props.onReady} />;
   return <World3DView {...props} />;
 }
 
@@ -61,7 +55,6 @@ function World3DView(props: {
 
   return (
     <div ref={host} className="scene">
-      {!props.demo && hasPaintedPref() && <div className="painted-tools"><button type="button" className="mode" aria-label="Đổi sang hiển thị tranh vẽ" title="Kiểu hiển thị: 3D. Bấm để đổi sang tranh vẽ" onClick={() => setPaintedPref(true)}>Tranh</button></div>}
       {failed && <p className="scene-fail">Thiết bị hoặc trình duyệt này chưa bật đồ hoạ 3D (WebGL) nên không hiện được vườn.</p>}
     </div>
   );
