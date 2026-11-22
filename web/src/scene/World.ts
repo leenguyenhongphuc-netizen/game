@@ -852,6 +852,11 @@ export class World {
       const inside = Math.abs(l.x) < FENCE.x && l.z > FENCE.back && l.z < FENCE.front;
       if (!lot.data) { if (i !== 0 && Math.abs(l.x) < FENCE.x && l.z > FENCE.back && l.z < FENCE.front + 3) ctx = { kind: 'empty-lot', lot: i }; continue; }
       if (i === 0 && inside) this.enteredYard = true;
+      if (isFactory(lot.data) && inside) { // đứng cạnh trạm máy gần nhất (hoặc chỗ trống kế tiếp)
+        let best = -1, bd = 2.3;
+        for (let k = 0; k <= lot.fx.length && k < MACHINE_SPOTS.length; k++) { const d = Math.hypot(l.x - MACHINE_SPOTS[k].x, l.z - MACHINE_SPOTS[k].z); if (d < bd) { bd = d; best = k; } }
+        if (best >= 0) { ctx = { kind: 'machine', lot: i, index: best, machineId: lot.fx[best]?.m.id ?? null }; continue; }
+      }
       if (Math.abs(l.x) < PLOT_COLS && Math.abs(l.z) < PLOT_ROWS) {
         const tile = Math.floor((l.z + PLOT_ROWS) / TILE) * PLOT_COLS + Math.floor((l.x + PLOT_COLS) / TILE);
         if (!lotTiles(lot.data).includes(tile) && !lot.data.plantings.some((p) => p.tile === tile)) continue;
@@ -859,11 +864,6 @@ export class World {
         const planting = lot.data.plantings.find((p) => p.tile === tile);
         if (planting && now >= planting.stepReadyAt && !this.opts.demo && (this.readyAt.get(planting.id) ?? 0) < t) { this.readyAt.set(planting.id, t + 1.5); this.opts.onReady?.(i, planting); }
       } else if (Math.hypot(l.x - STALL.x, l.z - (STALL.z + 1.6)) < 2.4) ctx = { kind: 'stall', lot: i };
-      if (inside && isFactory(lot.data)) { // đứng cạnh trạm máy gần nhất (hoặc chỗ trống kế tiếp)
-        let best = -1, bd = 2.3;
-        for (let k = 0; k <= lot.fx.length && k < MACHINE_SPOTS.length; k++) { const d = Math.hypot(l.x - MACHINE_SPOTS[k].x, l.z - MACHINE_SPOTS[k].z); if (d < bd) { bd = d; best = k; } }
-        if (best >= 0) ctx = { kind: 'machine', lot: i, index: best, machineId: lot.fx[best]?.m.id ?? null };
-      }
     }
     if (ctx.kind === 'none' && this.truck && !this.driving && this.pos.distanceTo(this.truckPos) < 3) ctx = { kind: 'truck' };
     if (ctx.kind === 'tile') { const p = this.worldOfTile(ctx.lot, ctx.tile); this.ring.visible = true; this.ring.position.set(p.x, 0.17, p.z); this.ring.scale.setScalar(1 + Math.sin(t * 6) * 0.04); } else this.ring.visible = false;

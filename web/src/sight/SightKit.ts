@@ -166,7 +166,7 @@ export class Kit {
   ground(c: number, size = 900, y = 0, x = 0, z = 0): void { this.add(box(c, x, y - 0.5, z, size, 1, size)); }
   /** Mặt nước phẳng hơi bóng, gợn nhẹ bằng cách trôi lên xuống. */
   water(c: number, x: number, z: number, w: number, d: number, y = -0.35, opacity = 0.92): THREE.Mesh {
-    const tex = waves().clone(); tex.needsUpdate = true; tex.repeat.set(Math.max(1, w / 26), Math.max(1, d / 26));
+    const tex = waves().clone(); tex.needsUpdate = true; tex.userData = { own: true }; tex.repeat.set(Math.max(1, w / 26), Math.max(1, d / 26));
     const m = new THREE.MeshStandardMaterial({ color: c, map: tex, roughness: 0.22, metalness: 0.15, transparent: opacity < 1, opacity });
     const o = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2), m); o.position.set(x, y, z); this.live(o);
     this.onTick((t) => { o.position.y = y + Math.sin(t * 0.9) * 0.03; tex.offset.set(t * 0.012, t * 0.02); }); return o;

@@ -87,3 +87,31 @@
   .sw-seal-ink { width: 150px; height: 150px; }
   .sw button.sw-shop { left: max(10px, env(safe-area-inset-left)); transform: none; bottom: max(10px, env(safe-area-inset-bottom)); animation: none; }
 }
+
+/* ---- ảnh nét cao: màn chào khi vào địa danh, bưu thiếp trong thẻ, ảnh lưu niệm sau con dấu */
+.sw-splash { position: absolute; inset: 0; z-index: 5; background: #1c2433; pointer-events: none; animation: sw-splash 2.6s ease-in forwards; display: grid; }
+.sw-splash img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: sw-zoom 2.6s ease-out forwards; }
+.sw-splash div { position: relative; align-self: end; padding: 28px 22px max(46px, env(safe-area-inset-bottom)); background: linear-gradient(transparent, #1a120acc 45%); color: #fff7d6; text-align: center; }
+.sw-splash b { font-size: 2rem; display: block; }
+.sw-splash h1 { margin: 2px 0 6px; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 800; font-size: clamp(1.7rem, 7vw, 2.6rem); line-height: 1.1; text-shadow: 0 3px 0 #0006; }
+.sw-splash p { margin: 0 auto; max-width: 420px; font-size: 0.95rem; line-height: 1.45; font-weight: 500; }
+@keyframes sw-splash { 0%, 58% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+@keyframes sw-zoom { from { scale: 1; } to { scale: 1.08; } }
+.sw-post { position: relative; margin: 8px 0 2px; border-radius: 12px; overflow: hidden; border: 2.5px solid #7a4a22; aspect-ratio: 16 / 9; background: #e9d9b0; }
+.sw-post img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sw-post span { position: absolute; left: 8px; bottom: 6px; background: #fff6dce6; border-radius: 8px; padding: 1px 8px; font-weight: 700; font-size: 0.74rem; }
+.sw-polaroid { width: 210px; box-sizing: border-box; background: #fffdf4; padding: 8px 8px 6px; border-radius: 4px; box-shadow: 0 10px 26px #0007; rotate: 4deg; display: grid; gap: 4px; justify-items: center; animation: sw-seal-in 0.3s ease-out both; }
+.sw-polaroid img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.sw-polaroid span { font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 700; font-size: 0.82rem; color: #3b2a17; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw-polaroid + .sw-seal-ink { margin-top: -64px; margin-left: 96px; width: 132px; height: 132px; padding: 12px; animation-delay: 0.28s; background: #fff6dcb8; }
+.sw-polaroid + .sw-seal-ink b { font-size: 0.8rem; max-width: 104px; }
+.sw-polaroid + .sw-seal-ink small { font-size: 0.46rem; }
+.sw-polaroid + .sw-seal-ink span { font-size: 0.56rem; max-width: 96px; }
+.sw-polaroid + .sw-seal-ink em { font-size: 0.64rem; }
+.sw-seal { top: 20%; }
+@media (max-height: 430px) {
+  .sw-splash div { padding: 14px 20px 20px; } .sw-splash b { display: none; }
+  .sw-post { aspect-ratio: 21 / 9; }
+  .sw-seal { top: 8%; right: 40%; }
+  .sw-polaroid { width: 170px; }
+}

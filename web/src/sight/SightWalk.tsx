@@ -19,6 +19,9 @@ export interface SightWalkProps {
   /** Điểm kinh nghiệm nhận cho mỗi con dấu (mặc định 10). */
   xpPerStop?: number;
 }
+const ART = `${import.meta.env.BASE_URL}art/sights/`;
+/** Ảnh có thể thiếu: lỗi tải thì ẩn cả khung chứa. */
+const hideOnError = (e: { currentTarget: HTMLImageElement }) => { (e.currentTarget.closest('[data-art]') as HTMLElement | null ?? e.currentTarget).style.display = 'none'; };
 const today = () => { const d = new Date(), z = (n: number) => String(n).padStart(2, '0'); return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()}`; };
 /** Câu đầu của lời thuyết minh, dùng làm dòng tóm tắt. */
 const firstLine = (t: string) => { const m = t.match(/^.*?[.!?](\s|$)/); return (m ? m[0] : t).trim(); };
@@ -112,9 +115,11 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
       )}
       {hint && !stop && <div className="sw-hint">Kéo nửa dưới màn hình để đi · kéo nửa trên để nhìn quanh</div>}
       {stick && <div className="sw-stick" style={{ left: stick.x, top: stick.y }}><i style={{ transform: `translate(${stick.dx}px, ${stick.dy}px)` }} /></div>}
+      <div className="sw-splash" aria-hidden="true"><img src={`${ART}${s.id}.jpg`} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} /><div><b>{s.emoji}</b><h1>{s.name}</h1><p>{s.blurb}</p></div></div>
       {flash > 0 && <div className="sw-flash" key={flash} />}
       {stamp && (
         <div className="sw-seal" key={stamp.k} aria-hidden="true">
+          <div className="sw-polaroid" data-art><img src={`${ART}${s.id}-s.jpg`} alt="" onError={hideOnError} /><span>{stamp.name}</span></div>
           <div className="sw-seal-ink"><small>VƯỜN VIỆT · HỘ CHIẾU</small><b>{stamp.name}</b><span>{s.name}</span><em>{today()}</em></div>
           <strong className="sw-xp">+{xp} XP</strong>
         </div>
@@ -131,6 +136,7 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
             {!got && <button className="sw-snap" aria-label="Chụp ảnh lưu niệm, đóng dấu hộ chiếu" onClick={snap}><span aria-hidden="true">📸</span></button>}
             {got && !last && <button className="sw-next" onClick={close}>Đi tiếp ›</button>}
           </div>
+          {open && <div className="sw-post" data-art><img src={`${ART}${s.id}-s.jpg`} alt={`Bưu thiếp ${s.name}`} onError={hideOnError} /><span>{s.name}</span></div>}
           {open && <p className="sw-fact">{stop.fact}</p>}
           {(open || (got && last)) && (
             <div className="sw-actions">

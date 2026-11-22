@@ -7,48 +7,86 @@ import { Kit, V, ball, bead, bench, bicycle, bin, boat, box, cone, cyclo, cyl, g
 import type { SightSet } from '../SightKit.ts';
 
 const WALLS = [0xf0b93a, 0xf6c653, 0xe6a82e, 0xf8d476, 0xf0b93a, 0xf4e7c4], ROOFS = [0x7a4a36, 0x8a5540, 0x6a5a40, 0x74482f], MOSS = [0x5f6a44, 0x6a7350, 0x54603c], WOOD = 0x4a2c1c, WARM = 0xffd98a, SHUT = [0x3f7f6a, 0x4a6f8f, 0x3f6f5f, 0x6a5a3a];
-/** Nhà phố Hội An: tường vàng nghệ, mái ngói nâu rêu, cửa gỗ sẫm, mái hiên, đèn lồng, đôi khi có giàn hoa giấy. Mặt tiền quay về +z, gốc ở giữa chân mặt tiền. */
+// ---- mặt tiền dán ảnh nét cao: /art/tex/hoi-an-pho.jpg là dải nhà phố nhìn thẳng (2048×581), dùng bốn căn giữa.
+const TEX_W = 2048, TEX_H = 581, HOUSE_X: [number, number][] = [[359, 690], [702, 1018], [1035, 1361], [1373, 1704]];
+const PY = { roof: [64, 143], upper: [143, 528], lower: [343, 528], awning: [302, 343] } as const;
+/** Gom các tấm phẳng dán ảnh vào một lưới duy nhất (một lần vẽ). */
+class Facades {
+  private pos: number[] = []; private uv: number[] = []; private nor: number[] = [];
+  /** a: dưới trái, b: dưới phải, c: trên phải, d: trên trái (nhìn từ phía trước). */
+  quad(a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3, x0: number, x1: number, py: readonly [number, number]): void {
+    const n = b.clone().sub(a).cross(d.clone().sub(a)).normalize(), u0 = x0 / TEX_W, u1 = x1 / TEX_W, v0 = 1 - py[1] / TEX_H, v1 = 1 - py[0] / TEX_H;
+    for (const [p, u, v] of [[a, u0, v0], [b, u1, v0], [c, u1, v1], [a, u0, v0], [c, u1, v1], [d, u0, v1]] as const) { this.pos.push(p.x, p.y, p.z); this.uv.push(u, v); this.nor.push(n.x, n.y, n.z); }
+  }
+  build(): THREE.Mesh {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2)); g.setAttribute('normal', new THREE.Float32BufferAttribute(this.nor, 3));
+    const tex = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}art/tex/hoi-an-pho.jpg`); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.22 });
+    return new THREE.Mesh(g, m);
+  }
+}
+let FAC: Facades | null = null;
+type LocalQuad = { p: [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3]; x: [number, number]; py: readonly [number, number] };
+/** Nhà phố Hội An: tường vàng nghệ, mái ngói nâu rêu, cửa gỗ sẫm, mái hiên, đèn lồng, đôi khi có giàn hoa giấy. Mặt tiền quay về +z, gốc ở giữa chân mặt tiền.
+ *  Khi đang gom mặt tiền dán ảnh (FAC), mặt tiền, mái hiên và mái trước là ảnh nét cao; phần khối chỉ còn thân nhà, mái, cột hiên và đèn lồng. */
 export function shophouse(w: number, d: number, floors: number, r: () => number, lit = true, detail = true): THREE.Group {
   const g = new THREE.Group(), wall = WALLS[Math.floor(r() * WALLS.length)], roof = ROOFS[Math.floor(r() * ROOFS.length)], h = floors === 2 ? 6.2 : 3.9;
-  g.add(box(wall, 0, h / 2, -d / 2, w - 0.12, h, d), box(0x8a7a66, 0, 0.18, 0.03, w - 0.1, 0.36, 0.1));
+  g.add(box(wall, 0, h / 2, -d / 2, w - 0.12, h, d));
   g.add(gable(roof, 0, h, -d / 2, d + 0.5, 1.7, w, Math.PI / 2), box(0xf1e6c8, -w / 2 + 0.12, h + 0.5, -d / 2, 0.24, 1.3, d * 0.86), box(0xf1e6c8, w / 2 - 0.12, h + 0.5, -d / 2, 0.24, 1.3, d * 0.86));
-  // cửa gỗ và mái hiên tầng trệt
+  const awY = floors === 2 ? 3.05 : 2.75;
+  const aw = box(roof, 0, awY, 0.75, w - 0.1, 0.12, 1.7); aw.rotation.x = 0.32; g.add(aw);
+  for (const s of [-1, 1]) g.add(cyl(WOOD, s * (w / 2 - 0.25), awY / 2 - 0.1, 1.35, 0.07, awY - 0.25));
+  for (const s of [-1, 1]) if (r() < 0.75) g.add(lantern(LANTERN_COLORS[Math.floor(r() * LANTERN_COLORS.length)], s * (w / 2 - 0.7), awY - 0.6, 1.5));
+  if (r() < 0.3) { const sx = r() < 0.5 ? -1 : 1; for (let i = 0; i < 5; i++) g.add(bead(i % 2 ? 0xe85aa0 : 0xf07ab8, sx * (w / 2 - 0.4 - r() * 1.4), 3.3 + r() * 1.2, 1.0 + r() * 0.8, 0.5 + r() * 0.3)); g.add(cyl(0x5a4a34, sx * (w / 2 - 0.3), 1.6, 1.3, 0.06, 3.2)); }
+  if (r() < 0.35) g.add(box(0x8a6a48, (r() - 0.5) * 2, 0.3, 1.5, 0.9, 0.6, 0.5), ball(0x5cb85f, (r() - 0.5) * 2, 0.9, 1.5, 0.4));
+  if (FAC) {
+    const hx = HOUSE_X[Math.floor(r() * HOUSE_X.length)], x0 = -w / 2 + 0.06, x1 = w / 2 - 0.06, zf = 0.03, q: LocalQuad[] = [];
+    q.push({ p: [V(x0, 0, zf), V(x1, 0, zf), V(x1, h, zf), V(x0, h, zf)], x: hx, py: floors === 2 ? PY.upper : PY.lower });
+    // mái hiên và mái trước: ảnh ngói nằm theo đúng mặt dốc
+    const c = Math.cos(0.32) * 0.86, sn = Math.sin(0.32) * 0.86;
+    q.push({ p: [V(x0, awY - sn + 0.08, 0.75 + c), V(x1, awY - sn + 0.08, 0.75 + c), V(x1, awY + sn + 0.08, 0.75 - c), V(x0, awY + sn + 0.08, 0.75 - c)], x: hx, py: PY.awning });
+    q.push({ p: [V(x0, h + 0.04, 0.26), V(x1, h + 0.04, 0.26), V(x1, h + 1.72, -d / 2), V(x0, h + 1.72, -d / 2)], x: hx, py: PY.roof });
+    g.userData.quads = q;
+    if (detail) for (const sx of [-1, 1]) if (r() < 0.4) { const pp = potPlant([0xe85aa0, 0xffd23f, 0xf3ead2][Math.floor(r() * 3)], 0.9); pp.position.set(sx * (w / 2 - 0.5), 0, 1.75); g.add(pp); }
+    return g;
+  }
+  g.add(box(0x8a7a66, 0, 0.18, 0.03, w - 0.1, 0.36, 0.1));
+  // cửa gỗ tầng trệt
   const dw = Math.min(2.2, w * 0.42); g.add(box(WOOD, 0, 1.25, 0.04, dw, 2.5, 0.12), box(0x2a1a12, 0, 1.2, 0.08, dw * 0.46, 2.3, 0.08));
   for (const s of [-1, 1]) if (w > 4.6) g.add(box(WOOD, s * (w / 2 - 0.9), 1.5, 0.04, 1.0, 1.5, 0.1), box(lit && r() < 0.6 ? glow(WARM) : 0x3a2a20, s * (w / 2 - 0.9), 1.5, 0.08, 0.7, 1.2, 0.06));
-  const aw = box(roof, 0, 3.05, 0.75, w - 0.1, 0.12, 1.7); aw.rotation.x = 0.32; g.add(aw);
-  for (const s of [-1, 1]) g.add(cyl(WOOD, s * (w / 2 - 0.25), 1.4, 1.35, 0.07, 2.8));
   if (floors === 2) {
     g.add(box(WOOD, 0, 3.75, 0.5, w - 0.3, 0.1, 1.0), box(WOOD, 0, 4.15, 0.98, w - 0.3, 0.7, 0.06));
     const n = w > 5.4 ? 3 : 2; for (let i = 0; i < n; i++) { const x = (i - (n - 1) / 2) * (w / n) * 0.86; g.add(box(0x3f6f5f, x, 4.9, 0.04, 1.0, 1.5, 0.1), box(lit && r() < 0.55 ? glow(WARM) : 0x2a332e, x, 4.9, 0.08, 0.6, 1.2, 0.06)); }
   }
   g.add(box(0x2a1a12, 0, 2.72, 0.12, Math.min(2.4, w * 0.5), 0.4, 0.06), box(0xd9a83a, 0, 2.72, 0.16, Math.min(2.0, w * 0.4), 0.16, 0.03));
-  for (const s of [-1, 1]) if (r() < 0.75) g.add(lantern(LANTERN_COLORS[Math.floor(r() * LANTERN_COLORS.length)], s * (w / 2 - 0.7), 2.45, 1.5));
-  if (r() < 0.3) { const sx = r() < 0.5 ? -1 : 1; for (let i = 0; i < 5; i++) g.add(bead(i % 2 ? 0xe85aa0 : 0xf07ab8, sx * (w / 2 - 0.4 - r() * 1.4), 3.3 + r() * 1.2, 1.0 + r() * 0.8, 0.5 + r() * 0.3)); g.add(cyl(0x5a4a34, sx * (w / 2 - 0.3), 1.6, 1.3, 0.06, 3.2)); }
-  if (r() < 0.35) g.add(box(0x8a6a48, (r() - 0.5) * 2, 0.3, 1.5, 0.9, 0.6, 0.5), ball(0x5cb85f, (r() - 0.5) * 2, 0.9, 1.5, 0.4));
   if (detail) {
-    // ngói âm dương: các sống ngói chạy theo mái, loang rêu; chân tường ố mưa; cửa lá sách; bảng hiệu; chậu cây
     const slope = Math.atan2(1.7, (d + 0.5) / 2), sl = Math.hypot(1.7, (d + 0.5) / 2), n = Math.max(3, Math.round(w / 1.5)), shut = SHUT[Math.floor(r() * SHUT.length)];
     for (let i = 0; i < n; i++) { const x = (i + 0.5) / n * w - w / 2; g.add(box(i % 3 === 1 ? MOSS[Math.floor(r() * 3)] : shade2(roof, 0.86), x, h + 0.9, -d / 2 + (d + 0.5) / 4, 0.2, 0.1, sl).rotateX(slope)); }
     g.add(box(shade2(wall, 0.8), 0, 0.62, 0.02, w - 0.14, 0.5, 0.06), box(0xf4ead0, 0, h - 0.16, 0.03, w - 0.1, 0.3, 0.08));
-    if (floors === 2) { const m = w > 5.4 ? 3 : 2; for (let i = 0; i < m; i++) { const x = (i - (m - 1) / 2) * (w / m) * 0.86; for (const sx of [-1, 1]) { g.add(box(shut, x + sx * 0.72, 4.9, 0.1, 0.36, 1.5, 0.05)); for (let k = 0; k < 2; k++) g.add(box(shade2(shut, 0.75), x + sx * 0.72, 4.55 + k * 0.6, 0.13, 0.3, 0.05, 0.02)); } } for (let i = 0; i < Math.round(w / 1.0); i++) g.add(box(WOOD, -w / 2 + 0.5 + i * 1.0, 4.1, 1.0, 0.06, 0.62, 0.06)); }
+    if (floors === 2) { const m = w > 5.4 ? 3 : 2; for (let i = 0; i < m; i++) { const x = (i - (m - 1) / 2) * (w / m) * 0.86; for (const sx of [-1, 1]) g.add(box(shut, x + sx * 0.72, 4.9, 0.1, 0.36, 1.5, 0.05)); } }
     if (r() < 0.6) { const sg = shopSign(Math.min(1.8, w * 0.36), r() < 0.5 ? 0x7a2e22 : 0x2a1a12); sg.position.set((r() - 0.5) * (w - 2.4), 3.42, 1.62); g.add(sg); }
-    for (const sx of [-1, 1]) if (r() < 0.4) { const pp = potPlant([0xe85aa0, 0xffd23f, 0xf3ead2][Math.floor(r() * 3)], 0.9); pp.position.set(sx * (w / 2 - 0.5), 0, 1.75); g.add(pp); }
   }
   return g;
 }
 const shade2 = (c: number, k: number): number => new THREE.Color(c).multiplyScalar(k).getHex();
+/** Chuyển các tấm dán ảnh của một căn nhà đã đặt vào lưới chung. */
+function flush(h: THREE.Group): void {
+  const q = h.userData.quads as LocalQuad[] | undefined; if (!q || !FAC) return; h.updateMatrix();
+  for (const k of q) { const [a, b, c, d] = k.p.map((v) => v.applyMatrix4(h.matrix)); FAC.quad(a, b, c, d, k.x[0], k.x[1], k.py); }
+}
 /** Một dãy nhà phố từ x0 tới x1; face = +1 mặt tiền quay về nam (+z), -1 quay về bắc. Bỏ trống các khoảng trong gaps. */
 export function shopRow(kit: Kit, x0: number, x1: number, zFront: number, face: number, depth: number, gaps: [number, number][], lit = true, detail = true): void {
   let x = x0; const r = kit.r;
   while (x < x1 - 3.6) {
     const w = Math.min(x1 - x, 4.4 + r() * 2.4), gap = gaps.find(([a, b]) => x < b && x + w > a);
-    if (gap) { if (gap[0] - x > 3.6) { const ww = gap[0] - x; const h = shophouse(ww, depth, r() < 0.7 ? 2 : 1, r, lit, detail); h.position.set(x + ww / 2, 0, zFront); h.rotation.y = face > 0 ? 0 : Math.PI; kit.add(h); } x = gap[1]; continue; }
-    const h = shophouse(w, depth, r() < 0.68 ? 2 : 1, r, lit, detail); h.position.set(x + w / 2, 0, zFront); h.rotation.y = face > 0 ? 0 : Math.PI; kit.add(h); x += w;
+    if (gap) { if (gap[0] - x > 3.6) { const ww = gap[0] - x; const h = shophouse(ww, depth, r() < 0.7 ? 2 : 1, r, lit, detail); h.position.set(x + ww / 2, 0, zFront); h.rotation.y = face > 0 ? 0 : Math.PI; kit.add(h); flush(h); } x = gap[1]; continue; }
+    const h = shophouse(w, depth, r() < 0.68 ? 2 : 1, r, lit, detail); h.position.set(x + w / 2, 0, zFront); h.rotation.y = face > 0 ? 0 : Math.PI; kit.add(h); flush(h); x += w;
   }
 }
 
 export function hoiAn(kit: Kit, _s: Sight): SightSet {
   const r = kit.r, STONE = 0xa9987e, QUAY = 0x8f8474;
+  FAC = new Facades();
   // ---- nền đất: bờ tây lạch, khu phố, bờ An Hội bên kia sông; nước nằm thấp hơn mặt phố
   kit.add(box(0x7f9a62, -200, -1.5, 0, 205, 3, 220), box(STONE, 22, -1.5, -24, 221, 3, 152), box(0x7f9a62, 0, -1.5, 150, 600, 3, 116), box(0x7f9a62, 240, -1.5, 0, 215, 3, 220));
   kit.water(0x1f6f86, 0, 40, 700, 400, -1.0, 1);
@@ -170,6 +208,7 @@ export function hoiAn(kit: Kit, _s: Sight): SightSet {
   for (let x = -60; x < 150; x += 7) kit.add(reflection(LANTERN_COLORS[Math.floor(r() * 7)], x, -0.93, 87, 1.4, 8, false, 0.3));
   kit.motes(24, 0xcfc6c0, 2.4, (i) => V([-30, 70, 118][i % 3], 9 + (i % 8), [-10, 14, 30][i % 3]), (p, i, _t, dt) => { p.y += 0.7 * dt; p.x += 0.25 * dt; if (p.y > 17) { p.y = 8.6; p.x = [-30, 70, 118][i % 3]; } });
 
+  kit.live(FAC.build()); FAC = null;
   // ---- lối đi
   const path = [V(-134, 0, 3), V(-112, 0, 5), V(-103, 0, 0.6), V(-99.4, 0.1, 0), V(-96.3, 0.7, 0), V(-93, 0.95, 0), V(-89.7, 0.7, 0), V(-86.6, 0.1, 0), V(-70, 0, 0), V(-70, 0, 26), V(-10, 0, 26), V(-10, 0, 0), V(50, 0, 0), V(50, 0, 48), V(104, 0, 48)];
   return {
