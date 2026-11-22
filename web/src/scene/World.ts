@@ -677,15 +677,21 @@ export class World {
       for (let i = 0; i < SLOT_COUNT; i++) { const l = toLocal(i, x, z); if (Math.abs(l.x) < FENCE.x + 1.2 && l.z > FENCE.back - 1.2 && l.z < FENCE.front + 4) return false; }
       return true;
     };
+    const blobs: number[][] = [];
     let placed = 0, guard = 0; const groves = new Map<string, THREE.Group>(); // gộp cây theo cụm ~30 m: ít lần vẽ mà vẫn bỏ được cụm ngoài khung hình
     while (placed < (this.urban ? 22 : 70) && guard++ < 900) {
       const x = (r() * 2 - 1) * (WORLD.x + 40), z = WORLD.zMin - 34 + r() * (WORLD.zMax - WORLD.zMin + 70);
       const d = out(x, z); if (!free(x, z) || (th.sea && d > 3)) continue;
       if (z > ROAD_Z + ROAD_HALF && z < 2 * ROAD_Z + 6 && Math.abs(x) < 8 && r() < 0.7) continue;
-      const k = d / 34, t = this.makeTree(th.trees, r); t.position.set(x, th.sea ? 0 : k * k * th.hill * 2.4, z); t.rotation.y = r() * 6; t.scale.setScalar(0.9 + r() * 0.7);
+      const k = d / 34, t = this.makeTree(th.trees, r); t.position.set(x, th.sea ? 0 : k * k * th.hill * 2.4, z); t.rotation.y = r() * 6; t.scale.setScalar(0.9 + r() * 0.7); blobs.push([x, t.position.y, z, t.scale.x]);
       { const key = `${Math.round(x / 30)}|${z < ROAD_Z ? 0 : 1}`; if (!groves.has(key)) groves.set(key, new THREE.Group()); groves.get(key)!.add(t); } placed++;
     }
-    for (const gv of groves.values()) this.env.add(bake(gv));
+    for (const gv of groves.values()) { const b = bake(gv); if (IS_MOBILE) b.traverse((o) => { o.castShadow = false; }); this.env.add(b); } // di động: cây quanh xóm không vào lượt bóng đổ, thay bằng bóng tròn mềm dưới gốc
+    if (blobs.length) { // bóng tiếp đất mềm dưới mọi gốc cây quanh xóm: một lưới, một lần vẽ
+      const parts = blobs.map(([x, y, z, k]) => { const c = new THREE.CircleGeometry(1.9 * k, 12).rotateX(-Math.PI / 2); c.scale(1, 1, 0.8); c.translate(x + 0.5, y + 0.07, z + 0.4); return c; });
+      const m = new THREE.Mesh(mergeGeometries(parts, false), new THREE.MeshBasicMaterial({ color: 0x0c2410, transparent: true, opacity: this.sky.night ? 0.24 : IS_MOBILE ? 0.32 : 0.12, depthWrite: false }));
+      for (const c of parts) c.dispose(); m.renderOrder = -1; this.env.add(m);
+    }
     for (let i = 0; i < 60; i++) { const x = (r() * 2 - 1) * WORLD.x, z = WORLD.zMin + r() * (WORLD.zMax - WORLD.zMin); if (free(x, z)) st.add(mesh(GEO.ball, mat(i % 3 ? 0x79c96d : 0x5cb85f), x, 0.2, z, 0.4 + r() * 0.3, 0.3, 0.4)); }
     for (let i = 0; i < th.mountains; i++) {
       const a = Math.PI * (1.05 + (i / Math.max(1, th.mountains - 1)) * 0.9) + r() * 0.15, dist = 150 + r() * 50, hh = 34 + r() * 36;
