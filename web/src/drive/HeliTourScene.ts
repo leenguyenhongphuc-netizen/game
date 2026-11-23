@@ -28,13 +28,13 @@ function heli(): { root: THREE.Group; rotor: THREE.Mesh; tail: THREE.Mesh } {
 /** Khung cabin gắn vào máy quay: hai cột kính, mép trên, bảng đồng hồ — vài khối gộp thành một lưới. */
 function cockpit(): THREE.Group {
   const g = new THREE.Group(), M = (c: number) => new THREE.MeshLambertMaterial({ color: c });
-  const dash = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.5, 0.6), M(0x2b2f36)); dash.position.set(0, -0.78, -1.1); g.add(dash);
-  for (const x of [-0.9, 0.9]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.0, 0.08), M(0x3a3f47)); p.position.set(x, 0, -1.25); p.rotation.z = x > 0 ? -0.25 : 0.25; g.add(p); }
-  const top = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 0.6), M(0x3a3f47)); top.position.set(0, 0.85, -1.1); g.add(top);
-  for (const x of [-0.5, 0, 0.5]) { const d = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.02, 14).rotateX(Math.PI / 2 - 0.5), M(0xeaf6ff)); d.position.set(x, -0.6, -0.85); g.add(d); }
-  const out = bakeColored(g, false, false);
-  out.traverse((o) => { (o as THREE.Mesh).renderOrder = 10; const m = (o as THREE.Mesh).material as THREE.Material | undefined; if (m) m.depthTest = false; });
-  return out;
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.2, 0.3), M(0x4a4f57)); dash.position.set(0, -0.6, -1.1); g.add(dash);
+  for (const x of [-0.9, 0.9]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.3, 0.05), M(0x3a3f47)); p.position.set(x, 0, -1.1); p.rotation.z = x > 0 ? -0.18 : 0.18; g.add(p); }
+  const top = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.06, 0.3), M(0x3a3f47)); top.position.set(0, 0.55, -1.1); g.add(top);
+  for (const x of [-0.5, 0, 0.5]) { const d = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.02, 14).rotateX(Math.PI / 2 - 0.5), M(0xeaf6ff)); d.position.set(x * 0.6, -0.49, -1.0); g.add(d); }
+  // không gộp: chất liệu riêng (tắt kiểm tra chiều sâu để khung luôn nằm trên cảnh) — chất liệu gộp dùng chung với cả cảnh nên không được sửa
+  g.traverse((o) => { const m = o as THREE.Mesh; if (!m.isMesh) return; m.renderOrder = 10; (m.material as THREE.Material).depthTest = false; (m.material as THREE.Material).depthWrite = false; });
+  return g;
 }
 
 export class HeliTourScene {
@@ -93,6 +93,7 @@ export class HeliTourScene {
     const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1;
     this.renderer.setSize(w, h, false); this.renderer.domElement.style.width = '100%'; this.renderer.domElement.style.height = '100%';
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+    this.cockpit.scale.x = Math.min(1, (w / h) * 0.72); // màn dọc: kéo cột kính vào trong khung hình
   }
 
   /** Số lần vẽ của khung vừa rồi (để đo hiệu năng). */

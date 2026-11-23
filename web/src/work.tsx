@@ -13,32 +13,45 @@ export function NpcBadge({ id }: { id: string }) {
 }
 
 // ------------------------------------------------------------------ đơn hàng
+interface OrderItemV2 { specialtyId: string; kg: number; processed?: boolean; name?: string }
+interface OrderV2 { slot: number; npcId: string; title: string; kind?: string; items: OrderItemV2[]; reward: number; bonus?: number; xp?: number; done: boolean }
 export function OrdersPanel({ me, onChanged }: { me: Me; onChanged: () => void }) {
-  const [data, setData] = useState<{ orders: Order[]; resetsAt: number } | null>(null);
-  const load = useCallback(async () => { setData(await api('GET', '/api/orders')); }, []);
+  const [data, setData] = useState<{ orders: OrderV2[]; resetsAt: number; premium?: number; scale?: number } | null>(null);
+  const [products, setProducts] = useState<{ specialtyId: string; kg: number }[]>([]);
+  const load = useCallback(async () => {
+    const d = await api<{ orders: OrderV2[]; resetsAt: number; premium?: number; scale?: number }>('GET', '/api/orders');
+    setData(d);
+    // đơn hàng chế biến cần biết kho thành phẩm
+    if (d.orders.some((o) => o.items.some((it) => it.processed))) setProducts((await api<{ products: { specialtyId: string; kg: number }[] }>('GET', '/api/workshop')).products ?? []);
+  }, []);
   useEffect(() => { void load(); }, [load]);
   const act = useAction(() => { void load(); onChanged(); });
   if (!data) return <p className="hint">Đang tải…</p>;
-  const have = (id: string) => me.inventory.filter((i) => i.specialtyId === id).reduce((a, i) => a + i.kg, 0);
+  const have = (it: OrderItemV2) => it.processed
+    ? products.find((p) => p.specialtyId === it.specialtyId)?.kg ?? 0
+    : me.inventory.filter((i) => i.specialtyId === it.specialtyId).reduce((a, i) => a + i.kg, 0);
+  const premium = data.premium ?? ORDER_PREMIUM;
   return (
     <div>
-      <p className="muted">Mỗi ngày có {data.orders.length} đơn, trả cao hơn giá tham chiếu {Math.round((ORDER_PREMIUM - 1) * 100)}%. Đơn cần đặc sản vùng khác thì mua ở Chợ, đi Du lịch, hoặc xin bạn bè. Đổi đơn sau {fmtDuration(data.resetsAt - Date.now())}.</p>
+      <p className="muted">Mỗi ngày có {data.orders.length} đơn, trả cao hơn giá tham chiếu {Math.round((premium - 1) * 100)}% cộng tiền thưởng theo cấp; khối lượng đơn lớn dần khi bạn lên cấp{data.scale && data.scale > 1 ? ` (đang ×${data.scale})` : ''}. Đơn cuối là đơn riêng theo vai: chủ xưởng giao thành phẩm, thương lái giao đơn sỉ lớn. Đổi đơn sau {fmtDuration(data.resetsAt - Date.now())}.</p>
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {data.orders.map((o) => {
-        const ok = o.items.every((it) => have(it.specialtyId) >= it.kg);
+        const ok = o.items.every((it) => have(it) >= it.kg);
         return (
           <div className="row" key={o.slot}>
-            <div className="row-line"><div className="grow"><strong>{o.title}</strong><br /><NpcBadge id={o.npcId} /></div><span className="price">{fmtMoney(o.reward)}</span></div>
+            <div className="row-line"><div className="grow"><strong>{o.title}</strong><br /><NpcBadge id={o.npcId} /></div>
+              <span className="price">{fmtMoney(o.reward)}{o.xp ? <small className="order-xp"> · +{o.xp} EXP</small> : null}</span></div>
             {o.items.map((it) => {
-              const sp = SPECIALTIES[it.specialtyId], h = have(it.specialtyId);
+              const sp = SPECIALTIES[it.specialtyId], h = have(it);
               return (
-                <div className="row-line" key={it.specialtyId}>
-                  <span className="emoji">{CROPS[sp.crop].emoji}</span>
-                  <div className="grow">{sp.name}<br /><small>{REGIONS[sp.regionId].name}</small></div>
+                <div className="row-line" key={it.specialtyId + (it.processed ? 'P' : '')}>
+                  <span className="emoji">{it.processed ? '📦' : CROPS[sp.crop].emoji}</span>
+                  <div className="grow">{it.name ?? sp.name}<br /><small>{it.processed ? 'Thành phẩm chế biến' : REGIONS[sp.regionId].name}</small></div>
                   <span className={`num ${h >= it.kg ? 'up' : 'down'}`}>{Math.min(h, it.kg)}/{it.kg} kg</span>
                 </div>
               );
             })}
+            {o.bonus ? <small className="muted">Gồm thưởng {fmtMoney(o.bonus)} theo cấp.</small> : null}
             {o.done ? <span className="tag">Đã giao ✓</span> : <button className="primary" disabled={act.busy || !ok} onClick={() => act.run(() => api('POST', `/api/orders/${o.slot}/deliver`, {}))}>{ok ? 'Giao hàng' : 'Chưa đủ hàng'}</button>}
           </div>
         );

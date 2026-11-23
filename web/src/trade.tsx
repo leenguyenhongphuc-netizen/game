@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES } from '../../shared/catalog.ts';
 import { BULK_EASY_KG, EXPORT_MARKETS, EXPORT_MODES, LIMIT_REASONS, QUALITY_NAMES, TRAVEL_VS_TRUCK, bulkSellFactor, fmtMoney, wholesaleQuote } from '../../shared/rules.ts';
 import type { ExportMarket, ExportMode, ExportQuote } from '../../shared/rules.ts';
+import type { BundleQuote } from '../../shared/economy.ts';
 import { api } from './api.ts';
 import type { Me } from './api.ts';
 import { fmtDuration, useAction } from './ui.ts';
@@ -153,10 +154,13 @@ const lotId = (l: ExportLot) => (l.processed ? 'cb:' : '') + l.specialtyId + l.q
 const lotName = (l: { specialtyId: string; name?: string }) => l.name ?? SPECIALTIES[l.specialtyId]?.name ?? l.specialtyId;
 
 /** Xuất khẩu: chọn hàng tươi hoặc hàng chế biến → thị trường → đường đi; mỗi đường một giá cước, thời gian và hao hụt riêng. */
+type CartQuote = BundleQuote & { allowed: boolean; minKg: number; maxKg: number };
 export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => void; onSent: (s: ExportSent) => void }) {
   const [opt, setOpt] = useState<ExportOptions | null>(null);
   const [ships, setShips] = useState<Shipment[]>([]);
-  const [pick, setPick] = useState<string | null>(null);
+  /** Giỏ hàng xuất khẩu: mã lô → số kg muốn gửi. */
+  const [cart, setCart] = useState<Record<string, number>>({});
+  const [quotes, setQuotes] = useState<CartQuote[] | null>(null);
   const [market, setMarket] = useState<ExportMarket>('trung_quoc');
   const [now, setNow] = useState(Date.now());
   const load = useCallback(async () => {
@@ -165,108 +169,142 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
   }, []);
   useEffect(() => { void load(); const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [load]);
   const act = useAction(() => { void load(); refresh(); });
+  const products = opt?.products ?? [], lots = opt ? [...opt.stock, ...products] : [];
+  const inCart = lots.filter((l) => (cart[lotId(l)] ?? 0) > 0).map((l) => ({ lot: l, kg: Math.min(l.kg, cart[lotId(l)]) }));
+  const items = inCart.map(({ lot, kg }) => ({ specialtyId: lot.specialtyId, grade: lot.quality, kg, ...(lot.processed ? { processed: true } : {}) }));
+  const cartKey = JSON.stringify(items);
+  // báo giá lại cả giỏ cho mọi thị trường mỗi khi giỏ đổi
+  useEffect(() => {
+    if (!items.length) { setQuotes(null); return; }
+    let live = true;
+    const t = setTimeout(() => {
+      void api<{ quotes: CartQuote[] }>('POST', '/api/export/quote', { items }).then((r) => {
+        if (!live) return;
+        setQuotes(r.quotes);
+        setMarket((cur) => r.quotes.some((q) => q.market === cur && q.ok) ? cur : r.quotes.filter((q) => q.ok).sort((a, b) => b.net - a.net)[0]?.market ?? cur);
+      }).catch(() => live && setQuotes([]));
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartKey]);
   if (!opt) return <p className="hint">Đang lấy báo giá xuất khẩu…</p>;
   const scale = me.config.timeScale || 1;
-  const products = opt.products ?? [], lots = [...opt.stock, ...products];
-  const item = lots.find((l) => lotId(l) === pick) ?? null;
   const going = ships.filter((s) => s.status === 'dang_di'), done = ships.filter((s) => s.status === 'da_toi').slice(0, 5);
   const full = opt.active >= opt.maxActive, discount = opt.discount ?? 0;
-  /** Đường lãi nhất của lô đang chọn ở từng thị trường. */
-  const bestOf = (m: ExportMarket) => item?.quotes.filter((q) => q.market === m && q.ok).sort((a, b) => b.net - a.net)[0] ?? null;
-  const overall = item ? MARKET_IDS.map(bestOf).filter((q): q is ExportQuote => !!q).sort((a, b) => b.net - a.net)[0] ?? null : null;
-  const here = item ? item.quotes.filter((q) => q.market === market).sort((a, b) => Number(b.ok) - Number(a.ok) || b.net - a.net) : [];
+  const totalKg = inCart.reduce((s, x) => s + x.kg, 0);
+  const bestOf = (m: ExportMarket) => quotes?.filter((q) => q.market === m && q.ok && q.allowed).sort((a, b) => b.net - a.net)[0] ?? null;
+  const overall = quotes ? MARKET_IDS.map(bestOf).filter((q): q is CartQuote => !!q).sort((a, b) => b.net - a.net)[0] ?? null : null;
+  const here = quotes ? quotes.filter((q) => q.market === market).sort((a, b) => Number(b.ok) - Number(a.ok) || b.net - a.net) : [];
   const top = here.find((q) => q.ok) ?? null;
-  const choose = (l: ExportLot) => {
-    setPick(lotId(l));
-    // nếu thị trường đang chọn không nhận lô này thì nhảy sang thị trường lãi nhất nhận được
-    if (!l.quotes.some((q) => q.market === market && q.ok)) { const b = l.quotes.filter((q) => q.ok).sort((x, y) => y.net - x.net)[0]; if (b) setMarket(b.market); }
-  };
+  const setKg = (l: ExportLot, kg: number) => setCart((c) => ({ ...c, [lotId(l)]: Math.max(0, Math.min(l.kg, Math.round(kg))) }));
+  const toggle = (l: ExportLot) => setCart((c) => { const id = lotId(l), n = { ...c }; if (n[id]) delete n[id]; else n[id] = l.kg; return n; });
   const lotButton = (l: ExportLot) => {
     const sp = SPECIALTIES[l.specialtyId], id = lotId(l);
     return (
-      <button key={id} className={l.processed ? 'pick processed' : 'pick'} aria-pressed={pick === id} onClick={() => choose(l)}>
+      <button key={id} className={l.processed ? 'pick processed' : 'pick'} aria-pressed={(cart[id] ?? 0) > 0} onClick={() => toggle(l)}>
         <span className="emoji" aria-hidden="true">{l.processed ? '📦' : sp ? CROPS[sp.crop].emoji : '📦'}</span><strong>{lotName(l)}</strong><small>{l.processed ? 'Chế biến' : QUALITY_NAMES[l.quality]} · {l.kg} kg</small>
       </button>
     );
   };
+  const send = (q: CartQuote) => act.run(async () => {
+    // chỉ gửi các mặt hàng thị trường này nhận; mặt hàng bị loại ở lại kho
+    const okLines = q.lines.filter((x) => x.ok).map((x) => ({ specialtyId: x.specialtyId, grade: x.grade, kg: x.kg, ...(x.processed ? { processed: true } : {}) }));
+    await api('POST', '/api/export/ship', { items: okLines, mode: q.mode, market: q.market });
+    onSent({ mode: q.mode, market: q.market, kg: q.kg, specialtyId: okLines[0].specialtyId });
+    setCart({});
+  });
   return (
     <div className="export">
-      <p className="muted">Bán ra nước ngoài được giá hơn trong nước và không bị "được mùa mất giá". Chọn hàng, chọn nước mua, rồi chọn đường đi: mỗi đường có cước, thời gian và hao hụt riêng. Tiền về khi lô hàng tới nơi.</p>
+      <p className="muted">Gom nhiều mặt hàng vào một lô: mức tối thiểu tính trên tổng lô, cước chia theo kg. Nước ngoài trả cao hơn trong nước nhưng mỗi thị trường chỉ mua dễ vài tấn mỗi loại một ngày, xả nhiều thì giá rớt; giá thế giới lên xuống mỗi ngày. Tiền về khi lô tới nơi.</p>
       <div className="ex-status">
-        <span>Đang có <b>{opt.active}</b> lô trên đường. Gửi bao nhiêu lô tuỳ lượng hàng trong kho và mức tối thiểu của từng đường.</span>
+        <span>Đang có <b>{opt.active}</b> lô trên đường.</span>
         {discount > 0 && <span className="tag">Bạn được giảm {Math.round(discount * 100)}% cước</span>}
       </div>
       {act.error && <p className="error" role="alert">{act.error}</p>}
 
-      <h3>1 · Chọn hàng trong kho</h3>
-      {lots.length === 0 && <p className="hint">Kho chưa có hàng để xuất. Thu hoạch, thu mua hoặc chế biến trước đã.</p>}
+      <h3>1 · Giỏ hàng xuất khẩu</h3>
+      {lots.length === 0 && <p className="hint">Kho chưa có hàng để xuất. Thu hoạch, thu mua, chế biến — hoặc nhận hợp đồng của công ty xuất nhập khẩu ở thẻ Hợp đồng.</p>}
       {opt.stock.length > 0 && <><h4>Nông sản tươi</h4><div className="pick-row wrap">{opt.stock.map(lotButton)}</div></>}
       {products.length > 0 && <><h4>Hàng chế biến <small>hao hụt thấp, không xét loại, miễn kiểm dịch</small></h4><div className="pick-row wrap">{products.map(lotButton)}</div></>}
+      {inCart.length > 0 && (
+        <div className="ex-cart">
+          {inCart.map(({ lot, kg }) => (
+            <div className="row-line ex-cart-line" key={lotId(lot)}>
+              <div className="grow"><strong>{lotName(lot)}</strong> <small>{lot.processed ? 'chế biến' : QUALITY_NAMES[lot.quality]} · có {lot.kg} kg</small></div>
+              <div className="qty">
+                <button className="ghost" onClick={() => setKg(lot, kg - 100)} aria-label="Bớt 100 kg">−100</button>
+                <input type="number" inputMode="numeric" min={1} max={lot.kg} value={kg} onChange={(e) => setKg(lot, Number(e.target.value) || 0)} aria-label={`Số kg ${lotName(lot)}`} />
+                <button className="ghost" onClick={() => setKg(lot, kg + 100)} aria-label="Thêm 100 kg">+100</button>
+                <button className="ghost" onClick={() => setKg(lot, lot.kg / 2)}>½</button>
+                <button className="ghost" onClick={() => setKg(lot, lot.kg)}>Hết</button>
+                <button className="ghost" onClick={() => toggle(lot)} aria-label={`Bỏ ${lotName(lot)}`}>✕</button>
+              </div>
+            </div>
+          ))}
+          <p className="ex-cart-total">Tổng lô: <b>{totalKg.toLocaleString('vi-VN')} kg</b> · {inCart.length} mặt hàng</p>
+        </div>
+      )}
 
-      {item && (
+      {inCart.length > 0 && (
         <>
           <h3>2 · Bán sang đâu</h3>
-          {overall && <p className="notice ex-best">💡 Với {item.kg} kg {lotName(item)}, lãi nhất là sang <b>{EXPORT_MARKETS[overall.market].name}</b> bằng <b>{EXPORT_MODES[overall.mode].name}</b>: lãi {fmtMoney(overall.net)}.</p>}
-          <div className="pick-row wrap ex-markets">
-            {MARKET_IDS.map((m) => {
-              const mk = EXPORT_MARKETS[m], b = bestOf(m);
-              return (
-                <button key={m} className={b ? 'pick' : 'pick off'} aria-pressed={market === m} onClick={() => setMarket(m)}>
-                  <span className="emoji" aria-hidden="true">{mk.icon}</span><strong>{mk.name}</strong>
-                  <small>giá ×{mk.priceMult}{mk.processedOnly ? ' · chỉ hàng chế biến, hàng khô' : mk.gradeA ? ' · tươi: chỉ Loại 1' : ''}</small>
-                  <small className={b ? 'up' : 'down'}>{b ? `lãi tới ${fmtMoney(b.net)}` : mk.processedOnly && !item.processed ? 'không nhận hàng tươi' : mk.gradeA && !item.processed && item.quality !== 'A' ? 'không nhận loại này' : 'lô chưa đủ kg'}</small>
-                </button>
-              );
-            })}
-          </div>
-          <p className="muted">{EXPORT_MARKETS[market].note}{EXPORT_MARKETS[market].treat && !item.processed ? ` ${EXPORT_MARKETS[market].treat}: thêm ${fmtMoney(EXPORT_MARKETS[market].treatFee ?? 0)}/kg và ${fmtDuration(((EXPORT_MARKETS[market].treatMinutes ?? 0) * 60_000) / scale)} (hàng khô và hàng chế biến được miễn).` : ''}</p>
-
-          <h3>3 · Đi đường nào</h3>
-          {here.length > 1 && (
-            <div className="ex-table-wrap">
-              <table className="ex-table">
-                <thead><tr><th>Đường</th><th>Cước</th><th>Thời gian</th><th>Hao</th><th>Lãi</th></tr></thead>
-                <tbody>
-                  {here.map((q) => (
-                    <tr key={q.mode} className={q === top ? 'best' : q.ok ? '' : 'off'}>
-                      <th><span aria-hidden="true">{EXPORT_MODES[q.mode].icon}</span> {EXPORT_MODES[q.mode].name}</th>
-                      {q.ok ? <><td>{fmtMoney(q.freight)}</td><td>{fmtDuration((q.minutes * 60_000) / scale)}</td><td>{q.spoilKg} kg</td><td><b>{fmtMoney(q.net)}</b></td></> : <td colSpan={4}>{q.reason}</td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {!quotes && <p className="hint">Đang báo giá cả lô…</p>}
+          {overall && <p className="notice ex-best">💡 Lô {totalKg.toLocaleString('vi-VN')} kg lãi nhất khi sang <b>{EXPORT_MARKETS[overall.market].name}</b> bằng <b>{EXPORT_MODES[overall.mode].name}</b>: lãi {fmtMoney(overall.net)}.</p>}
+          {quotes && (
+            <div className="pick-row wrap ex-markets">
+              {MARKET_IDS.map((m) => {
+                const mk = EXPORT_MARKETS[m], b = bestOf(m), any = quotes.find((q) => q.market === m);
+                return (
+                  <button key={m} className={b ? 'pick' : 'pick off'} aria-pressed={market === m} onClick={() => setMarket(m)}>
+                    <span className="emoji" aria-hidden="true">{mk.icon}</span><strong>{mk.name}</strong>
+                    <small>giá ×{mk.priceMult}{mk.processedOnly ? ' · chỉ hàng chế biến, hàng khô' : mk.gradeA ? ' · tươi: chỉ Loại 1' : ''}</small>
+                    <small className={b ? 'up' : 'down'}>{b ? `lãi tới ${fmtMoney(b.net)}` : any?.reason ?? 'không nhận lô này'}</small>
+                  </button>
+                );
+              })}
             </div>
           )}
+          <p className="muted">{EXPORT_MARKETS[market].note}{EXPORT_MARKETS[market].treat ? ` ${EXPORT_MARKETS[market].treat} trái tươi: thêm ${fmtMoney(EXPORT_MARKETS[market].treatFee ?? 0)}/kg và ${fmtDuration(((EXPORT_MARKETS[market].treatMinutes ?? 0) * 60_000) / scale)}.` : ''}</p>
+
+          <h3>3 · Đi đường nào</h3>
           {here.map((q) => {
-            const m = EXPORT_MODES[q.mode];
+            const m = EXPORT_MODES[q.mode], out = q.lines.filter((x) => !x.ok);
             return (
               <div className={q.ok ? 'route' : 'route off'} key={q.mode}>
                 <span className="emoji" aria-hidden="true">{m.icon}</span>
                 <div className="grow">
                   <strong>{m.name}{q === top && here.filter((x) => x.ok).length > 1 ? <span className="tag"> lãi nhất</span> : null}</strong>
-                  <small>{m.note}</small>
+                  <small>{m.note} Nhận lô {m.minKg.toLocaleString('vi-VN')}–{m.maxKg.toLocaleString('vi-VN')} kg.</small>
                   {q.ok ? (
-                    <div className="route-facts">
-                      <span>📦 {q.kg} kg</span>
-                      {q.lcl && <span className="tag lcl">Gom hàng lẻ (LCL)</span>}
-                      <span>🧾 cước {fmtMoney(q.freight)}</span>
-                      <span>⏱️ {fmtDuration((q.minutes * 60_000) / scale)}</span>
-                      <span>{q.spoilKg > 0 ? `🥀 hao ${q.spoilKg} kg` : '✨ không hao'}</span>
-                      <span>💵 {fmtMoney(q.unitPrice)}/kg</span>
-                      <span>🏁 qua {q.gatewayName}{q.inlandKm > 0 ? ` (${q.inlandKm} km)` : ''}</span>
-                    </div>
+                    <>
+                      <div className="route-facts">
+                        <span>📦 {q.kg} kg</span>
+                        {q.lcl && <span className="tag lcl">Gom hàng lẻ (LCL)</span>}
+                        <span>🧾 cước {fmtMoney(q.freight)}</span>
+                        <span>⏱️ {fmtDuration((q.minutes * 60_000) / scale)}</span>
+                        <span>{q.spoilKg > 0 ? `🥀 hao ${q.spoilKg} kg` : '✨ không hao'}</span>
+                        <span>💵 tiền về {fmtMoney(q.payout)}</span>
+                        <span>🏁 qua {q.gatewayName}{q.inlandKm > 0 ? ` (${q.inlandKm} km)` : ''}</span>
+                      </div>
+                      <ul className="ex-lines">
+                        {q.lines.map((x) => (
+                          <li key={x.specialtyId + x.grade + (x.processed ? 'P' : '')} className={x.ok ? '' : 'off'}>
+                            {x.name} {x.processed ? '' : `(${QUALITY_NAMES[x.grade]})`}: {x.ok ? <>{x.kg} kg, hao {x.spoilKg} kg, {fmtMoney(x.unitPrice)}/kg{x.demand < 1 ? <small className="down"> · thị trường đã nhiều hàng, giá ×{x.demand}</small> : null}, cước {fmtMoney(x.freight)}</> : <small className="error">không đi — {x.reason}</small>}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
                   ) : <small className="error">{q.reason}</small>}
                 </div>
                 {q.ok && (
-                  <button className="go" disabled={act.busy || me.user.cash < q.freight || full}
-                    onClick={() => act.run(async () => { await api('POST', '/api/export/ship', { specialtyId: item.specialtyId, grade: item.quality, kg: q.kg, mode: q.mode, market: q.market, ...(item.processed ? { processed: true } : {}) }); onSent({ mode: q.mode, market: q.market, kg: q.kg, specialtyId: item.specialtyId }); setPick(null); })}>
-                    Gửi đi<small>{me.user.cash < q.freight ? 'thiếu tiền cước' : `lãi ${fmtMoney(q.net)}`}</small>
+                  <button className="go" disabled={act.busy || me.user.cash < q.freight || full || !q.allowed} onClick={() => send(q)}>
+                    Gửi đi<small>{me.user.cash < q.freight ? 'thiếu tiền cước' : out.length ? `lãi ${fmtMoney(q.net)} · bỏ ${out.length} mặt hàng` : `lãi ${fmtMoney(q.net)}`}</small>
                   </button>
                 )}
               </div>
             );
           })}
-          {here.length === 0 && <p className="hint">Chưa có đường nào tới thị trường này.</p>}
+          {quotes && here.length === 0 && <p className="hint">Chưa có đường nào tới thị trường này.</p>}
           {full && <p className="notice">Bạn đang có {opt.active} lô trên đường, đã chạm mức tối đa {opt.maxActive} lô. Chờ một lô tới nơi rồi gửi tiếp.</p>}
         </>
       )}

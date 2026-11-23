@@ -11,7 +11,7 @@ import type { RideStep } from './RideHud.tsx';
 export interface HeliTourInput { fee: number; own: boolean; fields: (FieldLite & { regionName: string; name: string | null; emoji: string | null; stepName: string | null })[] }
 
 const STEPS: RideStep[] = [{ icon: '🛫', label: 'Cất cánh' }, { icon: '🌾', label: 'Bay vòng ruộng' }, { icon: '🛬', label: 'Hạ cánh' }];
-const HELI_CSS = `.tr .heli-views{position:absolute;right:max(12px,env(safe-area-inset-right));top:calc(max(12px,env(safe-area-inset-top)) + 64px);display:flex;gap:6px;z-index:5}
+const HELI_CSS = `.tr .heli-views{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:calc(max(12px,env(safe-area-inset-bottom)) + 76px);display:flex;gap:6px;z-index:5}
 .tr .heli-views button{min-height:44px;padding:4px 12px;border-radius:12px;border:2px solid #fff;background:rgba(20,40,60,.55);color:#fff;font-weight:700}
 .tr .heli-views button[aria-pressed='true']{background:#ffd23f;color:#3a2a00;border-color:#c99a00}
 .tr .heli-list{margin:6px 0 0;padding:0;list-style:none;display:grid;gap:3px;font-size:.85rem;text-align:left}`;

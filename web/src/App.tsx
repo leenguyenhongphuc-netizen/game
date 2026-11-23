@@ -33,6 +33,9 @@ import { LandCertificate, PassportPanel } from './passport.tsx';
 import { ProgressPanel } from './progress.tsx';
 import { FusionPanel } from './fusion.tsx';
 import { GaragePanel } from './vehicles.tsx';
+import { FieldsPanel } from './fields.tsx';
+import type { FieldsData, HeliTourData } from './fields.tsx';
+import { HeliTour } from './drive/HeliTour.tsx';
 import { ShoppingPanel, useOwnedGoods } from './shopping.tsx';
 import { LandUpgrades } from './upgrades.tsx';
 import { ImportRide } from './drive/ImportRide.tsx';
@@ -260,6 +263,14 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [bulk, setBulk] = useState<{ label: string; done: number; total: number } | null>(null);
   const bulkStop = useRef(false);
   const [hudPop, setHudPop] = useState<'wx' | 'plots' | 'quest' | null>(null);
+  useEffect(() => { // cánh đồng lớn của Nhà nông hiện phía sau xóm
+    const w = worldRef.current as unknown as { setFields?: (f: FieldsData['fields'] | null) => void } | null;
+    if (!w?.setFields) return;
+    if (me?.user.role !== 'nong_dan' || tour) { w.setFields(null); return; }
+    let live = true;
+    void api<FieldsData>('GET', '/api/fields').then((d) => { if (live) w.setFields?.(d.fields); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [me?.user.role, tour, village]);
   const seedScroll = useDragScroll<HTMLDivElement>(typeof matchMedia !== 'undefined' && matchMedia('(max-height: 430px)').matches);
   const gameRef = useRef<HTMLDivElement>(null), hudRef = useRef<HTMLDivElement>(null), stackRef = useRef<HTMLDivElement>(null);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -275,7 +286,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [sightWalk, setSightWalk] = useState<SightTrip | null>(null);
   const [marketTab, setMarketTab] = useState<'cho' | 'gia'>('cho');
   const [xomTab, setXomTab] = useState<'ban' | 'htx' | 'qua'>('ban');
-  const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua' | 'tui' | 'dunghop'>('kho');
+  const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua' | 'tui' | 'dunghop' | 'ruong'>('kho');
+  const [heli, setHeli] = useState<HeliTourData | null>(null);
   type FactoryView = { machines: { id: number | string; kind: string; name: string; level?: number; slots?: number; jobs?: { recipeId?: string; doneAt?: number; done?: boolean }[] }[] };
   const [factory, setFactory] = useState<FactoryView | null>(null);
   const isWorkshop = me?.user.role === 'xuong';
@@ -666,6 +678,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         setTravelTab(r.toMarket ? 'sieuthi' : 'thamquan'); setTab('bando');
       }} />}
       {sightWalk && shopOpen && <ShopSheet sightId={sightWalk.sight.id} shopId={shopOpen} onClose={() => setShopOpen(null)} onChanged={() => { void refresh(); }} />}
+      {heli && <HeliTour tour={heli} onDone={() => setHeli(null)} />}
       {importRide && <ImportRide order={importRide} onDone={() => { setImportRide(null); setKhoTab('xuong'); setTab('kho'); }} />}
       {cert !== null && <LandCertificate plotId={cert} onClose={() => setCert(null)} />}
       {building && atHome && center && tab === 'vuon' && <BuildMode me={me} home={center} worldRef={worldRef} onChanged={reload} onClose={() => setBuilding(false)} />}
@@ -685,11 +698,13 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                   <button aria-selected={khoTab === 'xuat'} onClick={() => setKhoTab('xuat')}>Xuất khẩu</button>
                   <button aria-selected={khoTab === 'tui'} onClick={() => setKhoTab('tui')}>Túi đồ</button>
                   <button aria-selected={khoTab === 'dunghop'} onClick={() => setKhoTab('dunghop')}>Dung hợp</button>
+                  {me.user.role === 'nong_dan' && <button aria-selected={khoTab === 'ruong'} onClick={() => setKhoTab('ruong')}>Cánh đồng</button>}
                   {isTrader && atHome && <button aria-selected={khoTab === 'mua'} onClick={() => setKhoTab('mua')}>Thu mua</button>}
                 </div>
                 {khoTab === 'kho' && <Stock me={me} prices={prices} marketDay={!!village?.events?.some((e) => e.id === 'cho_phien' && e.active)} floating={!!village?.events?.some((e) => e.id === 'cho_noi' && e.active) && atHome} friends={friendList} refresh={reload} />}
                 {khoTab === 'tui' && <BagPanel me={me} refresh={reload} />}
                 {khoTab === 'dunghop' && <FusionPanel me={me} refresh={reload} />}
+                {khoTab === 'ruong' && <FieldsPanel me={me} refresh={reload} onTour={(t) => { setTab('vuon'); setHeli(t); }} onFields={(d: FieldsData) => (worldRef.current as unknown as { setFields?: (f: FieldsData['fields']) => void } | null)?.setFields?.(d.fields)} />}
                 {khoTab === 'don' && <OrdersPanel me={me} onChanged={reload} />}
                 {khoTab === 'xuat' && <ExportPanel me={me} refresh={reload} onSent={(x) => { setTab('vuon'); setExportRide(x); }} />}
                 {khoTab === 'mua' && <TradePanel me={me} regionId={me.user.homeRegionId!} refresh={reload} openStock={() => setKhoTab('kho')} />}

@@ -73,6 +73,8 @@ export class StopArea {
   private added = 0; private cost = 0; private energy: number; private wc = false; private wcT = 0; private minutes = 0;
   private msg: string | null = null; private msgT = 0; private camX = ENTRY[0]; private camZ = ENTRY[1]; private hudT = 0;
   private auto = false; private autoStep = 0; private autoT = 0;
+  /** Mái che cây xăng: mờ đi khi xe/người ở dưới để máy quay nhìn thấy trụ bơm. */
+  private roof: THREE.Group | null = null; private roofMats: THREE.Material[] = []; private roofSign: THREE.Sprite | null = null; private roofA = 1;
 
   constructor(private host: HTMLElement, private info: StopAreaInfo, private cb: { onHud(h: StopHud): void; onDone(r: StopResult): void; onSpot?(s: 'shop' | 'food'): void }) {
     this.energy = info.energy;
@@ -121,7 +123,8 @@ export class StopArea {
     for (const [x, z, r] of [[-27, -21, 1.9], [26, -10, Math.PI], [0, -1.5, Math.PI / 2], [30, -16, 0]] as [number, number, number][]) { const a = boxM(0xffffff, x, 0.04, z, 0.4, 0.02, 2.6, { rough: 1 }); a.rotation.y = r; g.add(a); }
     // cây xăng: mái che, hai đảo bơm, trụ bơm
     if (pumps) {
-      g.add(boxM(0xf08a24, -11, 6.1, -12, 22, 0.5, 13), boxM(0xffffff, -11, 5.8, -12, 22.4, 0.2, 13.4));
+      const roof = new THREE.Group(); roof.add(boxM(0xf08a24, -11, 6.1, -12, 22, 0.5, 13), boxM(0xffffff, -11, 5.8, -12, 22.4, 0.2, 13.4));
+      this.roof = bakeColored(roof, false); this.roof.traverse((o) => { const me = o as THREE.Mesh; if (!me.isMesh) return; const m = (me.material as THREE.Material).clone(); m.transparent = true; me.material = m; this.roofMats.push(m); this.own.push(m); }); sc.add(this.roof);
       for (const [x, z] of [[-22, -17.8], [-22, -6.2], [0, -17.8], [0, -6.2]]) g.add(mesh(GEO.cyl, mat(0xeef0f3), x, 3, z, 0.28, 6, 0.28));
       for (const isl of ISLANDS) {
         const x = (isl.x0 + isl.x1) / 2; g.add(boxM(0xd7dbe0, x, 0.15, -12, 1.6, 0.3, 7));
@@ -143,7 +146,7 @@ export class StopArea {
     // biển hiệu
     const nm = label(`☕ ${info.name}`, '#2f6fd0', 15); nm.position.set(bx, 6.6, BUILDING.z0); sc.add(nm);
     for (const [txt, bg, x] of [['🛒 Cửa hàng tiện lợi', '#e0342b', DOORS.shop[0]], ['🍜 Quán ăn', '#f08a24', DOORS.food[0]], ['🚻 Nhà vệ sinh', '#2f6fd0', DOORS.wc[0]]] as [string, string, number][]) { const s = label(txt, bg, 6); s.position.set(x, 3.0, BUILDING.z0 - 0.3); sc.add(s); }
-    if (pumps) { const s = label(`⛽ ${Math.round(info.electric ? 25_000 : info.price).toLocaleString('vi-VN')}đ/lít`, '#f08a24', 9); s.position.set(-11, 7.3, -12); sc.add(s); }
+    if (pumps) { const s = label(`⛽ ${Math.round(info.electric ? 25_000 : info.price).toLocaleString('vi-VN')}đ/lít`, '#f08a24', 9); s.position.set(-11, 7.3, -12); sc.add(s); this.roofSign = s; }
     { const s = label(`⚡ Sạc nhanh${info.electric ? ` ${Math.round(info.price).toLocaleString('vi-VN')}đ/kWh` : ''}`, '#1f9d5a', 7); s.position.set(14, 4.6, -11); sc.add(s); }
     { const s = label('LỐI VÀO →', '#2f6fd0', 6); s.position.set(-42, 3.2, -30); sc.add(s); const t = label('RA CAO TỐC →', '#1f9d5a', 7); t.position.set(42, 3.2, -31); sc.add(t); }
     if (pumps) {
@@ -247,13 +250,15 @@ export class StopArea {
   private near(): Spot | null {
     if (this.phase !== 'walk' || this.wcT > 0) return null;
     const d = (s: Spot) => { const p = this.spotPos(s); return Math.hypot(p[0] - this.px, p[1] - this.pz); };
-    const order: Spot[] = this.holding ? ['car', 'pump', 'charger'] : ['pump', 'charger', 'shop', 'food', 'wc', 'car'];
+    const order: Spot[] = this.holding ? (this.added > 0 && !this.plugged ? ['pump', 'charger', 'car'] : ['car', 'pump', 'charger']) : ['pump', 'charger', 'shop', 'food', 'wc', 'car'];
+    let best: Spot | null = null, bestD = 1e9;
     for (const s of order) {
       if (s === 'food' && this.info.kind !== 'rest') continue;
       if (s === 'pump' && (this.info.electric || this.bay?.kind !== 'pump')) continue;
       if (s === 'charger' && (!this.info.electric || this.bay?.kind !== 'charger')) continue;
-      if (d(s) < (s === 'car' ? 1.6 : 1.8)) return s;
+      const dd = d(s); if (dd < (s === 'car' ? 1.6 : 1.8)) { if (this.holding) return s; if (dd < bestD) { bestD = dd; best = s; } }
     }
+    if (best) return best;
     if (!this.holding && Math.hypot(this.px - this.cx, this.pz - this.cz) < this.carLen / 2 + 1.7) return 'car';
     return null;
   }
@@ -308,6 +313,12 @@ export class StopArea {
     const portrait = this.camera.aspect < 0.9, h = walk ? (portrait ? 17 : 12) : portrait ? 30 : 21, back = walk ? (portrait ? 12 : 10) : portrait ? 20 : 15;
     this.camera.position.set(this.camX, h, this.camZ + back); this.camera.lookAt(this.camX, 0, this.camZ - 1);
     this.quality.busy = Math.abs(this.v) > 0.1 || walk;
+    if (this.roof) {
+      const under = (x: number, z: number) => x > -25 && x < 3 && z > -22 && z < 2;
+      const want = under(tx, tz) || under(this.camX, this.camZ - 4) ? 0.15 : 1; this.roofA += (want - this.roofA) * ease(0.15, real);
+      for (const m of this.roofMats) { m.opacity = this.roofA; m.depthWrite = this.roofA > 0.9; }
+      if (this.roofSign) this.roofSign.visible = this.roofA > 0.6;
+    }
     this.renderer.render(this.scene, this.camera);
     this.hudT -= real; if (this.hudT <= 0) { this.hudT = 0.1; this.cb.onHud(this.hudNow()); }
   };

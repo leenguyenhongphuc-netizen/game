@@ -37,6 +37,12 @@ const CSS = `
 .sa-shop h2 { margin: 0; text-align: center; font-family: 'Baloo 2', sans-serif; font-size: 1.15rem; }
 .sa-wc { position: absolute; inset: 0; display: grid; place-items: center; background: #2f6fd055; pointer-events: none; }
 .sa-wc span { background: #fff; border: 3px solid #2f6fd0; border-radius: 18px; padding: 12px 18px; font-weight: 800; font-size: 1rem; animation: sa-bob 0.6s ease-in-out infinite alternate; }
+.sa .dg-foods { display: grid; gap: 5px; max-height: 46vh; overflow: auto; -webkit-overflow-scrolling: touch; }
+.sa .dg-food { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 6px; align-items: center; background: #fffdf4; border: 2px solid #e3cf9a; border-radius: 12px; padding: 4px 6px 4px 8px; font-size: 0.84rem; font-weight: 700; }
+.sa .dg-food b { font-size: 1.3rem; } .sa .dg-food small { display: block; font-weight: 600; font-size: 0.72rem; color: #7a6547; }
+.sa .dg-food button { font: inherit; font-family: 'Baloo 2', sans-serif; font-weight: 700; min-height: 44px; min-width: 52px; border-radius: 12px; border: 2px solid #7a4a22; background: #f6e7bd; box-shadow: 0 3px 0 #7a4a22; cursor: pointer; color: inherit; padding: 2px 8px; }
+.sa .dg-food button.eat { background: #ffd23f; } .sa .dg-food button:disabled { opacity: 0.5; }
+.sa-shop .tot { display: flex; justify-content: space-between; font-weight: 800; }
 @keyframes sa-bob { from { transform: translateY(-3px); } to { transform: translateY(3px); } }
 @media (orientation: landscape) and (max-height: 500px) { .sa-joy { width: 112px; height: 112px; } .sa-btn { min-height: 44px; font-size: 0.86rem; } .sa-btn.main { min-height: 48px; } }
 `;

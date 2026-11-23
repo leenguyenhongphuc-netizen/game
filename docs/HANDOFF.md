@@ -49,11 +49,12 @@ Người dùng báo (ảnh + video ngày 23/11):
 5. **Ảnh 4–6 — xuất khẩu:** muốn **gộp nhiều loại trái cây trong một lô**; xây **công ty xuất nhập khẩu NPC** đặt đơn và đi thu mua để cân bằng game; đơn hàng của xưởng/đơn thu mua hiện **giá trị quá thấp** so với lời xuất khẩu (mất cân bằng) → làm lại kinh tế cho đàng hoàng.
 6. **Thi sa hình:** đồ hoạ xấu; **vô-lăng khó điều khiển, quá nhạy** → giảm độ khó (trợ lái, bắt dính, vô-lăng chậm, góc nhìn rõ).
 7. **Trạm dừng/cây xăng:** phải có **nhánh rẽ riêng**, đỗ vào bãi, **xuống xe đi bộ** vào cửa hàng mua nước/vệ sinh; đổ xăng thì tới trụ, **cầm vòi bơm** và tính tiền; xe điện tương tự với trụ sạc. **Giảm số lần dừng nghỉ** (hiện quá nhiều, gây phiền).
-8. **Nông dân quy mô lớn:** nâng vườn lên **hàng trăm/hàng nghìn ô**, mua **máy cày**, công cụ; **trực thăng** bay xem ruộng; **drone** rải phân, phun thuốc.
-9. **Cân bằng mọi vai** (nông dân, chủ xưởng, thương lái) — không vai nào lấn át.
+8. ✅ (nhánh D2, chờ App nối) **Nông dân quy mô lớn:** nâng vườn lên **hàng trăm/hàng nghìn ô**, mua **máy cày**, công cụ; **trực thăng** bay xem ruộng; **drone** rải phân, phun thuốc.
+9. **Cân bằng mọi vai** (phần nông dân: xong ở D2 — xem GDD "Nông trại quy mô lớn", `node tools/farm-sim.ts`) (nông dân, chủ xưởng, thương lái) — không vai nào lấn át.
 
 ## Nhật ký
 
+- **23/11 (Opus, nhánh D2 — nông trại lớn):** cánh đồng theo khối 100 ô (tối đa 40 khối = 4.000 ô, chỉ nhà nông, từ cấp 5), máy tưới/cày/gieo/gặt, drone (chỉ vùng nhà), thuê nhân công, trực thăng thuê/mua. Luật `shared/farm.ts`, máy chủ `server/src/farm.ts` (bảng `fields`, `farm_machines`, `field_jobs`; kiểm thử `server/test/farm.test.ts`), bảng `web/src/fields.tsx`, cảnh `web/src/scene/fields.ts` + `World.setFields()`, hoạt cảnh `web/src/drive/HeliTour.tsx`, trang thử `fields-test.html` (`?gia=2000` dữ liệu giả). 2.000 ô chỉ thêm 3 lần vẽ. **Chưa nối vào App.tsx**: thêm nút mở `<FieldsPanel me refresh onTour onFields={(d) => world.setFields(d.fields)} />` cho nhà nông, và `{tour && <HeliTour tour={tour} onDone={() => setTour(null)} />}`.
 - **23/11 (Opus):** triển khai bản `55b84be`: hoạt ảnh trồng/chăm/thu hàng loạt theo cấp, thu mua theo tải trọng xe (nguồn 40 tấn/ngày, giá bậc thang, ép giá khi xả, hao đường dài, thùng lạnh), bằng lái có hạn/điểm/thi/đổi, sân thi sa hình 11 bài, đồ mua sắm hiện lên nhân vật/nhà/xe + Tủ đồ, sửa dải nền dưới HUD. Bộ kiểm đầy đủ iPhone dọc+ngang 0 lỗi; 59/59 kiểm thử máy chủ.
 - **22–23/11 (Fable):** tham quan 13 địa danh (Hội An dựng bằng ảnh Kling), taxi ghế sau, ra đảo bằng tàu, hộ chiếu/cấp bậc 30 cấp, thể lực, xưởng máy + máy nhập khẩu + dung hợp, xe tải nhiều loại + xe điện + trạm dừng, mua sắm, màn vườn mới (thanh giống, HUD 2 hàng), chống giật nhiều đợt.
 - Mô hình Fable hết hạn mức tới 26/11 22:00 UTC; đang làm tiếp bằng Opus.

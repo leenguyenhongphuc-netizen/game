@@ -19,6 +19,7 @@ import {
   SIGHT_MIN_KM, SIGHT_REWARD, sightRoute, SUPER_DAILY_KG, SUPER_FEE, SUPER_MAX_LOTS, SUPER_MAX_LOT_KG, SUPER_MAX_RATIO, SUPER_MIN_KG, SUPER_NPC_KG, SUPER_NPC_RATIO, superPriceRange,
 } from '../../shared/rules.ts';
 import { SIGHTS, SIGHT_PROVINCES, sightsOfProvince } from '../../shared/sights.ts';
+import { ORDER_PREMIUM_V2, machineBatchKg, orderBonus } from '../../shared/economy.ts';
 import { ITEMS, ITEM_BAG_MAX, HOME_SHOP_ITEMS } from '../../shared/items.ts';
 import { DEFAULT_VEHICLE, VEHICLES, tripPlanFor, truckOf } from '../../shared/vehicles.ts';
 import type { Weather, WeatherKind } from '../../shared/rules.ts';
@@ -943,7 +944,8 @@ test('đơn hàng cá nhân: tất định trong ngày, giao hàng hạng thấp
   await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, cookie);
   const first = (await call('GET', '/api/orders', undefined, cookie)).body;
   assert.deepEqual((await call('GET', '/api/orders', undefined, cookie)).body, first, 'cùng ngày thì đơn không đổi');
-  assert.equal(first.orders.length, ORDERS_PER_DAY);
+  // ba đơn chung và một đơn riêng theo vai
+  assert.equal(first.orders.length, ORDERS_PER_DAY + 1);
   assert.ok(first.resetsAt > Date.now() && first.resetsAt <= Date.now() + 86400_000);
   const [o0, o1, o2] = first.orders;
   assert.deepEqual([o0.title, o1.title, o2.title], ['Đơn thu mua', 'Giỏ quà biếu', 'Mâm ngũ quả']);
@@ -956,10 +958,12 @@ test('đơn hàng cá nhân: tất định trong ngày, giao hàng hạng thấp
   assert.ok(o1.items.every((it: any) => it.kg >= 5 && it.kg <= 15));
   assert.equal(new Set(o2.items.map(regionOf)).size, 3); assert.ok(o2.items.map(regionOf).includes('ld_dalat'));
   assert.ok(o2.items.every((it: any) => it.kg >= 3 && it.kg <= 8));
-  for (const o of first.orders) {
+  for (const o of first.orders.slice(0, ORDERS_PER_DAY)) {
     assert.equal(o.done, false);
-    assert.equal(o.reward, Math.round((o.items.reduce((n: number, it: any) => n + SPECIALTIES[it.specialtyId].refPrice * it.kg, 0) * ORDER_PREMIUM) / 1000) * 1000);
+    assert.equal(o.reward, Math.round((o.items.reduce((n: number, it: any) => n + SPECIALTIES[it.specialtyId].refPrice * it.kg, 0) * ORDER_PREMIUM_V2) / 1000) * 1000 + orderBonus(1));
+    assert.ok(o.xp > 0 && o.bonus === orderBonus(1));
   }
+  void ORDER_PREMIUM;
   const other = await signup('nhan_don_khac');
   await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, other);
   assert.notDeepEqual((await call('GET', '/api/orders', undefined, other)).body.orders.map((o: any) => o.items), first.orders.map((o: any) => o.items), 'mỗi người một bộ đơn');
