@@ -2,7 +2,7 @@
 // qua trạm thu phí ETC, ra đường tỉnh tới cổng chào. Chặng biển đi theo luồng có phao số.
 import * as THREE from 'three';
 import { bakeColored } from '../scene/batch.ts';
-import { IS_MOBILE, Quality, debugScene, rendererParams , stepDt } from '../perf.ts';
+import { IS_MOBILE, Quality, debugScene, rendererParams , stepDt , trace } from '../perf.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { REGIONS } from '../../../shared/catalog.ts';
 import type { Zone } from '../../../shared/catalog.ts';
@@ -1003,6 +1003,7 @@ export class DriveScene {
       this.cab.wheel.rotation.z = -this.pv * 0.2; this.cab.needle.rotation.z = lerp(2.2, -2.2, clamp(kmh / 160, 0, 1));
     } else {
       this.camera.position.set(this.px * 0.86 + jx, (boat ? (portrait ? 17 : 9.5) : portrait ? 10.5 : 7.2) + jy, boat ? (portrait ? 25 : 20) : (portrait ? 14 : 13) + this.vehBack);
+      trace({ t: performance.now(), dt, x: this.px, z: this.s, cx: this.camera.position.x, cy: this.camera.position.y, cz: this.s, yaw: 0, level: this.quality?.level ?? 0, ratio: this.quality?.pixelRatio ?? 1 });
       this.camera.lookAt(this.px * 0.92, boat ? (portrait ? -4 : -2) : portrait ? -2.4 : -1.6, boat ? -22 : portrait ? -15 : -15);
     }
     this.decor.rotation.y = this.phi * 0.6;

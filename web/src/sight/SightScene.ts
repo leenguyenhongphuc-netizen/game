@@ -368,7 +368,7 @@ export class SightScene {
       this.zoom(portrait ? 74 : 54, snap); return;
     }
     this.zoom(portrait ? 62 : 52, snap);
-    const distMax = portrait ? 8.6 : 7.4, h = Math.max(1.3, 3.1 + this.pitch * 5.5);
+    const distMax = portrait ? 11 : 9, h = Math.max(1.3, 3.7 + this.pitch * 5.5); // lùi xa hơn để nhân vật không choán khung hình
     const head = new THREE.Vector3(p.x, p.y + 1.75, p.z);
     const dirx = -Math.sin(this.yaw) * Math.cos(this.pitch * 0.6), dirz = Math.cos(this.yaw) * Math.cos(this.pitch * 0.6);
     const far = new THREE.Vector3(p.x + dirx * distMax, p.y + h, p.z + dirz * distMax);
@@ -415,7 +415,7 @@ export class SightScene {
     for (const f of this.skyTicks) f(this.time, dt);
     // quầy hàng gần nhất
     if (this.shopAt.length) { let near: number | null = null; this.shopAt.forEach((q, i) => { if (Math.hypot(q.x - st.pos.x, q.z - st.pos.z) < 4.2 && Math.abs(q.y - st.pos.y) < 3) near = i; }); if (near !== this.shopIdx) { this.shopIdx = near; this.cb.onShop?.(near); } }
-    this.markers.forEach((m, i) => { m.beam.visible = m.num.visible = this.nearIdx !== i && !this.seen.has(this.set.stops[i].id) && this.camera.position.distanceToSquared(m.num.position) > 30; const k = 1 + Math.sin(this.time * 3 + i) * 0.08; m.ring.scale.set(k, 1, k); m.beam.rotation.y = this.time * 0.6; });
+    this.markers.forEach((m, i) => { m.beam.visible = false; m.num.visible = this.nearIdx !== i && !this.seen.has(this.set.stops[i].id) && this.camera.position.distanceToSquared(m.num.position) > 30; const k = 1 + Math.sin(this.time * 3 + i) * 0.08; m.ring.scale.set(k, 1, k); m.beam.rotation.y = this.time * 0.6; });
     for (const t of this.kit.ticks) t(this.time, dt, st);
     this.placeCamera();
     this.renderer.render(this.scene, this.camera);

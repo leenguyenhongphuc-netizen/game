@@ -39,6 +39,7 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const [stamp, setStamp] = useState<{ k: number; name: string } | null>(null);
   const [hint, setHint] = useState(true);
   const [stick, setStick] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
+  const knob = useRef<HTMLElement>(null);
   const ptr = useRef<{ move: number | null; look: number | null; lx: number; ly: number; ox: number; oy: number }>({ move: null, look: null, lx: 0, ly: 0, ox: 0, oy: 0 });
   const nearRef = useRef<number | null>(null); nearRef.current = near;
   const [album, setAlbum] = useState(false);
@@ -105,7 +106,7 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
     const p = ptr.current;
     if (e.pointerId === p.move) {
       let dx = e.clientX - p.ox, dy = e.clientY - p.oy; const l = Math.hypot(dx, dy), R = 46; if (l > R) { dx *= R / l; dy *= R / l; }
-      scene.current?.setMove(dx / R, -dy / R); setStick((st) => st && { ...st, dx, dy });
+      scene.current?.setMove(dx / R, -dy / R); if (knob.current) knob.current.style.transform = `translate(${dx}px, ${dy}px)`; // ghi thẳng DOM: không vẽ lại React theo từng sự kiện chạm
     } else if (e.pointerId === p.look) { scene.current?.look((e.clientX - p.lx) * 0.006, (e.clientY - p.ly) * 0.003); p.lx = e.clientX; p.ly = e.clientY; }
   };
   const up = (e: RPointerEvent<HTMLDivElement>) => {
@@ -152,7 +153,7 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
         </div>
       )}
       {hint && !stop && <div className="sw-hint">Kéo nửa dưới màn hình để đi · kéo nửa trên để nhìn quanh</div>}
-      {stick && <div className="sw-stick" style={{ left: stick.x, top: stick.y }}><i style={{ transform: `translate(${stick.dx}px, ${stick.dy}px)` }} /></div>}
+      {stick && <div className="sw-stick" style={{ left: stick.x, top: stick.y }}><i ref={knob} /></div>}
       {splash !== 'off' && <div className={`sw-splash${splash === 'fade' ? ' fade' : ''}`} aria-hidden="true"><img src={`${ART}${s.id}.jpg`} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} /><div><b>{s.emoji}</b><h1>{s.name}</h1><p>{s.blurb}</p></div></div>}
       {flash > 0 && <div className="sw-flash" key={flash} />}
       {stamp && (
