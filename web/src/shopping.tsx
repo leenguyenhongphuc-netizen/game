@@ -8,6 +8,9 @@ import { api } from './api.ts';
 import type { Me } from './api.ts';
 import { useAction } from './ui.ts';
 import './vehicles.css';
+import { renderThumbs, thumbOf } from './scene/thumbs.ts';
+import type { ThumbKind } from './scene/thumbs.ts';
+import type { World } from './scene/World.ts';
 
 interface GoodRow extends Good { owned: boolean; available: boolean; canBuy: boolean; why: string | null; slot: string | null; ride?: { perKm: number; maxKm: number } }
 export interface ShoppingData { where: string[]; here: string[]; level: number; cash: number; categories: Record<GoodCategory, { name: string; emoji: string; slot: string | null; note: string }>; equipped: Partial<Record<EquipSlot, string | null>>; items: GoodRow[] }
@@ -83,6 +86,36 @@ export function GoodArt({ g, size = 84 }: { g: Pick<Good, 'id' | 'category' | 'e
   return <svg viewBox="0 0 80 80" width={size} height={size} role="img" aria-label={`Hình ${g.name}`}>{body}</svg>;
 }
 
+const worldNow = () => (window as unknown as { __vuon?: World }).__vuon ?? null;
+const GOODS_EVENT = 'vv-goods';
+/** Các món nội thất, đồ sân vườn đã mua (để bày quanh nhà trong cảnh vườn). Tự nạp lại sau mỗi lần mua. */
+export function useOwnedGoods(userId: number): string[] {
+  const [ids, setIds] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = () => { void api<ShoppingData>('GET', '/api/shopping').then((d) => { if (alive) setIds(d.items.filter((i) => i.owned && (i.category === 'noi_that' || i.category === 'san_vuon')).map((i) => i.id)); }).catch(() => undefined); };
+    load(); window.addEventListener(GOODS_EVENT, load);
+    return () => { alive = false; window.removeEventListener(GOODS_EVENT, load); };
+  }, [userId]);
+  return ids;
+}
+/** Ảnh 3D thật của các món (chụp từ đúng mô hình trong game); món chưa chụp xong dùng hình vẽ tạm. */
+function useThumbs(items: { id: string; category: GoodCategory }[]): number {
+  const [tick, setTick] = useState(0);
+  const key = items.map((i) => i.id).join(',');
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (renderThumbs(items.map((i) => ({ id: i.id, kind: i.category as ThumbKind }))) > 0) setTick((n) => n + 1); }, 60);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return tick;
+}
+/** Hình một món: ảnh 3D nếu đã có, không thì hình vẽ. */
+export function GoodPic({ g, size = 84 }: { g: Pick<Good, 'id' | 'category' | 'emoji' | 'preview' | 'name'>; size?: number }): JSX.Element {
+  const src = thumbOf({ id: g.id, kind: g.category as ThumbKind });
+  return src ? <img className="good-pic" src={src} width={size} height={size} alt={`Hình ${g.name}`} /> : <GoodArt g={g} size={size} />;
+}
+
 const SLOT_NAMES: Record<EquipSlot, string> = { ao: 'Quần áo', non: 'Nón', phu_kien: 'Phụ kiện', nha: 'Kiểu nhà', xe: 'Xe riêng' };
 const CATS: GoodCategory[] = ['ao', 'non', 'phu_kien', 'nha', 'noi_that', 'san_vuon', 'xe'];
 
@@ -93,12 +126,29 @@ export function ShoppingPanel({ me, refresh, where }: { me: Me; refresh: () => v
   const [note, setNote] = useState<string | null>(null);
   const load = useCallback(() => api<ShoppingData>('GET', `/api/shopping${where ? `?where=${encodeURIComponent(where)}` : ''}`).then((d) => { setData(d); setLoadError(null); }).catch((e) => setLoadError(e instanceof Error ? e.message : 'Không mở được cửa hàng.')), [where]);
   useEffect(() => { void load(); }, [load]);
-  const act = useAction(() => { void load(); refresh(); });
+  const act = useAction(() => { void load(); refresh(); window.dispatchEvent(new Event(GOODS_EVENT)); });
+  const [trying, setTrying] = useState<GoodRow | null>(null);
+  useThumbs(data ? [...data.items.filter((i) => i.category === cat), ...data.items.filter((i) => Object.values(data.equipped).includes(i.id))] : []);
+  // "Mặc thử": thu bảng thành thanh nhỏ, hiện món trên nhân vật, nhà, xe ngoài vườn; thoát thì trả về đồ đang dùng
+  useEffect(() => {
+    if (!trying || !data) return;
+    const w = worldNow(); document.body.classList.add('vv-peek'); w?.buildFocus(true); w?.previewEquip({ ...data.equipped, [trying.slot as EquipSlot]: trying.id });
+    return () => { document.body.classList.remove('vv-peek'); w?.previewEquip(null); w?.buildFocus(false); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trying]);
   if (!data) return <div className="shopping"><p className="hint">{loadError ?? 'Đang mở cửa hàng…'}</p></div>;
   const byId = Object.fromEntries(data.items.map((i) => [i.id, i])) as Record<string, GoodRow>;
   const list = data.items.filter((i) => i.category === cat).sort((a, b) => Number(b.owned) - Number(a.owned) || Number(b.available) - Number(a.available) || a.price - b.price);
   const info = data.categories[cat];
   const equip = (slot: string, itemId: string | null, name: string) => act.run(async () => { await api('POST', '/api/shopping/equip', { slot, itemId }); setNote(itemId ? `Đang dùng: ${name}.` : `Đã cất ${name}.`); });
+  if (trying) return (
+    <div className="peek-bar try-bar">
+      <span>👁 Đang thử: <b>{trying.name}</b>{trying.owned ? '' : ` · ${fmtMoney(trying.price)}`}</span>
+      {trying.owned
+        ? <button className="primary" disabled={act.busy} onClick={() => { const t = trying; setTrying(null); void equip(t.slot!, t.id, t.name); }}>Dùng luôn</button>
+        : <button className="primary" disabled={act.busy || !trying.canBuy} onClick={() => { const t = trying; setTrying(null); void act.run(async () => { await api('POST', '/api/shopping/buy', { itemId: t.id }); await api('POST', '/api/shopping/equip', { slot: t.slot, itemId: t.id }); setNote(`Đã mua và dùng ${t.name}.`); }); }}>{trying.canBuy ? 'Mua và dùng' : trying.why ?? 'Chưa mua được'}</button>}
+      <button onClick={() => setTrying(null)}>Quay lại</button>
+    </div>);
   return (
     <div className="shopping">
       <p className="muted">Mua sắm bằng tiền làm vườn, buôn bán. Đồ phổ thông bán ở mọi nơi; đồ đặc trưng vùng miền chỉ bán ở đúng tỉnh đó, nên đi du lịch tới nơi mới mua được. {me.user.displayName} đang ở: {data.here.join(', ') || 'nhà'}.</p>
@@ -108,17 +158,17 @@ export function ShoppingPanel({ me, refresh, where }: { me: Me; refresh: () => v
         <h3>Đang mặc, đang dùng</h3>
         <div className="shop-worn">
           {(Object.keys(SLOT_NAMES) as EquipSlot[]).map((s) => { const it = data.equipped[s] ? byId[data.equipped[s]!] : null; return (
-            <div key={s}>{it ? <GoodArt g={it} size={44} /> : <svg viewBox="0 0 80 80" aria-hidden="true"><rect x="12" y="12" width="56" height="56" rx="14" fill="none" stroke="#cdb67c" strokeWidth="3" strokeDasharray="6 6" /></svg>}{SLOT_NAMES[s]}<b>{it ? it.name : 'chưa có'}</b></div>); })}
+            <div key={s}>{it ? <GoodPic g={it} size={44} /> : <svg viewBox="0 0 80 80" aria-hidden="true"><rect x="12" y="12" width="56" height="56" rx="14" fill="none" stroke="#cdb67c" strokeWidth="3" strokeDasharray="6 6" /></svg>}{SLOT_NAMES[s]}<b>{it ? it.name : 'chưa có'}</b></div>); })}
         </div>
       </section>
       <div className="shop-cats" role="group" aria-label="Loại hàng">
         {CATS.map((k) => <button type="button" key={k} aria-pressed={cat === k} onClick={() => setCat(k)}>{data.categories[k].emoji} {data.categories[k].name}</button>)}
       </div>
-      <p className="veh-tip">{info.note}{cat === 'nha' || cat === 'ao' || cat === 'non' || cat === 'phu_kien' ? ' Bản này mới lưu món bạn chọn; hình nhân vật và ngôi nhà trong vườn sẽ đổi theo ở bản sau.' : ''}</p>
+      <p className="veh-tip">{info.note}{info.slot ? ' Bấm "Dùng" là nhân vật, ngôi nhà, chiếc xe ngoài vườn đổi theo ngay; bấm 👁 để thử trước khi mua.' : ' Món đã mua được bày sẵn quanh nhà: nội thất ở sân trước hiên, đồ sân vườn dọc hàng rào.'}</p>
       <div className="goods">
         {list.map((g) => { const worn = !!g.slot && data.equipped[g.slot as EquipSlot] === g.id; return (
           <div className={`good${g.owned ? ' owned' : ''}${worn ? ' worn' : ''}${!g.available ? ' far' : ''}`} key={g.id} data-good={g.id}>
-            <GoodArt g={g} />
+            <GoodPic g={g} />
             <strong>{g.name}</strong>
             <small>{g.preview.hint}</small>
             {g.region && <span className="where">Đặc trưng {g.region}</span>}
@@ -127,7 +177,32 @@ export function ShoppingPanel({ me, refresh, where }: { me: Me; refresh: () => v
             {g.owned
               ? g.slot ? <button type="button" className={worn ? '' : 'go'} disabled={act.busy} onClick={() => equip(g.slot!, worn ? null : g.id, g.name)}>{worn ? 'Đang dùng · cất đi' : 'Dùng'}</button> : <span className="tag">Đã có</span>
               : <button type="button" className="go" disabled={act.busy || !g.canBuy} onClick={() => act.run(async () => { await api('POST', '/api/shopping/buy', { itemId: g.id }); setNote(`Đã mua ${g.name}.`); })}>{g.canBuy ? 'Mua' : g.why}</button>}
+            {g.slot && !worn && worldNow() && <button type="button" className="try-btn" disabled={act.busy} onClick={() => setTrying(g)}>👁 {g.category === 'nha' || g.category === 'xe' ? 'Xem thử' : 'Mặc thử'}</button>}
           </div>); })}
       </div>
+    </div>);
+}
+
+/** Tủ đồ trong bảng Trang trí: các món đã mua của vài ô (áo, nón, phụ kiện hoặc kiểu nhà) kèm lựa chọn "mặc định", một chỗ duy nhất để đổi. */
+export function Wardrobe({ slots, refresh, defaults }: { slots: EquipSlot[]; refresh: () => void; defaults: Partial<Record<EquipSlot, string>> }): JSX.Element {
+  const [data, setData] = useState<ShoppingData | null>(null);
+  const load = useCallback(() => api<ShoppingData>('GET', '/api/shopping').then(setData).catch(() => undefined), []);
+  useEffect(() => { void load(); }, [load]);
+  const act = useAction(() => { void load(); refresh(); });
+  useThumbs(data ? data.items.filter((i) => i.owned && slots.includes(i.slot as EquipSlot)) : []);
+  if (!data) return <p className="hint">Đang mở tủ đồ…</p>;
+  const equip = (slot: EquipSlot, itemId: string | null) => act.run(() => api('POST', '/api/shopping/equip', { slot, itemId }));
+  return (
+    <div className="wardrobe">
+      {act.error && <p className="error" role="alert">{act.error}</p>}
+      {slots.map((s) => { const owned = data.items.filter((i) => i.owned && i.slot === s), cur = data.equipped[s] ?? null; return (
+        <section key={s}>
+          <h3>{SLOT_NAMES[s]}</h3>
+          <div className="wardrobe-row">
+            <button type="button" className="pick" aria-pressed={!cur} disabled={act.busy} onClick={() => equip(s, null)}><span className="wardrobe-def" aria-hidden="true">{s === 'nha' ? '🏠' : s === 'non' ? '👒' : s === 'ao' ? '👕' : '∅'}</span><strong>{defaults[s] ?? 'Không dùng'}</strong><small>mặc định</small></button>
+            {owned.map((g) => <button type="button" key={g.id} className="pick" aria-pressed={cur === g.id} disabled={act.busy} onClick={() => equip(s, cur === g.id ? null : g.id)}><GoodPic g={g} size={56} /><strong>{g.name}</strong><small>{cur === g.id ? 'đang dùng' : 'đã mua'}</small></button>)}
+          </div>
+          {owned.length === 0 && <p className="hint">Chưa mua món nào cho ô này. Vào thẻ Mua sắm để xem; đồ đặc trưng vùng miền phải tới đúng tỉnh mới mua được.</p>}
+        </section>); })}
     </div>);
 }

@@ -317,7 +317,7 @@ class Lot {
     for (const d of data?.decor ?? []) { const o = buildDecor(d.item); o.position.set(d.x, 0, d.z); o.rotation.y = d.rot; st.add(o); }
     // Nội thất, đồ sân vườn đã mua bày ở chỗ cố định quanh nhà; xe riêng đang dùng đỗ trong sân cạnh cổng
     if (!isFactory(data)) for (const id of data?.goods ?? []) { const sp = GOODS_SPOTS[id], o = sp && buildGoodProp(id, this.night); if (o) { o.position.set(sp[0], 0, sp[1]); o.rotation.y = sp[2]; st.add(o); } }
-    { const ride = data?.equipped?.xe ? buildPersonalRide(data.equipped.xe) : null; if (ride) { ride.root.position.set(-6.2, 0.02, 10.3); ride.root.rotation.y = Math.PI / 2; // đỗ ở lề cỏ trước rào, cạnh chỗ xe tải st.add(ride.root); } }
+    { const ride = data?.equipped?.xe ? buildPersonalRide(data.equipped.xe) : null; if (ride) { ride.root.position.set(-6.2, 0.02, 10.3); ride.root.rotation.y = Math.PI / 2; st.add(ride.root); } } // xe riêng đỗ ở lề cỏ trước rào, cạnh chỗ xe tải
     {
     // Sạp bán hàng sát đường
     const s = new THREE.Group(); s.position.set(STALL.x, 0, STALL.z);
