@@ -146,7 +146,7 @@ export function heightAt(c: Course, x: number, y: number): number {
   const r = c.ramp; if (Math.abs(y) > r.hw || x <= r.x0 || x >= r.x3) return 0;
   if (x < r.x1) return (x - r.x0) / (r.x1 - r.x0) * r.top; if (x <= r.x2) return r.top; return (r.x3 - x) / (r.x3 - r.x2) * r.top;
 }
-function slopeX(c: Course, x: number, y: number): number { const r = c.ramp; if (Math.abs(y) > r.hw || x <= r.x0 || x >= r.x3) return 0; if (x < r.x1) return r.top / (r.x1 - r.x0); if (x <= r.x2) return 0; return -r.top / (r.x3 - r.x2); }
+export function slopeX(c: Course, x: number, y: number): number { const r = c.ramp; if (Math.abs(y) > r.hw || x <= r.x0 || x >= r.x3) return 0; if (x < r.x1) return r.top / (r.x1 - r.x0); if (x <= r.x2) return 0; return -r.top / (r.x3 - r.x2); }
 
 export type Gear = 'D' | 'R' | 'P';
 export interface Input { steer: number; gas: number; brake: number; gear: Gear; hand: boolean; left: boolean; right: boolean; hazard: boolean; belt: boolean }
@@ -316,6 +316,8 @@ export class ExamSim {
 
   // ------------------------------------------------------------- lái mẫu (dùng cho gợi ý và kiểm thử tự động)
   private auto: { i: number; d: number; wait: number } | null = null;
+  /** Tốc độ (m/s) mà đường chạy mẫu muốn ở chỗ xe đang đứng — trợ lái mức Dễ dùng để hãm ga. */
+  refV = 0;
   /** Vị trí của xe trên đường mẫu (để vẽ gợi ý). */
   autoState() { return this.auto; }
   /** Trả về thao tác lái mẫu cho bước kế tiếp: bám đường chạy mẫu, dừng đúng vạch, bật tín hiệu đúng lúc. */
@@ -360,6 +362,7 @@ export class ExamSim {
       if (st.state === 'cho' && mustStop) { const gap = -al - 0.22; vt = Math.min(vt, gap <= 0 ? 0 : Math.max(0.18, Math.sqrt(2 * 1.0 * gap))); if (gap <= 0.02) hold = true; }
       else if (st.state === 'da_dung') { if (st.kind === 'den' ? this.lightColor() !== 'xanh' : st.timer < 1.0) hold = true; }
     }
+    this.refV = hold ? 0 : vt;
     if (this.danger) { inp.hazard = true; hold = true; }
     if (hold) { inp.brake = 1; inp.gas = 0; return inp; }
     const up = slopeX(c, this.x + Math.cos(this.th) * s.wb / 2, this.y) * 9.81 * Math.cos(this.th) * p.dir, sp = this.v * p.dir, err = vt - sp;

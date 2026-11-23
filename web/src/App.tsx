@@ -475,7 +475,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     const order = worldRef.current?.tileOrder(0, list.map((p) => p.tile)) ?? list.map((p) => p.tile);
     const todo = order.map((t) => list.find((p) => p.tile === t)!).filter((p) => p && !busy.current.has(p.id));
     for (const p of todo) busy.current.add(p.id); // giữ chỗ: đi ngang qua ô khác không tự kích hoạt bước của ô đó
-    bulkStop.current = false; setBulk({ label: fallback, done: 0, total: todo.length });
+    bulkStop.current = false; setBulk({ label: fallback, done: 0, total: todo.length }); setToast(null); // toast cũ không được treo khi thanh dưới/nhiệm vụ đã sang bước khác
+    const names = new Set<string>(), nexts = new Set<string>();
     try {
       for (const pl of todo) {
         const sp = SPECIALTIES[pl.specialtyId], step = processOf(CROPS[sp.crop])[pl.stepIndex], kind = burstKind(step.name), label = `Đang ${step.name.toLowerCase()}`;
@@ -486,10 +487,10 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
           if (r.harvested) { kg += r.harvested.kg; worldRef.current?.floatText(0, pl.tile, `+${r.harvested.kg} kg ${CROPS[sp.crop].emoji}`); } else worldRef.current?.floatText(0, pl.tile, `${STEP_ICON[kind]} ${step.name}${r.xpGained ? ` · +${r.xpGained} XP` : ''}`, '#fff6dc');
           blocked.current.set(pl.id, Date.now() + 4000);
         });
-        if (!ok) { stopped = true; break; } done++; setBulk({ label, done, total: todo.length });
+        if (!ok) { stopped = true; break; } done++; names.add(step.name.toLowerCase()); nexts.add(processOf(CROPS[sp.crop])[pl.stepIndex + 1]?.name ?? ''); setBulk({ label, done, total: todo.length });
         if (bulkStop.current) { stopped = done < todo.length; break; }
       }
-      setToast(stopped ? `Đã dừng: xong ${done}/${todo.length} ô${kg > 0 ? ` · +${kg} kg vào kho` : ''}` : kg > 0 ? `🧺 Thu hoạch ${done} ô: +${kg} kg vào kho` : `✨ Đã chăm ${done} ô`);
+      setToast(stopped ? `Đã dừng: xong ${done}/${todo.length} ô${kg > 0 ? ` · +${kg} kg vào kho` : ''}` : kg > 0 ? `🧺 Thu hoạch ${done} ô: +${kg} kg vào kho` : `✨ Đã ${names.size === 1 ? [...names][0] : 'chăm'} ${done} ô${nexts.size === 1 && [...nexts][0] ? ` · bước tiếp: ${[...nexts][0].toLowerCase()}` : ''}`);
     } catch (e) { setToast(`${done > 0 ? `Xong ${done}/${todo.length} ô rồi dừng: ` : ''}${e instanceof Error ? e.message : 'Có lỗi xảy ra.'}`); }
     for (const p of todo) busy.current.delete(p.id);
     worldRef.current?.cancelQueue(); setBulk(null); reload();

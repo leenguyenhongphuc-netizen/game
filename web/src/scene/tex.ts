@@ -44,7 +44,8 @@ export function roadTex(color: number, paved = false): THREE.CanvasTexture {
     g.fillStyle = css(color); g.fillRect(0, 0, 256, 128);
     const tone = (k: number, a: number) => { const c = base.clone().multiplyScalar(k); return `rgba(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)},${a})`; };
     if (paved) {
-      g.fillStyle = tone(0.96, 0.6); for (let i = 0; i < 260; i++) g.fillRect(r() * 256, r() * 128, 2, 2); // hạt nhạt, thưa: hạt đậm nhỏ hơn một điểm ảnh làm mặt đường lấp lánh khi đi
+      { const c = { r: 0, g: 0, b: 0 }; base.clone().multiplyScalar(0.94).getRGB(c, THREE.SRGBColorSpace); g.fillStyle = `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},0.7)`; } // tone() trộn số tuyến tính như sRGB nên ra sẫm hơn hẳn — hạt đường nhựa tính đúng hệ màu
+      for (let i = 0; i < 260; i++) g.fillRect(r() * 256, r() * 128, 2, 2); // hạt nhạt, thưa: hạt đậm nhỏ hơn một điểm ảnh làm mặt đường lấp lánh khi đi
       g.fillStyle = 'rgba(255,255,255,0.9)'; for (let x = 10; x < 256; x += 64) g.fillRect(x, 62, 34, 4);
       g.fillStyle = 'rgba(255,255,255,0.75)'; g.fillRect(0, 8, 256, 2.5); g.fillRect(0, 117.5, 256, 2.5);
       return;

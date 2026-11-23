@@ -71,3 +71,18 @@
 .exam-pedal.on { transform: translateY(4px); box-shadow: 0 1px 0 #56310f; filter: brightness(1.15); }
 @media (max-width: 400px) { .exam-wheel-box { width: 112px; height: 112px; } .exam-pedal { width: 58px; } .exam-toggles button, .exam-gear button { padding: 4px 7px; font-size: 0.76rem; } }
 @media (max-height: 430px) { .exam-top { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; } .exam-hint, .exam-danger, .exam-feed { grid-column: 1; } .exam-banner small { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; } .exam-wheel-box { width: 112px; height: 112px; } .exam-pedal.gas { height: 96px; } .exam-pedal.brake { height: 78px; } .exam-ctl { gap: 4px; } }
+
+/* trợ lái */
+.exam-assist { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; background: #eaf3ff; border: 2px solid #9cc3f2; border-radius: 14px; padding: 8px 10px; }
+.exam-assist b { font-family: 'Baloo 2', sans-serif; margin-right: 2px; }
+.exam-assist button { min-height: 44px; min-width: 64px; border-radius: 12px; border: 2px solid #7a4a22; background: #fffdf4; font-weight: 800; color: #3b2a17; box-shadow: 0 3px 0 #7a4a22; }
+.exam-assist button.on { background: #57c24a; color: #fff; border-color: #2f7d26; box-shadow: 0 3px 0 #2f7d26; }
+.exam-assist label { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-size: 0.86rem; min-height: 44px; margin-left: auto; }
+.exam-assist small { flex-basis: 100%; color: #24456f; }
+.exam-steer { display: flex; align-items: center; gap: 6px; }
+.exam-nudge { pointer-events: auto; width: 56px; height: 64px; border-radius: 16px; border: 3px solid #56310f; background: #fff8e6; color: #3b2a17; font-size: 1.5rem; font-weight: 800; box-shadow: 0 5px 0 #56310f; touch-action: none; }
+.exam-nudge.on { transform: translateY(4px); box-shadow: 0 1px 0 #56310f; background: #ffd35a; }
+.exam-toggles button.need, .exam-gear button.need { animation: exam-need 0.8s ease-in-out infinite alternate; outline: 3px solid #ffd23f; outline-offset: 1px; }
+@keyframes exam-need { from { box-shadow: 0 3px 0 #7a4a22, 0 0 0 0 #ffd23faa; } to { box-shadow: 0 3px 0 #7a4a22, 0 0 0 8px #ffd23f00; } }
+@media (max-width: 400px) { .exam-nudge { width: 48px; height: 58px; } .exam-wheel-box { width: 100px; height: 100px; } }
+@media (max-height: 430px) { .exam-nudge { height: 56px; } }
