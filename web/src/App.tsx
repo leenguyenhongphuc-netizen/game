@@ -444,13 +444,6 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     push(); const ro = new ResizeObserver(push); if (hudRef.current) ro.observe(hudRef.current); if (stackRef.current) ro.observe(stackRef.current);
     return () => ro.disconnect();
   });
-  useEffect(() => {
-    const g = gameRef.current;
-    const down = (e: PointerEvent) => { if ((e.target as Element | null)?.tagName === 'CANVAS') g?.classList.add('moving'); };
-    const up = () => g?.classList.remove('moving');
-    window.addEventListener('pointerdown', down); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
-    return () => { window.removeEventListener('pointerdown', down); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
-  }, []);
   useEffect(() => { setHudPop(null); }, [tab, plotId, tour]);
 
   const ctxLot = ctx.kind === 'none' || ctx.kind === 'truck' ? null : lots[ctx.lot] ?? null;

@@ -11,8 +11,11 @@ export type QualityLevel = 0 | 1 | 2 | 3;
 export interface PerfStats { jitter: number; late: number; levelChanges: number; pace30: boolean; name: string; fps: number; ms: number; level: QualityLevel; pref: QualityPref; pixelRatio: number; pixels: number; calls: number; triangles: number; width: number; height: number; locked: boolean }
 
 const SCALE = [1, 0.85, 0.7, 0.6] as const;
-const PREF_KEY = 'vv-quality', LEVEL_KEY = 'vv-quality-level', FPS_KEY = 'vv-fps', PACE_KEY = 'vv-pace30';
+// Khoá v2: bản trước lưu nhầm bậc thấp và nhịp 30 cho cả máy khoẻ (phản ứng với khung trễ lúc đang tải) nên bỏ hẳn các khoá cũ.
+const PREF_KEY = 'vv-quality', LEVEL_KEY = 'vv-q2-level', FPS_KEY = 'vv-fps';
 const LS = { get(k: string) { try { return localStorage.getItem(k); } catch { return null; } }, set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* bỏ qua */ } } };
+
+try { for (const k of ['vv-quality-level', 'vv-quality-level-at', 'vv-pace30']) localStorage.removeItem(k); } catch { /* bỏ qua */ }
 
 const nav = typeof navigator !== 'undefined' ? navigator : ({} as Navigator);
 const UA = nav.userAgent ?? '';
@@ -57,7 +60,11 @@ export interface QualityOptions {
 
 /** Nhịp vẽ chung của máy trong phiên này: 0 = theo màn hình, 30 = đều 30 khung/giây. Chốt một lần, không bật tắt qua lại. */
 let pace30 = false, levelChanges = 0;
-try { const v = JSON.parse(LS.get(PACE_KEY) ?? 'null') as { on?: boolean; at?: number } | null; if (v?.on && Date.now() - (v.at ?? 0) < 3 * 86_400_000) pace30 = true; } catch { /* bỏ qua */ }
+/** Người chơi đã chạm/bấm chưa: trước đó máy còn đang tải, dựng cảnh nên không lấy số đo làm căn cứ hạ nhịp. */
+let interacted = false;
+if (typeof window !== 'undefined') for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, () => { interacted = true; }, { passive: true, capture: true });
+/** Dùng cho phép thử: đặt lại trạng thái chung của bộ điều tiết. */
+export function __resetGovernor(opts: { interacted?: boolean } = {}) { pace30 = false; levelChanges = 0; interacted = !!opts.interacted; }
 const fake = () => (window as unknown as { __fakeDt?: number[] }).__fakeDt;
 let fakeI = 0;
 /** Bước thời gian (giây) cho mô phỏng: thời gian thật kẹp 1–100 ms. Khi thử, window.__fakeDt = [16, 33, 50] ép nhịp không đều để soát chuyển động có đều theo thời gian không. */
@@ -78,7 +85,8 @@ export class Quality {
   private base = 16.7;       // chu kỳ làm tươi ước lượng của màn hình (ms)
   private lows: number[] = [];
   private age = 0;           // số ms cảnh đã thật sự chạy
-  private bad = 0;           // số giây liên tiếp bị trễ khung
+  private bad = 0;           // số giây liên tiếp bị chậm
+  private crawl = 0;         // số giây liên tiếp dưới 40 khung/giây ở bậc thấp nhất
   private shown = ''; private disposed = false;
   /** Cảnh báo cho biết nhân vật/xe đang di chuyển: không đổi cỡ bộ đệm lúc này (đổi cỡ gây khựng thấy rõ). */
   busy = false;
@@ -131,26 +139,29 @@ export class Quality {
         this.avg = this.acc / this.n; this.jitter = Math.sqrt(Math.max(0, this.sq / this.n - this.avg * this.avg));
         const lateRatio = this.late / this.n; this.lateShown = this.late;
         this.acc = 0; this.n = 0; this.sq = 0; this.late = 0;
-        if (!this.locked && this.age > 1200) this.adapt(lateRatio, target);
+        if (!this.locked) this.adapt(lateRatio, target);
         if (wantBox()) this.paint();
       }
     }
     return true;
   }
   /**
-   * Giữ nhịp khung ĐỀU thay vì cố chạy nhanh:
-   *  - Trong 5 giây đầu của cảnh (pha đo): hễ trễ khung là hạ một bậc ngay; hết bậc mà vẫn trễ thì chốt nhịp 30 cho cả phiên.
-   *  - Sau pha đo: giữ nguyên. Chỉ khi trễ kéo dài 3 giây mới hạ tiếp, và chờ lúc nhân vật đứng yên mới đổi cỡ bộ đệm.
-   *  - Không tự nâng bậc trong phiên (nâng rồi lại hạ chính là nguồn gây giật lặp lại); lần mở game sau mới thử lại bậc cao hơn.
+   * Chỉ can thiệp khi máy THẬT SỰ không kham nổi, và không bao giờ vì vài khung trễ lẻ:
+   *  - 3 giây đầu của cảnh (tải tài nguyên, biên dịch shader, dựng hàng xóm) không tính.
+   *  - "Chậm" là trung bình cả giây dưới ~48 khung/giây (khung trễ đơn lẻ do GC, tải ảnh không làm đổi trung bình là bao).
+   *  - Chậm 2 giây liền thì hạ MỘT bậc chất lượng (tỉ lệ điểm ảnh, bóng); đang di chuyển thì chờ tới 4 giây mới đổi cỡ bộ đệm.
+   *  - Nhịp 30 là phương án cuối: đã ở bậc thấp nhất, người chơi đã tương tác, và dưới 40 khung/giây suốt 4 giây liền. Chỉ có hiệu lực trong phiên, không lưu lại.
+   *  - Không tự nâng bậc trong phiên; hôm sau mới thử lại bậc cao hơn.
    */
   private adapt(lateRatio: number, target: number) {
-    const slow = lateRatio > 0.08 || this.avg > target * 1.18;
+    if (this.age < 3000) { this.bad = 0; this.crawl = 0; return; }
+    void lateRatio;
+    const slow = this.avg > target * 1.25;
     this.bad = slow ? this.bad + 1 : 0;
+    this.crawl = this.level === 3 && !pace30 && interacted && this.avg > 25 && this.avg < 70 ? this.crawl + 1 : 0;
     if (!slow) return;
-    const settling = this.age < 5500;
-    if (!settling && (this.bad < 3 || this.busy)) return;
-    if (this.level < 3) { this.setLevel((this.level + 1) as QualityLevel); this.bad = 0; }
-    else if (!pace30 && this.avg < 70) { pace30 = true; this.bad = 0; LS.set(PACE_KEY, JSON.stringify({ on: true, at: Date.now() })); }
+    if (this.level < 3) { if (this.bad >= (this.busy ? 4 : 2)) { this.setLevel((this.level + 1) as QualityLevel); this.bad = 0; } }
+    else if (this.crawl >= 4) { pace30 = true; this.crawl = 0; }
   }
 
   stats(): PerfStats {

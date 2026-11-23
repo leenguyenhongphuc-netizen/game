@@ -468,11 +468,54 @@ export type ExportMode = 'xe_tai' | 'container' | 'tau_hoa' | 'hang_khong' | 'ta
 // ---------------------------------------------------------------- thu mua sỉ bằng xe tải
 /** Thương lái mua sỉ tại vườn ở vùng xe đang đỗ với giá này so với giá tham chiếu (hàng Loại 1). */
 export const WHOLESALE_RATIO = 0.9;
-/** Mỗi đặc sản, mỗi vùng chỉ có chừng này kg cho tất cả thương lái thu mua trong một ngày. */
-export const WHOLESALE_SUPPLY_KG = 1500;
-/** Giá mua sỉ 1 kg tại vùng trồng; được mùa (glut < 1) thì rẻ hơn. */
+/** Sản lượng một đặc sản mà cả vùng bán sỉ được trong một ngày bình thường (kg), cho tất cả thương lái. */
+export const WHOLESALE_BASE_KG = 40_000;
+/** Chính vụ vùng có nhiều hàng hơn, trái vụ khan hàng. */
+export const WHOLESALE_IN_SEASON = 1.5, WHOLESALE_OFF_SEASON = 0.4;
+/** Giữ tên cũ cho mã đang dùng: nguồn ngày ở mùa thường. */
+export const WHOLESALE_SUPPLY_KG = WHOLESALE_BASE_KG;
+/** Nguồn hàng sỉ trong ngày của một đặc sản tại vùng trồng. */
+export function wholesaleSupplyKg(inSeasonNow: boolean | null): number {
+  return Math.round(WHOLESALE_BASE_KG * (inSeasonNow === null ? 1 : inSeasonNow ? WHOLESALE_IN_SEASON : WHOLESALE_OFF_SEASON));
+}
+/** Đường cung: phần hàng dễ gom đầu ngày giá WHOLESALE_RATIO, càng vét càng đắt, gần cạn nguồn lên WHOLESALE_TOP_RATIO. */
+export const WHOLESALE_EASY_KG = 5000, WHOLESALE_TOP_RATIO = 1.05;
+/** Tỉ lệ so với giá tham chiếu của ki-lô-gam thứ `cumKg` mà cả vùng đã bán sỉ trong ngày. */
+export function wholesaleRatioAt(cumKg: number, supplyKg: number): number {
+  const easy = Math.min(WHOLESALE_EASY_KG, supplyKg * 0.25);
+  if (cumKg <= easy) return WHOLESALE_RATIO;
+  const f = Math.min(1, (cumKg - easy) / Math.max(1, supplyKg - easy));
+  return WHOLESALE_RATIO + (WHOLESALE_TOP_RATIO - WHOLESALE_RATIO) * f;
+}
+/** Giá mua sỉ 1 kg tại vùng trồng ở đầu ngày; được mùa (glut < 1) thì rẻ hơn. */
 export function wholesalePrice(refPrice: number, glut = 1): number {
   return Math.round((refPrice * WHOLESALE_RATIO * glut) / 100) * 100;
+}
+/** Báo giá mua sỉ `kg` khi cả vùng đã bán `boughtKg` trong ngày: giá trung bình (làm tròn trăm đồng) và tổng tiền. */
+export function wholesaleQuote(refPrice: number, glut: number, supplyKg: number, boughtKg: number, kg: number): { unit: number; total: number; firstUnit: number; lastUnit: number } {
+  const at = (c: number) => refPrice * glut * wholesaleRatioAt(c, supplyKg);
+  const n = 24; let sum = 0;
+  for (let i = 0; i < n; i++) sum += at(boughtKg + ((i + 0.5) / n) * Math.max(0, kg));
+  const unit = Math.round(sum / n / 100) * 100;
+  return { unit, total: unit * Math.max(0, kg), firstUnit: Math.round(at(boughtKg) / 100) * 100, lastUnit: Math.round(at(boughtKg + kg) / 100) * 100 };
+}
+/** Sức mua của một chợ vùng trong 24 giờ: bán tới BULK_EASY_KG thì giữ giá, càng xả nhiều giá càng rớt, tối đa BULK_MAX_DROP ở BULK_FULL_KG. */
+export const BULK_EASY_KG = 1000, BULK_FULL_KG = 30_000, BULK_MAX_DROP = 0.45;
+export function bulkFactorAt(cumKg: number): number {
+  if (cumKg <= BULK_EASY_KG) return 1;
+  return 1 - BULK_MAX_DROP * Math.min(1, (cumKg - BULK_EASY_KG) / (BULK_FULL_KG - BULK_EASY_KG));
+}
+/** Hệ số giá trung bình khi bán `kg` vào một chợ đã nhận `soldKg` loại này trong 24 giờ qua. */
+export function bulkSellFactor(soldKg: number, kg: number): number {
+  const n = 24; let sum = 0;
+  for (let i = 0; i < n; i++) sum += bulkFactorAt(soldKg + ((i + 0.5) / n) * Math.max(0, kg));
+  return sum / n;
+}
+/** Hàng tươi chở xe thùng thường hao theo quãng đường; thùng lạnh chỉ hao một phần. */
+export const SPOIL_PER_100KM = 0.005, SPOIL_MAX = 0.06, SPOIL_COLD_FACTOR = 0.2;
+export function spoilRate(roadKmValue: number, cold: boolean): number {
+  const r = Math.min(SPOIL_MAX, (Math.max(0, roadKmValue) / 100) * SPOIL_PER_100KM);
+  return Math.round((cold ? r * SPOIL_COLD_FACTOR : r) * 10000) / 10000;
 }
 
 /** Khác biệt giữa mua vé đi và tự lái xe tải, để giao diện đặt cạnh nhau. */
@@ -723,10 +766,10 @@ export function starterMachine(homeRegionId: string): MachineKind {
 export const LIMIT_REASONS: Record<string, { title: string; limit: string; reason: string }> = {
   souvenir: { title: 'Quà đặc sản ở quầy trưng bày', limit: `Mỗi lần ${SOUVENIR_MAX_KG} kg, mỗi ngày ${SOUVENIR_DAILY_BUYS} lần, giá ${Math.round(SOUVENIR_RATIO * 100)}% giá tham chiếu`,
     reason: 'Quầy bán quà cho khách du lịch để lấy tem sưu tập, không phải nơi buôn hàng. Nếu mua thoải mái thì ai cũng gom đủ hàng mọi miền mà không cần trồng hay buôn. Muốn mua nhiều: thương lái lái xe tải tới và thu mua sỉ tại vườn.' },
-  wholesale_cargo: { title: 'Thu mua sỉ bằng xe tải', limit: `Tối đa bằng tải trọng xe đang lái mỗi điểm đỗ (xe tải nhẹ ${TRUCK.cargoKg} kg; mua xe lớn hơn để chở nhiều hơn)`,
-    reason: 'Thùng xe chỉ chở được chừng đó. Muốn mua thêm thì phải chạy thêm chuyến, nên quãng đường và tiền xăng mới có ý nghĩa.' },
-  wholesale_supply: { title: 'Nguồn hàng sỉ của vùng', limit: `${WHOLESALE_SUPPLY_KG} kg mỗi đặc sản mỗi ngày cho tất cả thương lái`,
-    reason: 'Vườn trong vùng mỗi ngày chỉ hái được chừng đó. Thương lái tới sớm thì còn hàng, để không ai vét sạch một vùng.' },
+  wholesale_cargo: { title: 'Mỗi lần mua được bao nhiêu', limit: 'Bằng đúng chỗ trống trên chiếc xe đang lái: xe tải nhẹ 990 kg, xe 15 tấn mua được 15 tấn, đầu kéo container khoảng 28 tấn',
+    reason: 'Hàng mua sỉ được chất thẳng lên xe nên xe chở được bao nhiêu thì mua được bấy nhiêu. Muốn buôn lớn thì mua xe lớn (và thi bằng lái hạng tương ứng).' },
+  wholesale_supply: { title: 'Nguồn hàng và giá của vùng', limit: `Mỗi đặc sản khoảng ${WHOLESALE_BASE_KG / 1000} tấn mỗi ngày cho tất cả thương lái (chính vụ nhiều hơn, trái vụ ít hơn); ${WHOLESALE_EASY_KG / 1000} tấn đầu giá ${Math.round(WHOLESALE_RATIO * 100)}% tham chiếu, càng vét giá càng lên tới ${Math.round(WHOLESALE_TOP_RATIO * 100)}%`,
+    reason: 'Vườn trong vùng chỉ thu hoạch được chừng đó mỗi ngày. Mua ít thì gom được hàng rẻ; vét cả vùng thì phải trả giá cao hơn, và xả một lúc quá nhiều ở chợ nơi đến thì giá bán cũng rớt. Hàng tươi chở xa bằng xe thùng thường còn bị hao, thùng lạnh hao ít hơn.' },
   wholesale_role: { title: 'Ai được thu mua sỉ', limit: 'Chỉ thương lái',
     reason: 'Chỉ thương lái có xe tải. Nhà vườn và chủ xưởng mua hàng vùng khác qua chợ hoặc từ thương lái, để ba vai cần nhau.' },
   gift: { title: 'Tặng quà cho bạn', limit: `Mỗi ngày ${GIFT_DAILY_LIMIT} lần, mỗi lần tối đa ${GIFT_MAX_KG} kg`,
