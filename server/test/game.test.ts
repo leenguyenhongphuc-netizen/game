@@ -1788,7 +1788,9 @@ test('siêu thị đặc sản: ký gửi trong khung giá, mua có giới hạn
   assert.ok(specialtiesOfRegion('dn_tienphuoc').every((sp) => view0.body.shelves.some((s: any) => s.specialtyId === sp.id)), 'nhà bán có đủ đặc sản trong tỉnh');
   assert.deepEqual(view0.body.consignable.find((c: any) => c.specialtyId === 'xoai_hoa_loc'), { specialtyId: 'xoai_hoa_loc', quality: 'A', kg: 2500, refPrice: ref, ...range, processed: false, name: SPECIALTIES.xoai_hoa_loc.name });
   assert.equal((await call('POST', '/api/supermarket/consign', lot, seller)).body.error, 'khac_tinh');
-  assert.equal((await call('GET', `/api/supermarket?province=${encodeURIComponent('Hà Nội')}`, undefined, seller)).status, 404);
+  // mọi tỉnh đều có siêu thị đặc sản; tỉnh không tồn tại thì không có
+  assert.equal((await call('GET', `/api/supermarket?province=${encodeURIComponent('Hà Nội')}`, undefined, seller)).status, 200);
+  assert.equal((await call('GET', `/api/supermarket?province=${encodeURIComponent('Xứ Mơ')}`, undefined, seller)).status, 404);
   // Người bán và người mua tới Đà Nẵng.
   await call('POST', '/api/travel', { regionId: 'dn_tienphuoc' }, seller);
   assert.equal((await call('POST', '/api/supermarket/consign', { ...lot, price: range.maxPrice + 1 }, seller)).body.error, 'gia_sai');
@@ -1973,23 +1975,29 @@ test('xưởng máy: hàng chế biến ký gửi siêu thị và xuất khẩu;
   const alien = Object.values(SPECIALTIES).find((x) => !ws.machines[0].recipes.includes(recipeOf(CROPS[x.crop]).id))!;
   await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,$2,'A',50)`, [me.user.id, alien.id]);
   assert.equal((await call('POST', '/api/workshop/start', { specialtyId: alien.id, quality: 'A', kg: 50 }, cookie)).body.error, 'thieu_may');
-  const plain = await call('POST', '/api/workshop/start', { specialtyId: sp.id, quality: 'A', kg: 1000 }, cookie);
-  assert.equal(plain.body.kgOut, Math.floor(1000 * recipe.ratio + 1e-9));
+  // mỗi mẻ chỉ nhận tới sức chứa của máy
+  const batch: number = ws.machines[0].batchKg;
+  assert.equal(batch, machineBatchKg(1));
+  assert.equal((await call('POST', '/api/workshop/start', { specialtyId: sp.id, quality: 'A', kg: batch + 1 }, cookie)).body.error, 'qua_me');
+  const plain = await call('POST', '/api/workshop/start', { specialtyId: sp.id, quality: 'A', kg: batch }, cookie);
+  assert.equal(plain.body.kgOut, Math.floor(batch * recipe.ratio + 1e-9));
   // Mua máy rửa (+5% sản lượng), kho lạnh (hàng loại thấp thiệt một nửa), máy đóng gói (+8% giá); máy phụ trợ chỉ cần một cái.
   for (const kind of ['may_rua', 'kho_lanh', 'may_dong_goi']) assert.equal((await call('POST', '/api/workshop/machines/buy', { kind }, cookie)).status, 200);
   assert.equal((await call('POST', '/api/workshop/machines/buy', { kind: 'may_rua' }, cookie)).body.error, 'du_may');
   assert.equal((await call('POST', '/api/workshop/machines/buy', { kind: 'may_bay' }, cookie)).status, 400);
   const farmer = await signup('khong_co_xuong');
   assert.equal((await call('POST', '/api/workshop/machines/buy', { kind: 'may_say' }, farmer)).body.error, 'chi_chu_xuong');
-  const boosted = await call('POST', '/api/workshop/start', { specialtyId: sp.id, quality: 'A', kg: 1000 }, cookie);
-  assert.equal(boosted.body.kgOut, Math.floor(1000 * recipe.ratio * 1.05 + 1e-9));
+  const boosted = await call('POST', '/api/workshop/start', { specialtyId: sp.id, quality: 'A', kg: batch }, cookie);
+  assert.equal(boosted.body.kgOut, Math.floor(batch * recipe.ratio * 1.05 + 1e-9));
   await db.query(`update process_jobs set ready_at = now() - interval '1 second' where user_id = $1`, [me.user.id]);
   const lowC = await call('POST', '/api/workshop/collect/' + plain.body.jobId, {}, cookie);
   assert.deepEqual([lowC.status, lowC.body.xpGained], [200, XP.process]);
   await call('POST', '/api/workshop/collect/' + boosted.body.jobId, {}, cookie);
-  const c = await call('POST', '/api/workshop/start', { specialtyId: sp.id, quality: 'C', kg: 100 }, cookie);
-  assert.equal(c.body.kgOut, Math.floor(100 * recipe.ratio * (1 - (1 - QUALITY_MULT.C) * 0.5) * 1.05 + 1e-9));
-  const total = plain.body.kgOut + boosted.body.kgOut;
+  const c = await call('POST', '/api/workshop/start', { specialtyId: sp.id, quality: 'C', kg: batch }, cookie);
+  assert.equal(c.body.kgOut, Math.floor(batch * recipe.ratio * (1 - (1 - QUALITY_MULT.C) * 0.5) * 1.05 + 1e-9));
+  // thêm thành phẩm có sẵn (như đã chạy nhiều mẻ) để thử ký gửi và xuất khẩu lô lớn
+  await db.query('update products set kg = kg + 300 where user_id = $1 and specialty_id = $2', [me.user.id, sp.id]);
+  const total = plain.body.kgOut + boosted.body.kgOut + 300;
   const ref: number = (await call('GET', '/api/prices')).body.prices[sp.id].price;
   const prodRef = Math.round((ref * recipe.value) / 100) * 100;
   // Bán cho doanh nghiệp được cộng 8% nhờ máy đóng gói.

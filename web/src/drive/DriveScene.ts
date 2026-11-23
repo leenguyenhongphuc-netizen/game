@@ -17,7 +17,7 @@ export interface ScenePlan { km: number; needsBoat: boolean; seconds: number; to
   /** Tuỳ chọn theo xe đang lái: xe điện dùng chargersAtKm thay trạm xăng; trạm dừng nghỉ có tên; số lần phải nghỉ; tốc độ tối đa của xe. */
   power?: string; chargersAtKm?: number[]; restStops?: { atKm: number; name: string; hasFuel?: boolean; hasCharger?: boolean; province?: string | null }[]; restsNeeded?: number; maxKmh?: number }
 /** Xe đã dừng hẳn trong ô của một trạm dừng nghỉ: giao diện mở bảng trạm rồi gọi resume(). */
-export interface DriveRest { index: number; atKm: number; name: string; hasFuel: boolean; hasCharger: boolean; energy: number; tank: number; unit: string; price: number; electric: boolean }
+export interface DriveRest { index: number; atKm: number; name: string; kind: 'rest' | 'fuel' | 'charger'; hasFuel: boolean; hasCharger: boolean; energy: number; tank: number; unit: string; price: number; electric: boolean }
 export interface DriveHud {
   progress: number; kmh: number; mode: Mode; phase: string; kmLeft: number;
   fuel: number; range: number; etcLeft: number; spent: number; detourKm: number; refuelL: number;
@@ -409,7 +409,10 @@ export class DriveScene {
     const nR = clamp(Math.max(1, this.restsNeeded), 1, 5);
     const rsPick = rsAll.length > nR ? [...new Set(Array.from({ length: nR }, (_, i) => rsAll[Math.min(rsAll.length - 1, Math.round((i + 1) * rsAll.length / (nR + 1)))]))] : rsAll;
     if (rsPick.length) st = st.filter((k) => !rsPick.some((r) => Math.abs(r.atKm - k) < 25));
-    const maxSt = rsPick.length ? 3 : 5;
+    // Cây xăng/trạm sạc chỉ dựng khi thật cần: đủ năng lượng cho cả chuyến thì không có (hoặc 1 trạm nếu tuyến không có trạm nghỉ)
+    const needE = Math.max(0, (p.fuelNeededL ?? 0) - this.fuel), tankE = Math.max(1, this.opts.truck.tankL);
+    const maxSt = needE <= 0 && this.fuel >= (p.fuelNeededL ?? 0) * 1.1 ? (rsPick.length ? 0 : Math.min(1, st.length)) : clamp(Math.ceil(needE / (tankE * 0.75)) + 1, 1, 3);
+    if (maxSt <= 0) st = []; else if (maxSt === 1 && st.length > 1) st = [st[Math.floor(st.length / 2)]];
     if (st.length > maxSt) st = Array.from({ length: maxSt }, (_, i) => st[Math.round(i * (st.length - 1) / (maxSt - 1))]);
     const sf = st.map((k) => clamp(k / km, 0.05, 0.95));
     sf.forEach((f, i) => want.push({ ev: mk('station', 66, 66, { idx: i, kind: this.ev ? 'charger' : 'fuel', v: st[i] }), f }));
@@ -418,7 +421,7 @@ export class DriveScene {
     // Trạm dừng nghỉ xen giữa các trạm xăng
     const rf = sf.length >= 2 ? [(sf[0] + sf[1]) / 2, ...(sf.length >= 4 ? [(sf[sf.length - 2] + sf[sf.length - 1]) / 2] : [])] : roadSec >= 30 ? [sf.length ? clamp(sf[0] + 0.3, 0.2, 0.85) : 0.6] : [];
     if (rsPick.length) rsPick.forEach((r, i) => want.push({ ev: mk('rest', 70, 70, { idx: i, name: r.name, v: r.atKm, kind: (r.hasFuel !== false ? 'f' : '') + (r.hasCharger !== false ? 'c' : '') }), f: clamp(r.atKm / km, 0.06, 0.94) }));
-    else rf.forEach((f, i) => want.push({ ev: mk('rest', 70, 70, { idx: i, v: Math.round(f * km) }), f }));
+    else if (km > 150) rf.slice(0, 1).forEach((f, i) => want.push({ ev: mk('rest', 70, 70, { idx: i, v: Math.round(f * km) }), f }));
     // Các điểm có thể có tổ CSGT bắn tốc độ (có tổ hay không là ngẫu nhiên mỗi chuyến)
     const force = this.opts.police ?? (globalThis as { __drivePolice?: boolean }).__drivePolice;
     (roadSec >= 60 ? [0.2, 0.52, 0.8] : roadSec >= 32 ? [0.3, 0.72] : [0.5]).forEach((f, i) => want.push({ ev: mk('police', 36, 96, { idx: i, armed: force ?? Math.random() < 0.7 }), f: f + 0.013 }));
@@ -458,16 +461,19 @@ export class DriveScene {
       add(bake(gore, true), 16, e.dir * LW / 2, true);
     } else if (e.type === 'station') {
       if (e.kind === 'charger') {
+        add(roadside('⚡ Trạm sạc 2 km', '#1f9d5a', 5.6), -330, HW + 2.2); add(roadside('⚡ Trạm sạc 1 km', '#1f9d5a', 5.6), -240, HW + 2.2);
         add(roadside('⚡ Trạm sạc 500 m →', '#1f9d5a', 6.4), -140, HW + 2.2);
         add(roadside('⚡ Vào trạm sạc →', '#1f9d5a', 5.4), -58, HW + 2.2);
         const cs = bake(chargerStation(), true); const sp = sign(`⚡ Sạc nhanh ${vnd(this.opts.truck.fuelPrice)}/kWh`, '#1f9d5a', 7.4); sp.position.set(4.2, 6.9, 0); cs.add(sp); add(cs, 0, HW + LW + 0.9);
       } else {
+      add(roadside('⛽ Cây xăng 2 km', '#f08a24', 5.6), -330, HW + 2.2); add(roadside('⛽ Cây xăng 1 km', '#f08a24', 5.6), -240, HW + 2.2);
       add(roadside('⛽ Trạm xăng 500 m →', '#f08a24', 6.4), -140, HW + 2.2);
       add(roadside('⛽ Vào trạm →', '#f08a24', 5), -58, HW + 2.2);
       add(fuelStation(this.opts.truck.fuelPrice), 0, HW + LW + 0.9);
       }
       add(stopBox(0xf2c94c), 0, HW + LW / 2 + 0.3); add(limitPost(ROAD_LIMITS.station), -50, HW + LW + 1.6);
     } else if (e.type === 'rest') {
+      add(roadside('☕ Trạm dừng nghỉ 2 km', BLUE, 6.4), -340, HW + 2.2); add(roadside('☕ Trạm dừng nghỉ 1 km', BLUE, 6.4), -250, HW + 2.2);
       add(roadside('☕ Trạm dừng nghỉ 500 m →', BLUE, 7), -150, HW + 2.2);
       add(roadside('☕ Vào trạm nghỉ →', BLUE, 5.6), -60, HW + 2.2);
       const rsG = restStop(); if (e.kind.includes('c')) { const cp = chargerPosts(); cp.position.set(3.2, 0, -12.5); rsG.add(cp); }
@@ -484,7 +490,7 @@ export class DriveScene {
       add(gantry(HW, [{ text: `Thu phí chặng · ${vnd(this.opts.plan.tollFee)}`, x: 0, w: 9, bg: BLUE }]), -96, 0);
       const t = tollPlaza(); e.arms = t.arms; add(t.root, 0, 0);
     } else if (e.kind === 'tunnel') { add(tunnel(), 0, 0); add(roadside('Hầm đường bộ', BLUE, 5), -70, HW + 2.2); }
-    else { const river = box(0x6cc5e0, 0, 0, 0, 700, 0.06, 64, { rough: 0.25 }); river.castShadow = false; river.position.y = -0.02; add(river, 0, 0); add(pylon(), -15, 0); add(pylon(), 15, 0); add(roadside('Cầu vượt sông', BLUE, 5), -70, HW + 2.2); }
+    else { const river = box(0x6cc5e0, 0, 0, 0, 700, 0.06, 64, { rough: 0.25 }); river.castShadow = false; river.position.y = -0.055; /* mặt sông (đỉnh -0,025) nằm DƯỚI mặt đường (0) và trên nền cỏ (-0,06): trước đây đỉnh +0,01 đè lên mặt cầu nên thấy nước xuyên đường */ add(river, 0, 0); add(pylon(), -15, 0); add(pylon(), 15, 0); add(roadside('Cầu vượt sông', BLUE, 5), -70, HW + 2.2); }
     for (const o of e.objs) { o.o.visible = false; if (!o.o.parent) this.world.add(o.o); }
   }
 
@@ -612,13 +618,24 @@ export class DriveScene {
   /** Đã đọc biên bản: cho xe đi tiếp. */
   resume() {
     if (this.pulled?.shown) { this.pulled.go = true; }
-    if (this.held) { const e = this.held; this.held = null; this.rests++; if (!this.restsAt.includes(e.v)) this.restsAt.push(e.v); this.tired = 0; this.pause = Math.max(this.pause, 0.6); this.bump('☕ Nghỉ xong — tỉnh táo trở lại', 'good'); }
+    if (this.held) {
+      const e = this.held; this.held = null; this.pause = Math.max(this.pause, 0.6);
+      if (e.type === 'rest') { this.rests++; if (!this.restsAt.includes(e.v)) this.restsAt.push(e.v); this.tired = 0; this.bump('☕ Nghỉ xong — tỉnh táo trở lại', 'good'); }
+      else { this.tired = Math.max(0, this.tired - 0.3); this.bump('Nhập lại cao tốc', 'info'); }
+    }
+  }
+  /** Đã tự tay bơm xăng / sạc ở khu trạm (StopArea): cộng năng lượng và ghi vào tổng kết chuyến. */
+  addEnergy(amount: number): number {
+    const e = this.held, tk = this.opts.truck, add = Math.max(0, Math.min(amount, tk.tankL - this.fuel)); if (!e || add <= 0) return 0;
+    this.fuel += add; this.refuelL += add; this.warnDry = false;
+    if (this.ev) { const k = Math.round(e.v), c = this.charges.find((x) => x.atKm === k); if (c) c.kwh = Math.round((c.kwh + add) * 10) / 10; else this.charges.push({ atKm: k, kwh: Math.round(add * 10) / 10 }); }
+    return add;
   }
   /** Đang đỗ ở trạm dừng nghỉ: đổ đầy bình hoặc sạc đầy pin (nếu trạm có). Trả về lượng nạp, tiền và số giây chờ; null nếu không nạp được. */
   refuelHere(): { added: number; cost: number; seconds: number } | null { const e = this.held; return e && this.pumps.includes(e) ? this.topUp(e) : null; }
   /** Xe đang đỗ ở trạm dừng nghỉ nào (null nếu không). */
   restNow(): DriveRest | null { return this.held ? this.restInfo(this.held) : null; }
-  private restInfo(e: Ev): DriveRest { const tk = this.opts.truck; return { index: e.idx, atKm: e.v, name: e.name || 'Trạm dừng nghỉ', hasFuel: !this.ev && e.kind.includes('f'), hasCharger: this.ev && e.kind.includes('c'), energy: Math.round(this.fuel * 10) / 10, tank: tk.tankL, unit: this.unit, price: tk.fuelPrice, electric: this.ev }; }
+  private restInfo(e: Ev): DriveRest { const tk = this.opts.truck, st = e.type === 'station'; return { index: e.idx, atKm: e.v, kind: st ? (this.ev ? 'charger' : 'fuel') : 'rest', name: e.name || (st ? (this.ev ? `Trạm sạc Km ${Math.round(e.v)}` : `Cây xăng Km ${Math.round(e.v)}`) : 'Trạm dừng nghỉ'), hasFuel: !this.ev && (st || e.kind.includes('f')), hasCharger: this.ev && (st || e.kind.includes('c')), energy: Math.round(this.fuel * 10) / 10, tank: tk.tankL, unit: this.unit, price: tk.fuelPrice, electric: this.ev }; }
   /** Nạp đầy năng lượng tại trạm xăng, trạm sạc hoặc trạm dừng nghỉ. Xe điện sạc nhanh mất vài giây và được ghi vào danh sách `charges`. */
   private topUp(e: Ev): { added: number; cost: number; seconds: number } | null {
     const tk = this.opts.truck, add = Math.max(0, tk.tankL - this.fuel); if (add <= 0.5 || this.chg) return null;
@@ -797,7 +814,8 @@ export class DriveScene {
         if (u > 70) { e.done = true; if (e.type === 'station') this.stationsPassed++; continue; }
         if (this.inAux() && Math.abs(u) < 7.5 && kmh < 1.5 && this.pause <= 0 && !this.held) {
           e.done = true; this.gear = 'D';
-          if (e.type === 'station') { this.stationsPassed++; this.tired = Math.max(0, this.tired - 0.3); if (!this.topUp(e)) this.bump(`${this.ev ? 'Pin' : 'Bình'} còn đầy, chạy tiếp`, 'info'); }
+          if (e.type === 'station' && this.opts.onRest && !this.autoPilot) { this.stationsPassed++; this.held = e; this.speed = 0; this.opts.onRest(this.restInfo(e)); }
+          else if (e.type === 'station') { this.stationsPassed++; this.tired = Math.max(0, this.tired - 0.3); if (!this.topUp(e)) this.bump(`${this.ev ? 'Pin' : 'Bình'} còn đầy, chạy tiếp`, 'info'); }
           else if (this.opts.onRest) { this.held = e; this.speed = 0; this.opts.onRest(this.restInfo(e)); if (this.autoPilot && this.pumps.includes(e) && this.fuel / Math.max(1, tk.tankL) < 0.7) this.topUp(e); }
           else { this.rests++; this.restsAt.push(e.v); this.tired = 0; this.pause = 2.2; this.speed = 0; this.bump('☕ Nghỉ 15 phút — tỉnh táo trở lại', 'good'); }
         }
@@ -842,7 +860,7 @@ export class DriveScene {
     if (this.mode === 'boat') { const i = this.gates.findIndex((g) => g > this.s); return this.offChan ? { icon: '⚠', text: 'Lệch luồng! Quay lại giữa phao đỏ và phao xanh', urgent: true } : { icon: '🧭', text: i < 0 ? `Qua hết phao, cập bến ${this.legIdx === this.legs.length - 1 ? this.toName : 'đất liền'}` : `Bám luồng tới cặp phao số ${i + 1}/${this.gates.length}`, urgent: false }; }
     const s = this.s, d = this.det();
     if (this.pulled) return { icon: '🚨', text: 'CSGT ra hiệu: giảm tốc, tấp vào lề phải', urgent: true };
-    if (this.held) return { icon: '☕', text: `Đang nghỉ ở ${this.held.name || 'trạm dừng nghỉ'}`, urgent: false };
+    if (this.held) return this.held.type === 'station' ? { icon: this.ev ? '⚡' : '⛽', text: this.ev ? 'Đang ở trạm sạc' : 'Đang ở cây xăng', urgent: false } : { icon: '☕', text: `Đang nghỉ ở ${this.held.name || 'trạm dừng nghỉ'}`, urgent: false };
     if (this.chg) return { icon: '⚡', text: `Đang sạc nhanh… ${Math.round(this.chg.t / this.chg.dur * 100)}%`, urgent: false };
     if (this.gear === 'R') return { icon: 'R', text: 'Đang gài số lùi: giữ GA để lùi, bấm R để về số tiến', urgent: true };
     if (this.inAux()) for (const e of this.auxs) { const u = s - e.s, what = e.type === 'station' ? (this.ev ? 'sạc pin' : 'đổ xăng') : 'vào trạm nghỉ'; if (e.done || Math.abs(u) > 62) continue; if (u < -7.5) return { icon: e.type === 'station' ? (this.ev ? '⚡' : '⛽') : '☕', text: `Còn ${Math.round((-u - 3) / UK / 10) * 10 || 10} m: thắng dần, dừng hẳn trong ô kẻ để ${what}`, urgent: false }; if (u <= 7.5) return { icon: 'P', text: `Đúng ô rồi: đạp thắng dừng hẳn để ${what}`, urgent: true }; return { icon: '↩', text: 'Lố ô dừng: dừng hẳn, gài số lùi (R) rồi lùi lại', urgent: true }; }

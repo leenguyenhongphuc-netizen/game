@@ -12,7 +12,7 @@ import { SIGHTS } from '../../shared/sights.ts';
 import {
   EXAM, LICENSE_POINTS, LICENSE_RENEW_FEE, LICENSE_YEAR_DAYS,
   DEFAULT_VEHICLE, DRIVE_RULES, ENERGY_PRICE, LICENSES, PERSONAL_RIDES, TOLL_GROUP_MULT, VEHICLES, VEHICLE_RESALE, licenseCovers, personalLegFare, rangeKm,
-  restStopItems, restsNeeded, tripPlanFor, truckOf,
+  restStopItems, restStopKms, restsNeeded, tripPlanFor, truckOf,
 } from '../../shared/vehicles.ts';
 import { GOODS, GOODS_BY_ID, GOOD_CATEGORIES, RIDE_GOODS } from '../../shared/shop.ts';
 
@@ -92,7 +92,10 @@ test('danh mục xe: tải trọng thực tế, bằng lái theo khối lượng
   assert.ok(ev.chargersAtKm.length <= base.stationsAtKm.length, 'trạm sạc thưa hơn trạm xăng');
   assert.ok(ice.restStops.length > 0 && ice.restStops.every((r) => /^Trạm dừng nghỉ Km \d+$/.test(r.name) && r.hasWc && r.hasCharger));
   assert.equal(ice.restsNeeded, restsNeeded(road));
-  assert.ok(restsNeeded(DRIVE_RULES.continuousHours * DRIVE_RULES.avgKmh) === 0 && restsNeeded(DRIVE_RULES.continuousHours * DRIVE_RULES.avgKmh + 1) === 1);
+  // Ít dừng hơn: ≤ 300 km không bắt nghỉ, ≤ 650 km nghỉ 1 lần, xa hơn 2 lần; số trạm trên tuyến tối đa 3.
+  assert.deepEqual([120, 300, 301, 650, 651, 1800].map(restsNeeded), [0, 0, 1, 1, 2, 2]);
+  assert.deepEqual([restStopKms(120).length, restStopKms(280).length], [0, 1]);
+  for (const r of [301, 500, 900, 1800]) { const k = restStopKms(r); assert.ok(k.length >= restsNeeded(r) + 1 && k.length <= 3 && k.every((x, i) => x > 0 && x < r && (i === 0 || x > k[i - 1]))); }
   assert.ok(ev.restStops.every((r) => ev.chargersAtKm.includes(r.atKm)), 'trạm dừng nghỉ nào cũng có trụ sạc');
   assert.equal(tripPlanFor(v.ba_gac, from, to).tollFee, 0);
   assert.ok(tripPlanFor(v.ba_gac, from, to).seconds > base.seconds && ice.upkeepCost > 0);

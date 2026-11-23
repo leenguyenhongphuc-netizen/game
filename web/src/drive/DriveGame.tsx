@@ -6,6 +6,8 @@ import { ITEMS } from '../../../shared/items.ts';
 import { DRIVE_RULES, VEHICLES, restStopItems } from '../../../shared/vehicles.ts';
 import { DriveScene } from './DriveScene.ts';
 import type { DriveHud, DriveRest, DriveSummary, DriveTicket, View } from './DriveScene.ts';
+import type { VehGroup } from './DriveExtras.ts';
+import { StopAreaView } from './StopAreaView.tsx';
 
 export interface DrivePlan { km: number; needsBoat: boolean; seconds: number; tolls: number; tollFee: number; fuelNeededL: number; junctions: { atKm: number; dir: 'L' | 'R'; name: string }[]; stationsAtKm: number[];
   /** Theo xe đang lái (máy chủ trả kèm trong plan của /api/trips/start). */
@@ -173,6 +175,8 @@ export function DriveGame(props: {
   const [restLog, setRestLog] = useState<DriveRestLog[]>([]);
   const [wc, setWc] = useState(0);
   const [fillMsg, setFillMsg] = useState<string | null>(null);
+  /** Khu trạm 3D không dựng được (máy không có WebGL thứ hai…): quay về bảng trạm cũ. */
+  const [stopFail, setStopFail] = useState(false);
   const logRef = useRef<DriveRestLog[]>([]); logRef.current = restLog;
   const auto = (window as unknown as { __driveAuto?: boolean }).__driveAuto === true;
   const from = REGIONS[props.fromRegionId]?.name ?? 'Nơi đi', to = REGIONS[props.toRegionId]?.name ?? 'Nơi đến';
@@ -184,7 +188,7 @@ export function DriveGame(props: {
         fromRegionId: props.fromRegionId, toRegionId: props.toRegionId, plan: props.plan, fuelL: props.fuelL, truck: props.truck, etc: props.etc, truckColor: props.truckColor,
         view: readView(), cruise: (window as unknown as { __driveAuto?: boolean }).__driveAuto === true,
         onPolice: setTicket,
-        onRest: (r) => { setFillMsg(null); setRest(r); setRestLog((l) => (l.some((x) => x.atKm === r.atKm) ? l : [...l, { atKm: r.atKm }])); },
+        onRest: (r) => { setFillMsg(null); setRest(r); if (r.kind === 'rest') setRestLog((l) => (l.some((x) => x.atKm === r.atKm) ? l : [...l, { atKm: r.atKm }])); },
         onTick: setHud,
         onBump: (text, kind) => setBump({ id: ++id, text, kind }),
         onFlash: (text) => setFlash({ id: ++id, text }),
@@ -362,7 +366,14 @@ export function DriveGame(props: {
             <div className="dg-row"><button className="go" onClick={() => { scene.current?.resume(); setTicket(null); }}>Đã hiểu, chạy đúng tốc độ</button></div>
           </div>
         )}
-        {rest && !arrived && !auto && (
+        {rest && !arrived && !auto && !stopFail && (
+          <StopAreaView key={`${rest.kind}:${rest.atKm}`}
+            info={{ kind: rest.kind, name: rest.name, electric: ev, energy: hud?.fuel ?? rest.energy, tank: rest.tank, unit, price: rest.price, group: (VEHICLES[props.truck.kind ?? '']?.group ?? 'tai_nhe') as VehGroup, color: parseInt((props.truckColor || '#f08a6c').replace('#', ''), 16) || 0xf08a6c, cold: !!props.truck.cold }}
+            fuelNames={ev ? [] : props.truck.power === 'dau' ? ['Dầu DO 0,05S'] : ['RON 95-III', 'E5 RON 92']}
+            menu={rest.kind === 'rest' ? menu : []} cash={cashLeft} bought={cur?.items ?? []} onBuy={buy} onFail={() => setStopFail(true)}
+            onDone={(r) => { scene.current?.addEnergy(r.added); if (r.wc && rest.kind === 'rest') setRestLog((l) => l.map((x) => (x.atKm === rest.atKm ? { ...x, wc: true } : x))); scene.current?.resume(); setRest(null); }} />
+        )}
+        {rest && !arrived && !auto && stopFail && (
           <div className="dg-card dg-rest" role="dialog" aria-label={rest.name}>
             <h2>☕ {rest.name}</h2>
             <p className="law">Luật giao thông: không lái xe liên tục quá {DRIVE_RULES.continuousHours} giờ, không quá {DRIVE_RULES.dailyHours} giờ một ngày. Nghỉ ít nhất 15 phút rồi mới đi tiếp.{restsNeeded > 0 ? ` Chuyến này cần nghỉ ${restsNeeded} lần.` : ''}</p>

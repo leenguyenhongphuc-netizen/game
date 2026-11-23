@@ -36,6 +36,9 @@ import { applyImport, logXp, registerProgress, useSeed } from './progress.ts';
 import type { Db, Q } from './db.ts';
 import { registerVehicles } from './vehicles.ts';
 import { registerShopping } from './shopping.ts';
+import { registerEconomy } from './economy.ts';
+import { ORDER_KIND_NAMES, ORDER_PREMIUM_V2, SUPER_PROVINCES, machineBatchKg, orderBonus, orderScale } from '../../shared/economy.ts';
+import { registerFarm } from './farm.ts';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 const SESSION_DAYS = 30;
@@ -1275,7 +1278,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     ]);
     const list = m.rows.filter((r) => isMachine(r.kind)).map((r) => {
       const kind = r.kind as MachineKind, info = MACHINES[kind], st = machineStats(kind, r.level);
-      return applyImport({ id: Number(r.id), kind, name: info.name, emoji: info.emoji, level: r.level as number, slots: st.slots, time: st.time, recipes: info.recipes, support: info.slots === 0,
+      return applyImport({ id: Number(r.id), kind, name: info.name, emoji: info.emoji, level: r.level as number, slots: st.slots, time: st.time, recipes: info.recipes, support: info.slots === 0, batchKg: machineBatchKg(r.level, !!r.origin),
         bonus: info.bonus ?? null, upgradeCost: r.level < MACHINE_MAX_LEVEL ? machineUpgradeCost(kind, r.level) : null, jobs: [] as ReturnType<typeof jobOut>[] }, r.origin);
     });
     const orphan: ReturnType<typeof jobOut>[] = [];
@@ -1345,7 +1348,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const u = await q.query('select role, cash from users where id = $1 for update', [userId]);
       if (u.rows[0].role !== 'xuong') throw bad('chi_chu_xuong', 'Chỉ chủ xưởng mới mua máy chế biến được.', 403);
       const have = await q.query('select kind from machines where user_id = $1', [userId]);
-      if (have.rows.length >= WORKSHOP_MAX_MACHINES) throw bad('het_cho_may', `Nhà xưởng chỉ đặt được ${WORKSHOP_MAX_MACHINES} máy.`, 409);
+      const maxMachines = WORKSHOP_MAX_MACHINES + (await econ.branchSlots(q, userId));
+      if (have.rows.length >= maxMachines) throw bad('het_cho_may', `Nhà xưởng chỉ đặt được ${maxMachines} máy; mở xưởng chi nhánh ở tỉnh khác để đặt thêm.`, 409);
       const cap = MACHINES[kind].slots ? WORKSHOP_MAX_PER_KIND : 1;
       if (have.rows.filter((r) => r.kind === kind).length >= cap) throw bad('du_may', MACHINES[kind].slots ? `Mỗi loại máy chế biến chỉ đặt được ${cap} cái; hãy nâng cấp máy đang có.` : 'Máy phụ trợ chỉ cần một cái.', 409);
       if (Number(u.rows[0].cash) < MACHINES[kind].price) throw bad('khong_du_tien', 'Bạn không đủ tiền mua máy.', 409);
@@ -1399,6 +1403,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         host = want.jobs.length < want.slots ? want : undefined;
       }
       if (!host) throw bad('het_cho', 'Máy đã kín mẻ, hãy nhận hàng xong rồi làm mẻ mới (hoặc nâng cấp, mua thêm máy).', 409);
+      if (kg > host.batchKg) throw bad('qua_me', `${host.name} cấp ${host.level} chỉ nhận ${host.batchKg} kg mỗi mẻ; chia thành nhiều mẻ hoặc nâng cấp máy.`, 409);
       const bonus = workshopBonus(machines);
       // hàng loại thấp ra ít thành phẩm hơn; có kho lạnh thì thiệt ít đi
       const gradeMult = 1 - (1 - QUALITY_MULT[ql]) * (1 - bonus.grade);
@@ -1446,10 +1451,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const now = Date.now();
       const bonus = (marketDayOf(now).active ? MARKET_DAY_BONUS : 0) + (floatingAt(u.rows[0].home_region_id, now) ? FLOATING_BONUS : 0);
       const pack = await valueBonusOf(q, userId);
-      const unit = Math.round(((await currentPrice(q, sp.id)) * recipeOf(CROPS[sp.crop]).value * (1 + bonus) * (1 + pack)) / 100) * 100;
+      await q.query('select pg_advisory_xact_lock(hashtext($1))', [`che_bien:${sp.id}`]);
+      const bulk = bulkSellFactor(await soldAt(q, 'che_bien', sp.id), kg);
+      const unit = Math.round(((await currentPrice(q, sp.id)) * recipeOf(CROPS[sp.crop]).value * (1 + bonus) * (1 + pack) * bulk) / 100) * 100;
+      await q.query('insert into npc_sales (user_id, specialty_id, kg, market_region) values ($1,$2,$3,$4)', [userId, sp.id, kg, 'che_bien']);
       await addCash(q, userId, unit * kg, `ban_che_bien:${sp.id}`);
       const xp = await addXp(q, userId, xpFor('ban_thanh_pham', unit * kg), 'ban_thanh_pham');
-      return { unitPrice: unit, total: unit * kg, npcId: npcOf('che_bien').id, ...xp };
+      return { unitPrice: unit, total: unit * kg, npcId: npcOf('che_bien').id, bulkFactor: Math.round(bulk * 1000) / 1000, ...xp };
     });
   });
   async function addProduct(q: Q, userId: number, specialtyId: string, kg: number) {
@@ -1471,57 +1479,85 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     for (const ch of seed) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
     return () => { h = (h + 0x6d2b79f5) | 0; let t = Math.imul(h ^ (h >>> 15), 1 | h); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   }
-  function ordersFor(userId: number, homeRegionId: string, day: number) {
+  /** Đơn trong ngày: ba đơn chung (khối lượng lớn dần theo cấp) và một đơn riêng theo vai. */
+  const ORDER_SLOTS = ORDERS_PER_DAY + 1;
+  type OrderItem = { specialtyId: string; kg: number; processed?: boolean };
+  function ordersFor(userId: number, homeRegionId: string, day: number, level = 1, role: Role | null = null) {
     const pick = <T>(list: T[], r: () => number): T => list[Math.floor(r() * list.length)];
-    const kg = (min: number, max: number, r: () => number) => min + Math.floor(r() * (max - min + 1));
+    const s = orderScale(level);
+    const kg = (min: number, max: number, r: () => number) => Math.round((min + Math.floor(r() * (max - min + 1))) * s);
     const others = Object.keys(REGIONS).filter((id) => id !== homeRegionId).sort();
     const sameZone = others.filter((id) => REGIONS[id].zone === REGIONS[homeRegionId].zone);
     const home = specialtiesOfRegion(homeRegionId);
-    const out: { slot: number; npcId: string; title: string; items: { specialtyId: string; kg: number }[] }[] = [];
-    for (let slot = 0; slot < ORDERS_PER_DAY; slot++) {
+    const out: { slot: number; npcId: string; title: string; kind: string; items: OrderItem[] }[] = [];
+    for (let slot = 0; slot < ORDER_SLOTS; slot++) {
       const r = seeded(`${userId}:${day}:${slot}`);
-      if (slot === 0) out.push({ slot, npcId: npcOf('thuong_lai').id, title: 'Đơn thu mua', items: [{ specialtyId: pick(home, r).id, kg: kg(10, 30, r) }] });
+      if (slot === 0) out.push({ slot, npcId: npcOf('thuong_lai').id, title: ORDER_KIND_NAMES.thu_mua, kind: 'thu_mua', items: [{ specialtyId: pick(home, r).id, kg: kg(10, 30, r) }] });
       else if (slot === 1) {
         const other = pick(sameZone.length ? sameZone : others, r);
-        out.push({ slot, npcId: npcOf('sieu_thi').id, title: 'Giỏ quà biếu', items: [
+        out.push({ slot, npcId: npcOf('sieu_thi').id, title: ORDER_KIND_NAMES.qua_bieu, kind: 'qua_bieu', items: [
           { specialtyId: pick(home, r).id, kg: kg(5, 15, r) }, { specialtyId: pick(specialtiesOfRegion(other), r).id, kg: kg(5, 15, r) }] });
-      } else {
+      } else if (slot === 2) {
         const a = pick(others, r), rest = others.filter((id) => id !== a), c = pick(rest, r);
-        out.push({ slot, npcId: npcOf('sieu_thi').id, title: 'Mâm ngũ quả', items: [homeRegionId, a, c].map((regionId) => ({ specialtyId: pick(specialtiesOfRegion(regionId), r).id, kg: kg(3, 8, r) })) });
+        out.push({ slot, npcId: npcOf('sieu_thi').id, title: ORDER_KIND_NAMES.mam_ngu_qua, kind: 'mam_ngu_qua', items: [homeRegionId, a, c].map((regionId) => ({ specialtyId: pick(specialtiesOfRegion(regionId), r).id, kg: kg(3, 8, r) })) });
+      } else if (role === 'xuong') {
+        // đơn vừa cho xưởng: thành phẩm chế biến từ đặc sản cùng miền
+        const region = pick([homeRegionId, ...sameZone], r);
+        out.push({ slot, npcId: npcOf('che_bien').id, title: ORDER_KIND_NAMES.xuong, kind: 'xuong', items: [{ specialtyId: pick(specialtiesOfRegion(region), r).id, kg: kg(4, 10, r), processed: true }] });
+      } else if (role === 'thuong_lai') {
+        // đơn lớn cho thương lái: hàng vùng khác, phải đi gom bằng xe
+        out.push({ slot, npcId: npcOf('thuong_lai').id, title: ORDER_KIND_NAMES.si_lon, kind: 'si_lon', items: [{ specialtyId: pick(specialtiesOfRegion(pick(others, r)), r).id, kg: kg(150, 300, r) }] });
+      } else {
+        out.push({ slot, npcId: npcOf('thuong_lai').id, title: 'Đơn thu mua lớn', kind: 'thu_mua', items: [{ specialtyId: pick(home, r).id, kg: kg(40, 80, r) }] });
       }
     }
     return out;
   }
-  async function orderReward(q: Q, items: { specialtyId: string; kg: number }[]): Promise<number> {
+  async function orderReward(q: Q, items: OrderItem[], level = 1): Promise<number> {
     let sum = 0;
-    for (const it of items) sum += (await currentPrice(q, it.specialtyId)) * it.kg;
-    return Math.round((sum * ORDER_PREMIUM) / 1000) * 1000;
+    for (const it of items) sum += (it.processed ? await productRef(q, it.specialtyId) : await currentPrice(q, it.specialtyId)) * it.kg;
+    return Math.round((sum * ORDER_PREMIUM_V2) / 1000) * 1000 + orderBonus(level);
+  }
+  /** Điểm kinh nghiệm của đơn: đơn riêng theo vai được gấp đôi, cấp cao thêm chút. */
+  const orderXp = (slot: number, level: number) => (XP.order + Math.floor(level / 2)) * (slot >= ORDERS_PER_DAY ? 2 : 1);
+  async function orderUser(q: Q, userId: number, lock = false) {
+    const u = (await q.query(`select home_region_id, role, xp from users where id = $1${lock ? ' for update' : ''}`, [userId])).rows[0];
+    return { home: (u.home_region_id ?? null) as string | null, role: (u.role ?? null) as Role | null, level: levelOf(Number(u.xp)).level };
   }
 
   app.get('/api/orders', async (req) => {
     const userId = await requireUser(req);
-    const u = await db.query('select home_region_id from users where id = $1', [userId]);
+    const u = await orderUser(db, userId);
     const day = vnDay(Date.now());
-    if (!u.rows[0].home_region_id) return { orders: [], resetsAt: (day + 1) * DAY_MS - VN_TZ_MS };
+    if (!u.home) return { orders: [], resetsAt: (day + 1) * DAY_MS - VN_TZ_MS };
     const done = await db.query('select slot from order_done where user_id = $1 and day = $2', [userId, dayString(day)]);
     const doneSlots = new Set(done.rows.map((r) => r.slot));
     const orders = [];
-    for (const o of ordersFor(userId, u.rows[0].home_region_id, day)) orders.push({ ...o, reward: await orderReward(db, o.items), done: doneSlots.has(o.slot) });
-    return { orders, resetsAt: (day + 1) * DAY_MS - VN_TZ_MS };
+    for (const o of ordersFor(userId, u.home, day, u.level, u.role)) {
+      const items = o.items.map((it) => ({ ...it, name: it.processed ? productName(it.specialtyId) : SPECIALTIES[it.specialtyId].name }));
+      orders.push({ ...o, items, reward: await orderReward(db, o.items, u.level), bonus: orderBonus(u.level), xp: orderXp(o.slot, u.level), done: doneSlots.has(o.slot) });
+    }
+    return { orders, resetsAt: (day + 1) * DAY_MS - VN_TZ_MS, premium: ORDER_PREMIUM_V2, scale: orderScale(u.level) };
   });
 
   app.post('/api/orders/:slot/deliver', async (req) => {
     const userId = await requireUser(req);
     const slot = Number((req.params as any).slot);
-    if (!Number.isInteger(slot) || slot < 0 || slot >= ORDERS_PER_DAY) throw bad('khong_tim_thay', 'Không tìm thấy đơn hàng.', 404);
+    if (!Number.isInteger(slot) || slot < 0 || slot >= ORDER_SLOTS) throw bad('khong_tim_thay', 'Không tìm thấy đơn hàng.', 404);
     return db.tx(async (q) => {
-      const u = await q.query('select home_region_id from users where id = $1 for update', [userId]);
-      if (!u.rows[0].home_region_id) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
+      const u = await orderUser(q, userId, true);
+      if (!u.home) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
       const day = vnDay(Date.now());
-      const order = ordersFor(userId, u.rows[0].home_region_id, day)[slot];
+      const order = ordersFor(userId, u.home, day, u.level, u.role)[slot];
       const mark = await q.query('insert into order_done (user_id, day, slot) values ($1,$2,$3) on conflict do nothing', [userId, dayString(day), slot]);
       if (!mark.rowCount) throw bad('da_giao', 'Đơn này hôm nay bạn đã giao rồi.', 409);
       for (const it of order.items) {
+        if (it.processed) {
+          const have = (await q.query('select kg from products where user_id = $1 and specialty_id = $2', [userId, it.specialtyId])).rows[0]?.kg ?? 0;
+          if (have < it.kg) throw bad('khong_du_hang', `Kho chưa đủ ${it.kg} kg ${productName(it.specialtyId)}.`, 409);
+          await takeProduct(q, userId, it.specialtyId, it.kg);
+          continue;
+        }
         // Giao hàng hạng thấp trước để giữ hàng đẹp lại cho người chơi.
         const stock = await q.query(
           `select quality, kg from inventory where user_id = $1 and specialty_id = $2 and kg > 0 order by quality desc for update`, [userId, it.specialtyId]);
@@ -1533,9 +1569,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
           need -= take;
         }
       }
-      const reward = await orderReward(q, order.items);
+      const reward = await orderReward(q, order.items, u.level);
       await addCash(q, userId, reward, `don_hang:${slot}`);
-      const xp = await addXp(q, userId, XP.order, 'giao_don');
+      const xp = await addXp(q, userId, orderXp(slot, u.level), 'giao_don');
       return { reward, ...xp };
     });
   });
@@ -1543,6 +1579,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // xe cộ, giấy phép lái xe, trạm dừng nghỉ và mua sắm nằm ở vehicles.ts, shopping.ts
   const veh = registerVehicles(app, { db, requireUser, requireTester: (r) => requireTester(r), bad, addCash, energyState, setEnergy, bagOf: (q, u) => bagOf(q, u), licenseTimeScale: opts.licenseTimeScale ?? 1, examHurry: opts.examHurry });
   const shopping = registerShopping(app, { db, requireUser, bad, addCash, provincesOf: async (q, u) => (await whereabouts(q, u)).provinces, licensesOf: veh.licensesOf });
+  // lô xuất khẩu nhiều mặt hàng, công ty xuất nhập khẩu, siêu thị riêng và xưởng chi nhánh nằm ở economy.ts
+  const econ = registerEconomy(app, { db, timeScale, requireUser, bad, addCash, addXp, addInventory, takeInventory, addProduct, takeProduct, currentPrice,
+    productRef: (q, id) => productRef(q, id), exportContext: (q, u) => exportContext(q, u), shipmentOut: (r) => shipmentOut(r), provincesOf: async (q, u) => (await whereabouts(q, u)).provinces });
 
   // ---------------------------------------------------------------- chuyến xe của thương lái
   const round1 = (v: number) => Math.round(v * 10) / 10;
@@ -1803,7 +1842,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const [u, coop, active, mach] = await Promise.all([
       q.query('select cash, role, home_region_id, truck_region, xp from users where id = $1', [userId]),
       q.query('select 1 from coop_members where user_id = $1', [userId]),
-      q.query('select count(*)::int as n from export_shipments where user_id = $1 and paid_at is null', [userId]),
+      q.query('select count(distinct coalesce(bundle_id, id::text))::int as n from export_shipments where user_id = $1 and paid_at is null', [userId]),
       valueBonusOf(q, userId),
     ]);
     const role: Role | null = u.rows[0].role ?? null, inCoop = coop.rows.length > 0, level = levelOf(u.rows[0].xp).level;
@@ -1848,6 +1887,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   app.post('/api/export/ship', async (req) => {
     const userId = await requireUser(req);
+    // lô nhiều mặt hàng { items, mode, market } — kiểu cũ một mặt hàng vẫn nhận như trước
+    if (Array.isArray((req.body as any)?.items)) return econ.shipBundle(req, userId);
     const b = (req.body ?? {}) as Record<string, unknown>;
     const sp = findSpecialty(String(b.specialtyId ?? ''));
     if (!sp) throw bad('du_lieu_sai', 'Đặc sản không tồn tại.');
@@ -1962,7 +2003,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const cleanStops = (v: unknown, valid: string[]) => [...new Set((Array.isArray(v) ? v : []).filter((x): x is string => typeof x === 'string' && valid.includes(x)))];
   const superProvince = (v: unknown) => {
     const p = String(v ?? '');
-    if (!SIGHT_PROVINCES.includes(p)) throw bad('khong_tim_thay', 'Tỉnh này chưa có siêu thị đặc sản.', 404);
+    if (!SUPER_PROVINCES.includes(p)) throw bad('khong_tim_thay', 'Không có tỉnh này.', 404);
     return p;
   };
 
@@ -2214,7 +2255,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const userId = await requireUser(req);
     const w = await whereabouts(db, userId);
     const asked = (req.query as Record<string, unknown>).province;
-    const province = superProvince(asked ?? w.provinces.find((p) => SIGHT_PROVINCES.includes(p)) ?? SIGHT_PROVINCES[0]);
+    const province = superProvince(asked ?? w.province ?? SUPER_PROVINCES[0]);
     const here = w.provinces.includes(province);
     const earned = await db.tx(async (q) => {
       const r = await q.query('select super_earned from users where id = $1 for update', [userId]);
@@ -2255,7 +2296,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const price = int(b.price, 1, 1_000_000_000, 'price');
     return db.tx(async (q) => {
       const w = await whereabouts(q, userId, true);
-      const province = superProvince(b.province ?? w.provinces.find((p) => SIGHT_PROVINCES.includes(p)));
+      const province = superProvince(b.province ?? w.province);
       if (!w.provinces.includes(province)) throw bad('khac_tinh', `Bạn phải chở hàng tới ${province} mới ký gửi lên kệ được.`, 409);
       const { minPrice, maxPrice } = superPriceRange(processed ? await productRef(q, sp.id) : await currentPrice(q, sp.id));
       if (price < minPrice || price > maxPrice) throw bad('gia_sai', `Giá bán phải từ ${minPrice.toLocaleString('vi-VN')}đ đến ${maxPrice.toLocaleString('vi-VN')}đ mỗi kg.`, 409);
@@ -2278,7 +2319,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const w = await whereabouts(q, userId, true);
       let province: string, specialtyId: string, ql: Quality, price: number, sellerId: number | null = null, processed = false;
       if (npcId) {
-        province = superProvince(b.province ?? w.provinces.find((p) => SIGHT_PROVINCES.includes(p)));
+        province = superProvince(b.province ?? w.province);
         if (!findSpecialty(npcId) || !npcItems(province, Date.now()).includes(npcId)) throw bad('khong_tim_thay', 'Kệ hàng không còn.', 404);
         // khoá theo tỉnh để hai người không cùng mua vượt lượng hàng trong ngày của nhà bán
         await q.query('select pg_advisory_xact_lock(hashtext($1))', [`super:${province}:${npcId}`]);
@@ -2412,6 +2453,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   registerProgress(app, { db, timeScale, bad, requireUser, addCash, addXp, addInventory, takeInventory, addProduct, takeProduct, currentPrice, ensureStarter, requireTester: (r) => requireTester(r) });
+  registerFarm(app, { db, timeScale, lateGraceMs, requireUser, requireTester: (r) => requireTester(r), bad, addCash, addXp, addInventory, spendEnergy, weatherGrowth: (r, t) => weatherOf(r, t).growth, inSeason: inSeasonOf });
 
   app.get('/api/health', async () => ({ ok: true }));
 

@@ -537,3 +537,41 @@ Viết theo hiểu biết sẵn có về Luật Trật tự, an toàn giao thôn
 - **Điểm:** mỗi bằng 12 điểm. Bị phạt quá tốc độ trong chuyến xe thì trừ theo mức phạt (2, 4, 6 điểm…). Hết điểm bằng bị tạm khoá, thi lại lý thuyết đạt thì phục hồi 12 điểm. 12 "tháng" không bị trừ thì tự đủ điểm lại.
 - **Hết hạn:** không được bắt đầu chuyến bằng xe cần hạng đó. Đổi bằng (lệ phí 135.000đ): còn hạn hoặc quá hạn dưới 3 "tháng" đổi thẳng; quá 3 tháng đến dưới 1 năm phải thi lại lý thuyết; từ 1 năm phải thi lại cả sa hình.
 - **Đơn giản hoá:** không có khám sức khoẻ, không có thi đường trường và mô phỏng; bài thi do phía người chơi chấm điểm, máy chủ chỉ kiểm tra khoảng điểm và thời gian làm bài tối thiểu.
+
+## Nông trại quy mô lớn (cánh đồng, máy nông nghiệp, drone, trực thăng)
+
+Chỉ dành cho **nhà nông** (vai `nong_dan`): chủ xưởng mở rộng bằng máy chế biến, thương lái bằng xe lớn — mỗi vai một đường lớn lên riêng. Luật nằm ở `shared/farm.ts`, máy chủ `server/src/farm.ts`.
+
+- **Cánh đồng** mua theo **khối 100 ô** (0,25 ha). Từ cấp 5: hạn mức `(cấp − 4) × 2` khối, tối đa 40 khối (4.000 ô). Một cánh đồng gộp 1–10 khối, trồng **một loại**; mỗi bước chăm áp dụng cho cả cánh đồng. Dưới cấp 10 chỉ mua ở vùng nhà, từ cấp 10 mua vùng nào cũng được. Giá một khối = giá thửa vườn × 1,2 (+ lệ phí trước bạ/sổ như đất vườn); bán lại khi ruộng trống được 70%.
+- **Năng suất** mỗi ô = 0,5 × vườn nhà (quảng canh); nhịp sinh trưởng cố định như người đã quen (pace 2: một vụ bằng nửa `growHours`); giống = 8% giá trị sản lượng như vườn. Trễ bước quá hạn mức vẫn hạ loại A/B/C.
+- **Cách làm mỗi bước**: *Tự làm* 60 ô/giờ, 12 thể lực mỗi khối, không tốn tiền; *Thuê nhân công* 4.000 đ/ô, 250 ô/giờ; *Dùng máy*/*Drone* nhanh và rẻ mỗi ô nhưng phải mua máy. Bước tỉa cành/bao trái chỉ làm tay hoặc thuê. Một máy chỉ làm một cánh đồng một lúc — ruộng sau xếp hàng chờ.
+
+| Máy | Giá | Cấp | Làm bước | Công suất | Chi phí/ô |
+|---|---|---|---|---|---|
+| Hệ thống tưới | 30 tr | 5 | tưới | 3.000 ô/giờ | 200 đ |
+| Máy cày (không cần bằng lái trong game) | 180 tr | 6 | làm đất | 500 ô/giờ | 600 đ (dầu) |
+| Máy gieo/cấy | 120 tr | 7 | gieo, trồng | 600 ô/giờ | 500 đ |
+| Drone phun/rải | 95 tr | 8 | bón, phun, tưới — chỉ ruộng ở vùng nhà (tầm bay, pin) | 1.600 ô/giờ | 250 đ |
+| Máy gặt/thu hoạch | 350 tr | 10 | thu hoạch | 500 ô/giờ | 900 đ |
+| Trực thăng riêng | 3,5 tỷ | 15 | bay tham quan miễn phí | — | — |
+
+- **Trực thăng tham quan**: thuê 3 triệu/chuyến từ cấp 8 (hoặc miễn phí nếu sở hữu), bay vòng trên các cánh đồng của mình, xem từ cabin hoặc từ ngoài.
+- **Áp lực xả hàng**: sản lượng lớn bán tại chợ nhà chịu `bulkSellFactor` như mọi người — 55 tấn xoài một lúc chỉ được ~68% giá. Muốn lãi hơn phải chia nhiều đặc sản, đưa cho xưởng chế biến hoặc xuất khẩu.
+
+**Cân bằng** (`node tools/farm-sim.ts`, Xoài Cao Lãnh 40.000 đ/kg, giờ thật TIME_SCALE = 1, chơi đều tay):
+
+| Vai | Cấp | Vốn | Chu kỳ | Lãi/giờ | Hoàn vốn |
+|---|---|---|---|---|---|
+| Nông trại 2 khối, thuê người | 5 | 116 tr | 21 giờ | 6,5 tr | 0,7 ngày |
+| Nông trại 6 khối, tưới + máy cày | 7 | 558 tr | 31 giờ | 12,2 tr | 1,9 ngày |
+| Nông trại 12 khối, đủ máy | 10 | 1,47 tỷ | 33 giờ | 18,9 tr | 3,2 ngày |
+| Nông trại 20 khối, đủ máy, 1 đặc sản | 14 | 1,94 tỷ | 46 giờ | 19,6 tr | 4,1 ngày |
+| Nông trại 20 khối, đủ máy, 3 đặc sản | 14 | 1,94 tỷ | 46 giờ | 27,7 tr | 2,9 ngày |
+| Nông trại 40 khối, đủ máy | 24 | 3,1 tỷ | 76 giờ | 20,3 tr | 6,3 ngày |
+| Thương lái xe 15 tấn, 250 km | 6 | 699 tr | 10 giờ | 4,0 tr | 7,2 ngày |
+| Thương lái đầu kéo 28 tấn, 250 km (xả một chợ) | 7 | 1,31 tỷ | 10 giờ | âm | — |
+| Chủ xưởng 4–8 máy sấy, mua sỉ 40 tấn/ngày | 5–10 | ~0,3 tỷ | 4 giờ | 24 tr | 0,5 ngày |
+
+Nhận xét: nông trại cấp 10 nằm trong ±50% của chủ xưởng; lãi/giờ **bão hoà ~20 tr** khi chỉ trồng một loại vì chợ chỉ hút có hạn, nên mua thêm ruộng không làm nông dân lấn át. Thương lái hiện **thấp hẳn** (4 tr/giờ, đầu kéo xả một chợ thì lỗ) và chủ xưởng hoàn vốn quá nhanh (bán thành phẩm chưa bị ép giá khi xả) — hai chỗ này thuộc đợt cân bằng buôn bán/xuất khẩu, không chỉnh trong nhánh nông trại.
+
+Đơn giản hoá: máy cày không đòi bằng lái; chưa có thuê/cho thuê máy giữa người chơi; chưa có xe tải nông trại (dùng xe tải thường); ruộng không có thời tiết riêng ngoài hệ số sinh trưởng của vùng.

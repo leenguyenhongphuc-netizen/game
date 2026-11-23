@@ -389,4 +389,83 @@ create table if not exists fusion_log (
   detail jsonb,
   created_at timestamptz not null default now()
 );
+-- nông trại quy mô lớn: cánh đồng theo khối 100 ô, máy nông nghiệp, lượt làm việc
+create table if not exists fields (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  region_id text not null,
+  blocks int not null check (blocks > 0),
+  specialty_id text,
+  step_index int not null default 0,
+  step_ready_at timestamptz,
+  late_count int not null default 0,
+  planted_at timestamptz,
+  price_paid bigint not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists fields_user on fields (user_id);
+create table if not exists farm_machines (
+  user_id bigint not null references users(id) on delete cascade,
+  kind text not null,
+  busy_until timestamptz,
+  bought_at timestamptz not null default now(),
+  primary key (user_id, kind)
+);
+create table if not exists field_jobs (
+  id bigserial primary key,
+  field_id bigint not null references fields(id) on delete cascade,
+  user_id bigint not null references users(id) on delete cascade,
+  step_index int not null,
+  kind text not null,
+  method text not null,
+  machine text,
+  started_at timestamptz not null,
+  ends_at timestamptz not null,
+  cost bigint not null default 0,
+  late boolean not null default false,
+  done boolean not null default false
+);
+create index if not exists field_jobs_open on field_jobs (user_id) where not done;
+-- kinh tế mở rộng (server/src/economy.ts): lô xuất khẩu nhiều mặt hàng, hợp đồng công ty, tài sản thương mại
+alter table export_shipments add column if not exists bundle_id text;
+create index if not exists export_shipments_market_idx on export_shipments (market, specialty_id, created_at desc);
+create table if not exists contract_deliveries (
+  id bigserial primary key,
+  contract_id text not null,
+  company_id text not null,
+  user_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  kg int not null check (kg > 0),
+  paid bigint not null,
+  ship_fee bigint not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists contract_deliveries_idx on contract_deliveries (contract_id);
+create table if not exists properties (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  kind text not null,
+  province text not null,
+  cost bigint not null,
+  ready_at timestamptz not null,
+  sold_at timestamptz,
+  pending bigint not null default 0,
+  earned_total bigint not null default 0,
+  created_at timestamptz not null default now(),
+  unique (user_id, kind, province)
+);
+create index if not exists properties_province_idx on properties (province, kind);
+create table if not exists property_shelves (
+  id bigserial primary key,
+  property_id bigint not null references properties(id) on delete cascade,
+  seller_id bigint not null references users(id) on delete cascade,
+  specialty_id text not null,
+  quality text not null,
+  processed boolean not null default false,
+  kg int not null,
+  sold_kg int not null default 0,
+  price bigint not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists property_shelves_prop_idx on property_shelves (property_id);
 `;

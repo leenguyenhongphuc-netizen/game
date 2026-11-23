@@ -7,6 +7,9 @@ import { DriveGame } from './DriveGame.tsx';
 import type { DrivePlan, DriveResult } from './DriveGame.tsx';
 import { REGIONS } from '../../../shared/catalog.ts';
 import { TravelRide } from './TravelRide.tsx';
+import { StopAreaView } from './StopAreaView.tsx';
+import { ITEMS } from '../../../shared/items.ts';
+import { restStopItems } from '../../../shared/vehicles.ts';
 import type { RideMode } from './TravelRide.tsx';
 
 declare global { interface Window { __finishCount?: number; __result?: DriveResult } }
@@ -23,6 +26,9 @@ function Test() {
   const done = () => { window.__finishCount = (window.__finishCount ?? 0) + 1; document.title = 'XONG'; setState('done'); };
   const ride = q.get('ride') as RideMode | null;
   if (ride) return <TravelRide mode={ride} fromRegionId={q.get('from') ?? 'dt_caibe'} toRegionId={q.get('to') ?? 'ld_dalat'} km={Number(q.get('km') ?? 320)} seconds={Number(q.get('seconds') ?? 10)} onFinish={done} />;
+  // &stop=rest|fuel|charger mở thẳng khu trạm 3D (&ev=1 xe điện, &energy=, &kind=); &stopauto=1 cho xe tự làm hết lượt
+  const stopQ = q.get('stop') as 'rest' | 'fuel' | 'charger' | null;
+  if (stopQ) return <StopTest kind={stopQ} q={q} onDone={done} />;
   const from = q.get('from') ?? 'dt_caibe', to = q.get('to') ?? 'ld_dalat';
   const km = Number(q.get('km') ?? 320), boat = q.get('boat') === '1', roadKm = boat ? km * 0.6 : km;
   const nj = Number(q.get('junctions') ?? 3), ns = Number(q.get('stations') ?? 2), names = ['QL1A', 'Cao tốc Bắc Nam', REGIONS[to]?.name ?? 'Điểm đến', 'QL20', 'ĐT 741'];
@@ -47,6 +53,20 @@ function Test() {
       onFinish={(r) => { window.__finishCount = (window.__finishCount ?? 0) + 1; window.__result = r; document.title = 'XONG'; setState('done'); }}
       onCancel={() => { document.title = 'ĐÃ HUỶ'; setState('cancel'); }}
     />
+  );
+}
+function StopTest(p: { kind: 'rest' | 'fuel' | 'charger'; q: URLSearchParams; onDone(): void }) {
+  const ev = p.q.get('ev') === '1', spec = VEHICLES[p.q.get('kind') ?? (ev ? 'tai_990_dien' : 'tai_990')] ?? VEHICLES.tai_990, tk = truckOf(spec);
+  const [bought, setBought] = useState<{ itemId: string; qty: number; use: boolean }[]>([]);
+  if (p.q.get('stopauto') === '1') (window as unknown as { __stopAuto?: boolean }).__stopAuto = true;
+  const menu = restStopItems('Đà Nẵng').map((id) => ITEMS[id]).filter(Boolean);
+  return (
+    <div className="dg" style={{ position: 'fixed', inset: 0 }}>
+      <StopAreaView info={{ kind: p.kind, name: p.kind === 'rest' ? 'Trạm dừng nghỉ Km 182' : ev ? 'Trạm sạc Km 96' : 'Cây xăng Km 96', electric: tk.power === 'dien', energy: Number(p.q.get('energy') ?? tk.tankL * 0.3), tank: tk.tankL, unit: tk.unit, price: tk.fuelPrice, group: spec.group as never, color: 0xf08a24, cold: !!spec.cold }}
+        fuelNames={tk.power === 'dien' ? [] : tk.power === 'dau' ? ['Dầu DO 0,05S'] : ['RON 95-III', 'E5 RON 92']} menu={p.kind === 'rest' ? menu : []} cash={2_000_000} bought={bought}
+        onBuy={(id, use) => setBought((b) => [...b, { itemId: id, qty: 1, use }])} onFail={() => { document.title = 'LỖI'; }}
+        onDone={(r) => { (window as unknown as { __stopResult?: unknown }).__stopResult = r; p.onDone(); }} />
+    </div>
   );
 }
 createRoot(document.getElementById('root')!).render(<Test />);

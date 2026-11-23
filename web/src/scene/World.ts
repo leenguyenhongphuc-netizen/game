@@ -21,6 +21,8 @@ import { roadsideProp, zoneHouse, zoneScene } from './zones.ts';
 import { BASIC_FACTORY, LAMP_MATS, MACHINE_SPOTS, STEAM_MAT, buildBeltCrates, buildDoneCrate, buildFactoryYard, buildMachine, factoryColliders, machineState } from './factory.ts';
 import type { FactoryData, FactoryMachine, MachineState } from './factory.ts';
 import { blobTex, boardCanvas, edgeFade, grassTex, roadTex, softDot } from './tex.ts';
+import { FieldsLayer } from './fields.ts';
+import type { FieldLite } from './fields.ts';
 
 // ---------------------------------------------------------------- bố cục xóm
 const TILE = 2;
@@ -99,6 +101,7 @@ export function bake(root: THREE.Object3D): THREE.Group {
 const TUFT_GEO = new THREE.ConeGeometry(1, 1, 5), FLOWER_GEO = new THREE.OctahedronGeometry(1, 0);
 type LabelTone = 'gold' | 'paper' | 'region' | 'float';
 /** Biển chữ trong thế giới: tấm ván gỗ (hoặc viên chữ nổi), cao `h` đơn vị, rộng theo chữ. */
+const SUN_UP = new THREE.Vector3(0, 1, 0), SUN_X = new THREE.Vector3(), SUN_Y = new THREE.Vector3(), SUN_Z = new THREE.Vector3(), SUN_C = new THREE.Vector3();
 function makeLabel(text: string, tone: LabelTone = 'paper', h = 0.92, floatBg?: string): THREE.Sprite {
   const { canvas, aspect } = boardCanvas(text, tone, floatBg);
   const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
@@ -678,8 +681,11 @@ export class World {
     const st = new THREE.Group(), road = mat(th.road), edge = mat(this.urban ? 0xf3f4f6 : 0xfbf3df);
     const strip = (x: number, z: number, len: number, wid: number, alongZ = false) => { // dải đường có vân, mép mờ vào cỏ
       const tex = roadTex(th.road, this.urban).clone(); tex.needsUpdate = true; tex.repeat.set(len / 9, 1);
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, wid).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, alphaMap: this.urban ? null : edgeFade(), transparent: !this.urban, roughness: 1, depthWrite: this.urban, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-      m.position.set(x, 0.035, z); if (alongZ) m.rotation.y = Math.PI / 2; m.receiveShadow = true; m.renderOrder = this.urban ? 0 : alongZ ? -3 : -2; this.env.add(m);
+      // Đường chính nằm trên lối vào từng lô (cao hơn và lệch độ sâu nhiều hơn): hai dải không cùng mặt phẳng nên không giành nhau từng khung
+      // (trước đây cùng độ cao, cùng polygonOffset → vạch trắng mép đường lúc hiện lúc mất khi máy quay trượt).
+      const off = alongZ ? -1 : -4;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(len, wid).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, alphaMap: this.urban ? null : edgeFade(), transparent: !this.urban, roughness: 1, depthWrite: this.urban, polygonOffset: true, polygonOffsetFactor: off, polygonOffsetUnits: off }));
+      m.position.set(x, alongZ ? 0.028 : 0.04, z); if (alongZ) m.rotation.y = Math.PI / 2; m.receiveShadow = true; m.renderOrder = this.urban ? 0 : alongZ ? -3 : -2; this.env.add(m);
     };
     strip(0, ROAD_Z, (WORLD.x + 60) * 2, ROAD_HALF * 2 + 1.3);
     for (let x = -WORLD.x - 4; x <= WORLD.x + 4; x += 2.4) for (const s of [-1, 1]) { const k = 0.7 + ((Math.abs(x * 7.3) % 1) * 0.6); if ((Math.round(x / 2.4) + (s > 0 ? 1 : 0)) % 3 !== 0) st.add(mesh(GEO.ball, edge, x + (s > 0 ? 1.1 : 0), 0.04, ROAD_Z + s * (ROAD_HALF + 0.35), 0.3 * k, 0.11, 0.24 * k)); }
@@ -877,12 +883,16 @@ export class World {
     if (!this.opts.demo) this.camera.position.set(this.camPos.x, 24 * k, this.camPos.z + 23 * k + lift);
     if (this.opts.demo) this.camera.lookAt(0, 0.8, 2);
     else this.camera.lookAt(this.camPos.x, 0.8, this.camPos.z - 1.2 + lift);
-    // Mặt trời bám theo máy quay theo từng nấc 2 m để bóng không rung; bản đồ bóng dựng lại cách khung (điện thoại) hoặc mỗi khung (máy tính)
-    const sx = Math.round(this.camPos.x / 2) * 2, sz = Math.round(this.camPos.z / 2) * 2;
-    this.sun.target.position.set(sx, 0, sz); this.sun.position.set(sx + this.sky.dir[0], this.sky.dir[1], sz + this.sky.dir[2]);
-    if (this.sun.castShadow) { const every = 1, key = `${sx},${sz}`; if (this.frameNo % every === 0 || key !== this.shadowKey) { this.renderer.shadowMap.needsUpdate = true; this.shadowKey = key; } }
+    // Mặt trời bám theo máy quay nhưng chỉ dịch đúng bội số một điểm ảnh của bản đồ bóng (tính trong hệ toạ độ ánh sáng):
+    // mép bóng rơi đúng chỗ cũ mỗi khung nên không rung, không lấp lánh khi đi (trước đây nhảy theo nấc 2 m → bóng giật).
+    { const [dx, dy, dz] = this.sky.dir, z = SUN_Z.set(dx, dy, dz).normalize(), x = SUN_X.crossVectors(SUN_UP, z).normalize(), y = SUN_Y.crossVectors(z, x);
+      const cam = this.sun.shadow.camera, texel = (cam.right - cam.left) / this.sun.shadow.mapSize.x, c = SUN_C.set(this.camPos.x, 0, this.camPos.z);
+      const a = c.dot(x), b = c.dot(y); c.addScaledVector(x, Math.round(a / texel) * texel - a).addScaledVector(y, Math.round(b / texel) * texel - b);
+      this.sun.target.position.copy(c); this.sun.position.set(c.x + dx, c.y + dy, c.z + dz); }
+    if (this.sun.castShadow) this.renderer.shadowMap.needsUpdate = true;
     this.updateGuide(now, t);
     this.animateLife(dt, t);
+    this.fields?.update(t, now, this.camera.position);
     this.renderer.render(this.scene, this.camera);
     trace({ t: performance.now(), dt, x: this.pos.x, z: this.pos.z, cx: this.camera.position.x, cy: this.camera.position.y, cz: this.camera.position.z, yaw: 0, level: this.quality.level, ratio: this.quality.pixelRatio });
   }
@@ -1123,6 +1133,14 @@ export class World {
       g.add(o);
     }
     this.buildGroup = g; this.scene.add(g);
+  }
+
+  private fields: FieldsLayer | null = null;
+  /** Cánh đồng lớn của nhà nông phía sau xóm (dữ liệu từ GET /api/fields). Mảng rỗng hoặc null thì ẩn. */
+  setFields(data: FieldLite[] | null) {
+    if (!data?.length) { if (this.fields) this.fields.group.visible = false; return; }
+    if (!this.fields) { this.fields = new FieldsLayer(); this.scene.add(this.fields.group); this.cleanup.push(() => this.fields?.dispose()); }
+    this.fields.group.visible = true; this.fields.set(data);
   }
 
   dispose() {

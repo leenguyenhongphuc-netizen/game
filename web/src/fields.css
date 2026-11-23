@@ -1,0 +1,30 @@
+/* Nông trại quy mô lớn (dùng chung lớp .veh-* của vehicles.css) */
+.fields { display: grid; gap: 10px; }
+.fields section { display: grid; gap: 8px; }
+.fields-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.fields-head > div { display: grid; }
+.fields-head strong { font-family: var(--display); font-size: 1.2rem; }
+.fields-head small { color: var(--muted); font-size: 0.8rem; }
+.fields button.heli { min-height: 46px; font-size: 0.88rem; background: linear-gradient(#8fd3ff, #4ea8e8); border-color: #2c74b3; box-shadow: 0 4px 0 #2c74b3; color: #fff; }
+.fields button.go { background: linear-gradient(#6fd45c, #4caf3f); border-color: var(--green-dark); box-shadow: 0 4px 0 var(--green-dark); color: #fff; }
+.fields button:disabled { opacity: 0.6; }
+.fields .wide { width: 100%; min-height: 46px; }
+.fields .big { font-size: 1.8rem; line-height: 1; }
+.fields .tag { font-weight: 700; color: var(--green-dark); font-size: 0.85rem; }
+.fields .err { background: #ffe1d6; color: #8c2b12; }
+.field-map { width: 100%; max-height: 46vh; aspect-ratio: 1; background: #6f8f3e; border: 2px solid var(--line); border-radius: 14px; }
+.field-map g { cursor: pointer; }
+.field-map g.sel rect { stroke: #fff; stroke-width: 2.5; }
+.field-map g.busy rect { animation: field-busy 1.2s ease-in-out infinite; }
+@keyframes field-busy { 50% { opacity: 0.6; } }
+.field-list { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.field-chip { flex: 0 0 auto; min-height: 40px; font-size: 0.82rem; padding: 3px 10px; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.field-chip.on { background: var(--gold); border-color: var(--gold-dark); }
+.field-chip i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.field-bar { height: 8px; background: var(--paper-2); border-radius: 6px; overflow: hidden; }
+.field-bar i { display: block; height: 100%; }
+.field-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; }
+.field-methods button { min-height: 56px; display: grid; gap: 1px; text-align: left; padding: 6px 10px; }
+.field-methods button small { font-size: 0.74rem; font-weight: 400; opacity: 0.92; }
+.field-label { display: grid; gap: 4px; font-size: 0.86rem; }
+.field-label select, .fields select { min-height: 44px; border-radius: 10px; border: 2px solid var(--line); padding: 0 8px; font: inherit; background: #fffdf4; }

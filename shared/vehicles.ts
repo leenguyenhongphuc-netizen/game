@@ -142,12 +142,21 @@ export type TruckInfo = ReturnType<typeof truckOf>;
 // ---------------------------------------------------------------- trạm dừng nghỉ và giờ lái xe
 /** Luật 2024: không lái liên tục quá 4 giờ, không quá 10 giờ một ngày, không quá 48 giờ một tuần. */
 export const DRIVE_RULES = { continuousHours: 4, dailyHours: 10, weeklyHours: 48, avgKmh: 60, wcEnergy: 2, missedRestEnergy: 6 };
-/** Cứ khoảng này km đường bộ có một trạm dừng nghỉ. */
-export const REST_EVERY_KM = 90;
+/** Khoảng cách trung bình giữa các trạm dừng nghỉ được dựng trên tuyến (chỉ dùng để rải trạm, không bắt ghé hết). */
+export const REST_EVERY_KM = 220;
+/** Mốc quãng đường: dưới mốc đầu không bắt buộc nghỉ, dưới mốc hai nghỉ 1 lần, xa hơn nghỉ 2 lần. */
+export const REST_TIERS_KM = [300, 650] as const;
 export interface RestStop { atKm: number; name: string; hasFuel: boolean; hasCharger: boolean; hasWc: true; province: string | null }
-/** Số lần tối thiểu phải dừng nghỉ trên một chuyến để không lái liên tục quá 4 giờ. */
+/** Số lần phải dừng nghỉ trên một chuyến. Đồng hồ trong game chạy nhanh nên chỉ giữ tinh thần luật 4 giờ:
+ * chuyến thường gặp (≤ 300 km) không bắt nghỉ, chuyến dài nghỉ 1 lần, chuyến rất dài (> 650 km) nghỉ 2 lần. */
 export function restsNeeded(roadKmTotal: number): number {
-  return Math.max(0, Math.ceil(roadKmTotal / (DRIVE_RULES.continuousHours * DRIVE_RULES.avgKmh)) - 1);
+  return roadKmTotal <= REST_TIERS_KM[0] ? 0 : roadKmTotal <= REST_TIERS_KM[1] ? 1 : 2;
+}
+/** Cây số các trạm dừng nghỉ trên tuyến: rải đều, nhiều hơn số lần bắt nghỉ một trạm để còn chọn; tối đa 3 trạm. */
+export function restStopKms(roadKmTotal: number): number[] {
+  if (roadKmTotal <= 150) return [];
+  const n = Math.min(3, Math.max(restsNeeded(roadKmTotal) + 1, Math.round(roadKmTotal / REST_EVERY_KM) - 1, 1));
+  return Array.from({ length: n }, (_, i) => Math.round((roadKmTotal * (i + 1)) / (n + 1)));
 }
 export interface VehicleTripPlan extends TripPlan {
   vehicleKind: string; power: Power; unit: 'lít' | 'kWh';
@@ -174,7 +183,7 @@ export function tripPlanFor(v: VehicleSpec, fromRegionId: string, toRegionId: st
   const p = tripPlan(fromRegionId, toRegionId), road = roadKm(p.km, p.needsBoat);
   const energy = Math.round(((road * v.per100) / 100) * 10) / 10;
   const restStops: RestStop[] = [];
-  for (let k = REST_EVERY_KM; k < road - 20; k += REST_EVERY_KM) {
+  for (const k of restStopKms(road)) {
     // Chưa đối chiếu được tên trạm thật trên từng tuyến nên chỉ gọi theo cây số.
     restStops.push({ atKm: k, name: `Trạm dừng nghỉ Km ${k}`, hasFuel: true, hasCharger: true, hasWc: true, province: provinceAlong(fromRegionId, toRegionId, k / Math.max(1, road)) });
   }

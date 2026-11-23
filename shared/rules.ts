@@ -572,15 +572,15 @@ export interface ExportMarketInfo {
   processedOnly?: boolean;
 }
 export const EXPORT_MARKETS: Record<ExportMarket, ExportMarketInfo> = {
-  trung_quoc: { name: 'Trung Quốc', icon: '🇨🇳', priceMult: 1.25, modes: ['xe_tai', 'container', 'tau_hoa'], gradeA: false, note: 'Chợ biên mậu gần, mua số lượng lớn, giá vừa phải. Cần mã số vùng trồng (đã gồm trong cước).' },
-  lao_cam: { name: 'Lào – Campuchia', icon: '🇱🇦', priceMult: 1.15, modes: ['xe_tai', 'container'], gradeA: false, note: 'Gần và dễ tính, giá chỉ nhỉnh hơn trong nước.' },
-  asean: { name: 'Thái Lan – Singapore', icon: '🌏', priceMult: 1.3, modes: ['tau_nho', 'hang_khong'], gradeA: false, note: 'Đi tàu nhỏ hoặc máy bay, giá khá.' },
-  an_do: { name: 'Ấn Độ', icon: '🇮🇳', priceMult: 1.35, modes: ['tau_nho', 'tau_lon', 'hang_khong'], gradeA: false, note: 'Thị trường đông dân, chuộng hồ tiêu, quế, hạt điều và trái cây sấy.' },
-  trung_dong: { name: 'Trung Đông', icon: '🇦🇪', priceMult: 1.5, modes: ['hang_khong', 'tau_lon'], gradeA: false, note: 'Mua trái cây nhiệt đới và hàng chế biến giá tốt; đi máy bay hoặc tàu lớn.' },
-  nhat_han: { name: 'Nhật Bản – Hàn Quốc', icon: '🇯🇵', priceMult: 1.6, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao nhưng chỉ nhận hàng Loại 1; trái tươi phải xử lý hơi nước nóng.', treatFee: 2_500, treatMinutes: 5, treat: 'Xử lý hơi nước nóng' },
-  nga: { name: 'Nga – Á Âu', icon: '🇷🇺', priceMult: 1.45, modes: ['tau_hoa', 'tau_lon'], gradeA: false, note: 'Đường quá dài cho hàng tươi: chỉ nhận hàng chế biến và hàng khô (cà phê, tiêu, chè, trái sấy).', processedOnly: true },
-  uc_nz: { name: 'Úc – New Zealand', icon: '🇦🇺', priceMult: 1.75, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao, kiểm dịch rất chặt: trái tươi phải chiếu xạ trước khi đi.', treatFee: 4_000, treatMinutes: 10, treat: 'Chiếu xạ' },
-  au_my: { name: 'Châu Âu – Mỹ', icon: '🌍', priceMult: 1.9, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao nhất, xa nhất, chỉ nhận hàng Loại 1; trái tươi đi Mỹ phải chiếu xạ.', treatFee: 4_000, treatMinutes: 10, treat: 'Chiếu xạ' },
+  trung_quoc: { name: 'Trung Quốc', icon: '🇨🇳', priceMult: 1.12, modes: ['xe_tai', 'container', 'tau_hoa'], gradeA: false, note: 'Chợ biên mậu gần, mua số lượng lớn, giá vừa phải. Cần mã số vùng trồng (đã gồm trong cước).' },
+  lao_cam: { name: 'Lào – Campuchia', icon: '🇱🇦', priceMult: 1.05, modes: ['xe_tai', 'container'], gradeA: false, note: 'Gần và dễ tính, giá chỉ nhỉnh hơn trong nước.' },
+  asean: { name: 'Thái Lan – Singapore', icon: '🌏', priceMult: 1.18, modes: ['tau_nho', 'hang_khong'], gradeA: false, note: 'Đi tàu nhỏ hoặc máy bay, giá khá.' },
+  an_do: { name: 'Ấn Độ', icon: '🇮🇳', priceMult: 1.2, modes: ['tau_nho', 'tau_lon', 'hang_khong'], gradeA: false, note: 'Thị trường đông dân, chuộng hồ tiêu, quế, hạt điều và trái cây sấy.' },
+  trung_dong: { name: 'Trung Đông', icon: '🇦🇪', priceMult: 1.28, modes: ['hang_khong', 'tau_lon'], gradeA: false, note: 'Mua trái cây nhiệt đới và hàng chế biến giá tốt; đi máy bay hoặc tàu lớn.' },
+  nhat_han: { name: 'Nhật Bản – Hàn Quốc', icon: '🇯🇵', priceMult: 1.38, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao nhưng chỉ nhận hàng Loại 1; trái tươi phải xử lý hơi nước nóng.', treatFee: 2_500, treatMinutes: 5, treat: 'Xử lý hơi nước nóng' },
+  nga: { name: 'Nga – Á Âu', icon: '🇷🇺', priceMult: 1.25, modes: ['tau_hoa', 'tau_lon'], gradeA: false, note: 'Đường quá dài cho hàng tươi: chỉ nhận hàng chế biến và hàng khô (cà phê, tiêu, chè, trái sấy).', processedOnly: true },
+  uc_nz: { name: 'Úc – New Zealand', icon: '🇦🇺', priceMult: 1.45, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao, kiểm dịch rất chặt: trái tươi phải chiếu xạ trước khi đi.', treatFee: 4_000, treatMinutes: 10, treat: 'Chiếu xạ' },
+  au_my: { name: 'Châu Âu – Mỹ', icon: '🌍', priceMult: 1.5, modes: ['hang_khong', 'tau_lon'], gradeA: true, note: 'Giá cao nhất, xa nhất, chỉ nhận hàng Loại 1; trái tươi đi Mỹ phải chiếu xạ.', treatFee: 4_000, treatMinutes: 10, treat: 'Chiếu xạ' },
 };
 /** Cửa ngõ xuất khẩu thật: hàng phải chở nội địa tới đó trước, càng xa càng tốn. */
 const FAR: ExportMarket[] = ['asean', 'nhat_han', 'au_my', 'an_do', 'trung_dong', 'uc_nz'];

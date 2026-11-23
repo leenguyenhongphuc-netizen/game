@@ -44,7 +44,7 @@ export function roadTex(color: number, paved = false): THREE.CanvasTexture {
     g.fillStyle = css(color); g.fillRect(0, 0, 256, 128);
     const tone = (k: number, a: number) => { const c = base.clone().multiplyScalar(k); return `rgba(${Math.round(Math.min(1, c.r) * 255)},${Math.round(Math.min(1, c.g) * 255)},${Math.round(Math.min(1, c.b) * 255)},${a})`; };
     if (paved) {
-      g.fillStyle = tone(0.93, 1); for (let i = 0; i < 500; i++) g.fillRect(r() * 256, r() * 128, 1.5, 1.5);
+      g.fillStyle = tone(0.96, 0.6); for (let i = 0; i < 260; i++) g.fillRect(r() * 256, r() * 128, 2, 2); // hạt nhạt, thưa: hạt đậm nhỏ hơn một điểm ảnh làm mặt đường lấp lánh khi đi
       g.fillStyle = 'rgba(255,255,255,0.9)'; for (let x = 10; x < 256; x += 64) g.fillRect(x, 62, 34, 4);
       g.fillStyle = 'rgba(255,255,255,0.75)'; g.fillRect(0, 8, 256, 2.5); g.fillRect(0, 117.5, 256, 2.5);
       return;
@@ -87,16 +87,40 @@ export function softDot(): THREE.CanvasTexture {
  * Biển gỗ treo: tấm ván có vân, viền sẫm, hai lỗ đinh. `tone`: 'gold' cho vườn nhà, 'paper' cho biển thường, 'region' cho cổng chào.
  * Trả về canvas để tạo Sprite, kèm tỉ lệ rộng/cao.
  */
+const LABEL_FONT = '800 46px "Baloo 2", "Be Vietnam Pro", sans-serif';
+try { void document.fonts?.load(LABEL_FONT, 'Tỉa cành ✂️'); } catch { /* bỏ qua */ }
+/**
+ * Vẽ chữ ra một canvas phụ rồi dò điểm ảnh để biết chữ THỰC SỰ rộng bao nhiêu.
+ * measureText có thể lệch với cái được vẽ (phông chưa tải xong, emoji trên iOS rộng hơn số đo) → viên nhãn rộng mà chữ lệch, bị cắt.
+ * Quá 560 px thì cắt bớt chữ và thêm "…".
+ */
+function inkText(text: string, color: string): HTMLCanvasElement {
+  const pad = 30, H = 104, MAX = 560;
+  const draw = (t: string) => {
+    const probe = document.createElement('canvas').getContext('2d')!; probe.font = LABEL_FONT;
+    const guess = Math.ceil(probe.measureText(t).width * 1.5 + 120);
+    const c = document.createElement('canvas'); c.width = guess + pad * 2; c.height = H;
+    const g = c.getContext('2d', { willReadFrequently: true })!; g.font = LABEL_FONT; g.fillStyle = color; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(t, pad, H / 2 - 2);
+    const d = g.getImageData(0, 0, c.width, H).data; let l = c.width, r = -1;
+    for (let x = 0; x < c.width; x++) { for (let y = 0; y < H; y += 2) if (d[(y * c.width + x) * 4 + 3] > 8) { if (x < l) l = x; r = x; break; } }
+    return { c, l: r < 0 ? pad : l, r: r < 0 ? pad : r };
+  };
+  let t = text, m = draw(t);
+  while (m.r - m.l > MAX && t.length > 2) { t = t.slice(0, Math.max(1, Math.floor(t.length * MAX / (m.r - m.l)) - 2)).trimEnd() + '…'; m = draw(t); }
+  const out = document.createElement('canvas'); out.width = Math.max(1, m.r - m.l + 1); out.height = H;
+  out.getContext('2d')!.drawImage(m.c, -m.l, 0); return out;
+}
 export function boardCanvas(text: string, tone: 'gold' | 'paper' | 'region' | 'float', floatBg?: string): { canvas: HTMLCanvasElement; aspect: number } {
-  const probe = document.createElement('canvas').getContext('2d')!;
-  const font = '800 46px "Baloo 2", "Be Vietnam Pro", sans-serif'; probe.font = font;
-  const tw = Math.min(560, probe.measureText(text).width), w = Math.ceil(tw + 76), h = 104;
+  const pal0 = tone === 'gold' ? '#4a2c0c' : tone === 'region' ? '#ffffff' : tone === 'float' ? '#3b2a17' : '#4a2f14';
+  const ink = inkText(text, pal0);
+  const tw = ink.width, w = Math.ceil(tw + 76), h = 104;
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d')!;
+  const put = (dx: number) => g.drawImage(ink, Math.round((w - tw) / 2 + dx), 0);
   if (tone === 'float') { // chữ nổi (+25 kg…): viên thuốc gọn
     g.fillStyle = 'rgba(70,40,15,0.9)'; g.beginPath(); g.roundRect(2, 8, w - 4, h - 16, 44); g.fill();
     g.fillStyle = floatBg ?? '#ffcf3a'; g.beginPath(); g.roundRect(7, 13, w - 14, h - 30, 38); g.fill();
-    g.fillStyle = '#3b2a17'; g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 - 2, 560);
+    put(0);
     return { canvas: c, aspect: w / h };
   }
   const pal = tone === 'gold' ? ['#8a5a22', '#f6c64a', '#ffdf7a', '#4a2c0c'] : tone === 'region' ? ['#1f5a3a', '#2f8a56', '#3da066', '#ffffff'] : ['#7a4f26', '#e9cf9c', '#f6e3ba', '#4a2f14'];
@@ -107,6 +131,6 @@ export function boardCanvas(text: string, tone: 'gold' | 'paper' | 'region' | 'f
   g.strokeStyle = 'rgba(90,55,20,0.16)'; g.lineWidth = 1.5; // vân gỗ
   if (tone !== 'region') for (let y = 22; y < h - 26; y += 11) { g.beginPath(); g.moveTo(16, y); g.bezierCurveTo(w * 0.3, y - 3, w * 0.6, y + 4, w - 22, y - 1); g.stroke(); }
   g.fillStyle = pal[0]; for (const x of [18, w - 24]) { g.beginPath(); g.arc(x, h / 2 - 3, 3.2, 0, 6.3); g.fill(); }
-  g.fillStyle = pal[3]; g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2 - 2, h / 2 - 2, 560);
+  put(-2);
   return { canvas: c, aspect: w / h };
 }

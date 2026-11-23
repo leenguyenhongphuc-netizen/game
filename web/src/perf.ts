@@ -39,10 +39,11 @@ export function pixelRatioFor(w: number, h: number, level: QualityLevel = 0): nu
   const fit = Math.sqrt(BUDGET / Math.max(1, w * h));
   return Math.max(0.5, Math.min(dpr, fit) * SCALE[level]);
 }
-/** Tham số tạo WebGLRenderer: mật độ điểm ảnh đã cao thì bỏ khử răng cưa MSAA (đắt mà khó thấy khác). */
+/** Tham số tạo WebGLRenderer. */
 export function rendererParams(host?: HTMLElement | null): { antialias: boolean; powerPreference: 'high-performance' } {
   const w = host?.clientWidth || (typeof innerWidth !== 'undefined' ? innerWidth : 1280), h = host?.clientHeight || (typeof innerHeight !== 'undefined' ? innerHeight : 720);
-  return { antialias: !(IS_MOBILE && pixelRatioFor(w, h, startLevel()) >= 1.9), powerPreference: 'high-performance' };
+  void w; void h; // MSAA luôn bật: GPU dạng tile của điện thoại làm khử răng cưa gần như miễn phí, tắt đi thì vạch kẻ, mép vỉa lấp lánh khi máy quay trượt
+  return { antialias: true, powerPreference: 'high-performance' };
 }
 /** Cỡ bản đồ bóng đổ nên dùng. */
 export const SHADOW_MAP = IS_MOBILE ? 1024 : 2048;
