@@ -35,7 +35,7 @@ function audit(touch) {
   if (document.documentElement.scrollWidth > window.innerWidth + 1) issues.push({ level: 'error', rule: 'tran-ngang', detail: `scrollWidth ${document.documentElement.scrollWidth} > ${window.innerWidth}` });
   const box = (el) => { const q = el.getBoundingClientRect(); return { left: q.left - X0, top: q.top - Y0, right: q.right - X0, bottom: q.bottom - Y0, width: q.width, height: q.height }; };
   const visible = (el) => { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.05 && r.width > 0 && r.height > 0; };
-  const scrollParent = (el) => { for (let p = el.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p); if (/(auto|scroll)/.test(o.overflowY + o.overflowX)) return p; } return null; };
+  const scrollParent = (el) => { for (let p = el.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p); if (/(auto|scroll)/.test(o.overflowY + o.overflowX) || p.classList.contains('seed-bar')) return p; } return null; };
   const label = (el) => `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : ''} "${(el.innerText || el.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ').slice(0, 40)}"`;
   // 1. Phần tử thao tác được nằm ngoài màn hình hoặc quá nhỏ
   for (const el of document.querySelectorAll('button, a, input, select, [role="button"]')) {
