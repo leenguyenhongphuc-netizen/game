@@ -1,4 +1,5 @@
 // Bảng tham quan (bản đồ tỉnh + bắt taxi tới địa danh) và siêu thị đặc sản (mua hàng, ký gửi hàng).
+import { canUse } from '../../shared/roles.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES } from '../../shared/catalog.ts';
 import { QUALITY_NAMES, fmtMoney } from '../../shared/rules.ts';
@@ -192,14 +193,14 @@ export function SupermarketPanel({ me, province, refresh }: { me: Me; province: 
       {data.earned > 0 && <p className="super-earned" role="status">💰 Hàng ký gửi của bạn vừa bán được, bạn nhận {fmtMoney(data.earned)}.</p>}
       <div className="tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === 'mua'} onClick={() => setTab('mua')}>Mua hàng</button>
-        <button type="button" role="tab" aria-selected={tab === 'kygui'} onClick={() => setTab('kygui')}>Ký gửi hàng của bạn</button>
+        {canUse(me.user.role, 'ky_gui_sieu_thi') && <button type="button" role="tab" aria-selected={tab === 'kygui'} onClick={() => setTab('kygui')}>Ký gửi hàng của bạn</button>}
       </div>
       {act.error && <p className="error" role="alert">{act.error}</p>}
 
       {tab === 'mua' && (
         <>
           {data.shelves.length === 0
-            ? <div className="shelf-empty"><span aria-hidden="true">🧺</span><p>Kệ đang trống — chưa thương lái nào chở hàng tới.</p><small>Nếu bạn có hàng trong kho, hãy sang thẻ "Ký gửi hàng của bạn" để là người bày hàng đầu tiên.</small></div>
+            ? <div className="shelf-empty"><span aria-hidden="true">🧺</span><p>Kệ đang trống — chưa thương lái nào chở hàng tới.</p>{canUse(me.user.role, 'ky_gui_sieu_thi') && <small>Nếu bạn có hàng trong kho, hãy sang thẻ "Ký gửi hàng của bạn" để là người bày hàng đầu tiên.</small>}</div>
             : (
               <>
                 <p className={leftKg > 0 ? 'super-left' : 'super-left out'} role="status">🛒 Hôm nay còn mua được <b>{leftKg} kg</b> ở siêu thị này (mỗi ngày {dailyKg} kg, lên cấp được mua nhiều hơn).</p>
@@ -210,7 +211,7 @@ export function SupermarketPanel({ me, province, refresh }: { me: Me; province: 
         </>
       )}
 
-      {tab === 'kygui' && (
+      {tab === 'kygui' && canUse(me.user.role, 'ky_gui_sieu_thi') && (
         <>
           <h3>1 · Chọn hàng trong kho</h3>
           {data.consignable.length === 0 && <p className="hint">Kho của bạn chưa có gì để ký gửi. Thu hoạch ở vườn, thu mua sỉ bằng xe tải hoặc chế biến ở xưởng rồi quay lại.</p>}

@@ -570,7 +570,9 @@ export class World {
     this.truck.root.position.copy(this.driving ? this.pos : this.truckPos); this.truck.root.rotation.y = this.truckYaw;
   }
   /** Toạ độ chỗ đứng trước quầy Đại lý xuất khẩu (để giao diện dẫn đường hoặc cho nhân vật đi tới). */
-  exportDeskSpot(): { x: number; z: number } | null { return this.desk ? { ...this.desk.spot } : null; }
+  exportDeskSpot(): { x: number; z: number } | null { return this.desk?.group.visible ? { ...this.desk.spot } : null; }
+  /** Chỉ vai được xuất khẩu mới thấy quầy Đại lý xuất khẩu. */
+  setExportDeskVisible(v: boolean) { if (this.desk) this.desk.group.visible = v; }
   enterTruck() { if (!this.truck || this.driving) return; this.driving = true; this.pos.copy(this.truckPos); this.walkTo = null; this.vel.set(0, 0, 0); this.player.root.visible = false; }
   exitTruck() {
     if (!this.driving) return; this.driving = false; this.truckPos.copy(this.pos); this.truckYaw = this.truck?.root.rotation.y ?? this.truckYaw;
@@ -1020,7 +1022,7 @@ export class World {
       } else if (Math.hypot(l.x - STALL.x, l.z - (STALL.z + 1.6)) < 2.4) ctx = { kind: 'stall', lot: i };
     }
     if (ctx.kind === 'none' && this.truck && !this.driving && this.pos.distanceTo(this.truckPos) < 3) ctx = { kind: 'truck' };
-    if (ctx.kind === 'none' && this.desk && !this.driving && Math.hypot(this.pos.x - this.desk.spot.x, this.pos.z - this.desk.spot.z) < 1.9) ctx = { kind: 'export-desk', lot: 0 };
+    if (ctx.kind === 'none' && this.desk?.group.visible && !this.driving && Math.hypot(this.pos.x - this.desk.spot.x, this.pos.z - this.desk.spot.z) < 1.9) ctx = { kind: 'export-desk', lot: 0 };
     if (ctx.kind === 'tile') { const p = this.worldOfTile(ctx.lot, ctx.tile); this.ring.visible = true; this.ring.position.set(p.x, 0.17, p.z); this.ring.scale.setScalar(1 + Math.sin(t * 6) * 0.04); } else this.ring.visible = false;
     const key = JSON.stringify(ctx);
     if (key !== this.ctxKey) { this.ctxKey = key; this.opts.onContext?.(ctx); }

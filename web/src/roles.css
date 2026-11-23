@@ -1,0 +1,19 @@
+/* Hợp tác xã theo luật (panels.tsx CoopPanel). */
+.coop { display: grid; gap: 8px; min-width: 0; }
+.coop .row-line { flex-wrap: wrap; }
+.coop .row-line .grow { min-width: 0; flex: 1 1 160px; overflow-wrap: anywhere; }
+.coop-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; }
+.coop .tag.dang_lap { background: #fde7b0; }
+.coop .tag.cho_cap { background: #dbe9ff; }
+.coop .tag.hoat_dong { background: #d7f0c8; }
+.coop-steps { background: var(--paper-2); border: 2px solid var(--line, #e2cf9c); border-radius: 14px; padding: 8px 12px; display: grid; gap: 8px; min-width: 0; }
+.coop-steps ol { margin: 0; padding-left: 1.3em; display: grid; gap: 3px; font-size: 0.88rem; }
+.coop-steps li.done { color: #2f6b1f; }
+.coop-steps li.done::marker { content: '✓ '; }
+.coop-steps h4 { margin: 4px 0 0; }
+.coop-steps button.wide { display: grid; justify-items: center; width: 100%; min-height: 52px; }
+.coop-steps button.wide small { font-weight: 400; font-size: 0.75rem; }
+.coop-new { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.coop-new input { flex: 1 1 180px; min-width: 0; min-height: 44px; }
+.coop-new button { flex: 1 1 160px; min-height: 44px; }
+.coop-invites { border: 2px solid var(--gold, #f3c74b); border-radius: 14px; padding: 6px 10px; }

@@ -36,7 +36,7 @@ const fmt = (v) => (Math.abs(v) >= 1e9 ? (v / 1e9).toFixed(2) + ' tỉ' : Math.a
 const FIELD_OVERRIDE = process.argv.includes('--dong-de-xuat') ? { pace: 1, yieldMult: 0.6 } : null;
 function farmer(level, after, withFields = true, maxTiles = 30) {
   const blocks = farm && withFields ? Math.min(farm.fieldMaxBlocks(level), Math.floor((CAPITAL[level] * 0.8) / farm.fieldBlockPrice(SAMPLE[1].regionId))) : 0;
-  let best = 0;
+  let best = 0, bestKgH = 0, bestRef = 0;
   for (const sp of SAMPLE) {
     const c = CROPS[sp.crop];
     // hạt giống phải mua trước bằng vốn: vốn ít thì trồng ít ô cây đắt
@@ -46,9 +46,9 @@ function farmer(level, after, withFields = true, maxTiles = 30) {
     const bulk = bulkSellFactor(0, kgDay);
     const seed = sp.refPrice * SEED_COST_RATIO;
     const unit = sp.refPrice * FARM_GATE_RATIO * QUALITY_MULT.A * bulk - seed;
-    best = Math.max(best, unit * kgPerH * 8);
+    if (unit * kgPerH * 8 > best) { best = unit * kgPerH * 8; bestKgH = kgPerH * 8; bestRef = sp.refPrice; }
   }
-  return { income: best, note: `${30 + blocks * 100} ô` };
+  return { income: best, note: `${30 + blocks * 100} ô`, kgH: bestKgH, ref: bestRef };
 }
 /** Chủ xưởng: máy theo vốn; mua sỉ nguyên liệu, chế biến, bán thành phẩm (luật mới: có ép giá khi bán nhiều). */
 function workshop(level, after) {
@@ -162,7 +162,9 @@ function table(after) {
     const ct = after ? contracts(level).income : 0;
     const sh = after ? shop(level).income : 0;
     const roles = {
-      'Nông dân': Math.max(farmer(level, after, FIELDS).income, 0) + o('nong_dan') + Math.max(0, Math.max(ex('nong_dan'), ct) * 0.3),
+      // nông dân không xuất khẩu, không nhận hợp đồng công ty (shared/roles.ts): bán vườn, chợ, thương lái, HTX
+      // hợp đồng liên kết bao tiêu (NĐ 98/2018): khoảng nửa sản lượng giao theo hợp đồng công ty, giá 1,12–1,22 thay vì 0,85 tại vườn, trừ ~3% cước giao
+      'Nông dân': (() => { const f = farmer(level, after, FIELDS); const lk = after && level >= 5 ? 0.5 * f.kgH * f.ref * ((CONTRACT_PRICE_FRESH[0] + CONTRACT_PRICE_FRESH[1]) / 2 - FARM_GATE_RATIO - 0.03) : 0; return Math.max(f.income, 0) + lk + o('nong_dan'); })(),
       'Chủ xưởng': workshop(level, after).income + o('xuong') + Math.max(0, Math.max(ex('xuong'), ct, sh) * 0.3),
       // thương lái có vườn nhỏ 8 ô
       // lô xuất khẩu đi ngầm trong lúc xe vẫn chạy buôn: thương lái tận dụng được một nửa

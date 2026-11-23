@@ -60,7 +60,7 @@ export function ContractsPanel({ me, refresh }: { me: Me; refresh: () => void })
             <div className="contract-body">
               <p className="muted">{co.name}. {co.note}</p>
               {co.contracts.length === 0 && <p className="hint">Hôm nay công ty đã gom đủ hàng.</p>}
-              {co.contracts.map((c) => {
+              {co.contracts.filter((c) => !(c.processed && me.user.role === 'nong_dan')).map((c) => {
                 const stock = stockFor(c), best = stock.find((s) => s.kg > 0), left = c.remainingKg;
                 const want = Math.min(kgOf[c.id] ?? Math.min(best?.kg ?? 0, left), best?.kg ?? 0, left);
                 return (

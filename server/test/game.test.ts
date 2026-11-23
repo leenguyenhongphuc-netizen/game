@@ -6,7 +6,7 @@ import { openDb } from '../src/db.ts';
 import type { Db } from '../src/db.ts';
 import { NPCS, PROVINCES, REGIONS, SPECIALTIES, CROPS, npcOf, processOf, recipeOf, specialtiesOfRegion } from '../../shared/catalog.ts';
 import {
-  CITY_BONUS, COOP_BONUS, COOP_CREATE_COST, GIFT_DAILY_LIMIT, GLUT_KG, GLUT_MAX_DROP, HELP_REWARD, LAND_PRICE, MARKET_DAY_BONUS, MAX_FRIENDS,
+  CITY_BONUS, COOP_BONUS, FARM_GATE_RATIO, COOP_CAPITAL, COOP_REG_FEE, GIFT_DAILY_LIMIT, GLUT_KG, GLUT_MAX_DROP, HELP_REWARD, LAND_PRICE, MARKET_DAY_BONUS, MAX_FRIENDS,
   COOP_ORDER_BONUS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, IN_SEASON_YIELD, ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS_XUONG,
   ROLE_INFO, inSeason, marketEventsAt, seasonAt, supplyKg,
   DUMP_RATIO, FUEL_PER_KM, ROLES, ROLE_TARGETS, SEASON_DAYS, SMALL_TILES, allowedTiles, spinWeights, tripInfo, TRUCK, landPrice, roadKm, tripPlan,
@@ -523,35 +523,56 @@ test('được mùa mất giá, chợ phiên được giá', async () => {
   assert.ok(fair.body.unitPrice > npcPrice(sp.refPrice, 'A', sp.regionId, 'sl_mocchau', { glut: fair.body.mods.glut }));
 });
 
-test('hợp tác xã: lập, vào, khác vùng, thưởng giá, rời và chuyển chủ', async () => {
-  const chu = await signup('chu_nhiem'), xa = await signup('xa_vien', 'thuong_lai'), la = await signup('vung_khac'), ngheo = await signup('het_tien');
-  await call('POST', '/api/onboard', { regionId: 'bn_lucngan' }, chu);
-  await call('POST', '/api/onboard', { regionId: 'bn_lucngan' }, xa);
+/** Đưa một HTX "đang vận động" thành "đang hoạt động": người sáng lập nộp hồ sơ, cơ quan đăng ký cấp giấy (giả lập hết hạn xử lý). */
+async function activateCoop(coopId: number, founder: string) {
+  const reg = await call('POST', `/api/coops/${coopId}/register`, {}, founder);
+  assert.equal(reg.status, 200, JSON.stringify(reg.body));
+  await db.query(`update coops set reg_due_at = now() - interval '1 second' where id = $1`, [coopId]);
+  const mine = (await call('GET', '/api/coops/mine', undefined, founder)).body.coop;
+  assert.equal(mine.status, 'hoat_dong');
+  return mine;
+}
+
+test('hợp tác xã theo Luật HTX 2023: vận động 5 thành viên, góp vốn, nộp hồ sơ, cấp giấy, thưởng giá, rời được trả vốn', async () => {
+  const chu = await signup('chu_nhiem'), xa = await signup('xa_vien'), la = await signup('vung_khac'), ngheo = await signup('het_tien');
+  const tl = await signup('tl_htx', 'thuong_lai');
+  const more = [await signup('xa_vien_3'), await signup('xa_vien_4'), await signup('xa_vien_5')];
+  for (const c of [chu, xa, ngheo, tl, ...more]) await call('POST', '/api/onboard', { regionId: 'bn_lucngan' }, c);
   await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, la);
-  await call('POST', '/api/onboard', { regionId: 'bn_lucngan' }, ngheo);
   const chuMe = await meOf(chu), xaMe = await meOf(xa), ngheoMe = await meOf(ngheo);
 
   assert.equal((await call('POST', '/api/coops', { name: 'ab' }, chu)).status, 400);
   await db.query('update users set cash = 1000 where id = $1', [ngheoMe.user.id]);
   assert.equal((await call('POST', '/api/coops', { name: 'HTX Nghèo' }, ngheo)).body.error, 'khong_du_tien');
-  const made = await call('POST', '/api/coops', { name: '  HTX Vải thiều Lục Ngạn ' }, chu);
+  assert.equal((await call('POST', '/api/coops', { name: 'HTX của thương lái' }, tl)).status, 403, 'thương lái không lập HTX nông nghiệp');
+  const made = await call('POST', '/api/coops', { name: '  Vải thiều Lục Ngạn ' }, chu);
   assert.equal(made.status, 200, JSON.stringify(made.body));
   const coopId = made.body.coopId;
-  assert.equal((await meOf(chu)).user.cash, chuMe.user.cash - COOP_CREATE_COST);
-  assert.equal((await meOf(chu)).user.coopId, coopId);
+  assert.equal(made.body.status, 'dang_lap');
+  assert.equal((await meOf(chu)).user.cash, chuMe.user.cash - COOP_CAPITAL, 'người sáng lập góp vốn');
+  assert.equal((await meOf(chu)).user.coopId, null, 'chưa được cấp giấy thì chưa hưởng quyền lợi');
   assert.equal((await call('POST', '/api/coops', { name: 'HTX thứ hai' }, chu)).body.error, 'da_co_htx');
-  assert.equal((await call('POST', '/api/coops', { name: 'HTX Vải thiều Lục Ngạn' }, xa)).body.error, 'ten_da_dung');
+  assert.equal((await call('POST', '/api/coops', { name: 'Hợp tác xã Vải thiều Lục Ngạn' }, xa)).body.error, 'ten_da_dung');
 
   assert.equal((await call('POST', `/api/coops/${coopId}/join`, {}, la)).body.error, 'khac_vung');
   assert.equal((await call('POST', `/api/coops/999999/join`, {}, xa)).status, 404);
-  assert.equal((await call('POST', `/api/coops/${coopId}/join`, {}, xa)).status, 200);
+  assert.equal((await call('POST', `/api/coops/${coopId}/register`, {}, chu)).body.error, 'thieu_thanh_vien');
+  // Mời rồi xác nhận
+  assert.equal((await call('POST', `/api/coops/${coopId}/invite`, { userId: xaMe.user.id }, chu)).status, 200);
+  assert.equal((await call('GET', '/api/coops/invites', undefined, xa)).body.invites[0].coopId, coopId);
+  assert.equal((await call('POST', `/api/coops/${coopId}/accept`, {}, xa)).status, 200);
+  assert.equal((await meOf(xa)).user.cash, xaMe.user.cash - COOP_CAPITAL);
   assert.equal((await call('POST', `/api/coops/${coopId}/join`, {}, xa)).body.error, 'da_co_htx');
   assert.equal((await call('POST', '/api/coops/leave', {}, la)).body.error, 'chua_co_htx');
-
+  for (const c of more) assert.equal((await call('POST', `/api/coops/${coopId}/join`, {}, c)).status, 200);
+  assert.equal((await call('POST', `/api/coops/${coopId}/register`, {}, xa)).body.error, 'khong_phai_chu');
+  const before = (await meOf(chu)).user.cash;
+  await activateCoop(coopId, chu);
+  assert.equal((await meOf(chu)).user.cash, before - COOP_REG_FEE, 'lệ phí đăng ký');
   const list = (await call('GET', '/api/coops', undefined, xa)).body.coops;
-  assert.deepEqual(list, [{ id: coopId, name: 'HTX Vải thiều Lục Ngạn', regionId: 'bn_lucngan', ownerName: 'chu_nhiem', members: 2 }]);
+  assert.deepEqual(list, [{ id: coopId, name: 'Hợp tác xã Vải thiều Lục Ngạn', regionId: 'bn_lucngan', status: 'hoat_dong', ownerName: 'chu_nhiem', members: 5 }]);
+  assert.match((await call('GET', '/api/coops/mine', undefined, xa)).body.coop.regNo, /^HTX-/);
   assert.deepEqual((await call('GET', '/api/coops', undefined, la)).body.coops, []);
-  assert.equal((await call('GET', '/api/coops?regionId=bn_lucngan', undefined, la)).body.coops.length, 1);
   assert.equal((await call('GET', '/api/coops/mine', undefined, la)).body.coop, null);
 
   // Xã viên được thưởng giá khi bán thương lái; sản lượng tuần tính từ lượng đã bán.
@@ -559,17 +580,46 @@ test('hợp tác xã: lập, vào, khác vùng, thưởng giá, rời và chuy�
   await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,$2,'A',30)`, [xaMe.user.id, sp.id]);
   const sell = await call('POST', '/api/sell/npc', { specialtyId: sp.id, quality: 'A', kg: 30 }, xa);
   assert.equal(sell.body.mods.coop, true);
-  assert.equal(sell.body.unitPrice, npcPrice(sp.refPrice, 'A', sp.regionId, 'bn_lucngan', { coop: true }));
+  const ref = (await call('GET', '/api/prices')).body.prices[sp.id].price;
+  assert.equal(sell.body.unitPrice, Math.round((ref * FARM_GATE_RATIO * (1 + COOP_BONUS)) / 100) * 100, 'bán qua HTX: giá tại vườn + thưởng HTX');
   const mine = (await call('GET', '/api/coops/mine', undefined, chu)).body.coop;
-  assert.deepEqual({ id: mine.id, ownerId: mine.ownerId, kgWeek: mine.kgWeek, regionId: mine.regionId }, { id: coopId, ownerId: chuMe.user.id, kgWeek: 30, regionId: 'bn_lucngan' });
-  assert.deepEqual(mine.members, [{ userId: xaMe.user.id, displayName: 'xa_vien', kgWeek: 30 }, { userId: chuMe.user.id, displayName: 'chu_nhiem', kgWeek: 0 }]);
+  assert.equal(mine.kgWeek, 30);
+  assert.equal(mine.capital, COOP_CAPITAL * 5);
 
-  // Chủ nhiệm rời: quyền chuyển cho xã viên vào sớm nhất; người cuối rời thì HTX giải thể.
+  // Rời HTX: được trả lại vốn góp; chủ rời thì chuyển quyền cho người vào sớm nhất.
+  const cashXa = (await meOf(xa)).user.cash;
+  assert.equal((await call('POST', '/api/coops/leave', {}, xa)).status, 200);
+  assert.equal((await meOf(xa)).user.cash, cashXa + COOP_CAPITAL);
   assert.equal((await call('POST', '/api/coops/leave', {}, chu)).status, 200);
   assert.equal((await meOf(chu)).user.coopId, null);
-  assert.equal((await call('GET', '/api/coops/mine', undefined, xa)).body.coop.ownerId, xaMe.user.id);
-  assert.equal((await call('POST', '/api/coops/leave', {}, xa)).status, 200);
-  assert.deepEqual((await call('GET', '/api/coops?regionId=bn_lucngan', undefined, xa)).body.coops, []);
+  assert.notEqual((await call('GET', '/api/coops/mine', undefined, more[0])).body.coop.ownerId, chuMe.user.id);
+});
+
+test('chức năng theo vai: máy chủ chặn đúng bảng shared/roles.ts', async () => {
+  const nd = await signup('vai_nong_dan'), xg = await signup('vai_xuong', 'xuong'), tl = await signup('vai_thuong_lai', 'thuong_lai');
+  for (const c of [nd, xg, tl]) await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, c);
+  const fresh = { items: [{ specialtyId: 'dau_tay_da_lat', grade: 'A', kg: 100 }] };
+  // Nông dân không xuất khẩu, không vào xưởng, không thu mua sỉ, không ký gửi siêu thị
+  for (const [m, u, b] of [['POST', '/api/export/quote', fresh], ['POST', '/api/export/ship', fresh], ['POST', '/api/workshop/start', {}],
+    ['POST', '/api/wholesale/buy', {}], ['POST', '/api/supermarket/consign', {}], ['POST', '/api/fusion/boxes/sell', {}]] as const) {
+    const r = await call(m, u, b as any, nd);
+    assert.deepEqual([r.status, r.body.error], [403, 'khong_dung_vai'], `${m} ${u}`);
+    assert.match(r.body.message, /Nhà vườn không dùng/);
+  }
+  // Chủ xưởng: không xuất nông sản tươi, không cánh đồng, không HTX
+  assert.equal((await call('POST', '/api/export/quote', fresh, xg)).status, 403);
+  assert.notEqual((await call('POST', '/api/export/quote', { items: [{ specialtyId: 'dau_tay_da_lat', grade: 'A', kg: 100, processed: true }] }, xg)).status, 403);
+  assert.equal((await call('POST', '/api/fields/buy', {}, xg)).status, 403);
+  assert.equal((await call('POST', '/api/coops', { name: 'HTX của xưởng' }, xg)).status, 403);
+  // Thương lái: xuất tươi được, không xưởng, không cánh đồng
+  assert.notEqual((await call('POST', '/api/export/quote', fresh, tl)).status, 403);
+  assert.equal((await call('POST', '/api/workshop/machines/buy', { kind: 'may_say' }, tl)).status, 403);
+  assert.equal((await call('POST', '/api/fields/buy', {}, tl)).status, 403);
+  // Lò lai tạo chỉ trả công thức đúng vai
+  const kinds = async (c: string) => new Set((await call('GET', '/api/fusion', undefined, c)).body.recipes.map((r: any) => r.kind));
+  assert.deepEqual([...(await kinds(nd))], ['giong']);
+  assert.ok(!(await kinds(tl)).has('giong') && !(await kinds(tl)).has('may') && (await kinds(tl)).has('san_pham'));
+  assert.ok(!(await kinds(xg)).has('giong') && (await kinds(xg)).has('may'));
 });
 
 test('du lịch, quà đặc sản và sổ sưu tập', async () => {
@@ -846,7 +896,7 @@ test('xưởng chế biến: chỉ chủ xưởng làm được; bắt đầu, h
   await setRole('tho_say', 'nong_dan');
   assert.equal((await call('GET', '/api/workshop', undefined, cookie)).body.slots, 0);
   const no = await call('POST', '/api/workshop/start', { specialtyId: 'toi_ly_son', quality: 'A', kg: 5 }, cookie);
-  assert.deepEqual([no.status, no.body.error], [403, 'chi_chu_xuong']);
+  assert.deepEqual([no.status, no.body.error], [403, 'khong_dung_vai']);
   const left = (await call('GET', '/api/workshop', undefined, cookie)).body.jobs;
   assert.ok(left.length > 0);
   assert.equal((await call('POST', `/api/workshop/collect/${left[0].id}`, {}, cookie)).status, 200);
@@ -909,25 +959,28 @@ test('đơn lớn của hợp tác xã: góp hàng, không vượt đơn, hoàn 
   assert.equal((await call('POST', '/api/coops/order/contribute', { quality: 'A', kg: 1 }, lone)).body.error, 'chua_co_htx');
   const coop = await call('POST', '/api/coops', { name: 'HTX Thốt Nốt Đơn Lớn' }, a);
   assert.equal((await call('POST', `/api/coops/${coop.body.coopId}/join`, {}, b)).status, 200);
+  assert.equal((await call('POST', '/api/coops/order/contribute', { quality: 'A', kg: 1 }, a)).body.error, 'chua_co_htx', 'chưa cấp giấy thì chưa có đơn');
+  for (const n of ['htx_don_c', 'htx_don_d', 'htx_don_e']) { const c = await signup(n); await call('POST', '/api/onboard', { regionId: 'ag_baynui' }, c); await call('POST', `/api/coops/${coop.body.coopId}/join`, {}, c); }
+  await activateCoop(coop.body.coopId, a);
   const order = (await call('GET', '/api/coops/mine', undefined, a)).body.coop.order;
-  assert.equal(order.kgTarget, COOP_ORDER_KG_PER_MEMBER * 2);
+  assert.equal(order.kgTarget, COOP_ORDER_KG_PER_MEMBER * 5);
   assert.deepEqual([order.kgFilled, order.mine, order.npcId], [0, 0, npcOf('xuat_khau').id]);
   assert.equal(SPECIALTIES[order.specialtyId].regionId, 'ag_baynui');
   assert.ok(order.expiresAt > Date.now() + 6 * 86400_000);
   assert.equal((await call('GET', '/api/coops/mine', undefined, b)).body.coop.order.id, order.id, 'cả hợp tác xã chung một đơn');
 
   const ma = await meOf(a), mb = await meOf(b);
-  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,$3,'A',500), ($2,$3,'B',500)`, [ma.user.id, mb.user.id, order.specialtyId]);
+  await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,$3,'A',600), ($2,$3,'B',600)`, [ma.user.id, mb.user.id, order.specialtyId]);
   const over = await call('POST', '/api/coops/order/contribute', { quality: 'A', kg: order.kgTarget + 1 }, a);
   assert.deepEqual([over.status, over.body.error], [409, 'vuot_don']);
   const ref = SPECIALTIES[order.specialtyId].refPrice;
-  const ca = await call('POST', '/api/coops/order/contribute', { quality: 'A', kg: 150 }, a);
-  assert.deepEqual(noXp(ca.body), { paid: ref * 150, completed: false, exportMode: order.exportMode, market: order.market });
-  assert.deepEqual((({ kgFilled, mine }) => [kgFilled, mine])((await call('GET', '/api/coops/mine', undefined, a)).body.coop.order), [150, 150]);
-  const cb = await call('POST', '/api/coops/order/contribute', { quality: 'B', kg: 50 }, b);
-  const paidB = Math.round(ref * 0.85 * 50);
+  const ca = await call('POST', '/api/coops/order/contribute', { quality: 'A', kg: 400 }, a);
+  assert.deepEqual(noXp(ca.body), { paid: ref * 400, completed: false, exportMode: order.exportMode, market: order.market });
+  assert.deepEqual((({ kgFilled, mine }) => [kgFilled, mine])((await call('GET', '/api/coops/mine', undefined, a)).body.coop.order), [400, 400]);
+  const cb = await call('POST', '/api/coops/order/contribute', { quality: 'B', kg: 100 }, b);
+  const paidB = Math.round(ref * 0.85 * 100);
   assert.deepEqual(noXp(cb.body), { paid: paidB, completed: true, exportMode: order.exportMode, market: order.market });
-  assert.equal((await meOf(a)).user.cash, ma.user.cash + ref * 150 + Math.round(ref * 150 * COOP_ORDER_BONUS));
+  assert.equal((await meOf(a)).user.cash, ma.user.cash + ref * 400 + Math.round(ref * 400 * COOP_ORDER_BONUS));
   assert.equal((await meOf(b)).user.cash, mb.user.cash + paidB + Math.round(paidB * COOP_ORDER_BONUS));
   const next = (await call('GET', '/api/coops/mine', undefined, a)).body.coop.order;
   assert.ok(next.id !== order.id && next.kgFilled === 0 && next.mine === 0);
@@ -1527,7 +1580,7 @@ test('thu mua sỉ: chỉ thương lái, đúng vùng xe đỗ, theo sức chở
   const farmer = await signup('nha_vuon_si');
   await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, farmer);
   const no = await call('POST', '/api/wholesale/buy', { specialtyId: 'xoai_hoa_loc', kg: 10 }, farmer);
-  assert.deepEqual([no.status, no.body.error], [403, 'chi_thuong_lai']);
+  assert.deepEqual([no.status, no.body.error], [403, 'khong_dung_vai']);
   const viewF = await call('GET', '/api/regions/dt_caolanh/trade', undefined, farmer);
   assert.deepEqual([viewF.body.canBuy, viewF.body.cargo.capacityKg], [false, 0]);
   assert.equal(viewF.body.whyNot, LIMIT_REASONS.wholesale_role.reason);
@@ -1616,21 +1669,25 @@ test('xuất khẩu: báo giá theo đường và thị trường, quyền theo 
   assert.deepEqual([exportMaxActive(1), exportMaxActive(3), exportMaxActive(99)], [EXPORT_MAX_ACTIVE, EXPORT_MAX_ACTIVE, EXPORT_MAX_ACTIVE_TOP]);
   for (let id = 1; id < 30; id++) { const r = coopOrderRoute(id, 100); assert.ok(EXPORT_MARKETS[r.market].modes.includes(r.exportMode)); }
 
-  const farmer = await signup('xk_nha_vuon');
+  // Nhà vườn không xuất khẩu (shared/roles.ts): bán cho thương lái, HTX hoặc chợ. Lô thử dưới đây do thương lái gửi.
+  const vuon = await signup('xk_nha_vuon_that');
+  await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, vuon);
+  assert.deepEqual(((r) => [r.status, r.body.error])(await call('POST', '/api/export/ship', { specialtyId: 'xoai_hoa_loc', grade: 'A', kg: 300, mode: 'xe_tai', market: 'lao_cam' }, vuon)), [403, 'khong_dung_vai']);
+  const farmer = await signup('xk_nha_vuon', 'thuong_lai');
   await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, farmer);
   const fm = await meOf(farmer);
   await db.query(`insert into inventory (user_id, specialty_id, quality, kg) values ($1,'xoai_hoa_loc','A',800), ($1,'xoai_hoa_loc','B',100)`, [fm.user.id]);
   await db.query('update users set cash = 100000000 where id = $1', [fm.user.id]);
   const opts = await call('GET', '/api/export/options', undefined, farmer);
   assert.equal(opts.status, 200, JSON.stringify(opts.body));
-  assert.deepEqual([opts.body.allowedModes.length, opts.body.active, opts.body.maxActive, opts.body.fromRegionId, opts.body.discount, opts.body.products], [6, 0, EXPORT_MAX_ACTIVE, 'dt_caibe', 0, []]);
+  assert.deepEqual([opts.body.allowedModes.length, opts.body.active, opts.body.maxActive, opts.body.fromRegionId, opts.body.discount, opts.body.products], [6, 0, EXPORT_MAX_ACTIVE, 'dt_caibe', EXPORT_DISCOUNT_TRADER, []]);
   const a = opts.body.stock.find((x: any) => x.quality === 'A');
   assert.ok(a.quotes[0].ok && a.quotes.some((x: any) => x.ok && x.mode === 'container'), 'nhà vườn cũng đi được container');
   assert.ok(a.quotes.some((x: any) => !x.ok && x.market === 'nga'), 'đường không gửi được vẫn hiện, kèm lý do');
   const small = await call('POST', '/api/export/ship', { specialtyId: 'xoai_hoa_loc', grade: 'A', kg: 10, mode: 'xe_tai', market: 'trung_quoc' }, farmer);
   assert.deepEqual([small.status, small.body.error], [409, 'lo_hang_sai']);
   assert.equal((await call('POST', '/api/export/ship', { specialtyId: 'xoai_hoa_loc', grade: 'A', kg: 100, mode: 'bay', market: 'trung_quoc' }, farmer)).status, 400);
-  const quote = exportQuote('xoai_hoa_loc', 'A', 300, 'xe_tai', 'lao_cam', 'dt_caibe');
+  const quote = exportQuote('xoai_hoa_loc', 'A', 300, 'xe_tai', 'lao_cam', 'dt_caibe', undefined, { discount: EXPORT_DISCOUNT_TRADER });
   const ship = await call('POST', '/api/export/ship', { specialtyId: 'xoai_hoa_loc', grade: 'A', kg: 300, mode: 'xe_tai', market: 'lao_cam' }, farmer);
   assert.equal(ship.status, 200, JSON.stringify(ship.body));
   assert.deepEqual([ship.body.quote, ship.body.cash, ship.body.shipment.status, ship.body.shipment.payout], [quote, 100000000 - quote.freight, 'dang_di', quote.payout]);
@@ -1664,12 +1721,6 @@ test('xuất khẩu: báo giá theo đường và thị trường, quyền theo 
   assert.equal((await call('POST', '/api/export/ship', { specialtyId: 'xoai_hoa_loc', grade: 'A', kg: 600, mode: 'container', market: 'trung_quoc' }, trader)).status, 200);
   assert.equal((await call('POST', '/api/export/ship', { specialtyId: 'xoai_hoa_loc', grade: 'A', kg: 1, mode: 'xe_tai', market: 'lao_cam' }, trader)).body.error, 'lo_hang_sai');
 
-  // Đơn lớn hợp tác xã cho biết đi đường nào, thị trường nào.
-  assert.equal((await call('POST', '/api/coops', { name: 'HTX xuất khẩu thử' }, trader)).status, 200);
-  const mine = await call('GET', '/api/coops/mine', undefined, trader);
-  const o = mine.body.coop.order;
-  assert.ok(EXPORT_MARKETS[o.market as keyof typeof EXPORT_MARKETS].modes.includes(o.exportMode));
-  assert.deepEqual([o.exportMode, o.market], [(await call('GET', '/api/coops/mine', undefined, trader)).body.coop.order.exportMode, o.market]);
   void QUALITY_MULT;
 });
 
@@ -1990,7 +2041,7 @@ test('xưởng máy: hàng chế biến ký gửi siêu thị và xuất khẩu;
   assert.equal((await call('POST', '/api/workshop/machines/buy', { kind: 'may_rua' }, cookie)).body.error, 'du_may');
   assert.equal((await call('POST', '/api/workshop/machines/buy', { kind: 'may_bay' }, cookie)).status, 400);
   const farmer = await signup('khong_co_xuong');
-  assert.equal((await call('POST', '/api/workshop/machines/buy', { kind: 'may_say' }, farmer)).body.error, 'chi_chu_xuong');
+  assert.equal((await call('POST', '/api/workshop/machines/buy', { kind: 'may_say' }, farmer)).body.error, 'khong_dung_vai');
   const boosted = await call('POST', '/api/workshop/start', { specialtyId: sp.id, quality: 'A', kg: batch }, cookie);
   assert.equal(boosted.body.kgOut, Math.floor(batch * recipe.ratio * 1.05 + 1e-9));
   await db.query(`update process_jobs set ready_at = now() - interval '1 second' where user_id = $1`, [me.user.id]);
