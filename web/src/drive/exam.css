@@ -50,15 +50,16 @@
 .exam-feed p { margin: 0; padding: 5px 10px; border-radius: 10px; font-weight: 700; font-size: 0.88rem; animation: exam-in 0.2s ease-out; }
 .exam-feed p.bad { background: #b3261eee; color: #fff; } .exam-feed p.ok { background: #2f7d26ee; color: #fff; }
 @keyframes exam-in { from { transform: translateY(-6px); opacity: 0; } }
-.exam-ctl { position: absolute; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); display: flex; align-items: flex-end; gap: 8px; pointer-events: none; }
-.exam-ctl > * { pointer-events: auto; }
+.exam-ctl { position: absolute; left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); display: grid; gap: 8px; pointer-events: none; }
+.exam-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; pointer-events: none; }
+.exam-row > * { pointer-events: auto; }
+.exam-row.main { align-items: flex-end; flex-wrap: nowrap; }
 .exam-left { display: grid; justify-items: center; gap: 6px; }
 .exam-wheel-box { width: 132px; height: 132px; border-radius: 50%; touch-action: none; cursor: grab; }
 .exam-wheel { width: 100%; height: 100%; border-radius: 50%; border: 14px solid #2a2d33; background: radial-gradient(circle, #555 0 22%, transparent 23%); position: relative; box-shadow: 0 4px 0 #0006, inset 0 0 0 3px #555; box-sizing: border-box; }
 .exam-wheel i { position: absolute; left: 50%; top: 50%; width: 10px; height: 50%; background: #2a2d33; transform-origin: 50% 0; margin-left: -5px; }
 .exam-wheel i:nth-child(1) { transform: rotate(90deg); } .exam-wheel i:nth-child(2) { transform: rotate(-90deg); } .exam-wheel i:nth-child(3) { transform: rotate(0deg); }
 .exam-wheel b { position: absolute; left: 50%; top: -12px; width: 10px; height: 12px; margin-left: -5px; background: #ffd35a; border-radius: 3px; }
-.exam-mid { flex: 1; display: grid; gap: 6px; justify-items: center; min-width: 0; }
 .exam-toggles { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 .exam-toggles button, .exam-gear button { min-width: 46px; min-height: 44px; padding: 4px 10px; border-radius: 12px; border: 2px solid #7a4a22; background: #f6e7bd; color: #3b2a17; font-weight: 800; font-size: 0.82rem; box-shadow: 0 3px 0 #7a4a22; }
 .exam-toggles button.on.amber { background: #ffb020; } .exam-toggles button.on.red { background: #e2573c; color: #fff; } .exam-toggles button.on.green { background: #57c24a; color: #fff; } .exam-toggles button.warn { background: #fff; border-color: #b3261e; color: #b3261e; }
@@ -69,4 +70,4 @@
 .exam-pedal.gas { height: 118px; background: #2f9e3a; } .exam-pedal.brake { height: 92px; background: #c8402c; }
 .exam-pedal.on { transform: translateY(4px); box-shadow: 0 1px 0 #56310f; filter: brightness(1.15); }
 @media (max-width: 400px) { .exam-wheel-box { width: 112px; height: 112px; } .exam-pedal { width: 58px; } .exam-toggles button, .exam-gear button { padding: 4px 7px; font-size: 0.76rem; } }
-@media (max-height: 430px) { .exam-top { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; } .exam-hint, .exam-danger, .exam-feed { grid-column: 1; } .exam-banner small { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; } .exam-wheel-box { width: 112px; height: 112px; } .exam-pedal.gas { height: 96px; } .exam-pedal.brake { height: 78px; } .exam-mid { grid-template-columns: auto auto auto; align-items: end; justify-content: center; } }
+@media (max-height: 430px) { .exam-top { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; } .exam-hint, .exam-danger, .exam-feed { grid-column: 1; } .exam-banner small { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; } .exam-wheel-box { width: 112px; height: 112px; } .exam-pedal.gas { height: 96px; } .exam-pedal.brake { height: 78px; } .exam-ctl { gap: 4px; } }

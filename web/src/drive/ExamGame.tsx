@@ -139,6 +139,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
         </div>);
     }
     const it = ITEMS[(hud?.item ?? from) - 1];
+    const live = auto ? yard.current?.sim.input : null, sig = live ? { gear: live.gear, left: live.left, right: live.right, hazard: live.hazard, belt: live.belt, hand: live.hand } : ctl; // đang xem lái mẫu thì các nút hiện theo thao tác mẫu
     return (
       <>
         <div className="exam-scene" ref={host} />
@@ -158,27 +159,27 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
           <div className="exam-feed" role="status">{feed.map((f) => <p key={f.id} className={f.bad ? 'bad' : 'ok'}>{f.text}</p>)}</div>
         </div>
         <div className="exam-ctl">
-          <div className="exam-left">
-            <div className="exam-wheel-box" onPointerDown={wDown} onPointerMove={wMove} onPointerUp={wUp} onPointerCancel={wUp} aria-label="Vô-lăng: kéo sang trái hoặc phải" role="slider" aria-valuemin={-100} aria-valuemax={100} aria-valuenow={Math.round((hud?.steer ?? 0) * 100)}>
-              <div className="exam-wheel" ref={wheelEl}><i /><i /><i /><b /></div>
-            </div>
-            <button className="exam-mini" onClick={() => { manual(); turnWheel(0); }}>Trả thẳng lái</button>
-          </div>
-          <div className="exam-mid">
+          <div className="exam-row">
             <div className="exam-toggles">
-              <button className={ctl.left ? 'on amber' : ''} aria-pressed={ctl.left} aria-label="Xi nhan trái" onClick={() => set({ left: !ctl.left, right: false })}>◀</button>
-              <button className={ctl.hazard ? 'on red' : ''} aria-pressed={ctl.hazard} aria-label="Đèn khẩn cấp" onClick={() => set({ hazard: !ctl.hazard })}>⚠</button>
-              <button className={ctl.right ? 'on amber' : ''} aria-pressed={ctl.right} aria-label="Xi nhan phải" onClick={() => set({ right: !ctl.right, left: false })}>▶</button>
+              <button className={sig.left ? 'on amber' : ''} aria-pressed={sig.left} aria-label="Xi nhan trái" onClick={() => set({ left: !ctl.left, right: false })}>◀</button>
+              <button className={sig.hazard ? 'on red' : ''} aria-pressed={sig.hazard} aria-label="Đèn khẩn cấp" onClick={() => set({ hazard: !ctl.hazard })}>⚠</button>
+              <button className={sig.right ? 'on amber' : ''} aria-pressed={sig.right} aria-label="Xi nhan phải" onClick={() => set({ right: !ctl.right, left: false })}>▶</button>
+              <button className={sig.belt ? 'on green' : 'warn'} aria-pressed={sig.belt} onClick={() => set({ belt: !ctl.belt })}>{sig.belt ? 'Đã thắt dây' : 'Thắt dây'}</button>
+              <button className={sig.hand ? 'on red' : ''} aria-pressed={sig.hand} onClick={() => set({ hand: !ctl.hand })}>Phanh tay</button>
             </div>
-            <div className="exam-toggles">
-              <button className={ctl.belt ? 'on green' : 'warn'} aria-pressed={ctl.belt} onClick={() => set({ belt: !ctl.belt })}>{ctl.belt ? 'Đã thắt dây' : 'Thắt dây an toàn'}</button>
-              <button className={ctl.hand ? 'on red' : ''} aria-pressed={ctl.hand} onClick={() => set({ hand: !ctl.hand })}>Phanh tay</button>
-            </div>
-            <div className="exam-gear" role="radiogroup" aria-label="Cần số">{(['P', 'R', 'D'] as Gear[]).map((g) => <button key={g} role="radio" aria-checked={ctl.gear === g} className={ctl.gear === g ? 'on' : ''} onClick={() => set({ gear: g })}>{g}</button>)}</div>
+            <div className="exam-gear" role="radiogroup" aria-label="Cần số">{(['P', 'R', 'D'] as Gear[]).map((g) => <button key={g} role="radio" aria-checked={sig.gear === g} className={sig.gear === g ? 'on' : ''} onClick={() => set({ gear: g })}>{g}</button>)}</div>
           </div>
-          <div className="exam-right">
-            <button className="exam-pedal brake" onPointerDown={pedal('brake', true)} onPointerUp={pedal('brake', false)} onPointerCancel={pedal('brake', false)} onPointerLeave={pedal('brake', false)} onContextMenu={(e) => e.preventDefault()}>PHANH</button>
-            <button className="exam-pedal gas" onPointerDown={pedal('gas', true)} onPointerUp={pedal('gas', false)} onPointerCancel={pedal('gas', false)} onPointerLeave={pedal('gas', false)} onContextMenu={(e) => e.preventDefault()}>GA</button>
+          <div className="exam-row main">
+            <div className="exam-left">
+              <div className="exam-wheel-box" onPointerDown={wDown} onPointerMove={wMove} onPointerUp={wUp} onPointerCancel={wUp} aria-label="Vô-lăng: kéo sang trái hoặc phải" role="slider" aria-valuemin={-100} aria-valuemax={100} aria-valuenow={Math.round((hud?.steer ?? 0) * 100)}>
+                <div className="exam-wheel" ref={wheelEl}><i /><i /><i /><b /></div>
+              </div>
+              <button className="exam-mini" onClick={() => { manual(); turnWheel(0); }}>Trả thẳng lái</button>
+            </div>
+            <div className="exam-right">
+              <button className="exam-pedal brake" onPointerDown={pedal('brake', true)} onPointerUp={pedal('brake', false)} onPointerCancel={pedal('brake', false)} onPointerLeave={pedal('brake', false)} onContextMenu={(e) => e.preventDefault()}>PHANH</button>
+              <button className="exam-pedal gas" onPointerDown={pedal('gas', true)} onPointerUp={pedal('gas', false)} onPointerCancel={pedal('gas', false)} onPointerLeave={pedal('gas', false)} onContextMenu={(e) => e.preventDefault()}>GA</button>
+            </div>
           </div>
         </div>
       </>);

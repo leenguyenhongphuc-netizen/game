@@ -191,7 +191,7 @@ export class ExamSim {
     if (id === 9) p = { ...m.i9, s: m.i9.s }; if (id === 7) p = m.i7; if (id === 10) p = m.i10;
     this.x = p.x - Math.cos(p.h) * back; this.y = p.y - Math.sin(p.h) * back; this.th = p.h; this.v = 0; this.delta = 0; this.item = id;
     for (const g of this.c.gates) g.hit = m[g.name].s < p.s - 0.01; for (const s of this.c.stops) { s.state = s.item < id ? 'xong' : 'cho'; s.still = 0; }
-    for (const b of this.c.bays) { b.ok = false; b.t0 = 0; b.timeHit = 0; }
+    for (const b of this.c.bays) { b.ok = b.item < id; b.t0 = 0; b.timeHit = 0; }
     this.prevAlong = []; this.auto = null; this.trackDone = id > 4; this.trackMiss = [false, false]; this.trackSeen = [false, false];
     this.emit({ type: 'item', item: id, text: ITEMS[id - 1].say });
   }
