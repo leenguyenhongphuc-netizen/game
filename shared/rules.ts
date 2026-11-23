@@ -345,7 +345,7 @@ export type TravelMode = 'xe_khach' | 'tau_hoa' | 'may_bay' | 'tau_thuy' | 'taxi
 export const TRAVEL_MODES: Record<TravelMode, { name: string; icon: string; base: number; perKm: number; seconds: number }> = {
   xe_khach: { name: 'Xe khách', icon: '🚌', base: 10_000, perKm: 150, seconds: 10 },
   tau_hoa: { name: 'Tàu hoả', icon: '🚆', base: 20_000, perKm: 250, seconds: 10 },
-  may_bay: { name: 'Máy bay', icon: '✈️', base: 300_000, perKm: 1500, seconds: 8 },
+  may_bay: { name: 'Máy bay', icon: '✈️', base: 450_000, perKm: 1300, seconds: 8 },
   tau_thuy: { name: 'Tàu thuỷ', icon: '⛴️', base: 50_000, perKm: 600, seconds: 10 },
   taxi: { name: 'Taxi', icon: '🚕', base: 15_000, perKm: 2_500, seconds: 12 },
 };
@@ -355,15 +355,61 @@ export const TAXI_MAX_KM = 200;
 export function taxiFare(km: number): number {
   return Math.round((TRAVEL_MODES.taxi.base + TRAVEL_MODES.taxi.perKm * Math.max(0, km)) / 1000) * 1000;
 }
-/** Các phương tiện đi được giữa hai vùng, kèm giá vé. Ra vào đảo phải đi tàu thuỷ hoặc máy bay. */
-export function travelOptions(fromRegionId: string, toRegionId: string): { mode: TravelMode; fare: number; km: number }[] {
+/** Cảng hàng không dân dụng có chuyến bay nội địa thường lệ (toạ độ nhà ga). */
+export const AIRPORTS: { code: string; name: string; lat: number; lng: number }[] = [
+  { code: 'HAN', name: 'Nội Bài', lat: 21.221, lng: 105.807 }, { code: 'HPH', name: 'Cát Bi', lat: 20.819, lng: 106.725 },
+  { code: 'VDO', name: 'Vân Đồn', lat: 21.118, lng: 107.414 }, { code: 'DIN', name: 'Điện Biên', lat: 21.397, lng: 103.008 },
+  { code: 'THD', name: 'Thọ Xuân', lat: 19.902, lng: 105.468 }, { code: 'VII', name: 'Vinh', lat: 18.737, lng: 105.671 },
+  { code: 'VDH', name: 'Đồng Hới', lat: 17.515, lng: 106.591 }, { code: 'HUI', name: 'Phú Bài', lat: 16.401, lng: 107.703 },
+  { code: 'DAD', name: 'Đà Nẵng', lat: 16.044, lng: 108.199 }, { code: 'VCL', name: 'Chu Lai', lat: 15.403, lng: 108.706 },
+  { code: 'PXU', name: 'Pleiku', lat: 14.004, lng: 108.017 }, { code: 'UIH', name: 'Phù Cát', lat: 13.955, lng: 109.042 },
+  { code: 'TBB', name: 'Tuy Hoà', lat: 13.05, lng: 109.334 }, { code: 'CXR', name: 'Cam Ranh', lat: 11.998, lng: 109.219 },
+  { code: 'BMV', name: 'Buôn Ma Thuột', lat: 12.668, lng: 108.12 }, { code: 'DLI', name: 'Liên Khương', lat: 11.75, lng: 108.367 },
+  { code: 'SGN', name: 'Tân Sơn Nhất', lat: 10.819, lng: 106.652 }, { code: 'VCA', name: 'Cần Thơ', lat: 10.085, lng: 105.712 },
+  { code: 'PQC', name: 'Phú Quốc', lat: 10.17, lng: 103.993 }, { code: 'VKG', name: 'Rạch Giá', lat: 9.958, lng: 105.133 },
+  { code: 'CAH', name: 'Cà Mau', lat: 9.177, lng: 105.178 }, { code: 'VCS', name: 'Côn Đảo', lat: 8.732, lng: 106.633 },
+];
+/** Vùng cách sân bay quá mức này thì coi như không có sân bay gần; chặng bay ngắn hơn mức dưới thì không có đường bay thường lệ. */
+export const AIRPORT_MAX_KM = 150, FLIGHT_MIN_KM = 200, ISLAND_AIRPORT_KM = 30;
+/** Giá vé máy bay hạng phổ thông (đã gồm thuế, phí sân bay), tham chiếu giá vé nội địa phổ biến 2025–2026. */
+export const FLIGHT_FARE = { base: 450_000, perKm: 1_300 };
+/** Ba sân bay trung chuyển; sân bay địa phương thường chỉ có đường bay thẳng tới các sân bay này. */
+export const AIRPORT_HUBS = ['HAN', 'SGN', 'DAD'];
+/** Các sân bay trong tầm AIRPORT_MAX_KM của một vùng, kèm quãng đường bộ ước tính (gấp 1,3 đường chim bay). */
+export function airportsNear(regionId: string): { code: string; name: string; lat: number; lng: number; km: number }[] {
+  const r = region(regionId);
+  if (!r) return [];
+  return AIRPORTS.map((a) => ({ ...a, km: haversineKm(r.lat, r.lng, a.lat, a.lng) }))
+    // vùng trên đảo chỉ dùng sân bay ngay trên đảo (đường bộ không ra được sân bay đất liền)
+    .filter((a) => a.km <= (r.island ? ISLAND_AIRPORT_KM : AIRPORT_MAX_KM))
+    .map((a) => ({ ...a, km: Math.max(3, Math.round(a.km * 1.3)) }))
+    .sort((x, y) => x.km - y.km);
+}
+/** Chuyến bay giữa hai vùng: taxi ra sân bay đi + vé bay + taxi từ sân bay đến. Chọn cặp sân bay có đường bay thẳng
+ *  (ít nhất một đầu là sân bay trung chuyển) và tổng đường bộ ngắn nhất. null nếu không có đường bay hợp lý. */
+export function flightPlan(fromRegionId: string, toRegionId: string): { from: string; to: string; airKm: number; fare: number; ticket: number; groundKm: number } | null {
+  let best: { from: string; to: string; airKm: number; fare: number; ticket: number; groundKm: number } | null = null;
+  for (const a of airportsNear(fromRegionId)) for (const b of airportsNear(toRegionId)) {
+    if (a.code === b.code || !(AIRPORT_HUBS.includes(a.code) || AIRPORT_HUBS.includes(b.code))) continue;
+    const airKm = Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng));
+    if (airKm < FLIGHT_MIN_KM || (best && a.km + b.km >= best.groundKm)) continue;
+    const ticket = Math.round((FLIGHT_FARE.base + FLIGHT_FARE.perKm * airKm) / 1000) * 1000;
+    best = { from: a.name, to: b.name, airKm, ticket, groundKm: a.km + b.km, fare: ticket + taxiFare(a.km) + taxiFare(b.km) };
+  }
+  return best;
+}
+/** Các phương tiện đi được giữa hai vùng, kèm giá vé. Ra vào đảo phải đi tàu thuỷ hoặc máy bay; máy bay chỉ khi hai đầu đều gần sân bay. */
+export function travelOptions(fromRegionId: string, toRegionId: string): { mode: TravelMode; fare: number; km: number; via?: string }[] {
   const a = region(fromRegionId), b = region(toRegionId);
   if (!a || !b || a.id === b.id) return [];
   const km = Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng));
+  const fly = flightPlan(a.id, b.id);
   const modes: TravelMode[] = a.island || b.island
-    ? ['tau_thuy', ...(km >= 300 ? ['may_bay' as const] : [])]
-    : ['xe_khach', ...(km <= TAXI_MAX_KM ? ['taxi' as const] : []), ...(km >= 150 ? ['tau_hoa' as const] : []), ...(km >= 400 ? ['may_bay' as const] : [])];
-  return modes.map((mode) => ({ mode, fare: Math.round((TRAVEL_MODES[mode].base + TRAVEL_MODES[mode].perKm * km) / 1000) * 1000, km }));
+    ? ['tau_thuy']
+    : ['xe_khach', ...(km <= TAXI_MAX_KM ? ['taxi' as const] : []), ...(km >= 150 ? ['tau_hoa' as const] : [])];
+  const out: { mode: TravelMode; fare: number; km: number; via?: string }[] = modes.map((mode) => ({ mode, fare: Math.round((TRAVEL_MODES[mode].base + TRAVEL_MODES[mode].perKm * km) / 1000) * 1000, km }));
+  if (fly) out.push({ mode: 'may_bay', fare: fly.fare, km, via: `${fly.from} → ${fly.to}` });
+  return out;
 }
 export const GIFT_DAILY_LIMIT = 5, GIFT_MAX_KG = 20, REGION_SET_REWARD = 50_000;
 

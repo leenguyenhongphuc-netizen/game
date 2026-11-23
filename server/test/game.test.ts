@@ -10,7 +10,7 @@ import {
   COOP_ORDER_BONUS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, IN_SEASON_YIELD, ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS_XUONG,
   ROLE_INFO, inSeason, marketEventsAt, seasonAt, supplyKg,
   DUMP_RATIO, FUEL_PER_KM, ROLES, ROLE_TARGETS, SEASON_DAYS, SMALL_TILES, allowedTiles, spinWeights, tripInfo, TRUCK, landPrice, roadKm, tripPlan,
-  HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_MODES, glutFactor, paceFactor, stepWaitMs, travelOptions, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
+  HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_MODES, glutFactor, paceFactor, stepWaitMs, travelOptions, flightPlan, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
   seedCost, snapCell, stepCount, urbanCoreAt, weatherAt, weatherInfo,
   speedFine, SPEED_FINES, wholesalePrice, wholesaleSupplyKg, WHOLESALE_RATIO, WHOLESALE_SUPPLY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_MAX_ACTIVE, exportModesFor, exportQuote, coopOrderRoute,
   LIMIT_REASONS, TRAVEL_VS_TRUCK, QUALITY_MULT, taxiFare, TAXI_MAX_KM, haversineKm,
@@ -1455,7 +1455,9 @@ test('nhịp chơi: người mới chờ ngắn hơn, càng thu hoạch nhiều 
 test('vé du lịch theo phương tiện', async () => {
   const modes = (a: string, b: string) => travelOptions(a, b).map((o) => o.mode);
   assert.deepEqual(modes('dt_caibe', 'vl_cholach'), ['xe_khach', 'taxi'], 'đất liền gần có xe khách và taxi');
-  assert.deepEqual(modes('dt_caibe', 'ld_dalat'), ['xe_khach', 'tau_hoa'], 'từ 150 km có tàu hoả');
+  assert.deepEqual(modes('dt_caibe', 'ld_dalat'), ['xe_khach', 'tau_hoa', 'may_bay'], 'từ 150 km có tàu hoả; hai đầu gần sân bay có đường bay thì có máy bay');
+  assert.equal(travelOptions('ld_dalat', 'dn_tienphuoc').find((o) => o.mode === 'may_bay')?.via, 'Liên Khương → Đà Nẵng', 'Đà Lạt đi Đà Nẵng bay qua sân bay trung chuyển');
+  assert.ok(!travelOptions('dt_caibe', 'vl_cholach').some((o) => o.mode === 'may_bay'), 'chặng ngắn không có máy bay');
   assert.deepEqual(modes('dt_caibe', 'hn_phudien'), ['xe_khach', 'tau_hoa', 'may_bay'], 'từ 400 km có máy bay');
   assert.deepEqual(modes('gl_hoainhon', 'qng_lyson'), ['tau_thuy'], 'ra đảo gần chỉ có tàu thuỷ');
   assert.deepEqual(modes('hn_phudien', 'ag_phuquoc'), ['tau_thuy', 'may_bay'], 'ra đảo xa có thêm máy bay');
@@ -1463,7 +1465,8 @@ test('vé du lịch theo phương tiện', async () => {
   assert.deepEqual(modes('dt_caibe', 'khong_co'), []);
   for (const o of travelOptions('dt_caibe', 'hn_phudien')) {
     const m = TRAVEL_MODES[o.mode];
-    assert.equal(o.fare, Math.round((m.base + m.perKm * o.km) / 1000) * 1000);
+    if (o.mode === 'may_bay') assert.equal(o.fare, flightPlan('dt_caibe', 'hn_phudien')!.fare, 'vé bay gồm taxi ra/vào sân bay');
+    else assert.equal(o.fare, Math.round((m.base + m.perKm * o.km) / 1000) * 1000);
     assert.ok(m.seconds > 0 && m.name && m.icon);
   }
 

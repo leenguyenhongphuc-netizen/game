@@ -201,7 +201,7 @@ export function TravelPanel({ me, startRide, startTrip, touring, openGarage }: {
                     <div className="pick-row">
                       {travelOptions(home, r.id).map((o) => (
                         <button key={o.mode} className="pick" disabled={act.busy || me.user.cash < o.fare} onClick={() => act.run(() => startRide(o.mode, r.id, o.km))}>
-                          <span className="emoji">{TRAVEL_MODES[o.mode].icon}</span><strong>{TRAVEL_MODES[o.mode].name}</strong><small>{o.km} km · {fmtMoney(o.fare)}</small>
+                          <span className="emoji">{TRAVEL_MODES[o.mode].icon}</span><strong>{TRAVEL_MODES[o.mode].name}</strong><small>{o.via ? `${o.via} · ` : `${o.km} km · `}{fmtMoney(o.fare)}</small>
                         </button>
                       ))}
                     </div>
