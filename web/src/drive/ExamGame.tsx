@@ -8,8 +8,6 @@ import { ExamYard } from './ExamYard.ts';
 import type { ExamView, YardHud } from './ExamYard.ts';
 import { CAR_SPECS, ITEMS, RULES, summarize } from './ExamCourse.ts';
 import type { ExamClass, Gear, Input, ItemId, SimEvent } from './ExamCourse.ts';
-import { ASSIST_NAMES, ASSIST_TIPS } from './ExamAssist.ts';
-import type { AssistLevel } from './ExamAssist.ts';
 import './exam.css';
 
 export interface ExamResult { cls: ExamClass; passed: boolean; score: number; seconds: number; out: string | null; recorded: boolean }
@@ -24,8 +22,6 @@ type Phase = 'intro' | 'run' | 'result';
 const yardClass = (cls: string): ExamClass => (cls === 'C1' || cls === 'C' || cls === 'CE' ? cls : 'B');
 const mmss = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 const VIEW_NAMES: Record<ExamView, string> = { tren: 'Trên cao', bac: 'Bản đồ', sau: 'Sau xe' };
-const readPref = <T extends string>(k: string, ok: readonly T[], d: T): T => { try { const v = localStorage.getItem(k) as T | null; return v && ok.includes(v) ? v : d; } catch { return d; } };
-const savePref = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* bỏ qua */ } };
 
 export function ExamGame(props: ExamGameProps): JSX.Element {
   const cls = yardClass(props.cls), spec = CAR_SPECS[cls];
@@ -43,8 +39,6 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
   const [sheet, setSheet] = useState<{ rows: ReturnType<typeof summarize>; general: { points: number; text: string; out?: boolean }[]; firstBad: ItemId } | null>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);
   const [showRules, setShowRules] = useState(false);
-  const [assist, setAssist] = useState<AssistLevel>(() => readPref('vv-exam-assist', ['de', 'vua', 'that'] as const, 'de'));
-  const [guide, setGuide] = useState(() => readPref('vv-exam-guide', ['1', '0'] as const, '1') === '1');
   const [nudge, setNudge] = useState(0);
   const minUntil = useRef(0);
   const examId = useRef<number | string | null>(null), feedId = useRef(0), drag = useRef<{ id: number; x: number; s: number } | null>(null), ended = useRef(false);
@@ -74,7 +68,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
       else if (e.type === 'say') { setSay(e.text ?? ''); pushFeed(e.text ?? '', /NGUY HIỂM/.test(e.text ?? '')); }
       else if (e.type === 'end') void finish();
     };
-    const y = new ExamYard(host.current, cls, { onEvent, onHud: setHud }, { practice, from: practice ? from : 1, assist, guide });
+    const y = new ExamYard(host.current, cls, { onEvent, onHud: setHud }, { practice, from: practice ? from : 1, assist: 'de', guide: practice });
     yard.current = y; y.setView(view); setSay(ITEMS[(practice ? from : 1) - 1].say);
     const w = window as unknown as { __exam?: unknown; __examAuto?: boolean };
     w.__exam = {
@@ -85,7 +79,6 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
       /** Người chơi giả: giữ ◀ (1) / ▶ (−1), chạm đích theo toạ độ sân, đổi mức trợ lái. */
       nudge: (n: number) => { y.auto = false; setAuto(false); y.nudge = n; },
       tap: (x: number, yy: number) => y.tapAt(x, yy),
-      assist: (l: AssistLevel) => y.setAssist(l),
       stops: () => y.sim.c.stops.map((st) => ({ x: st.x, y: st.y, h: st.h, state: st.state })), need: () => y.assist.need, ref: () => y.assist.ref, front: () => y.sim.front, danger: () => !!y.sim.danger,
     };
     if (w.__examAuto) { y.auto = true; setAuto(true); }
@@ -108,19 +101,17 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
   const manual = () => { if (yard.current?.auto) { yard.current.auto = false; setAuto(false); const i = input(); if (i) Object.assign(i, ctl, { gas: 0, brake: 1 }); } };
   // vô-lăng: kéo ngang để đánh lái, thả tay thì giữ nguyên góc lái (như xe thật khi đi chậm)
   const turnWheel = (s: number) => { const i = input(); if (i) i.steer = s; if (wheelEl.current) wheelEl.current.style.transform = `rotate(${-s * 400}deg)`; };
-  // Dễ/Vừa: vô-lăng nhẹ tay hơn một nửa và có vùng chết ở giữa
+  // vô-lăng nhẹ tay, có vùng chết ở giữa; trợ lái giữ xe bám làn, tay người chơi chỉ chỉnh thêm
   const wDown = (e: RPointerEvent) => { manual(); (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); drag.current = { id: e.pointerId, x: e.clientX, s: input()?.steer ?? 0 }; if (yard.current) yard.current.dragging = true; };
-  const wMove = (e: RPointerEvent) => { const d = drag.current; if (!d || d.id !== e.pointerId) return; const dx = e.clientX - d.x, eff = assist === 'that' ? dx / 110 : Math.sign(dx) * Math.max(0, Math.abs(dx) - 6) / 230; turnWheel(Math.max(-1, Math.min(1, d.s - eff))); };
+  const wMove = (e: RPointerEvent) => { const d = drag.current; if (!d || d.id !== e.pointerId) return; const dx = e.clientX - d.x, eff = Math.sign(dx) * Math.max(0, Math.abs(dx) - 6) / 230; turnWheel(Math.max(-1, Math.min(1, d.s - eff))); };
   const wUp = (e: RPointerEvent) => { if (drag.current?.id === e.pointerId) { drag.current = null; if (yard.current) yard.current.dragging = false; } };
   const hold = (n: number) => ({
     onPointerDown: (e: RPointerEvent) => { e.preventDefault(); manual(); try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* bỏ qua */ } if (yard.current) yard.current.nudge = n; setNudge(n); },
     onPointerUp: () => { if (yard.current) yard.current.nudge = 0; setNudge(0); }, onPointerCancel: () => { if (yard.current) yard.current.nudge = 0; setNudge(0); },
     onLostPointerCapture: () => { if (yard.current) yard.current.nudge = 0; setNudge(0); }, onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   });
-  const pickAssist = (l: AssistLevel) => { setAssist(l); savePref('vv-exam-assist', l); yard.current?.setAssist(l); };
-  const toggleGuide = () => { const g = !guide; setGuide(g); savePref('vv-exam-guide', g ? '1' : '0'); yard.current?.setGuide(g); };
   const pedal = (k: 'gas' | 'brake', on: boolean) => (e: RPointerEvent) => { e.preventDefault(); manual(); const i = input(); if (i) i[k] = on ? 1 : 0; (e.currentTarget as HTMLElement).classList.toggle('on', on); };
-  useEffect(() => { if (hud && wheelEl.current && !drag.current) wheelEl.current.style.transform = `rotate(${-(auto || assist === 'de' ? hud.steer : hud.wheel) * 400}deg)`; }, [auto, hud, assist]);
+  useEffect(() => { if (hud && wheelEl.current && !drag.current) wheelEl.current.style.transform = `rotate(${-hud.steer * 400}deg)`; }, [hud]);
 
   const body = (() => {
     if (phase === 'intro') return (
@@ -128,12 +119,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
         <header><h2>Sân sát hạch · {props.title ?? spec.name}</h2><button className="exam-x" aria-label="Đóng" onClick={() => props.onClose(null)}>✕</button></header>
         <p className="exam-lead">Thi lái xe trong hình gồm <b>11 bài liên hoàn</b>, tổng 100 điểm, <b>đạt từ 80 điểm</b>, tối đa 18 phút. Lên vỉa hè, không qua vệt bánh xe, tụt dốc quá 50 cm hoặc không ghép được xe vào nơi đỗ là bị truất quyền thi.</p>
         {error && <p className="exam-err" role="alert">{error}</p>}
-        <div className="exam-assist" role="radiogroup" aria-label="Mức trợ lái">
-          <b>Trợ lái</b>
-          {(['de', 'vua', 'that'] as AssistLevel[]).map((l) => <button key={l} role="radio" aria-checked={assist === l} className={assist === l ? 'on' : ''} onClick={() => pickAssist(l)}>{ASSIST_NAMES[l]}</button>)}
-          <label><input type="checkbox" checked={guide} onChange={toggleGuide} /> Vệt dẫn đường</label>
-          <small>{ASSIST_TIPS[assist]} Cách chấm điểm giữ nguyên ở mọi mức.</small>
-        </div>
+        <p className="exam-assist"><b>Xe có trợ lái</b><span>Xe tự bám làn và tự hãm trước vạch; bạn bấm đúng xi nhan, số, phanh tay, giữ GA/PHANH và chỉnh thêm bằng ◀ ▶. Chạm vào vạch phía trước để xe tự chạy tới và dừng đúng chỗ. Khi tập có vệt dẫn đường, khi thi thì không.</span></p>
         <div className="exam-start">
           {!props.practiceOnly && <button className="exam-go" disabled={busy} onClick={() => void begin(false)}>🏁 Vào thi{props.fee ? <small>lệ phí {fmtMoney(props.fee)}</small> : null}</button>}
           <button className="exam-go alt" disabled={busy} onClick={() => void begin(true, 1)}>🎓 Tập cả bài<small>miễn phí, có vệt gợi ý</small></button>
@@ -146,7 +132,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
         </ol>
         <button className="exam-link" aria-expanded={showRules} onClick={() => setShowRules(!showRules)}>{showRules ? 'Ẩn' : 'Xem'} bảng điểm trừ</button>
         {showRules && <ul className="exam-rules">{RULES.map((r, i) => <li key={i}><span>{r.item ? `Bài ${r.item}` : 'Chung'}</span><span className="grow">{r.text}</span><b className={r.points === 'truat' ? 'out' : ''}>{r.points === 'truat' ? 'truất quyền' : `−${r.points}`}</b></li>)}</ul>}
-        <p className="exam-note">Điều khiển: giữ ◀ ▶ hoặc kéo vô-lăng để đánh lái, giữ GA hoặc PHANH, chọn số P/R/D. Ở mức Dễ/Vừa: chạm vào một điểm trên đường phía trước (ví dụ vạch dừng) để xe tự chạy tới và dừng đúng chỗ. Nút nào cần bấm sẽ nhấp nháy. Trên máy tính dùng phím mũi tên hoặc WASD, phím cách để phanh.</p>
+        <p className="exam-note">Điều khiển: giữ ◀ ▶ hoặc kéo vô-lăng để chỉnh lái, giữ GA hoặc PHANH, chọn số P/R/D. Nút nào cần bấm sẽ nhấp nháy. Trên máy tính dùng phím mũi tên hoặc WASD, phím cách để phanh.</p>
       </div>);
     if (phase === 'result' && result) {
       const rows = sheet?.rows ?? [], general = sheet?.general ?? [];
@@ -180,13 +166,11 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
             <span className={hud && hud.item !== 9 && hud.kmh > spec.limitKmh ? 'over' : ''} title="Tốc độ">{Math.round(hud?.kmh ?? 0)} km/h</span>
             {hud?.lightNear && <span className={`exam-light ${hud.light}`} aria-label={`Đèn ${hud.light === 'do' ? 'đỏ' : hud.light === 'vang' ? 'vàng' : 'xanh'}`}><i /><i /><i /></span>}
             <button className="exam-mini" onClick={() => { const v: ExamView = view === 'tren' ? 'sau' : view === 'sau' ? 'bac' : 'tren'; setView(v); yard.current?.setView(v); }}>🎥 {VIEW_NAMES[view]}</button>
-            <button className="exam-mini" aria-label="Đổi mức trợ lái" onClick={() => pickAssist(assist === 'de' ? 'vua' : assist === 'vua' ? 'that' : 'de')}>🛟 {ASSIST_NAMES[assist]}</button>
-            <button className={`exam-mini${guide ? ' on' : ''}`} aria-pressed={guide} onClick={toggleGuide}>〰 Vệt</button>
             {practice && <button className={`exam-mini${auto ? ' on' : ''}`} onClick={() => { const y = yard.current; if (!y) return; if (auto) manual(); else { y.auto = true; setAuto(true); } }}>{auto ? '✋ Tự lái' : '🤖 Xem lái mẫu'}</button>}
             <button className="exam-mini quit" onClick={() => { if (practice || confirm('Bỏ bài thi? Lệ phí không được hoàn lại.')) { if (practice) setPhase('intro'); else props.onClose(null); } }}>Thoát</button>
           </div>
           {practice && hud?.hint && <div className="exam-hint">💡 {hud.hint}</div>}
-          {!auto && hud && assist !== 'that' && !hud.goal && hud.need.stop && <div className="exam-hint">👆 Chạm vào vạch dừng phía trước để xe tự dừng đúng chỗ</div>}
+          {!auto && hud && !hud.goal && hud.need.stop && <div className="exam-hint">👆 Chạm vào vạch dừng phía trước để xe tự dừng đúng chỗ</div>}
           {!auto && hud?.goal && <div className="exam-hint">🎯 Xe đang tự chạy tới điểm bạn chạm — đạp GA/PHANH để tự lái lại</div>}
           {hud?.danger && <div className="exam-danger" role="alert">⚠ TÌNH HUỐNG NGUY HIỂM: phanh dừng và bật đèn khẩn cấp!</div>}
           <div className="exam-feed" role="status">{feed.map((f) => <p key={f.id} className={f.bad ? 'bad' : 'ok'}>{f.text}</p>)}</div>
@@ -211,7 +195,6 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
               </div>
               <button className={`exam-nudge${nudge === -1 ? ' on' : ''}`} aria-label="Đánh lái phải (giữ)" {...hold(-1)}>▶</button>
               </div>
-              {assist === 'that' && <button className="exam-mini" onClick={() => { manual(); turnWheel(0); }}>Trả thẳng lái</button>}
             </div>
             <div className="exam-right">
               <button className="exam-pedal brake" onPointerDown={pedal('brake', true)} onPointerUp={pedal('brake', false)} onPointerCancel={pedal('brake', false)} onPointerLeave={pedal('brake', false)} onContextMenu={(e) => e.preventDefault()}>PHANH</button>
