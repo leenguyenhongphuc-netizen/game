@@ -217,6 +217,9 @@ create table if not exists wholesale_buys (
   created_at timestamptz not null default now()
 );
 create index if not exists wholesale_buys_day_idx on wholesale_buys (region_id, specialty_id, created_at);
+alter table wholesale_buys add column if not exists moved boolean not null default false;
+alter table npc_sales add column if not exists market_region text;
+create index if not exists npc_sales_market_idx on npc_sales (market_region, specialty_id, created_at desc);
 create table if not exists export_shipments (
   id bigserial primary key,
   user_id bigint not null references users(id) on delete cascade,
@@ -310,6 +313,22 @@ create table if not exists user_licenses (
   created_at timestamptz not null default now(),
   primary key (user_id, cls)
 );
+alter table user_licenses add column if not exists issued_at timestamptz not null default now();
+alter table user_licenses add column if not exists expires_at timestamptz;
+alter table user_licenses add column if not exists points int not null default 12;
+alter table user_licenses add column if not exists points_at timestamptz;
+alter table user_licenses add column if not exists suspended boolean not null default false;
+create table if not exists license_exams (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  cls text not null,
+  part text not null,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  score int,
+  passed boolean
+);
+create index if not exists license_exams_user_idx on license_exams (user_id, cls, part, finished_at desc);
 create table if not exists user_goods (
   user_id bigint not null references users(id) on delete cascade,
   item_id text not null,

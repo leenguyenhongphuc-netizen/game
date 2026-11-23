@@ -6,10 +6,11 @@ import { buildApp } from '../src/app.ts';
 import { openDb } from '../src/db.ts';
 import type { Db } from '../src/db.ts';
 import { REGIONS } from '../../shared/catalog.ts';
-import { LEVELS, TRUCK, haversineKm, roadKm, taxiFare, tripPlan } from '../../shared/rules.ts';
+import { FAR_MARKET_RATIO, LEVELS, TRUCK, bulkSellFactor, haversineKm, roadKm, speedFine, spoilRate, taxiFare, tripPlan, wholesaleQuote, wholesaleSupplyKg } from '../../shared/rules.ts';
 import { ITEMS } from '../../shared/items.ts';
 import { SIGHTS } from '../../shared/sights.ts';
 import {
+  EXAM, LICENSE_POINTS, LICENSE_RENEW_FEE, LICENSE_YEAR_DAYS,
   DEFAULT_VEHICLE, DRIVE_RULES, ENERGY_PRICE, LICENSES, PERSONAL_RIDES, TOLL_GROUP_MULT, VEHICLES, VEHICLE_RESALE, licenseCovers, personalLegFare, rangeKm,
   restStopItems, restsNeeded, tripPlanFor, truckOf,
 } from '../../shared/vehicles.ts';
@@ -23,8 +24,8 @@ before(async () => {
   await c.query('drop schema public cascade; create schema public;');
   await c.end();
   db = await openDb(url);
-  app = await buildApp({ db, timeScale: 1e9, lateGraceMs: 60_000, adminToken: 'test-admin-token-0123456789', rateLimit: false, staticDir: '/nonexistent', marketEventsAt: () => [], inSeason: () => false,
-    paceFactor: () => 1, testerUsernames: ['thu_xe'], tripMinFactor: 0, marketDayAt: () => ({ active: false, startsAt: 0, endsAt: 0 }) });
+  app = await buildApp({ db, timeScale: 1e9, examHurry: 1e9, lateGraceMs: 60_000, adminToken: 'test-admin-token-0123456789', rateLimit: false, staticDir: '/nonexistent', marketEventsAt: () => [], inSeason: () => false,
+    paceFactor: () => 1, testerUsernames: ['thu_xe', 'thu_bang'], tripMinFactor: 0, marketDayAt: () => ({ active: false, startsAt: 0, endsAt: 0 }) });
 });
 after(async () => { await app.close(); await db.close(); });
 
@@ -34,6 +35,14 @@ async function call(method: string, path: string, body?: unknown, cookie?: strin
     headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(cookie ? { cookie } : {}) } });
   const set = r.headers['set-cookie'], first = Array.isArray(set) ? set[0] : set;
   return { status: r.statusCode, body: r.body ? JSON.parse(r.body) : null, cookie: first?.split(';')[0] };
+}
+/** Thi đạt cả lý thuyết lẫn sa hình (nếu hạng đó cần) để đủ điều kiện cấp bằng. */
+async function passExams(cookie: string, cls: string) {
+  for (const part of ['ly_thuyet', 'sa_hinh']) {
+    const st = await call('POST', '/api/licenses/exam/start', { cls, part }, cookie);
+    if (st.status !== 200) continue;
+    await call('POST', '/api/licenses/exam', { cls, part, score: 100, examId: st.body.examId }, cookie);
+  }
 }
 async function signup(name: string, role: 'nong_dan' | 'xuong' | 'thuong_lai', regionId = 'dt_caibe', cash = 500_000_000): Promise<string> {
   const r = await call('POST', '/api/auth/register', { username: name, password: 'matkhau123', displayName: name });
@@ -97,6 +106,7 @@ test('mua xe: ai cũng mua được nhưng phải có bằng lái, đủ cấp, 
   const noLic = await call('POST', '/api/vehicles/buy', { kind: 'ban_tai' }, farmer);
   assert.deepEqual([noLic.status, noLic.body.error], [409, 'thieu_bang_lai']);
   assert.equal((await call('POST', '/api/licenses/buy', { cls: 'Z' }, farmer)).status, 400);
+  await passExams(farmer, 'B');
   const lic = await call('POST', '/api/licenses/buy', { cls: 'B' }, farmer);
   assert.deepEqual([lic.status, lic.body.price, lic.body.licenses], [200, LICENSES.B.price, ['B']]);
   assert.equal((await call('POST', '/api/licenses/buy', { cls: 'B' }, farmer)).body.error, 'da_co');
@@ -111,6 +121,7 @@ test('mua xe: ai cũng mua được nhưng phải có bằng lái, đủ cấp, 
   assert.equal((await call('POST', '/api/vehicles/buy', { kind: 'tai_3t5' }, farmer)).body.error, 'chua_du_cap');
   await setLevel('nha_vuon_xe', 3);
   assert.equal((await call('POST', '/api/vehicles/buy', { kind: 'tai_3t5' }, farmer)).body.error, 'thieu_bang_lai');
+  await passExams(farmer, 'C1');
   assert.equal((await call('POST', '/api/licenses/buy', { cls: 'C1' }, farmer)).status, 200);
   const big = await call('POST', '/api/vehicles/buy', { kind: 'tai_3t5' }, farmer);
   assert.deepEqual([big.status, big.body.active], [200, false]);
@@ -137,6 +148,7 @@ test('thương lái: được cấp xe tải nhẹ 990 kg và bằng B; sức ch
   assert.equal((await call('GET', '/api/regions/dt_caibe/trade', undefined, t)).body.cargo.capacityKg, 990);
   assert.equal((await call('POST', `/api/vehicles/${list.owned[0].id}/sell`, {}, t)).body.error, 'xe_cuoi');
   await setLevel('lai_buon_xe', 5);
+  await passExams(t, 'C');
   assert.equal((await call('POST', '/api/licenses/buy', { cls: 'C' }, t)).status, 200);
   const b = await call('POST', '/api/vehicles/buy', { kind: 'tai_8t' }, t);
   assert.equal(b.status, 200);
@@ -155,6 +167,7 @@ test('thương lái: được cấp xe tải nhẹ 990 kg và bằng B; sức ch
 test('chuyến xe theo xe đang lái: phí đường theo nhóm, phí đăng kiểm, trạm dừng nghỉ, mệt vì không nghỉ, vai khác bán được ở nơi xe đỗ', async () => {
   const f = await signup('duong_dai', 'nong_dan');
   await setLevel('duong_dai', 3);
+  await passExams(f, 'C1');
   await call('POST', '/api/licenses/buy', { cls: 'C1' }, f);
   const b = await call('POST', '/api/vehicles/buy', { kind: 'tai_3t5' }, f);
   assert.equal(b.status, 200);
@@ -249,6 +262,7 @@ test('mua sắm: đồ vùng miền phải tới nơi mới mua, mặc và đổ
   assert.equal(taxi.route.ride, null);
   assert.equal(taxi.taxiFare, taxiFare(taxi.km));
   assert.equal((await call('POST', '/api/shopping/buy', { itemId: 'xe_may' }, u)).body.error, 'thieu_bang_lai');
+  await passExams(u, 'A1');
   await call('POST', '/api/licenses/buy', { cls: 'A1' }, u);
   const bike = await call('POST', '/api/shopping/buy', { itemId: 'xe_may' }, u);
   assert.deepEqual([bike.status, bike.body.equipped.xe], [200, 'xe_may']);
@@ -272,4 +286,104 @@ test('tài khoản thử: nhận ngay một loại xe kèm bằng lái', async (
   assert.equal((await call('GET', '/api/me', undefined, t)).body.user.vehicle.cargoKg, 28_000);
   const other = await signup('khong_thu', 'nong_dan');
   assert.equal((await call('POST', '/api/test/vehicle', { kind: 'dau_keo' }, other)).status, 403);
+});
+
+
+test('thu mua sỉ theo tải trọng xe: xe 15 tấn mua 15 tấn một lần, giá bậc thang, xả lớn bị ép giá, không in tiền', async () => {
+  const t = await signup('lai_15t', 'thuong_lai', 'ld_dalat', 5_000_000_000);
+  assert.equal((await call('POST', '/api/test/vehicle', { kind: 'tai_15t' }, t)).status, 403); // không phải tài khoản thử
+  await setLevel('lai_15t', 10);
+  await passExams(t, 'C'); assert.equal((await call('POST', '/api/licenses/buy', { cls: 'C' }, t)).status, 200);
+  const b = await call('POST', '/api/vehicles/buy', { kind: 'tai_15t' }, t);
+  assert.equal(b.status, 200);
+  await call('POST', `/api/vehicles/${b.body.vehicleId}/activate`, {}, t);
+  const view = (await call('GET', '/api/regions/ld_dalat/trade?kg=15000', undefined, t)).body;
+  const cap = VEHICLES.tai_15t.cargoKg, row = view.buy[0];
+  assert.equal(view.cargo.capacityKg, cap);
+  assert.ok(row.supplyTotalKg >= cap, 'nguồn vùng đủ cho một xe 15 tấn');
+  assert.equal(row.maxKg, cap);
+  assert.ok(row.priceTiers.length >= 3 && row.priceTiers.at(-1).unit > row.priceTiers[0].unit, 'giá bậc thang tăng dần');
+  assert.equal(row.quote.kg, cap);
+  const before = (await call('GET', '/api/me', undefined, t)).body.user.cash;
+  const buy = await call('POST', '/api/wholesale/buy', { specialtyId: row.specialtyId, kg: cap }, t);
+  assert.deepEqual([buy.status, buy.body.cargo.usedKg, buy.body.total], [200, cap, row.quote.total]);
+  assert.ok(buy.body.unitPrice > row.wholesalePrice, 'vét 15 tấn thì giá trung bình cao hơn giá đầu ngày');
+  // Bán ngay tại chỗ: giá tại vườn thấp hơn giá mua và còn bị ép giá vì xả lớn → lỗ.
+  const sell = await call('POST', '/api/sell/npc', { specialtyId: row.specialtyId, quality: 'A', kg: cap }, t);
+  assert.equal(sell.status, 200);
+  assert.ok(sell.body.bulkFactor < 0.95 && sell.body.unitPrice < sell.body.basePrice, 'xả 15 tấn một lúc bị ép giá');
+  assert.ok(sell.body.total < buy.body.total, 'mua vét rồi bán tại chỗ phải lỗ');
+  assert.ok((await call('GET', '/api/me', undefined, t)).body.user.cash < before);
+  // Người thứ hai bán sau vào cùng chợ nhận giá thấp hơn người bán 500 kg lúc chợ còn trống.
+  const small = bulkSellFactor(0, 500), late = bulkSellFactor(cap, 500);
+  assert.ok(small === 1 && late < 0.8);
+  // Hàng phương xa: lời mỗi kg ở 15 tấn nhỏ hơn ở 1 tấn, nhưng tổng lời trước chi phí vẫn dương (xe lớn có tác dụng).
+  const ref = 20_000, sup = wholesaleSupplyKg(null);
+  const margin = (kg: number) => Math.round(ref * FAR_MARKET_RATIO * bulkSellFactor(0, kg)) - wholesaleQuote(ref, 1, sup, 0, kg).unit;
+  assert.ok(margin(15_000) < margin(1_000) && margin(15_000) > 0 && margin(15_000) * 15_000 > margin(1_000) * 1_000);
+  // Vét cạn nguồn rồi xả hết vào một chợ thì không còn lời: không có vòng in tiền bằng khối lượng.
+  assert.ok(Math.round(ref * FAR_MARKET_RATIO * bulkSellFactor(0, sup)) < wholesaleQuote(ref, 1, sup, 0, sup).unit);
+  assert.deepEqual([spoilRate(1000, false), spoilRate(1000, true), spoilRate(5000, false)], [0.05, 0.01, 0.06]);
+});
+
+test('bằng lái có hạn, có điểm; hết hạn phải đổi hoặc thi lại; cấp mới cần cả lý thuyết lẫn sa hình', async () => {
+  const u = await signup('thu_bang', 'thuong_lai', 'dt_caibe');
+  // Cấp mới: thiếu bài thi thì không được.
+  await setLevel('thu_bang', 5);
+  assert.equal((await call('POST', '/api/licenses/buy', { cls: 'C1' }, u)).body.error, 'chua_thi_ly_thuyet');
+  assert.equal((await call('POST', '/api/licenses/exam/start', { cls: 'C1', part: 'sa_hinh' }, u)).body.error, 'chua_thi_ly_thuyet');
+  const th = await call('POST', '/api/licenses/exam/start', { cls: 'C1', part: 'ly_thuyet' }, u);
+  assert.deepEqual([th.status, th.body.fee], [200, EXAM.ly_thuyet.fee]);
+  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'ly_thuyet', score: 101 }, u)).status, 400);
+  const fail = await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'ly_thuyet', score: 60 }, u);
+  assert.deepEqual([fail.body.passed, fail.body.exam.theory.passed], [false, false]);
+  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'ly_thuyet', score: 90 }, u)).body.error, 'chua_bat_dau');
+  await call('POST', '/api/licenses/exam/start', { cls: 'C1', part: 'ly_thuyet' }, u);
+  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'ly_thuyet', score: 90 }, u)).body.passed, true);
+  assert.equal((await call('POST', '/api/licenses/buy', { cls: 'C1' }, u)).body.error, 'chua_thi_sa_hinh');
+  await call('POST', '/api/licenses/exam/start', { cls: 'C1', part: 'sa_hinh' }, u);
+  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'sa_hinh', score: 85 }, u)).body.exam.yard.passed, true);
+  assert.equal((await call('POST', '/api/licenses/buy', { cls: 'C1' }, u)).status, 200);
+  let lic = (await call('GET', '/api/vehicles', undefined, u)).body.licenses.find((l: any) => l.cls === 'C1');
+  assert.deepEqual([lic.owned, lic.expired, lic.points, lic.termYears, lic.renew.mode], [true, false, LICENSE_POINTS, 10, 'doi']);
+  assert.ok(Math.abs(lic.daysLeft - 10 * LICENSE_YEAR_DAYS) < 0.2);
+  assert.equal((await call('GET', '/api/vehicles', undefined, u)).body.licenses.find((l: any) => l.cls === 'A1').renew, null);
+  // Hết hạn: không được lên đường; quá hạn ngắn thì đổi thẳng.
+  await call('POST', '/api/test/vehicle', { kind: 'tai_990' }, u);
+  assert.equal((await call('POST', '/api/test/license', { cls: 'B', expired: true, overdueMonths: 1 }, u)).status, 200);
+  await call('POST', '/api/test/license', { cls: 'C1', expired: true, overdueMonths: 1 }, u);
+  assert.equal((await call('POST', '/api/trips/start', { toRegionId: 'dt_caolanh' }, u)).body.error, 'bang_het_han');
+  const rn = await call('POST', '/api/licenses/renew', { cls: 'B' }, u);
+  assert.deepEqual([rn.status, rn.body.mode, rn.body.fee], [200, 'doi', LICENSE_RENEW_FEE]);
+  const trip = await call('POST', '/api/trips/start', { toRegionId: 'dt_caolanh' }, u);
+  assert.equal(trip.status, 200);
+  // Chạy quá tốc độ bị trừ điểm bằng.
+  const fin = await call('POST', `/api/trips/${trip.body.tripId}/finish`, { refuelL: 0, speeding: [25] }, u);
+  assert.equal(fin.status, 200);
+  assert.deepEqual([fin.body.license.cls, fin.body.license.deducted, fin.body.license.points], ['B', speedFine(25)!.points, LICENSE_POINTS - speedFine(25)!.points]);
+  assert.ok(fin.body.spoil && fin.body.spoil.kg === 0);
+  // Hết điểm: bằng bị khoá, thi lại lý thuyết thì phục hồi.
+  await call('POST', '/api/test/license', { cls: 'B', points: 0 }, u);
+  assert.equal((await call('POST', '/api/trips/start', { toRegionId: 'dt_caibe' }, u)).body.error, 'bang_bi_khoa');
+  await call('POST', '/api/licenses/exam/start', { cls: 'B', part: 'ly_thuyet' }, u);
+  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'B', part: 'ly_thuyet', score: 100 }, u)).body.restoredPoints, true);
+  assert.equal((await call('POST', '/api/trips/start', { toRegionId: 'dt_caibe' }, u)).status, 200);
+  // Quá hạn 5 tháng: phải thi lại lý thuyết; quá 13 tháng: cả sa hình.
+  await call('POST', '/api/test/license', { cls: 'C1', expired: true, overdueMonths: 5 }, u);
+  lic = (await call('GET', '/api/vehicles', undefined, u)).body.licenses.find((l: any) => l.cls === 'C1');
+  assert.deepEqual([lic.expired, lic.renew.mode, lic.renew.needTheory, lic.renew.needYard], [true, 'thi_ly_thuyet', true, false]);
+  assert.equal((await call('POST', '/api/licenses/renew', { cls: 'C1' }, u)).body.error, 'chua_thi_ly_thuyet');
+  await call('POST', '/api/licenses/exam/start', { cls: 'C1', part: 'ly_thuyet' }, u);
+  await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'ly_thuyet', score: 95 }, u);
+  assert.equal((await call('POST', '/api/licenses/renew', { cls: 'C1' }, u)).status, 200);
+  await call('POST', '/api/test/license', { cls: 'C1', expired: true, overdueMonths: 13 }, u);
+  lic = (await call('GET', '/api/vehicles', undefined, u)).body.licenses.find((l: any) => l.cls === 'C1');
+  assert.deepEqual([lic.renew.mode, lic.renew.needYard], ['thi_lai', true]);
+  await call('POST', '/api/licenses/exam/start', { cls: 'C1', part: 'ly_thuyet' }, u);
+  await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'ly_thuyet', score: 95 }, u);
+  assert.equal((await call('POST', '/api/licenses/renew', { cls: 'C1' }, u)).body.error, 'chua_thi_sa_hinh');
+  await call('POST', '/api/licenses/exam/start', { cls: 'C1', part: 'sa_hinh' }, u);
+  await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'sa_hinh', score: 80 }, u);
+  assert.equal((await call('POST', '/api/licenses/renew', { cls: 'C1' }, u)).status, 200);
+  assert.equal((await call('POST', '/api/licenses/renew', { cls: 'A1' }, u)).body.error, 'chua_co');
 });

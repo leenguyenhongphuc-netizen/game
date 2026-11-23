@@ -4,10 +4,11 @@ import type { Db, Q } from './db.ts';
 import { levelOf, roadKm } from '../../shared/rules.ts';
 import { ITEMS, ITEM_BAG_MAX } from '../../shared/items.ts';
 import {
+  EXAM, LICENSE_MONTH_MS, LICENSE_POINTS, LICENSE_RENEW_FEE, LICENSE_TERM_YEARS, LICENSE_YEAR_MS, needsYard, renewMode,
   CHARGE, DEFAULT_VEHICLE, DRIVE_RULES, ENERGY_PRICE, LICENSES, LICENSE_ORDER, POWER_NAMES, TOLL_GROUP_NAMES, VEHICLES, VEHICLE_MAX_OWNED, VEHICLE_RESALE,
   licenseCovers, parkPrice, rangeKm, restStopItems, roadPrice, tripPlanFor, truckOf, unitOf,
 } from '../../shared/vehicles.ts';
-import type { LicenseClass, TruckInfo, VehicleSpec, VehicleTripPlan } from '../../shared/vehicles.ts';
+import type { ExamPart, LicenseClass, TruckInfo, VehicleSpec, VehicleTripPlan } from '../../shared/vehicles.ts';
 
 type EnergyState = { cur: number; max: number; baseMs: number; now: number };
 export interface VehicleDeps {
@@ -19,6 +20,9 @@ export interface VehicleDeps {
   energyState: (q: Q, userId: number, lock?: boolean) => Promise<EnergyState>;
   setEnergy: (q: Q, userId: number, e: EnergyState, value: number) => Promise<{ energy: number; energyMax: number; energyFullAt: number | null }>;
   bagOf: (q: Q, userId: number) => Promise<{ itemId: string; qty: number }[]>;
+  licenseTimeScale?: number;
+  /** Kiểm thử: chia thời gian làm bài tối thiểu. */
+  examHurry?: number;
 }
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
@@ -26,8 +30,56 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
   const { db, bad } = d;
   const licensesOf = async (q: Q, userId: number): Promise<string[]> =>
     (await q.query('select cls from user_licenses where user_id = $1', [userId])).rows.map((r) => r.cls as string);
-  const grantLicense = (q: Q, userId: number, cls: LicenseClass) =>
-    q.query('insert into user_licenses (user_id, cls) values ($1,$2) on conflict do nothing', [userId, cls]);
+  const lts = Math.max(1e-9, d.licenseTimeScale ?? 1), YEAR = LICENSE_YEAR_MS / lts, MONTH = LICENSE_MONTH_MS / lts;
+  const termMs = (cls: LicenseClass) => (LICENSE_TERM_YEARS[cls] === null ? null : LICENSE_TERM_YEARS[cls]! * YEAR);
+  /** Cấp mới hoặc cấp lại: ngày cấp là bây giờ, hạn theo hạng, đủ 12 điểm. */
+  const grantLicense = (q: Q, userId: number, cls: LicenseClass) => {
+    const term = termMs(cls), exp = term === null ? null : new Date(Date.now() + term);
+    return q.query(`insert into user_licenses (user_id, cls, issued_at, expires_at, points, points_at, suspended) values ($1,$2,now(),$3,$4,null,false)
+      on conflict (user_id, cls) do update set issued_at = now(), expires_at = excluded.expires_at, points = excluded.points, points_at = null, suspended = false`, [userId, cls, exp, LICENSE_POINTS]);
+  };
+  type Lic = { cls: LicenseClass; issuedAt: number; expiresAt: number | null; expired: boolean; overdueMs: number; daysLeft: number | null; points: number; suspended: boolean };
+  /** Tình trạng từng bằng đang có. Bằng cấp trước khi có hạn (expires_at trống ở hạng có thời hạn) được tính hạn từ ngày cấp. */
+  async function licenseRows(q: Q, userId: number): Promise<Lic[]> {
+    const now = Date.now();
+    const { rows } = await q.query('select cls, issued_at, expires_at, points, points_at, suspended from user_licenses where user_id = $1', [userId]);
+    return rows.filter((r) => Object.hasOwn(LICENSES, r.cls)).map((r) => {
+      const cls = r.cls as LicenseClass, issuedAt = new Date(r.issued_at).getTime(), term = termMs(cls);
+      const expiresAt = term === null ? null : r.expires_at ? new Date(r.expires_at).getTime() : issuedAt + term;
+      // 12 "tháng" không bị trừ điểm thì phục hồi đủ điểm (bằng đang bị khoá thì không tự phục hồi).
+      const restored = !r.suspended && r.points < LICENSE_POINTS && r.points_at && now - new Date(r.points_at).getTime() >= 12 * MONTH;
+      return { cls, issuedAt, expiresAt, expired: expiresAt !== null && now >= expiresAt, overdueMs: expiresAt === null ? 0 : Math.max(0, now - expiresAt),
+        daysLeft: expiresAt === null ? null : Math.round(((expiresAt - now) / 86400_000) * 10) / 10, points: restored ? LICENSE_POINTS : r.points, suspended: !!r.suspended };
+    });
+  }
+  /** Bằng (còn hạn, không bị khoá) đang dùng để lái chiếc xe này; không có thì báo lỗi rõ lý do. */
+  async function requireValidLicense(q: Q, userId: number, spec: VehicleSpec): Promise<Lic> {
+    const mine = (await licenseRows(q, userId)).filter((l) => l.cls === spec.license || LICENSES[l.cls].includes.includes(spec.license));
+    const ok = mine.find((l) => !l.expired && !l.suspended);
+    if (ok) return ok;
+    const need = LICENSES[spec.license].name;
+    if (!mine.length) throw bad('thieu_bang_lai', `${spec.name} cần bằng lái ${need}. Hãy thi bằng ở Bãi xe trước khi lên đường.`, 409);
+    if (mine.some((l) => l.suspended)) throw bad('bang_bi_khoa', `Bằng lái ${LICENSES[mine.find((l) => l.suspended)!.cls].name} của bạn đã bị trừ hết ${LICENSE_POINTS} điểm. Hãy thi lại lý thuyết để phục hồi điểm rồi mới được lái.`, 409);
+    throw bad('bang_het_han', `Bằng lái ${LICENSES[mine[0].cls].name} của bạn đã hết hạn. Hãy đổi bằng (hoặc thi lại nếu quá hạn lâu) ở Bãi xe.`, 409);
+  }
+  /** Trừ điểm bằng lái sau một chuyến có vi phạm tốc độ. Hết điểm thì bằng bị tạm khoá. */
+  async function deductPoints(q: Q, userId: number, spec: VehicleSpec, pts: number) {
+    if (!(pts > 0)) return null;
+    const lic = (await licenseRows(q, userId)).filter((l) => (l.cls === spec.license || LICENSES[l.cls].includes.includes(spec.license)) && !l.expired && !l.suspended)[0];
+    if (!lic) return null;
+    const left = Math.max(0, lic.points - pts), suspended = left === 0;
+    await q.query('update user_licenses set points = $3, points_at = now(), suspended = $4 where user_id = $1 and cls = $2', [userId, lic.cls, left, suspended]);
+    return { cls: lic.cls, name: LICENSES[lic.cls].name, deducted: lic.points - left, points: left, max: LICENSE_POINTS, suspended,
+      message: suspended ? `Bằng ${LICENSES[lic.cls].name} bị trừ hết điểm và tạm khoá. Thi lại lý thuyết để phục hồi.` : `Bằng ${LICENSES[lic.cls].name} bị trừ ${lic.points - left} điểm, còn ${left}/${LICENSE_POINTS}.` };
+  }
+  /** Kết quả thi gần nhất còn hiệu lực (trong 1 "năm") của từng phần. */
+  async function examState(q: Q, userId: number, cls: LicenseClass) {
+    const since = new Date(Date.now() - YEAR);
+    const { rows } = await q.query(`select part, max(score) filter (where passed) as best, max(finished_at) filter (where passed) as at, max(score) as top
+      from license_exams where user_id = $1 and cls = $2 and finished_at >= $3 group by part`, [userId, cls, since]);
+    const of = (part: ExamPart) => { const r = rows.find((x) => x.part === part); return { passed: !!r?.at, at: r?.at ? new Date(r.at).getTime() : null, best: r?.top ?? null, pass: EXAM[part].pass, fee: EXAM[part].fee }; };
+    return { theory: of('ly_thuyet'), yard: { ...of('sa_hinh'), required: needsYard(cls) } };
+  }
 
   /** Chiếc xe đang dùng. Thương lái (và người chơi cũ) chưa có xe thì được cấp xe tải nhẹ 990 kg cùng bằng B. */
   async function truck(q: Q, userId: number, grant = false): Promise<{ has: boolean; id: number | null; spec: VehicleSpec; tk: TruckInfo; odoKm: number }> {
@@ -132,6 +184,7 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       db.query('select id, kind, energy, odo_km, price_paid from vehicles where user_id = $1 order by id', [userId]),
       licensesOf(db, userId),
     ]);
+    const licRows = await licenseRows(db, userId), licYearDays = Math.round((YEAR / 86400_000) * 1000) / 1000;
     const me = u.rows[0], level = levelOf(me.xp).level, home = atHome(me);
     const count = (kind: string) => owned.rows.filter((v) => v.kind === kind).length;
     return {
@@ -149,11 +202,18 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
           energy, ...(spec.power === 'dien' ? { chargeKwh: energy } : { fuelL: energy }), odoKm: round1(Number(v.odo_km)),
           regionId: active ? (me.truck_region ?? me.home_region_id) : me.home_region_id, active, resaleValue: Math.round(Number(v.price_paid) * VEHICLE_RESALE) };
       }),
-      licenses: LICENSE_ORDER.map((cls) => {
-        const info = LICENSES[cls], has = lic.includes(cls), covered = licenseCovers(lic, cls);
-        const why = has ? 'Đã có' : level < info.minLevel ? `Cần cấp ${info.minLevel}` : Number(me.cash) < info.price ? 'Chưa đủ tiền' : null;
-        return { cls, ...info, owned: has, covered, canBuy: !why, why };
-      }),
+      licenses: await Promise.all(LICENSE_ORDER.map(async (cls) => {
+        const info = LICENSES[cls], row = licRows.find((l) => l.cls === cls), has = !!row, covered = licenseCovers(lic, cls);
+        const exam = await examState(db, userId, cls);
+        const ready = exam.theory.passed && (!exam.yard.required || exam.yard.passed);
+        const why = has ? 'Đã có' : level < info.minLevel ? `Cần cấp ${info.minLevel}` : !exam.theory.passed ? 'Chưa đạt lý thuyết' : !ready ? 'Chưa đạt sa hình' : Number(me.cash) < info.price ? 'Chưa đủ tiền' : null;
+        const mode = row ? (row.suspended ? 'thi_ly_thuyet' as const : renewMode(row.overdueMs * lts)) : null;
+        return { cls, ...info, owned: has, covered, canBuy: !why, why, termYears: LICENSE_TERM_YEARS[cls],
+          issuedAt: row?.issuedAt ?? null, expiresAt: row?.expiresAt ?? null, expired: row?.expired ?? false, daysLeft: row?.daysLeft ?? null,
+          points: row?.points ?? null, maxPoints: LICENSE_POINTS, suspended: row?.suspended ?? false, exam,
+          renew: row && (row.expiresAt !== null || row.suspended) ? { mode, fee: LICENSE_RENEW_FEE, needTheory: mode !== 'doi', needYard: mode === 'thi_lai' && needsYard(cls) } : null };
+      })),
+      licenseRules: { yearDays: licYearDays, points: LICENSE_POINTS, exam: EXAM, renewFee: LICENSE_RENEW_FEE },
       energyPrice: ENERGY_PRICE, charge: CHARGE, rules: DRIVE_RULES,
     };
   });
@@ -167,10 +227,93 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       const info = LICENSES[cls];
       if ((await licensesOf(q, userId)).includes(cls)) throw bad('da_co', `Bạn đã có bằng ${info.name}.`, 409);
       if (levelOf(u.xp).level < info.minLevel) throw bad('chua_du_cap', `Cần đạt cấp ${info.minLevel} mới được thi bằng ${info.name}.`, 409);
-      if (Number(u.cash) < info.price) throw bad('khong_du_tien', `Lệ phí học và thi bằng ${info.name} là ${info.price.toLocaleString('vi-VN')}đ.`, 409);
+      const exam = await examState(q, userId, cls);
+      if (!exam.theory.passed) throw bad('chua_thi_ly_thuyet', `Bạn cần đạt bài thi lý thuyết hạng ${info.name} trước (từ ${EXAM.ly_thuyet.pass}/100 điểm).`, 409);
+      if (exam.yard.required && !exam.yard.passed) throw bad('chua_thi_sa_hinh', `Bạn cần đạt bài thi sa hình hạng ${info.name} (từ ${EXAM.sa_hinh.pass}/100 điểm) rồi mới được cấp bằng.`, 409);
+      if (Number(u.cash) < info.price) throw bad('khong_du_tien', `Lệ phí học và cấp bằng ${info.name} là ${info.price.toLocaleString('vi-VN')}đ.`, 409);
       await d.addCash(q, userId, -info.price, `bang_lai:${cls}`);
       await grantLicense(q, userId, cls);
       return { ok: true, cls, price: info.price, cash: Number(u.cash) - info.price, licenses: await licensesOf(q, userId) };
+    });
+  });
+
+  const clsOf = (v: unknown): LicenseClass => { const c = String(v ?? '') as LicenseClass; if (!Object.hasOwn(LICENSES, c)) throw bad('du_lieu_sai', 'Hạng giấy phép lái xe không hợp lệ.'); return c; };
+  const partOf = (v: unknown): ExamPart => { if (v !== 'ly_thuyet' && v !== 'sa_hinh') throw bad('du_lieu_sai', 'Phần thi không hợp lệ.'); return v; };
+  /** Bắt đầu một lượt thi: thu lệ phí, trả mã lượt thi để nộp kết quả. */
+  app.post('/api/licenses/exam/start', async (req) => {
+    const userId = await d.requireUser(req);
+    const b = (req.body ?? {}) as Record<string, unknown>, cls = clsOf(b.cls), part = partOf(b.part);
+    return db.tx(async (q) => {
+      const u = (await q.query('select cash, xp from users where id = $1 for update', [userId])).rows[0];
+      const info = LICENSES[cls], ex = EXAM[part];
+      if (levelOf(u.xp).level < info.minLevel) throw bad('chua_du_cap', `Cần đạt cấp ${info.minLevel} mới được thi bằng ${info.name}.`, 409);
+      if (part === 'sa_hinh' && !needsYard(cls)) throw bad('khong_can_thi', `Hạng ${info.name} không phải thi sa hình trong trò chơi.`, 409);
+      if (part === 'sa_hinh' && !(await examState(q, userId, cls)).theory.passed) throw bad('chua_thi_ly_thuyet', 'Phải đạt lý thuyết trước rồi mới được vào sân sa hình.', 409);
+      if (Number(u.cash) < ex.fee) throw bad('khong_du_tien', `Lệ phí thi ${ex.name.toLowerCase()} là ${ex.fee.toLocaleString('vi-VN')}đ.`, 409);
+      await d.addCash(q, userId, -ex.fee, `le_phi_thi:${cls}:${part}`);
+      await q.query('delete from license_exams where user_id = $1 and finished_at is null', [userId]);
+      const row = (await q.query('insert into license_exams (user_id, cls, part) values ($1,$2,$3) returning id', [userId, cls, part])).rows[0];
+      return { ok: true, examId: Number(row.id), cls, part, fee: ex.fee, pass: ex.pass, minSeconds: ex.minSeconds, cash: Number(u.cash) - ex.fee };
+    });
+  });
+  /** Nộp kết quả một phần thi. Lý thuyết đạt mà bằng đang bị khoá vì hết điểm thì được phục hồi điểm. */
+  app.post('/api/licenses/exam', async (req) => {
+    const userId = await d.requireUser(req);
+    const b = (req.body ?? {}) as Record<string, unknown>, cls = clsOf(b.cls), part = partOf(b.part);
+    const score = Number(b.score);
+    if (!Number.isFinite(score) || score < 0 || score > 100) throw bad('du_lieu_sai', 'Điểm thi phải từ 0 đến 100.');
+    return db.tx(async (q) => {
+      const ex = (await q.query(`select id, started_at from license_exams where user_id = $1 and cls = $2 and part = $3 and finished_at is null ${b.examId ? 'and id = $4' : ''} order by id desc limit 1 for update`,
+        b.examId ? [userId, cls, part, Number(b.examId) || 0] : [userId, cls, part])).rows[0];
+      if (!ex) throw bad('chua_bat_dau', 'Bạn chưa đăng ký lượt thi này. Hãy bấm bắt đầu thi trước.', 409);
+      const took = (Date.now() - new Date(ex.started_at).getTime()) / 1000;
+      if (took < EXAM[part].minSeconds / Math.max(1, d.examHurry ?? 1)) throw bad('qua_nhanh', 'Bài thi nộp quá nhanh, không hợp lệ. Hãy thi lại.', 409);
+      const s = Math.round(score), passed = s >= EXAM[part].pass;
+      await q.query('update license_exams set finished_at = now(), score = $2, passed = $3 where id = $1', [ex.id, s, passed]);
+      let restored = false;
+      if (passed && part === 'ly_thuyet') restored = !!(await q.query('update user_licenses set points = $3, points_at = null, suspended = false where user_id = $1 and cls = $2 and suspended', [userId, cls, LICENSE_POINTS])).rowCount;
+      return { ok: true, cls, part, score: s, pass: EXAM[part].pass, passed, restoredPoints: restored, exam: await examState(q, userId, cls) };
+    });
+  });
+  /** Đổi bằng: còn hạn hoặc quá hạn ngắn thì đổi thẳng; quá hạn lâu phải có kết quả thi lại còn hiệu lực. */
+  app.post('/api/licenses/renew', async (req) => {
+    const userId = await d.requireUser(req);
+    const cls = clsOf(((req.body ?? {}) as any).cls);
+    return db.tx(async (q) => {
+      const u = (await q.query('select cash from users where id = $1 for update', [userId])).rows[0];
+      const row = (await licenseRows(q, userId)).find((l) => l.cls === cls), info = LICENSES[cls];
+      if (!row) throw bad('chua_co', `Bạn chưa có bằng ${info.name} để đổi.`, 409);
+      if (row.expiresAt === null) throw bad('khong_thoi_han', `Bằng ${info.name} không có thời hạn, không cần đổi.`, 409);
+      if (row.suspended) throw bad('bang_bi_khoa', 'Bằng đang bị khoá vì hết điểm: thi lại lý thuyết để phục hồi trước.', 409);
+      const mode = renewMode(row.overdueMs * lts);
+      if (mode !== 'doi') {
+        // Chỉ tính bài thi làm SAU ngày hết hạn.
+        const after = new Date(row.expiresAt);
+        const done = (await q.query(`select part from license_exams where user_id = $1 and cls = $2 and passed and finished_at >= $3`, [userId, cls, after])).rows.map((r) => r.part as string);
+        if (!done.includes('ly_thuyet')) throw bad('chua_thi_ly_thuyet', `Bằng quá hạn đã lâu: phải thi lại lý thuyết${mode === 'thi_lai' && needsYard(cls) ? ' và sa hình' : ''} rồi mới được cấp lại.`, 409);
+        if (mode === 'thi_lai' && needsYard(cls) && !done.includes('sa_hinh')) throw bad('chua_thi_sa_hinh', 'Bằng quá hạn trên 1 năm: phải thi lại cả sa hình rồi mới được cấp lại.', 409);
+      }
+      if (Number(u.cash) < LICENSE_RENEW_FEE) throw bad('khong_du_tien', `Lệ phí đổi bằng là ${LICENSE_RENEW_FEE.toLocaleString('vi-VN')}đ.`, 409);
+      await d.addCash(q, userId, -LICENSE_RENEW_FEE, `doi_bang:${cls}`);
+      const term = termMs(cls)!, exp = new Date(Date.now() + term);
+      await q.query('update user_licenses set issued_at = now(), expires_at = $3 where user_id = $1 and cls = $2', [userId, cls, exp]);
+      return { ok: true, cls, mode, fee: LICENSE_RENEW_FEE, cash: Number(u.cash) - LICENSE_RENEW_FEE, expiresAt: exp.getTime() };
+    });
+  });
+  /** Tài khoản thử: cấp ngay một bằng, tuỳ chọn cho hết hạn (expired: true hoặc overdueMonths) hay đặt số điểm; passExams: true thì ghi sẵn hai phần thi đạt mà chưa cấp bằng. */
+  app.post('/api/test/license', async (req) => {
+    const userId = await d.requireTester(req);
+    const b = (req.body ?? {}) as Record<string, unknown>, cls = clsOf(b.cls);
+    return db.tx(async (q) => {
+      if (b.passExams === true) {
+        for (const part of ['ly_thuyet', 'sa_hinh'] as ExamPart[]) await q.query('insert into license_exams (user_id, cls, part, finished_at, score, passed) values ($1,$2,$3,now(),100,true)', [userId, cls, part]);
+        return { ok: true, cls, exam: await examState(q, userId, cls) };
+      }
+      await grantLicense(q, userId, cls);
+      const months = b.expired === true ? Math.max(0.1, Number(b.overdueMonths ?? 1)) : 0;
+      if (months > 0 && termMs(cls) !== null) await q.query('update user_licenses set expires_at = $3 where user_id = $1 and cls = $2', [userId, cls, new Date(Date.now() - months * MONTH)]);
+      if (b.points !== undefined) { const p = Math.max(0, Math.min(LICENSE_POINTS, Math.floor(Number(b.points) || 0))); await q.query('update user_licenses set points = $3, points_at = now(), suspended = $4 where user_id = $1 and cls = $2', [userId, cls, p, p === 0]); }
+      return { ok: true, license: (await licenseRows(q, userId)).find((l) => l.cls === cls) };
     });
   });
 
@@ -269,6 +412,6 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
     });
   });
 
-  return { truck, planFor, chargedKwh, afterTrip, restShop, meOut, testFill, licensesOf };
+  return { truck, planFor, chargedKwh, afterTrip, restShop, meOut, testFill, licensesOf, requireValidLicense, deductPoints };
 }
 export type VehicleApi = ReturnType<typeof registerVehicles>;

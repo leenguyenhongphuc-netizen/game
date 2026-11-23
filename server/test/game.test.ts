@@ -12,7 +12,7 @@ import {
   DUMP_RATIO, FUEL_PER_KM, ROLES, ROLE_TARGETS, SEASON_DAYS, SMALL_TILES, allowedTiles, spinWeights, tripInfo, TRUCK, landPrice, roadKm, tripPlan,
   HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_MODES, glutFactor, paceFactor, stepWaitMs, travelOptions, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
   seedCost, snapCell, stepCount, urbanCoreAt, weatherAt, weatherInfo,
-  speedFine, SPEED_FINES, wholesalePrice, WHOLESALE_RATIO, WHOLESALE_SUPPLY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_MAX_ACTIVE, exportModesFor, exportQuote, coopOrderRoute,
+  speedFine, SPEED_FINES, wholesalePrice, wholesaleSupplyKg, WHOLESALE_RATIO, WHOLESALE_SUPPLY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_MAX_ACTIVE, exportModesFor, exportQuote, coopOrderRoute,
   LIMIT_REASONS, TRAVEL_VS_TRUCK, QUALITY_MULT, taxiFare, TAXI_MAX_KM, haversineKm,
   landFees, starterMachine, exportDiscount, exportMaxActive, EXPORT_DISCOUNT_TRADER, EXPORT_DISCOUNT_COOP, EXPORT_MAX_ACTIVE_TOP, MACHINES, machineStats, machineUpgradeCost, WORKSHOP_RUN_FEE_PER_KG,
   LEVELS, XP, ENERGY_COST, ENERGY_MAX, levelOf, levelPerks, energyAt, tripEnergy, LAND_CERT_NAME,
@@ -88,7 +88,7 @@ async function signup(name: string, role: 'nong_dan' | 'xuong' | 'thuong_lai' = 
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Phần chính của kết quả một chuyến xe: bỏ các trường xe cộ mới (trạm dừng, đăng kiểm, thể lực…) và cộng lại phí đăng kiểm vào tiền mặt. */
-const tripCore = (b: any) => { const { upkeepCost = 0, odoKm, rests, fatigue, unit, vehicleKind, items, energy, energyMax, energyFullAt, xpGained, xp, level, title, levelUp, cash, ...rest } = b ?? {}; return { ...rest, cash: cash + upkeepCost }; };
+const tripCore = (b: any) => { const { spoil, license, upkeepCost = 0, odoKm, rests, fatigue, unit, vehicleKind, items, energy, energyMax, energyFullAt, xpGained, xp, level, title, levelUp, cash, ...rest } = b ?? {}; return { ...rest, cash: cash + upkeepCost }; };
 /** Bỏ các trường tiến độ (điểm kinh nghiệm, thể lực) mà nhiều lệnh trả kèm, để so phần chính của kết quả. */
 const core = (b: any) => { const { xpGained, xp, level, title, levelUp, energy, energyMax, energyFullAt, energyCost, ...rest } = b ?? {}; return rest; };
 
@@ -1540,7 +1540,7 @@ test('thu mua sỉ: chỉ thương lái, đúng vùng xe đỗ, theo sức chở
   const buy = await call('POST', '/api/wholesale/buy', { specialtyId: 'xoai_hoa_loc', kg: 200 }, cookie);
   assert.equal(buy.status, 200, JSON.stringify(buy.body));
   assert.deepEqual([buy.body.unitPrice, buy.body.total, buy.body.cargo, buy.body.supplyLeftKg],
-    [unit, unit * 200, { capacityKg: TRUCK.cargoKg, usedKg: 200, freeKg: TRUCK.cargoKg - 200 }, WHOLESALE_SUPPLY_KG - 200]);
+    [unit, unit * 200, { capacityKg: TRUCK.cargoKg, usedKg: 200, freeKg: TRUCK.cargoKg - 200 }, wholesaleSupplyKg(null) - 200]);
   const full = await call('POST', '/api/wholesale/buy', { specialtyId: 'xoai_hoa_loc', kg: TRUCK.cargoKg - 199 }, cookie);
   assert.deepEqual([full.status, full.body.error], [409, 'day_xe']);
   assert.equal((await call('POST', '/api/wholesale/buy', { specialtyId: 'xoai_hoa_loc', kg: TRUCK.cargoKg + 1 }, cookie)).status, 400);
@@ -1570,7 +1570,7 @@ test('thu mua sỉ: chỉ thương lái, đúng vùng xe đỗ, theo sức chở
   assert.equal(inv.find((i: any) => i.specialtyId === 'xoai_cao_lanh' && i.quality === 'A').kg, TRUCK.cargoKg);
   assert.equal((await call('POST', '/api/wholesale/buy', { specialtyId: 'xoai_hoa_loc', kg: 1 }, cookie)).body.error, 'khac_vung');
   // Nguồn hàng trong ngày của vùng là chung cho mọi thương lái.
-  await db.query(`insert into wholesale_buys (user_id, region_id, specialty_id, kg, unit_price) values ($1,'dt_caolanh','xoai_cao_lanh',$2,1)`, [me.user.id, WHOLESALE_SUPPLY_KG - TRUCK.cargoKg - 5]);
+  await db.query(`insert into wholesale_buys (user_id, region_id, specialty_id, kg, unit_price) values ($1,'dt_caolanh','xoai_cao_lanh',$2,1)`, [me.user.id, (await call('GET', '/api/regions/dt_caolanh/trade', undefined, cookie)).body.buy.find((x: any) => x.specialtyId === 'xoai_cao_lanh').supplyLeftKg - 5]);
   await db.query('update users set cargo_used = 0 where id = $1', [me.user.id]);
   const out = await call('POST', '/api/wholesale/buy', { specialtyId: 'xoai_cao_lanh', kg: 6 }, cookie);
   assert.deepEqual([out.status, out.body.error], [409, 'het_hang']);

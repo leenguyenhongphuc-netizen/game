@@ -16,6 +16,28 @@ export const LICENSES: Record<LicenseClass, { name: string; covers: string; pric
   CE: { name: 'Hạng CE', covers: 'Xe hạng C kéo rơ moóc trên 750 kg; ô tô đầu kéo kéo sơ mi rơ moóc', price: 8_000_000, minLevel: 7, includes: ['B', 'C1', 'C'] },
 };
 export const LICENSE_ORDER = Object.keys(LICENSES) as LicenseClass[];
+/** Thời hạn giấy phép lái xe theo hạng (năm); null là không thời hạn. Viết theo hiểu biết về Luật Trật tự, an toàn giao thông đường bộ 2024, chưa đối chiếu văn bản. */
+export const LICENSE_TERM_YEARS: Record<LicenseClass, number | null> = { A1: null, B1: null, B: 10, C1: 10, C: 5, CE: 5 };
+/** Một "năm bằng lái" trong game dài chừng này ngày thật (B, C1 hết hạn sau 30 ngày thật; C, CE sau 15 ngày). */
+export const LICENSE_YEAR_DAYS = 3;
+export const LICENSE_YEAR_MS = LICENSE_YEAR_DAYS * 86400_000, LICENSE_MONTH_MS = LICENSE_YEAR_MS / 12;
+/** Mỗi bằng có 12 điểm; vi phạm bị trừ, hết điểm thì bằng bị tạm khoá tới khi thi lại lý thuyết. Sau 12 "tháng" không bị trừ thì đủ điểm lại. */
+export const LICENSE_POINTS = 12;
+export type ExamPart = 'ly_thuyet' | 'sa_hinh';
+/** Điểm đạt (thang 100), lệ phí mỗi lần thi và thời gian làm bài tối thiểu (giây) của từng phần. */
+export const EXAM: Record<ExamPart, { name: string; pass: number; fee: number; minSeconds: number }> = {
+  ly_thuyet: { name: 'Lý thuyết', pass: 80, fee: 100_000, minSeconds: 5 },
+  sa_hinh: { name: 'Sa hình', pass: 80, fee: 300_000, minSeconds: 20 },
+};
+/** Hạng mô tô chỉ thi lý thuyết trong game; các hạng ô tô phải đạt cả sa hình. */
+export const needsYard = (cls: LicenseClass): boolean => cls !== 'A1' && cls !== 'B1';
+/** Lệ phí đổi bằng (không phải thi lại). */
+export const LICENSE_RENEW_FEE = 135_000;
+export type RenewMode = 'doi' | 'thi_ly_thuyet' | 'thi_lai';
+/** Đổi bằng: còn hạn hoặc quá hạn dưới 3 "tháng" thì đổi thẳng; quá 3 tháng đến dưới 1 năm thi lại lý thuyết; từ 1 năm thi lại cả lý thuyết lẫn sa hình. */
+export function renewMode(overdueMs: number): RenewMode {
+  return overdueMs < 3 * LICENSE_MONTH_MS ? 'doi' : overdueMs < LICENSE_YEAR_MS ? 'thi_ly_thuyet' : 'thi_lai';
+}
 /** Có bằng `have` thì lái được xe cần bằng `need` không (bằng cao bao gồm bằng thấp cùng nhóm). */
 export function licenseCovers(have: readonly string[], need: LicenseClass): boolean {
   return have.some((h) => h === need || (LICENSES[h as LicenseClass]?.includes ?? []).includes(need));

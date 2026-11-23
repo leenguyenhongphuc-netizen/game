@@ -1,5 +1,7 @@
 // Thế giới xóm vườn 3D: đường làng, các lô vườn (nhà mình và hàng xóm), nhân vật chạy bằng cần điều khiển.
 import * as THREE from 'three';
+import { HIT_AT, makeTool, poseWork, toolHand } from './actions.ts';
+import type { WorkKind } from './actions.ts';
 import { IS_MOBILE, Quality, debugScene, SHADOW_MAP, rendererParams , stepDt, trace } from '../perf.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CROPS, REGIONS, SPECIALTIES, processOf } from '../../../shared/catalog.ts';
@@ -446,6 +448,8 @@ export class World {
   private ctxKey = '';
   private readyAt = new Map<number, number>();
   private workUntil = 0;
+  private walkJob: { to: THREE.Vector3; mul: number; res: (ok: boolean) => void; cancel: boolean } | null = null;
+  private work: { kind: WorkKind; t0: number; dur: number; pro: boolean; tool: THREE.Group; hit: boolean; onHit: (ok: boolean) => void; onDone: () => void } | null = null;
   private ring: THREE.Mesh;
   private arrow = new THREE.Group();
   private markerGeo = new THREE.OctahedronGeometry(0.36, 0);
@@ -889,7 +893,7 @@ export class World {
         if (d < 0.25) { this.walkTo = null; this.detour = null; dir.set(0, 0, 0); } else { dir.normalize(); if (this.detour && t < this.detour.until) dir.set(dir.x * 0.35 + this.detour.x, 0, dir.z * 0.35 + this.detour.z).normalize(); dir.multiplyScalar(Math.min(1, d / 1.2 + 0.35)); }
       }
     }
-    this.vel.lerp(dir.multiplyScalar(this.driving ? 13 : 7.5), 1 - Math.pow(this.driving ? 0.02 : 0.0005, dt));
+    this.vel.lerp(dir.multiplyScalar(this.driving ? 13 : 7.5 * (this.walkJob && this.walkTo === this.walkJob.to ? this.walkJob.mul : 1)), 1 - Math.pow(this.driving ? 0.02 : 0.0005, dt));
     const before = this.pos.clone();
     this.pos.addScaledVector(this.vel, dt);
     if (this.driving && this.truck) { // xe chỉ chạy trên đường làng
@@ -914,8 +918,14 @@ export class World {
       if (before.distanceTo(this.pos) < 7.5 * dt * 0.3 && this.vel.length() > 2) this.stuckT += dt; else this.stuckT = Math.max(0, this.stuckT - dt * 2);
       if (this.stuckT > 0.18) { this.stuckT = 0; const n = (this.detour?.n ?? 0) + 1, to = new THREE.Vector3().subVectors(this.walkTo, this.pos).setY(0).normalize(), side = n % 2 ? 1 : -1; if (n > 6) { this.walkTo = null; this.detour = null; } else this.detour = { until: t + 0.35 + n * 0.12, x: -to.z * side, z: to.x * side, n }; }
     } else { this.detour = null; this.stuckT = 0; }
+    if (this.walkJob && this.walkTo !== this.walkJob.to) { // chuyến tự đi theo hàng đợi: tới nơi, bị người chơi giành lái, hoặc vướng quá lâu
+      const j = this.walkJob, cancelled = j.cancel || this.walkTo !== null || this.input.lengthSq() > 0.01 || this.keys.size > 0 || !!this.stick?.moved; this.walkJob = null;
+      if (!cancelled && Math.hypot(this.pos.x - j.to.x, this.pos.z - j.to.z) > 0.6) { this.pos.copy(j.to); this.vel.set(0, 0, 0); }
+      j.res(!cancelled);
+    }
     const p = this.player, speed = this.vel.length();
     p.root.position.copy(this.pos);
+    if (this.work && this.tickWork(t)) return;
     if (speed > 0.4) {
       const want = Math.atan2(this.vel.x, this.vel.z); let diff = want - p.root.rotation.y; diff = Math.atan2(Math.sin(diff), Math.cos(diff)); p.root.rotation.y += diff * Math.min(1, dt * 14);
       const sw = Math.sin(t * 16) * 0.9 * Math.min(1, speed / 5); p.legL.rotation.x = sw; p.legR.rotation.x = -sw; p.armL.rotation.x = -sw; p.armR.rotation.x = sw;
@@ -1026,6 +1036,49 @@ export class World {
   private buildZoom: number | null = null;
   /** Bỏ lệnh "chạy tới điểm vừa chạm" (khi cú chạm đó dùng để đặt đồ). */
   cancelWalk() { this.walkTo = null; }
+  // ---- Làm việc hàng loạt: tự chạy tới từng ô rồi làm đúng động tác của bước đó
+  /** Chạy tới một ô (mul: hệ số tốc độ theo cấp). Trả false nếu người chơi giành lại điều khiển hoặc gọi cancelQueue(). */
+  walkToTile(lot: number, tile: number, mul = 1): Promise<boolean> {
+    if (this.walkJob) { const j = this.walkJob; this.walkJob = null; j.res(false); }
+    const to = this.worldOfTile(lot, tile);
+    if (mul > 3) { this.pos.copy(to); this.vel.set(0, 0, 0); this.walkTo = null; return Promise.resolve(true); } // chạy kiểm thử: nhảy thẳng tới ô
+    return new Promise((res) => { this.walkTo = to; this.detour = null; this.walkJob = { to, mul, res, cancel: false }; });
+  }
+  /** Phát động tác làm việc tại chỗ trong `dur` giây. `hit` xong khi động tác chạm đất (false nếu bị ngắt), `done` xong khi hết động tác. */
+  playAction(kind: WorkKind, dur = 0.9, pro = false): { hit: Promise<boolean>; done: Promise<void> } {
+    this.endWork(false);
+    let onHit: (ok: boolean) => void = () => {}, onDone: () => void = () => {};
+    const hit = new Promise<boolean>((r) => { onHit = r; }), done = new Promise<void>((r) => { onDone = r; });
+    const tool = makeTool(kind, pro); (toolHand(kind) === 'L' ? this.player.armL : this.player.armR).add(tool);
+    this.walkTo = null; this.vel.set(0, 0, 0);
+    this.work = { kind, t0: this.clock.elapsedTime, dur: Math.max(0.05, dur), pro, tool, hit: false, onHit, onDone };
+    return { hit, done };
+  }
+  /** Dừng hàng đợi: bỏ chuyến tự đi và động tác đang làm. */
+  cancelQueue() { if (this.walkJob) this.walkJob.cancel = true; this.walkTo = null; this.endWork(false); }
+  /** Xếp các ô theo đường rắn bò: hàng gần nhân vật trước, mỗi hàng đổi chiều. */
+  tileOrder(lot: number, tiles: number[]): number[] {
+    const rows = new Map<number, { tile: number; x: number }[]>();
+    for (const tile of tiles) { const w = this.worldOfTile(lot, tile), k = Math.round(w.z * 2); (rows.get(k) ?? rows.set(k, []).get(k)!).push({ tile, x: w.x }); }
+    const keys = [...rows.keys()].sort((a, b) => a - b); if (keys.length && Math.abs(this.pos.z * 2 - keys[keys.length - 1]) < Math.abs(this.pos.z * 2 - keys[0])) keys.reverse();
+    const out: number[] = []; let x = this.pos.x;
+    for (const k of keys) { const r = rows.get(k)!.sort((a, b) => a.x - b.x); if (Math.abs(x - r[r.length - 1].x) < Math.abs(x - r[0].x)) r.reverse(); for (const c of r) out.push(c.tile); x = r[r.length - 1].x; }
+    return out;
+  }
+  private endWork(ok: boolean) {
+    const w = this.work; if (!w) return; this.work = null; w.tool.removeFromParent();
+    w.tool.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); } });
+    const p = this.player; p.armL.rotation.x = p.armR.rotation.x = 0; p.root.rotation.x = 0;
+    if (!w.hit) w.onHit(ok); w.onDone();
+  }
+  private tickWork(t: number): boolean {
+    const w = this.work!; if (this.input.lengthSq() > 0.01 || this.keys.size > 0 || this.stick?.moved || this.driving) { this.endWork(false); return false; }
+    const k = (t - w.t0) / w.dur, p = this.player;
+    if (k >= HIT_AT && !w.hit) { w.hit = true; w.onHit(true); }
+    if (k >= 1) { this.endWork(true); return false; }
+    p.legL.rotation.x = p.legR.rotation.x = 0; this.vel.set(0, 0, 0); poseWork(p, w.kind, k, t, w.pro);
+    return true;
+  }
   /** Vẽ các món xem trước: ok = bóng xanh, bad = bóng đỏ, pending = món vừa đặt chờ lưu, select = vòng sáng quanh món đã có. Gọi với [] hoặc null để xoá. */
   buildPreview(items: { item: string; x: number; z: number; rot: number; tone: 'ok' | 'bad' | 'pending' | 'select' }[] | null, grid = false) {
     if (this.buildGroup) {

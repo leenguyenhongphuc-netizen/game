@@ -16,6 +16,7 @@ const db = await openDb(databaseUrl, { ssl: process.env.DATABASE_SSL === 'no-ver
 const app = await buildApp({
   db,
   timeScale,
+  licenseTimeScale: Number(process.env.LICENSE_TIME_SCALE ?? 1) || 1,
   adminToken: process.env.ADMIN_TOKEN,
   secureCookies: process.env.NODE_ENV === 'production',
   trustProxy: process.env.TRUST_PROXY === '1',

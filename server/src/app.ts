@@ -16,7 +16,7 @@ import {
   COOP_CREATE_COST, COOP_MAX_MEMBERS, GIFT_DAILY_LIMIT, GIFT_MAX_KG, HELP_DAILY_LIMIT, HELP_REWARD, LAND_PRICE, LATE_GRACE_MS, MAX_FRIENDS,
   QUALITIES, REGION_SET_REWARD, SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, START_CASH, TILE_COUNT, glutFactor, inVietnam, paceFactor, travelOptions,
   marketDayAt, nearestRegion, npcPrice, qualityFromLate, region as findRegion, seedCost, snapCell, specialty as findSpecialty, stepCount,
-  stepWaitMs, urbanCoreAt, weatherAt, speedFine, wholesalePrice, WHOLESALE_SUPPLY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_GATEWAYS, EXPORT_MAX_ACTIVE,
+  stepWaitMs, urbanCoreAt, weatherAt, speedFine, wholesalePrice, wholesaleSupplyKg, wholesaleQuote, bulkSellFactor, spoilRate, BULK_EASY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_GATEWAYS, EXPORT_MAX_ACTIVE,
   exportModesFor, exportQuote, coopOrderRoute, LIMIT_REASONS, TRAVEL_VS_TRUCK, haversineKm, taxiFare,
   SIGHT_REWARD, SIGHT_TAXI_SECONDS, sightRoute, SUPER_DAILY_KG, SUPER_FEE, SUPER_MAX_LOTS, SUPER_MAX_LOT_KG, SUPER_MIN_KG,
   SUPER_NPC_GUESTS, SUPER_NPC_KG, SUPER_NPC_RATIO, superPriceRange,
@@ -71,6 +71,10 @@ export interface AppOptions {
   paceFactor?: (harvests: number) => number;
   /** Tên tài khoản được đánh dấu là tài khoản thử nghiệm khi đăng ký hoặc đăng nhập. */
   testerUsernames?: string[];
+  /** Tua nhanh thời hạn bằng lái (mặc định 1: một "năm bằng lái" dài LICENSE_YEAR_DAYS ngày thật). Tách khỏi timeScale để máy chủ thử không làm bằng hết hạn giữa chừng. */
+  licenseTimeScale?: number;
+  /** Kiểm thử: chia thời gian làm bài thi tối thiểu. */
+  examHurry?: number;
 }
 
 class HttpError extends Error {
@@ -819,11 +823,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       // Thương lái bán tại nơi xe đang đỗ: hàng của vùng đó là giá tại vườn, hàng vùng khác là hàng phương xa.
       const market: string = u.rows[0].truck_region ?? u.rows[0].home_region_id;
       const mods = await priceMods(q, userId, sp.id, now, market, u.rows[0].home_region_id);
-      const unit = npcPrice(ref, ql, sp.regionId, market, mods);
-      await q.query('insert into npc_sales (user_id, specialty_id, kg) values ($1,$2,$3)', [userId, sp.id, kg]);
+      // Bán số lượng lớn một lúc: chợ vùng chỉ tiêu thụ được có hạn nên giá trung bình rớt dần theo lượng đã xả trong 24 giờ.
+      await q.query('select pg_advisory_xact_lock(hashtext($1))', [`cho:${market}:${sp.id}`]);
+      const soldHere = await soldAt(q, market, sp.id);
+      const bulk = bulkSellFactor(soldHere, kg), base = npcPrice(ref, ql, sp.regionId, market, mods);
+      const unit = Math.round((base * bulk) / 100) * 100;
+      await q.query('insert into npc_sales (user_id, specialty_id, kg, market_region) values ($1,$2,$3,$4)', [userId, sp.id, kg, market]);
       await addCash(q, userId, unit * kg, `ban_thuong_lai:${sp.id}`);
       const xp = await addXp(q, userId, xpFor('ban_dn', unit * kg), 'ban_dn');
-      return { unitPrice: unit, total: unit * kg, mods, npcId: npcOf('thuong_lai').id, dump: false, marketRegionId: market, ...xp };
+      return { unitPrice: unit, total: unit * kg, mods, npcId: npcOf('thuong_lai').id, dump: false, marketRegionId: market, basePrice: base, bulkFactor: Math.round(bulk * 1000) / 1000, soldHere24hKg: soldHere + kg, ...xp };
     });
   });
 
@@ -1533,7 +1541,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   // xe cộ, giấy phép lái xe, trạm dừng nghỉ và mua sắm nằm ở vehicles.ts, shopping.ts
-  const veh = registerVehicles(app, { db, requireUser, requireTester: (r) => requireTester(r), bad, addCash, energyState, setEnergy, bagOf: (q, u) => bagOf(q, u) });
+  const veh = registerVehicles(app, { db, requireUser, requireTester: (r) => requireTester(r), bad, addCash, energyState, setEnergy, bagOf: (q, u) => bagOf(q, u), licenseTimeScale: opts.licenseTimeScale ?? 1, examHurry: opts.examHurry });
   const shopping = registerShopping(app, { db, requireUser, bad, addCash, provincesOf: async (q, u) => (await whereabouts(q, u)).provinces, licensesOf: veh.licensesOf });
 
   // ---------------------------------------------------------------- chuyến xe của thương lái
@@ -1585,6 +1593,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       const u = await q.query('select cash, role, home_region_id, truck_region, fuel_l, etc from users where id = $1 for update', [userId]);
       const mine = await veh.truck(q, userId), tk = mine.tk;
       if (!mine.has) throw bad('chua_co_xe', 'Bạn chưa có xe chở hàng. Hãy mua một chiếc xe (và thi bằng lái) trước khi đi vùng khác.', 403);
+      await veh.requireValidLicense(q, userId, mine.spec);
       const from: string | null = u.rows[0].truck_region ?? u.rows[0].home_region_id;
       if (!from || !findRegion(from)) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
       if (from === to.id) throw bad('du_lieu_sai', 'Xe của bạn đang ở vùng này rồi.');
@@ -1637,12 +1646,22 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       await q.query('update users set truck_region = $2, fuel_l = $3, etc = $4, cargo_used = 0 where id = $1', [userId, t.to_region, fuelL, etc]);
       const firstVisit = await q.query('insert into visits (user_id, region_id) values ($1,$2) on conflict do nothing', [userId, t.to_region]);
       if (firstVisit.rowCount && !(await q.query('select 1 from plots where user_id = $1 and region_id = $2', [userId, t.to_region])).rows[0]) await addXp(q, userId, XP.region, 'vung_moi');
+      // Hàng tươi vừa thu mua sỉ ở nơi đi bị hao theo quãng đường; thùng lạnh hao ít hơn nhiều.
+      const rate = spoilRate(road, !!mine.spec.cold), spoiled: { specialtyId: string; kg: number }[] = [];
+      const cargo = await q.query('select specialty_id, sum(kg)::int as kg from wholesale_buys where user_id = $1 and region_id = $2 and not moved group by specialty_id', [userId, t.from_region]);
+      for (const c of cargo.rows) {
+        const have = (await q.query(`select kg from inventory where user_id = $1 and specialty_id = $2 and quality = 'A' for update`, [userId, c.specialty_id])).rows[0]?.kg ?? 0;
+        const lose = Math.min(have, Math.round(Math.min(have, c.kg) * rate));
+        if (lose > 0) { await takeInventory(q, userId, c.specialty_id, 'A', lose); spoiled.push({ specialtyId: c.specialty_id, kg: lose }); }
+      }
+      await q.query('update wholesale_buys set moved = true where user_id = $1 and not moved', [userId]);
+      const licensePoints = await veh.deductPoints(q, userId, mine.spec, fines.reduce((n, f) => n + f.points, 0));
       const ex = await veh.afterTrip(q, userId, plan, body, cash);
       // EXP chuyến xe: phần cố định cộng theo quãng đường; chạy đúng tốc độ được thưởng thêm
       const tripKm = REGIONS[t.from_region] && REGIONS[t.to_region] ? haversineKm(REGIONS[t.from_region].lat, REGIONS[t.from_region].lng, REGIONS[t.to_region].lat, REGIONS[t.to_region].lng) : 0;
       if (!fines.length) await addXp(q, userId, xpFor('chuyen_xe_sach'), 'chuyen_xe_sach');
       const xpTrip = await addXp(q, userId, xpFor('chuyen_xe', Math.round(tripKm)), 'chuyen_xe');
-      return { regionId: t.to_region, fuelUsedL: round1(used), fuelCost, rescueL: round1(rescueL), tollCost: tollFromEtc + tollCash, tollFromEtc, fuelL, etc, fineCost, fines, ...xpTrip, unit: tk.unit, vehicleKind: tk.kind, ...ex };
+      return { regionId: t.to_region, fuelUsedL: round1(used), fuelCost, rescueL: round1(rescueL), tollCost: tollFromEtc + tollCash, tollFromEtc, fuelL, etc, fineCost, fines, ...xpTrip, unit: tk.unit, vehicleKind: tk.kind, spoil: { rate, cold: !!mine.spec.cold, items: spoiled, kg: spoiled.reduce((n, x) => n + x.kg, 0) }, license: licensePoints, ...ex };
     });
   });
 
@@ -1653,11 +1672,18 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const { rows } = await q.query(`select cargo_used, cargo_day::text as d from users where id = $1${lock ? ' for update' : ''}`, [userId]);
     return rows[0].d === today ? rows[0].cargo_used : 0;
   }
-  async function wholesaleLeft(q: Q, regionId: string, specialtyId: string): Promise<number> {
+  /** Nguồn hàng sỉ hôm nay của một đặc sản tại vùng: tổng theo mùa vụ và phần cả vùng đã bán. */
+  async function wholesaleState(q: Q, regionId: string, specialtyId: string): Promise<{ supply: number; bought: number; left: number }> {
     const start = new Date(vnDay(Date.now()) * DAY_MS - VN_TZ_MS);
     const { rows } = await q.query(
       'select coalesce(sum(kg),0)::int as kg from wholesale_buys where region_id = $1 and specialty_id = $2 and created_at >= $3', [regionId, specialtyId, start]);
-    return Math.max(0, WHOLESALE_SUPPLY_KG - rows[0].kg);
+    const supply = wholesaleSupplyKg(inSeasonOf(SPECIALTIES[specialtyId].crop, Date.now()));
+    return { supply, bought: rows[0].kg, left: Math.max(0, supply - rows[0].kg) };
+  }
+  /** Lượng một đặc sản mà chợ của vùng đã nhận trong 24 giờ qua (để ép giá khi xả hàng số lượng lớn). */
+  async function soldAt(q: Q, marketRegionId: string, specialtyId: string): Promise<number> {
+    const { rows } = await q.query(`select coalesce(sum(kg),0)::int as kg from npc_sales where market_region = $1 and specialty_id = $2 and created_at > now() - interval '24 hours'`, [marketRegionId, specialtyId]);
+    return rows[0].kg;
   }
 
   /** Tới một vùng thì mua gì, bán gì, lời bao nhiêu. */
@@ -1670,15 +1696,24 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const truckAt: string | null = trader ? (u.truck_region ?? home) : null;
     const now = Date.now();
     const used = trader ? await cargoUsed(db, userId) : 0;
-    const cap = (await veh.truck(db, userId)).tk.cargoKg;
+    const mine = await veh.truck(db, userId), cap = mine.tk.cargoKg;
     const free = trader ? Math.max(0, cap - used) : 0;
+    const wantKg = Math.max(0, Math.min(1_000_000, Math.floor(Number((req.query as any)?.kg) || 0)));
+    // Chi phí một lượt chạy giữa vùng này và vùng nhà bằng chiếc xe đang lái (năng lượng theo giá dọc đường + phí đường + đăng kiểm).
+    let tripCost: { km: number; energy: number; unit: string; energyCost: number; tollCost: number; upkeepCost: number; total: number; spoilRate: number; cold: boolean } | null = null;
+    if (trader && home && home !== r.id) {
+      const pl = veh.planFor(mine.spec, r.id, home), road = roadKm(pl.km, pl.needsBoat);
+      const energyCost = Math.round(pl.energyNeeded * mine.tk.fuelPrice), tollCost = pl.tolls * pl.tollFee;
+      tripCost = { km: pl.km, energy: pl.energyNeeded, unit: pl.unit, energyCost, tollCost, upkeepCost: pl.upkeepCost, total: energyCost + tollCost + pl.upkeepCost, spoilRate: spoilRate(road, !!mine.spec.cold), cold: !!mine.spec.cold };
+    }
     const here = truckAt === r.id;
     const canBuy = trader && here;
     const whyNot = canBuy ? null : !trader ? LIMIT_REASONS.wholesale_role.reason : `Xe tải của bạn đang ở ${findRegion(truckAt ?? '')?.name ?? 'nơi khác'}. Hãy lái xe tới ${r.name} để thu mua sỉ.`;
     const buy = [];
     for (const sp of specialtiesOfRegion(r.id)) {
       const ref = await currentPrice(db, sp.id), glut = await glutOf(db, sp.id);
-      const unit = wholesalePrice(ref, glut), left = await wholesaleLeft(db, r.id, sp.id);
+      const st = await wholesaleState(db, r.id, sp.id), left = st.left;
+      const unit = wholesaleQuote(ref, glut, st.supply, st.bought, 0).firstUnit;
       // Mang về vùng nhà bán (nếu đây không phải vùng nhà); còn mua ngay tại nhà thì phải chở đi vùng khác mới có lời.
       const atHome = home === r.id || !home;
       const sellPrice = atHome ? npcPrice(ref, 'A', sp.regionId, '', { glut })
@@ -1686,6 +1721,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       buy.push({
         specialtyId: sp.id, refPrice: ref, wholesalePrice: unit, sellPrice, sellAt: atHome ? 'vung_khac' : 'nha',
         marginPerKg: sellPrice - unit, supplyLeftKg: left, maxKg: canBuy ? Math.min(left, free) : 0,
+        supplyTotalKg: st.supply, boughtTodayKg: st.bought, glut, inSeason: inSeasonOf(sp.crop, now),
+        // Bảng bậc giá để giao diện báo trước: mua tới mốc này thì giá trung bình là bao nhiêu.
+        priceTiers: [1000, 5000, 10000, 15000, 28000, left].filter((k, i, a) => k > 0 && k <= left && a.indexOf(k) === i).map((k) => ({ kg: k, ...wholesaleQuote(ref, glut, st.supply, st.bought, k) })),
+        // Chợ nơi sẽ bán (vùng nhà) đã nhận bao nhiêu trong 24 giờ: bán thêm sẽ bị ép giá theo bulkSellFactor.
+        sellMarketSold24hKg: atHome ? 0 : await soldAt(db, home!, sp.id), bulkEasyKg: BULK_EASY_KG,
+        ...(wantKg > 0 ? { quote: (() => { const k = Math.min(wantKg, left), qd = wholesaleQuote(ref, glut, st.supply, st.bought, k); return { kg: k, unit: qd.unit, total: qd.total }; })() } : {}),
       });
     }
     // Chiều ngược lại: hàng trong kho bán ở đây được bao nhiêu so với bán ở nhà.
@@ -1700,13 +1741,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
         priceHere = npcPrice(ref, i.quality, sp.regionId, r.id, await priceMods(db, userId, sp.id, now, r.id, home));
         priceHome = npcPrice(ref, i.quality, sp.regionId, home, await priceMods(db, userId, sp.id, now, home, home));
       } else priceHere = priceHome = Math.round((ref * DUMP_RATIO * QUALITY_MULT[i.quality as Quality]) / 100) * 100;
-      sell.push({ specialtyId: sp.id, quality: i.quality, kg: i.kg, priceHere, priceHome, diffPerKg: priceHere - priceHome });
+      const soldHere = trader ? await soldAt(db, r.id, sp.id) : 0;
+      sell.push({ specialtyId: sp.id, quality: i.quality, kg: i.kg, priceHere, priceHome, diffPerKg: priceHere - priceHome,
+        soldHere24hKg: soldHere, avgPriceHereAll: trader ? Math.round((priceHere * bulkSellFactor(soldHere, i.kg)) / 100) * 100 : priceHere });
     }
     sell.sort((a, b) => b.diffPerKg * b.kg - a.diffPerKg * a.kg);
     return {
       regionId: r.id, homeRegionId: home, truckRegionId: truckAt, role: u.role ?? null, here, canBuy, whyNot, canSellHere: trader && here,
       cargo: { capacityKg: trader ? cap : 0, usedKg: used, freeKg: free },
-      buy, sell, limits: { cargo: LIMIT_REASONS.wholesale_cargo, supply: LIMIT_REASONS.wholesale_supply, souvenir: LIMIT_REASONS.souvenir }, compare: TRAVEL_VS_TRUCK,
+      tripCost, buy, sell, limits: { cargo: LIMIT_REASONS.wholesale_cargo, supply: LIMIT_REASONS.wholesale_supply, souvenir: LIMIT_REASONS.souvenir }, compare: TRAVEL_VS_TRUCK,
     };
   });
 
@@ -1728,9 +1771,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       if (kg > free) throw bad('day_xe', `Thùng xe chỉ còn chở thêm được ${Math.max(0, free)} kg.`, 409);
       // Khoá theo (vùng, đặc sản) để hai thương lái không mua vượt nguồn hàng trong ngày.
       await q.query('select pg_advisory_xact_lock(hashtext($1))', [`si:${at}:${sp.id}`]);
-      const left = await wholesaleLeft(q, at, sp.id);
+      const st = await wholesaleState(q, at, sp.id), left = st.left;
       if (kg > left) throw bad('het_hang', left > 0 ? `Hôm nay vùng này chỉ còn ${left} kg để thu mua.` : 'Hôm nay vùng này đã hết hàng để thu mua.', 409);
-      const unit = wholesalePrice(await currentPrice(q, sp.id), await glutOf(q, sp.id));
+      const unit = wholesaleQuote(await currentPrice(q, sp.id), await glutOf(q, sp.id), st.supply, st.bought, kg).unit;
       if (u.cash < unit * kg) throw bad('khong_du_tien', 'Bạn không đủ tiền thu mua.', 409);
       await addCash(q, userId, -unit * kg, `thu_mua_si:${sp.id}`);
       await addInventory(q, userId, sp.id, 'A', kg);

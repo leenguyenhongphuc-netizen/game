@@ -20,6 +20,7 @@ import { EXPORT_MARKETS } from '../../shared/rules.ts';
 import type { ExportSent } from './trade.tsx';
 import type { IconName } from './icons.tsx';
 import { CropGuide, KIND_VERB, StageArt, stepIcon, stepKind } from './guide.tsx';
+import type { WorkKind } from './scene/actions.ts';
 import type { Friends, GiftInbox, Listing, LotView, Me, Planting, Prices, Village } from './api.ts';
 import { DEFAULT_STYLE } from '../../shared/custom.ts';
 import { TravelRide } from './drive/TravelRide.tsx';
@@ -227,6 +228,7 @@ function modelLot(regionId: string): LotView {
   };
 }
 
+const WORK_OF: Record<ReturnType<typeof stepKind>, WorkKind> = { dat: 'cuoc', trong: 'trong', tuoi: 'tuoi', bon: 'bon', co: 'co', tia: 'tia', gian: 'cuoc', baove: 'phun', hoa: 'tia', ong: 'phun', thu: 'thu', phoi: 'thu' };
 function burstKind(stepName: string): 'water' | 'soil' | 'leaf' | 'harvest' {
   const n = stepName.toLowerCase();
   if (/thu hoạch|thu hái|nhổ|gặt|sơ chế/.test(n)) return 'harvest';
@@ -255,6 +257,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const holdSeed = (id: string | null) => { setHeld(id); try { if (id) localStorage.setItem('vv-giong', id); else localStorage.removeItem('vv-giong'); } catch { /* bỏ qua */ } };
   const [seedInfo, setSeedInfo] = useState<string | null>(null);
   const [bulk, setBulk] = useState<{ label: string; done: number; total: number } | null>(null);
+  const bulkStop = useRef(false);
   const [hudPop, setHudPop] = useState<'wx' | 'plots' | 'quest' | null>(null);
   const gameRef = useRef<HTMLDivElement>(null), hudRef = useRef<HTMLDivElement>(null), stackRef = useRef<HTMLDivElement>(null);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -359,6 +362,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     try {
       const kind = burstKind(step.name);
       if (lot.plot.mine) {
+        const act1 = worldRef.current?.playAction(WORK_OF[stepKind(step.name)], Math.max(0.45, 0.9 * Math.pow(0.9, Math.floor((me?.user.level ?? 1) / 5))) / ((window as unknown as { __rideStep?: number }).__rideStep ? 6 : 1), (me?.user.level ?? 1) >= 10);
+        if (act1) await act1.hit;
         const r = await api('POST', `/api/plantings/${planting.id}/step`, {});
         worldRef.current?.burst(lotIndex, planting.tile, kind);
         if (r.harvested) { worldRef.current?.floatText(lotIndex, planting.tile, `+${r.harvested.kg} kg ${CROPS[sp.crop].emoji}`); setToast(`Thu hoạch ${r.harvested.kg} kg ${sp.name} (${QUALITY_NAMES[r.harvested.quality as 'A']})${r.harvested.inSeason ? ' · chính vụ +15%' : ''}`); }
@@ -403,33 +408,68 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const heldSp = seedList.find((sp) => sp.id === held) ?? null;
   const isLastStep = (p: Planting) => p.stepIndex === processOf(CROPS[SPECIALTIES[p.specialtyId].crop]).length - 1;
   const readyCare = ready.filter((p) => !isLastStep(p)), readyHarvest = ready.filter(isLastStep);
+  // Động tác làm việc: tốc độ theo cấp (cấp 1: 0,9 giây mỗi ô; mỗi 5 cấp nhanh hơn 10%, tối thiểu 0,45 giây); từ cấp 10 dùng công cụ tốt hơn
+  const lvl = me.user.level ?? 1, testFast = !!(window as unknown as { __rideStep?: number }).__rideStep;
+  const workBase = Math.max(0.45, 0.9 * Math.pow(0.9, Math.floor(lvl / 5))), workDur = workBase / (testFast ? 6 : 1);
+  const runMul = testFast ? 6 : Math.min(1.6, 1 + 0.1 * Math.floor(lvl / 5)), proTool = lvl >= 10, fasterPct = Math.round((1 - workBase / 0.9) * 100);
+  const workOf = (stepName: string): WorkKind => WORK_OF[stepKind(stepName)];
+  /** Phát động tác tại chỗ rồi mới gửi lệnh đúng lúc "chạm đất". */
+  const withAction = async <T,>(stepName: string, fn: () => Promise<T>): Promise<T> => {
+    const a = worldRef.current?.playAction(workOf(stepName), workDur, proTool);
+    if (a) await a.hit;
+    return fn();
+  };
   const plantOne = async (tile: number, sp: Specialty) => {
-    await api('POST', `/api/plots/${center!.plot.id}/plant`, { tile, specialtyId: sp.id });
-    worldRef.current?.burst(0, tile, 'soil'); worldRef.current?.floatText(0, tile, `${CROPS[sp.crop].emoji} ${processOf(CROPS[sp.crop])[0].name}`, '#fff6dc');
+    const first = processOf(CROPS[sp.crop])[0].name;
+    await withAction(first, () => api('POST', `/api/plots/${center!.plot.id}/plant`, { tile, specialtyId: sp.id }));
+    worldRef.current?.burst(0, tile, 'soil'); worldRef.current?.floatText(0, tile, `${CROPS[sp.crop].emoji} ${first}`, '#fff6dc');
   };
+  /** Chạy tới một ô rồi làm việc ở đó. Trả false nếu người chơi giành lại điều khiển hoặc bấm Dừng. */
+  const workAt = async (tile: number, stepName: string, fn: () => Promise<void>): Promise<boolean> => {
+    const w = worldRef.current; if (!w) { await fn(); return true; }
+    if (bulkStop.current || !(await w.walkToTile(0, tile, runMul))) return false;
+    const a = w.playAction(workOf(stepName), workDur, proTool);
+    if (!(await a.hit)) return false;
+    await fn(); await a.done; return true;
+  };
+  const stopBulk = () => { bulkStop.current = true; worldRef.current?.cancelQueue(); };
   const plantAll = async () => {
-    if (!heldSp || bulk) return; const tiles = [...emptyTiles]; let done = 0;
-    setBulk({ label: `Đang trồng ${heldSp.name}`, done: 0, total: tiles.length });
-    try { for (const t of tiles) { await plantOne(t, heldSp); done++; setBulk({ label: `Đang trồng ${heldSp.name}`, done, total: tiles.length }); } setToast(`🌱 Đã trồng ${done} ô ${heldSp.name}`); }
-    catch (e) { setToast(`${done > 0 ? `Đã trồng ${done}/${tiles.length} ô rồi dừng: ` : ''}${e instanceof Error ? e.message : 'Có lỗi xảy ra.'}`); }
-    setBulk(null); reload();
-  };
-  const stepAll = async (list: Planting[], label: string) => {
-    if (bulk) return; let done = 0, kg = 0; setBulk({ label, done: 0, total: list.length });
+    if (!heldSp || bulk) return; const sp = heldSp, first = processOf(CROPS[sp.crop])[0].name;
+    const tiles = worldRef.current?.tileOrder(0, [...emptyTiles]) ?? [...emptyTiles]; let done = 0, stopped = false;
+    bulkStop.current = false; const label = `Đang ${first.toLowerCase()} · ${sp.name}`; setBulk({ label, done: 0, total: tiles.length });
     try {
-      for (const pl of list) {
-        if (busy.current.has(pl.id)) continue; busy.current.add(pl.id);
-        try {
-          const sp = SPECIALTIES[pl.specialtyId], step = processOf(CROPS[sp.crop])[pl.stepIndex], kind = burstKind(step.name);
+      for (const t of tiles) {
+        const ok = await workAt(t, first, async () => { await api('POST', `/api/plots/${center!.plot.id}/plant`, { tile: t, specialtyId: sp.id }); worldRef.current?.burst(0, t, 'soil'); worldRef.current?.floatText(0, t, `${CROPS[sp.crop].emoji} ${first}`, '#fff6dc'); });
+        if (!ok) { stopped = true; break; } done++; setBulk({ label, done, total: tiles.length });
+        if (bulkStop.current) { stopped = done < tiles.length; break; }
+      }
+      setToast(stopped ? `Đã dừng: trồng được ${done}/${tiles.length} ô ${sp.name}` : `🌱 Đã trồng ${done} ô ${sp.name}`);
+    } catch (e) { setToast(`${done > 0 ? `Đã trồng ${done}/${tiles.length} ô rồi dừng: ` : ''}${e instanceof Error ? e.message : 'Có lỗi xảy ra.'}`); }
+    worldRef.current?.cancelQueue(); setBulk(null); reload();
+  };
+  const stepAll = async (list: Planting[], fallback: string) => {
+    if (bulk) return; let done = 0, kg = 0, stopped = false;
+    const order = worldRef.current?.tileOrder(0, list.map((p) => p.tile)) ?? list.map((p) => p.tile);
+    const todo = order.map((t) => list.find((p) => p.tile === t)!).filter((p) => p && !busy.current.has(p.id));
+    for (const p of todo) busy.current.add(p.id); // giữ chỗ: đi ngang qua ô khác không tự kích hoạt bước của ô đó
+    bulkStop.current = false; setBulk({ label: fallback, done: 0, total: todo.length });
+    try {
+      for (const pl of todo) {
+        const sp = SPECIALTIES[pl.specialtyId], step = processOf(CROPS[sp.crop])[pl.stepIndex], kind = burstKind(step.name), label = `Đang ${step.name.toLowerCase()}`;
+        setBulk({ label, done, total: todo.length });
+        const ok = await workAt(pl.tile, step.name, async () => {
           const r = await api('POST', `/api/plantings/${pl.id}/step`, {});
           worldRef.current?.burst(0, pl.tile, kind);
-          if (r.harvested) { kg += r.harvested.kg; worldRef.current?.floatText(0, pl.tile, `+${r.harvested.kg} kg ${CROPS[sp.crop].emoji}`); } else worldRef.current?.floatText(0, pl.tile, `${STEP_ICON[kind]} ${step.name}`, '#fff6dc');
-          blocked.current.set(pl.id, Date.now() + 4000); done++; setBulk({ label, done, total: list.length });
-        } finally { busy.current.delete(pl.id); }
+          if (r.harvested) { kg += r.harvested.kg; worldRef.current?.floatText(0, pl.tile, `+${r.harvested.kg} kg ${CROPS[sp.crop].emoji}`); } else worldRef.current?.floatText(0, pl.tile, `${STEP_ICON[kind]} ${step.name}${r.xpGained ? ` · +${r.xpGained} XP` : ''}`, '#fff6dc');
+          blocked.current.set(pl.id, Date.now() + 4000);
+        });
+        if (!ok) { stopped = true; break; } done++; setBulk({ label, done, total: todo.length });
+        if (bulkStop.current) { stopped = done < todo.length; break; }
       }
-      setToast(kg > 0 ? `🧺 Thu hoạch ${done} ô: +${kg} kg vào kho` : `✨ Đã chăm ${done} ô`);
-    } catch (e) { setToast(`${done > 0 ? `Xong ${done}/${list.length} ô rồi dừng: ` : ''}${e instanceof Error ? e.message : 'Có lỗi xảy ra.'}`); }
-    setBulk(null); reload();
+      setToast(stopped ? `Đã dừng: xong ${done}/${todo.length} ô${kg > 0 ? ` · +${kg} kg vào kho` : ''}` : kg > 0 ? `🧺 Thu hoạch ${done} ô: +${kg} kg vào kho` : `✨ Đã chăm ${done} ô`);
+    } catch (e) { setToast(`${done > 0 ? `Xong ${done}/${todo.length} ô rồi dừng: ` : ''}${e instanceof Error ? e.message : 'Có lỗi xảy ra.'}`); }
+    for (const p of todo) busy.current.delete(p.id);
+    worldRef.current?.cancelQueue(); setBulk(null); reload();
   };
   // Báo cho cảnh 3D biết phần màn bị HUD và các thanh dưới che, để nhân vật nằm giữa vùng còn trống; làm mờ phần phụ khi đang kéo cần gạt
   useEffect(() => {
@@ -493,7 +533,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       {tab === 'vuon' && !driving && !building && farming && (emptyTiles.length > 0 || ready.length >= 2 || acted || bulk || act.error) && (
         <div className="farm-bar" ref={stackRef}>
           {act.error && <p className="farm-line err" role="alert">{act.error}</p>}
-          {bulk && <p className="farm-line" role="status">{bulk.label}… {bulk.done}/{bulk.total}</p>}
+          {bulk && <p className="farm-line bulk" role="status"><span>{bulk.label} {Math.min(bulk.total, bulk.done + 1)}/{bulk.total}{fasterPct > 0 ? <small> · Cấp {lvl}: làm nhanh hơn {fasterPct}%</small> : null}</span><button type="button" onClick={stopBulk}>Dừng</button></p>}
           {!bulk && acted && (() => {
             const steps = processOf(CROPS[acted.sp.crop]), st = steps[acted.stepIndex], nxt = steps[acted.stepIndex + 1];
             return <p className="farm-line" role="status" key={acted.at}>✓ <b>{st.name}</b> · {nxt ? `tiếp theo ${nxt.name} sau ${fmtDuration(stepWaitMs(acted.sp, pace))}` : `vào kho ${acted.kg ?? ''} kg, ô đã trống`}</p>;

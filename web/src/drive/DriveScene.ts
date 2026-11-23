@@ -228,8 +228,10 @@ function tunnel(): THREE.Group {
   const g = new THREE.Group(), half = HW + 2.8, len = 56;
   // Hầm hở giữa hai sườn núi: vách hai bên, các sườn bê tông bắc ngang, nhìn từ trên vẫn thấy xe
   for (const sd of [-1, 1]) { const hill = mesh(GEO.sphere, mat(0x7fbf7a, { rough: 1 }), sd * (half + 31), 0, 0, 31.5, 22, len / 2 + 6); hill.castShadow = false; g.add(hill, mesh(GEO.sphere, mat(0x9fb1a6, { rough: 1 }), sd * (half + 20), 0, sd * 6, 18, 13, len / 2 - 4)); }
-  const tube = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 7.6, len), new THREE.MeshStandardMaterial({ color: 0x5b6470, roughness: 1, side: THREE.BackSide })); tube.position.y = 3.8; g.add(tube);
-  for (let z = -len / 2 + 7; z < len / 2 - 3; z += 7) g.add(box(0xc9cdd3, 0, 7.9, z, half * 2 + 1.2, 0.6, 0.9));
+  // Đáy ống nằm dưới mặt đường 1,2 m: trước đây đáy trùng cao độ mặt đường nên hai mặt giằng co độ sâu, mặt đường hiện sọc ngang nhoè.
+  const wallM = new THREE.MeshStandardMaterial({ color: 0x8a94a0, roughness: 1, side: THREE.BackSide }), noM = new THREE.MeshBasicMaterial({ visible: false });
+  // Chỉ giữ hai vách và vòm: hai đầu hầm và đáy để trống (trước đây hai đầu bị bịt, xe như chạy xuyên tường).
+  const tube = new THREE.Mesh(new THREE.BoxGeometry(half * 2, 9.4, len), [wallM, wallM, wallM, noM, noM, noM]); tube.position.y = 3.5; g.add(tube);
   for (const z of [-len / 2 - 0.2, len / 2 + 0.2]) { g.add(box(0xd9dde2, -half - 0.6, 4, z, 1.2, 8, 1), box(0xd9dde2, half + 0.6, 4, z, 1.2, 8, 1), box(0xd9dde2, 0, 8.2, z, half * 2 + 2.4, 1.2, 1)); }
   for (let i = 0; i < 7; i++) for (const x of [-half + 0.1, half - 0.1]) g.add(box(0xfff3b0, x, 4.6, -24 + i * 8, 0.1, 0.3, 2.4, { emissive: 0xffe08a }));
   return g;
@@ -269,7 +271,7 @@ export class DriveScene {
   private world = new THREE.Group();
   private camera = new THREE.PerspectiveCamera(46, 1, 0.3, 420);
   private clock = new THREE.Clock();
-  private sun: THREE.DirectionalLight; private hemi!: THREE.HemisphereLight; private sky!: THREE.Texture; private dark = 0; private darkCol = new THREE.Color(0x232831); private fogCol = new THREE.Color(0xdff3fb);
+  private sun: THREE.DirectionalLight; private hemi!: THREE.HemisphereLight; private sky!: THREE.Texture; private dark = 0; private darkCol = new THREE.Color(0x4a5360); private tunK = 0; private fogCol = new THREE.Color(0xdff3fb);
   private truck: THREE.Group; private boat: THREE.Group; private wheels: THREE.Object3D[] = [];
   private ground: THREE.Mesh; private sea: THREE.Mesh; private mountains = new THREE.Group();
   private roadA: THREE.Mesh; private roadB: THREE.Mesh; private lineL: THREE.Mesh; private lineR: THREE.Mesh;
@@ -987,7 +989,7 @@ export class DriveScene {
     for (const p of this.props) { const q = p.s > 1e8 ? this.endS + 5 : p.s, vis = p.mode === this.mode && q > s - 60 && q < s + AHEAD + 70; p.o.visible = vis; if (vis) { this.near(p.o, q - s); this.put(p.o, q, this.center(q) + p.x, p.o.position.y); } }
     // ---- trong hầm: tối dần, chỉ còn đèn vách
     let inT = 0; if (!boat) for (const e of this.feats) if (e.kind === 'tunnel' && Math.abs(s - e.s) < 27) inT = 1;
-    if (inT !== this.dark || this.dark > 0) { this.dark += (inT - this.dark) * Math.min(1, dt * 5); if (Math.abs(inT - this.dark) < 0.01) this.dark = inT; const f = this.scene.fog as THREE.Fog; this.hemi.intensity = lerp(1.35, 0.5, this.dark); this.sun.intensity = lerp(2.1, 0.1, this.dark); f.color.copy(this.fogCol).lerp(this.darkCol, this.dark); f.near = lerp(80, 22, this.dark); f.far = lerp(AHEAD + 20, 110, this.dark); this.scene.background = this.dark > 0.5 ? this.darkCol : this.sky; }
+    if (inT !== this.dark || this.dark > 0) { this.dark += (inT - this.dark) * Math.min(1, dt * 5); if (Math.abs(inT - this.dark) < 0.01) this.dark = inT; const f = this.scene.fog as THREE.Fog; this.hemi.intensity = lerp(1.35, 1.05, this.dark); this.sun.intensity = lerp(2.1, 0.55, this.dark); f.color.copy(this.fogCol).lerp(this.darkCol, this.dark); f.near = lerp(80, 45, this.dark); f.far = lerp(AHEAD + 20, 150, this.dark); this.scene.background = this.dark > 0.5 ? this.darkCol : this.sky; }
     // ---- hạt bụi, máy quay
     for (const sp of this.sparks) { if (sp.life <= 0) continue; sp.life -= dt; sp.v.y -= 12 * dt; sp.m.position.addScaledVector(sp.v, dt); sp.m.position.z += this.speed * dt; sp.m.scale.setScalar(Math.max(0.01, 0.16 * sp.life)); if (sp.life <= 0) sp.m.visible = false; }
     this.shake = Math.max(0, this.shake - dt);
@@ -1002,9 +1004,14 @@ export class DriveScene {
       this.camera.rotation.set(boat ? -0.3 : -0.045, yaw - this.pv * 0.006, veh.rotation.z * 0.5, 'YXZ');
       this.cab.wheel.rotation.z = -this.pv * 0.2; this.cab.needle.rotation.z = lerp(2.2, -2.2, clamp(kmh / 160, 0, 1));
     } else {
-      this.camera.position.set(this.px * 0.86 + jx, (boat ? (portrait ? 17 : 9.5) : portrait ? 10.5 : 7.2) + jy, boat ? (portrait ? 25 : 20) : (portrait ? 14 : 13) + this.vehBack);
+      // Xe càng dài máy quay càng lùi và nâng để vẫn thấy đường phía trước; khi chui hầm thì hạ xuống dưới vòm (vòm cao 8,2 m) thay vì nhìn từ trên nóc hầm.
+      const vb = this.vehBack, camZ = (portrait ? 14 : 13) + vb; let tk = 0;
+      if (!boat) for (const e of this.feats) if (e.kind === 'tunnel') tk = Math.max(tk, clamp(1 - (Math.abs(s - camZ * 0.5 - e.s) - 36) / 16, 0, 1));
+      this.tunK += (tk - this.tunK) * (1 - Math.exp(-dt * 4)); const tK = this.tunK * this.tunK * (3 - 2 * this.tunK);
+      const camY = lerp((portrait ? 10.5 : 7.2) + vb * 0.42, 5.9, tK), camBack = lerp(camZ, (portrait ? 10.5 : 10) + vb, tK);
+      this.camera.position.set(this.px * 0.86 + jx, (boat ? (portrait ? 17 : 9.5) : camY) + jy, boat ? (portrait ? 25 : 20) : camBack);
       trace({ t: performance.now(), dt, x: this.px, z: this.s, cx: this.camera.position.x, cy: this.camera.position.y, cz: this.s, yaw: 0, level: this.quality?.level ?? 0, ratio: this.quality?.pixelRatio ?? 1 });
-      this.camera.lookAt(this.px * 0.92, boat ? (portrait ? -4 : -2) : portrait ? -2.4 : -1.6, boat ? -22 : portrait ? -15 : -15);
+      this.camera.lookAt(this.px * 0.92, boat ? (portrait ? -4 : -2) : lerp(portrait ? -2.4 : -1.6, 2.2, tK), boat ? -22 : portrait ? -15 - vb * 0.6 : -15 - vb * 0.6);
     }
     this.decor.rotation.y = this.phi * 0.6;
     this.renderer.render(this.scene, this.camera);
