@@ -37,6 +37,7 @@ import { FieldsPanel } from './fields.tsx';
 import { ContractsPanel } from './contracts.tsx';
 import { PropertiesPanel } from './properties.tsx';
 import { ExportDeskDialog } from './exportDesk.tsx';
+import { FieldHud } from './fieldHud.tsx';
 import type { FieldsData, HeliTourData } from './fields.tsx';
 import { HeliTour } from './drive/HeliTour.tsx';
 import { ShoppingPanel, useOwnedGoods } from './shopping.tsx';
@@ -685,6 +686,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       }} />}
       {sightWalk && shopOpen && <ShopSheet sightId={sightWalk.sight.id} shopId={shopOpen} onClose={() => setShopOpen(null)} onChanged={() => { void refresh(); }} />}
       {desk && <ExportDeskDialog onClose={() => setDesk(false)} onContracts={() => { setDesk(false); setKhoTab('hopdong'); setTab('kho'); }} onExport={() => { setDesk(false); setKhoTab('xuat'); setTab('kho'); }} />}
+      {me?.user.role === 'nong_dan' && !tour && <FieldHud getWorld={() => worldRef.current} />}
       {heli && <HeliTour tour={heli} onDone={() => setHeli(null)} />}
       {importRide && <ImportRide order={importRide} onDone={() => { setImportRide(null); setKhoTab('xuong'); setTab('kho'); }} />}
       {cert !== null && <LandCertificate plotId={cert} onClose={() => setCert(null)} />}
@@ -713,7 +715,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                 {khoTab === 'tui' && <BagPanel me={me} refresh={reload} />}
                 {khoTab === 'dunghop' && <FusionPanel me={me} refresh={reload} />}
                 {khoTab === 'hopdong' && <ContractsPanel me={me} refresh={reload} />}
-                {khoTab === 'ruong' && <FieldsPanel me={me} refresh={reload} onTour={(t) => { setTab('vuon'); setHeli(t); }} onFields={(d: FieldsData) => (worldRef.current as unknown as { setFields?: (f: FieldsData['fields']) => void } | null)?.setFields?.(d.fields)} />}
+                {khoTab === 'ruong' && <FieldsPanel me={me} refresh={reload} onShow={() => setTab('vuon')} onTour={(t) => { setTab('vuon'); setHeli(t); }} onFields={(d: FieldsData) => (worldRef.current as unknown as { setFields?: (f: FieldsData['fields']) => void } | null)?.setFields?.(d.fields)} />}
                 {khoTab === 'don' && <OrdersPanel me={me} onChanged={reload} />}
                 {khoTab === 'xuat' && <ExportPanel me={me} refresh={reload} onSent={(x) => { setTab('vuon'); setExportRide(x); }} />}
                 {khoTab === 'mua' && <TradePanel me={me} regionId={me.user.homeRegionId!} refresh={reload} openStock={() => setKhoTab('kho')} />}
