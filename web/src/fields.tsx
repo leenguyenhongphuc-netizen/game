@@ -22,12 +22,14 @@ export interface FieldRow {
   step: { name: string; kind: WorkKind; work: string; methods: WorkMethod[]; harvest: boolean } | null;
   readyAt: number | null; ready: boolean; lateCount: number; expectKg: number; progress: number; color: string;
   job: FieldJob | null; pricePaid: number; resale: number;
+  /** Mua đứt (sổ) hay thuê đất của Nhà nước trả tiền hằng năm. */ tenure?: 'so_do' | 'thue'; leaseUntil?: number | null; leaseRent?: number; leaseExpired?: boolean;
   phase?: FieldPhase; certNos?: string[]; drive?: { done: number; tiles: number[] } | null;
 }
 export interface FarmMachineRow { kind: FarmMachineKind; name: string; emoji: string; price: number; minLevel: number; works: WorkKind[]; tilesPerHour: number; costPerTile: number; note: string; owned: boolean; busyUntil: number | null; canBuy: boolean; why: string | null }
 export interface FieldsData {
   level: number; role: string; cash: number; canOwn: boolean; whyNot: string | null; usedBlocks: number; maxBlocks: number; maxPerField: number; blockTiles: number;
-  regions: { id: string; name: string; province: string; blockPrice: number; home: boolean }[];
+  regions: { id: string; name: string; province: string; blockPrice: number; leaseRent?: number; home: boolean }[];
+  lease?: { max: number; used: number; yearMs: number; ratePct: number };
   fields: FieldRow[]; settled: { fieldId: number; harvested?: { kg: number; quality: string } }[];
   machines: { kind: FarmMachineKind; busyUntil: number | null }[]; heli: { own: boolean; fee: number; minLevel: number };
 }
@@ -73,6 +75,7 @@ export function FieldsPanel({ me: _me, refresh, onTour, onFields, onShow }: { me
   const [tab, setTab] = useState<'ruong' | 'may' | 'mua'>('ruong');
   const [buyRegion, setBuyRegion] = useState<string>('');
   const [buyBlocks, setBuyBlocks] = useState(1);
+  const [tenure, setTenure] = useState<'so_do' | 'thue'>('so_do');
   const [note, setNote] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
@@ -93,7 +96,8 @@ export function FieldsPanel({ me: _me, refresh, onTour, onFields, onShow }: { me
   if (!data) return <div className="fields"><p className="veh-tip">Đang tải nông trại…</p></div>;
   if (!data.canOwn) return <div className="fields"><p className="veh-tip">{data.whyNot ?? 'Cánh đồng lớn dành cho nhà nông từ cấp 5.'}</p></div>;
   const region = data.regions.find((r) => r.id === buyRegion);
-  const room = data.maxBlocks - data.usedBlocks;
+  const leaseRoom = data.lease ? Math.max(0, data.lease.max - data.lease.used) : 0;
+  const room = Math.min(data.maxBlocks - data.usedBlocks, tenure === 'thue' ? leaseRoom : Infinity);
 
   return (
     <div className="fields">
@@ -153,13 +157,20 @@ export function FieldsPanel({ me: _me, refresh, onTour, onFields, onShow }: { me
               {data.regions.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.province}) · {fmtMoney(r.blockPrice)}/khối{r.home ? ' · vùng nhà' : ''}</option>)}
             </select>
           </label>
+          {data.lease && data.lease.max > 0 && (
+            <div className="veh-filter" role="tablist" aria-label="Hình thức">
+              <button aria-pressed={tenure === 'so_do'} onClick={() => setTenure('so_do')}>📜 Mua đứt (có sổ)</button>
+              <button aria-pressed={tenure === 'thue'} onClick={() => { setTenure('thue'); setBuyBlocks(1); }}>🤝 Thuê đất Nhà nước</button>
+            </div>
+          )}
+          {tenure === 'thue' && <p className="veh-tip">Thuê trả tiền hằng năm: {data.lease?.ratePct ?? 1}% giá đất mỗi năm (mức UBND tỉnh quy định cho đất sản xuất nông nghiệp). Không có sổ, không bán lại được; hết hạn không gia hạn thì đất trả về quỹ. Cấp {data.level} được thuê tối đa {data.lease?.max ?? 0} khối, đang thuê {data.lease?.used ?? 0}.</p>}
           <label className="field-label">Số khối (100 ô mỗi khối): <b>{buyBlocks}</b>
             <input type="range" min={1} max={Math.max(1, Math.min(data.maxPerField, room))} value={buyBlocks} onChange={(e) => setBuyBlocks(Number(e.target.value))} />
           </label>
-          <p className="veh-tip">{num(buyBlocks * data.blockTiles)} ô ≈ {(buyBlocks * 0.25).toLocaleString('vi-VN')} ha · {region ? fmtMoney(region.blockPrice * buyBlocks) : '—'} (chưa gồm lệ phí sổ) · còn được mua {room} khối ở cấp {data.level}.</p>
+          <p className="veh-tip">{num(buyBlocks * data.blockTiles)} ô ≈ {(buyBlocks * 0.25).toLocaleString('vi-VN')} ha · {region ? (tenure === 'thue' ? `${fmtMoney((region.leaseRent ?? 0) * buyBlocks)} tiền thuê năm đầu` : `${fmtMoney(region.blockPrice * buyBlocks)} (chưa gồm lệ phí sổ)`) : '—'} · còn được {tenure === 'thue' ? 'thuê' : 'mua'} {Math.max(0, room)} khối ở cấp {data.level}.</p>
           <button className="go wide" disabled={act.busy || room < 1 || !region}
-            onClick={() => act.run(async () => { const r = await api<{ fieldId: number }>('POST', '/api/fields/buy', { regionId: buyRegion, blocks: buyBlocks }); setSel(r.fieldId); setTab('ruong'); })}>
-            Mua {buyBlocks} khối ruộng
+            onClick={() => act.run(async () => { const r = await api<{ fieldId: number }>('POST', '/api/fields/buy', { regionId: buyRegion, blocks: buyBlocks, tenure }); setSel(r.fieldId); setTab('ruong'); })}>
+            {tenure === 'thue' ? `Thuê ${buyBlocks} khối ruộng` : `Mua ${buyBlocks} khối ruộng`}
           </button>
         </section>
       )}
@@ -176,17 +187,23 @@ function FieldCard({ f, owned, busy, run, onShow }: { f: FieldRow; owned: FarmMa
       <ul>{f.certNos.map((c, i) => <li key={c || i}>Khối {i + 1}: <b>{c}</b></li>)}</ul></details>
   ) : null;
   const goBtn = <button className="field-go" onClick={goField}>🚶 Ra đồng</button>;
+  const leaseLine = f.tenure === 'thue' ? (
+    <div className="veh-acts">
+      <small className={f.leaseExpired ? 'err' : ''}>🤝 Đất thuê · {f.leaseExpired ? 'hợp đồng đã hết hạn, thu hoạch xong sẽ trả đất' : `hết hạn sau ${until(f.leaseUntil ?? null)}`} · {fmtMoney(f.leaseRent ?? 0)}/năm</small>
+      <button disabled={busy} onClick={() => run(() => api('POST', `/api/fields/${f.id}/renew`, {}))}>Gia hạn 1 năm</button>
+    </div>
+  ) : null;
   if (!f.specialtyId) {
     return (
       <div className="veh-card">
         <div className="field-top"><strong>Cánh đồng trống · {num(f.tiles)} ô · {f.regionName}</strong>{goBtn}</div>
-        {certs}
+        {certs}{leaseLine}
         <select value={pick || options[0]?.id} onChange={(e) => setPick(e.target.value)}>
           {options.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <div className="veh-acts">
           <button className="go" disabled={busy} onClick={() => run(() => api('POST', `/api/fields/${f.id}/plant`, { specialtyId: pick || options[0]?.id }))}>Gieo trồng cả cánh đồng</button>
-          <button disabled={busy} onClick={() => run(() => api('POST', `/api/fields/${f.id}/sell`, {}))}>Bán lại {fmtMoney(f.resale)}</button>
+          <button disabled={busy} onClick={() => run(() => api('POST', `/api/fields/${f.id}/sell`, {}))}>{f.tenure === 'thue' ? 'Trả lại đất thuê' : `Bán lại ${fmtMoney(f.resale)}`}</button>
         </div>
       </div>
     );
@@ -198,7 +215,7 @@ function FieldCard({ f, owned, busy, run, onShow }: { f: FieldRow; owned: FarmMa
         <strong>{f.name} · {num(f.tiles)} ô</strong>
         <small>Bước {f.stepIndex + 1}/{f.stepCount}: <b>{st.name}</b> ({st.work}) · dự kiến {kg(f.expectKg)}{f.lateCount ? ` · trễ ${f.lateCount} lần` : ''}</small>
       </div>{goBtn}</div>
-      {certs}
+      {certs}{leaseLine}
       <div className="field-bar"><i style={{ width: `${Math.round(f.progress * 100)}%`, background: f.color }} /></div>
       {f.job ? (
         <p className="veh-cmp">{METHOD_ICON[f.job.method]} Đang {METHOD_NAMES[f.job.method].toLowerCase()}: xong sau {until(f.job.endsAt)}.</p>

@@ -25,6 +25,11 @@ alter table land_lots add column if not exists parcel_code text;
 alter table land_lots add column if not exists sheet_no int;
 alter table land_lots add column if not exists parcel_no int;
 alter table land_lots add column if not exists state text not null default 'co_chu';
+alter table land_lots add column if not exists tenure text not null default 'so_do';
+alter table land_lots add column if not exists lease_until timestamptz;
+alter table land_lots add column if not exists lease_no text;
+alter table fields add column if not exists lease_until timestamptz;
+alter table fields add column if not exists lease_rent bigint not null default 0;
 create unique index if not exists land_lots_parcel_uq on land_lots (parcel_code);
 create table if not exists land_certs (
   serial text primary key,
@@ -131,8 +136,8 @@ export async function issueLot(q: Q, userId: number, province: string, use: Land
   let id: number;
   if (old) {
     id = Number(old.id);
-    await q.query(`update land_lots set owner_id = $2, price_paid = $3, field_id = $4, property_id = null, listing_price = null, listed_at = null, acquired_at = now(), state = 'co_chu' where id = $1`,
-      [id, userId, Math.round(price), fieldId]);
+    await q.query(`update land_lots set owner_id = $2, price_paid = $3, field_id = $4, property_id = null, listing_price = null, listed_at = null, acquired_at = now(), state = 'co_chu',
+      tenure = 'so_do', lease_until = null, lease_no = null where id = $1`, [id, userId, Math.round(price), fieldId]);
   } else {
     const ins = await q.query('insert into land_lots (province, use, owner_id, area_m2, price_paid, field_id) values ($1,$2,$3,$4,$5,$6) returning id',
       [province, use, userId, LAND_USES[use].lotM2, Math.round(price), fieldId]);
@@ -144,14 +149,41 @@ export async function issueLot(q: Q, userId: number, province: string, use: Land
   await appendLedger(q, id, 'cap_lan_dau', { parcel: lot.parcel_code, serial, owner: userId, use, area: Number(lot.area_m2), price: Math.round(price), province });
   return id;
 }
+/**
+ * Nhà nước cho thuê một thửa đất nông nghiệp trả tiền hằng năm (gắn với một cánh đồng). Người thuê không có giấy chứng nhận,
+ * chỉ có số hợp đồng thuê; thửa không chuyển nhượng được. Trả về id thửa.
+ */
+export async function leaseLot(q: Q, userId: number, province: string, rentPerYear: number, fieldId: number, until: Date): Promise<number> {
+  const old = (await q.query(`select id from land_lots where province = $1 and use = 'nong_nghiep' and state = 'nha_nuoc' order by id limit 1 for update skip locked`, [province])).rows[0];
+  let id: number;
+  if (old) id = Number(old.id);
+  else {
+    id = Number((await q.query(`insert into land_lots (province, use, owner_id, area_m2, price_paid, field_id) values ($1,'nong_nghiep',$2,$3,0,$4) returning id`,
+      [province, userId, LAND_USES.nong_nghiep.lotM2, fieldId])).rows[0].id);
+    await assignParcel(q, id, province);
+  }
+  const code = (await q.query('select parcel_code from land_lots where id = $1', [id])).rows[0].parcel_code as string;
+  const leaseNo = `HĐT-${code}-${String(id).padStart(5, '0')}`;
+  await q.query(`update land_lots set owner_id = $2, price_paid = 0, field_id = $3, property_id = null, listing_price = null, listed_at = null, acquired_at = now(), state = 'co_chu',
+    tenure = 'thue', lease_until = $4, lease_no = $5 where id = $1`, [id, userId, fieldId, until, leaseNo]);
+  await appendLedger(q, id, 'cho_thue', { parcel: code, lease: leaseNo, to: userId, rent: Math.round(rentPerYear), until: until.getTime(), province });
+  return id;
+}
+/** Gia hạn thuê các thửa của một cánh đồng. */
+export async function renewFieldLease(q: Q, fieldId: number, until: Date, rentPerYear: number): Promise<void> {
+  const lots = (await q.query(`update land_lots set lease_until = $2 where field_id = $1 and tenure = 'thue' and state = 'co_chu' returning id, parcel_code, lease_no, owner_id`, [fieldId, until])).rows;
+  for (const l of lots) await appendLedger(q, Number(l.id), 'gia_han_thue', { parcel: l.parcel_code, lease: l.lease_no, to: Number(l.owner_id), rent: Math.round(rentPerYear), until: until.getTime() });
+}
 /** Bán ruộng cho Nhà nước: các thửa của cánh đồng về quỹ đất, sổ bị thu hồi, ghi sổ biến động. */
 export async function surrenderFieldLots(q: Q, fieldId: number): Promise<number> {
-  const lots = (await q.query(`select id, owner_id, parcel_code from land_lots where field_id = $1 and state = 'co_chu' for update`, [fieldId])).rows;
+  const lots = (await q.query(`select id, owner_id, parcel_code, tenure, lease_no from land_lots where field_id = $1 and state = 'co_chu' for update`, [fieldId])).rows;
   for (const l of lots) {
     await q.query(`update land_deals set status = 'da_huy', cancelled_at = now(), cancel_reason = 'tra_dat' where lot_id = $1 and status = any($2::text[])`, [l.id, ACTIVE_DEAL]);
     const serial = await revokeCert(q, Number(l.id), 'tra_lai_nha_nuoc');
-    await q.query(`update land_lots set owner_id = null, field_id = null, listing_price = null, listed_at = null, state = 'nha_nuoc' where id = $1`, [l.id]);
-    await appendLedger(q, Number(l.id), 'thu_hoi', { parcel: l.parcel_code, serial, from: l.owner_id == null ? null : Number(l.owner_id) });
+    await q.query(`update land_lots set owner_id = null, field_id = null, listing_price = null, listed_at = null, state = 'nha_nuoc', tenure = 'so_do', lease_until = null, lease_no = null where id = $1`, [l.id]);
+    const from = l.owner_id == null ? null : Number(l.owner_id);
+    if (l.tenure === 'thue') await appendLedger(q, Number(l.id), 'het_thue', { parcel: l.parcel_code, lease: l.lease_no, from });
+    else await appendLedger(q, Number(l.id), 'thu_hoi', { parcel: l.parcel_code, serial, from });
   }
   return lots.length;
 }
@@ -220,6 +252,7 @@ export function registerLand(app: FastifyInstance, d: LandDeps) {
     fieldId: r.field_id == null ? null : Number(r.field_id), listingPrice: r.listing_price == null ? null : Number(r.listing_price),
     statePrice: lotPrice(r.province, r.use as LandUse), acquiredAt: new Date(r.acquired_at).getTime(),
     used: r.property_id != null || r.field_id != null, inDeal: !!r.in_deal,
+    tenure: (r.tenure ?? 'so_do') as 'so_do' | 'thue', leaseNo: r.lease_no ?? null, leaseUntil: ms(r.lease_until),
   });
   const LOT_SELECT = `select l.*, u.display_name, c.serial,
     exists(select 1 from land_deals x where x.lot_id = l.id and x.status in ('hen_cong_chung','da_cong_chung','dang_xu_ly','cho_nop_thue','cho_tra_ket_qua')) as in_deal
@@ -324,6 +357,7 @@ export function registerLand(app: FastifyInstance, d: LandDeps) {
     return db.tx(async (q) => {
       const r = (await q.query('select * from land_lots where id = $1 for update', [id])).rows[0];
       if (!r || Number(r.owner_id) !== userId || r.state !== 'co_chu') throw bad('khong_tim_thay', 'Không tìm thấy thửa đất của bạn.', 404);
+      if (r.tenure === 'thue') throw bad('dat_thue', 'Đất thuê của Nhà nước không chuyển nhượng được.', 409);
       if (r.property_id != null || r.field_id != null) throw bad('dang_dung', 'Thửa đang có công trình hoặc ruộng, chưa bán được.', 409);
       const live = (await q.query(`select 1 from land_deals where lot_id = $1 and status = any($2::text[]) and status <> 'de_nghi'`, [id, ACTIVE_DEAL])).rows.length;
       if (live) throw bad('dang_giao_dich', 'Thửa đang làm thủ tục chuyển nhượng.', 409);
@@ -522,7 +556,8 @@ export function registerLand(app: FastifyInstance, d: LandDeps) {
       const name = (id: unknown) => (id == null ? 'Nhà nước' : names[Number(id)] ?? `#${id}`);
       return { id: Number(r.id), kind: r.kind as LedgerKind, kindName: LEDGER_NAMES[r.kind as LedgerKind] ?? r.kind, at: Number(r.at), hash: r.hash, prev: r.prev_hash, ok: okSelf && okPrev,
         serial: r.data.serial ?? null, oldSerial: r.data.oldSerial ?? null, price: r.data.price ?? null,
-        from: r.kind === 'cap_lan_dau' ? 'Nhà nước' : name(r.data.from), to: r.kind === 'thu_hoi' ? 'Nhà nước' : name(r.data.to ?? r.data.owner) };
+        from: r.kind === 'cap_lan_dau' || r.kind === 'cho_thue' || r.kind === 'gia_han_thue' ? 'Nhà nước' : name(r.data.from), to: r.kind === 'thu_hoi' || r.kind === 'het_thue' ? 'Nhà nước' : name(r.data.to ?? r.data.owner),
+        lease: r.data.lease ?? null, until: r.data.until ?? null };
     });
     return {
       lot: lotOut(lot, userId), owner: lot.owner_id == null ? null : lot.display_name,

@@ -69,3 +69,5 @@
 .ledger li { overflow-wrap: anywhere; }
 .ledger li.bad { color: #b3261e; }
 .ledger code { font-size: 0.78em; color: #5b6b7c; }
+.admin-ring button { width: auto; flex: 0 0 auto; }
+.admin-ring .primary { padding-inline: 18px; }

@@ -13,7 +13,8 @@ import { BUILDINGS, CERT_FEE, PROVINCE_LAND, buildingCost, landPriceM2, lotPrice
 import { REF_PRICES, fuelPriceNow, householdPowerBill, registrationFee, transferTax } from '../../shared/realPrices.ts';
 import { NOTARY_DRAFT_FEE, TAX_EPOCH, notaryFee, quarterIndex, quarterStart, quarterTax } from '../../shared/admin.ts';
 import { ENERGY_PRICE } from '../../shared/vehicles.ts';
-import { fieldBlockPrice } from '../../shared/farm.ts';
+import { fieldBlockPrice, fieldLeaseMax, fieldLeaseRent } from '../../shared/farm.ts';
+import { SPECIALTIES } from '../../shared/catalog.ts';
 
 const url = process.env.TEST_LAND_DATABASE_URL ?? process.env.TEST_ECON_DATABASE_URL ?? 'postgres://vuon:vuon@localhost:5432/vuon_test_econ';
 let db: Db, app: FastifyInstance;
@@ -274,3 +275,49 @@ test('phí công chứng theo bậc giá trị; thuế hộ kinh doanh theo quý
   assert.equal((await call('POST', '/api/admin/tax/file', { province: prov, quarter: cur.quarter }, tl)).body.error, 'chua_het_ky');
 });
 
+
+test('thuê đất nông nghiệp trả tiền hằng năm: hạn mức theo cấp, hợp đồng thuê (không sổ), không chuyển nhượng', async () => {
+  const nd = await signup('nd_thue', 'nong_dan', 10, 'dt_caibe', 50_000_000);
+  assert.equal(fieldLeaseMax(10), 2);
+  const info = (await call('GET', '/api/fields', undefined, nd)).body;
+  assert.deepEqual([info.lease.max, info.lease.used], [2, 0]);
+  assert.equal(fieldLeaseRent('dt_caibe', 1), Math.round(fieldBlockPrice('dt_caibe') * 0.01 / 1000) * 1000, 'tiền thuê một năm = 1% giá đất');
+  assert.equal((await call('POST', '/api/fields/buy', { regionId: 'dt_caibe', blocks: 3, tenure: 'thue' }, nd)).body.error, 'vuot_han_muc_thue');
+  const before = await cashOf('nd_thue');
+  const r = await call('POST', '/api/fields/buy', { regionId: 'dt_caibe', blocks: 2, tenure: 'thue' }, nd);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(await cashOf('nd_thue'), before - fieldLeaseRent('dt_caibe', 2));
+  assert.equal((await call('GET', '/api/fields', undefined, nd)).body.lease.used, 2);
+  const lots = (await call('GET', '/api/land', undefined, nd)).body.mine.filter((l: any) => l.fieldId === Number(r.body.fieldId));
+  assert.equal(lots.length, 2);
+  assert.ok(lots.every((l: any) => l.tenure === 'thue' && l.serial === null && /^HĐT-/.test(l.leaseNo)), 'hợp đồng thuê, không có giấy chứng nhận');
+  // không chuyển nhượng được (gỡ ruộng khỏi thửa để thử rao bán)
+  await db.query('update land_lots set field_id = null where id = $1', [lots[0].id]);
+  assert.equal((await call('POST', `/api/land/${lots[0].id}/list`, { price: lotPrice('Đồng Tháp', 'nong_nghiep') }, nd)).body.error, 'dat_thue');
+  await db.query('update land_lots set field_id = $2 where id = $1', [lots[0].id, r.body.fieldId]);
+  const look = (await call('GET', `/api/land/lookup?q=${q(lots[0].parcelCode)}`, undefined, nd)).body;
+  assert.ok(look.history.some((h: any) => h.kind === 'cho_thue'));
+  // trả lại sớm: không hoàn tiền thuê, đất về quỹ
+  const cash = await cashOf('nd_thue');
+  assert.equal((await call('POST', `/api/fields/${r.body.fieldId}/sell`, {}, nd)).status, 200);
+  assert.equal(await cashOf('nd_thue'), cash);
+  assert.equal((await db.query(`select count(*)::int as n from land_lots where id = any($1::bigint[]) and state = 'nha_nuoc'`, [lots.map((l: any) => l.id)])).rows[0].n, 2);
+});
+
+test('ruộng thuê: gia hạn; hết hạn mà ruộng trống thì trả đất; hết hạn thì không gieo vụ mới', async () => {
+  const nd = await signup('nd_thue2', 'nong_dan', 10, 'dt_caibe', 50_000_000);
+  const r = await call('POST', '/api/fields/buy', { regionId: 'dt_caibe', blocks: 1, tenure: 'thue' }, nd);
+  const fid = Number(r.body.fieldId);
+  const ren = await call('POST', `/api/fields/${fid}/renew`, {}, nd);
+  assert.equal(ren.status, 200, JSON.stringify(ren.body));
+  assert.ok(ren.body.leaseUntil > r.body.leaseUntil);
+  await db.query(`update fields set lease_until = now() - interval '1 second' where id = $1`, [fid]);
+  assert.equal((await call('GET', '/api/fields', undefined, nd)).body.fields.some((f: any) => f.id === fid), false, 'ruộng trống hết hạn: trả đất');
+  const r2 = await call('POST', '/api/fields/buy', { regionId: 'dt_caibe', blocks: 1, tenure: 'thue' }, nd);
+  const f2 = Number(r2.body.fieldId);
+  // ghi hạn đã qua nhưng giữ ruộng (giả lập đang có cây bằng cách gọi gieo trực tiếp sau khi lùi hạn): phải báo hết hạn
+  await db.query(`update fields set lease_until = now() + interval '50 milliseconds' where id = $1`, [f2]);
+  await new Promise((res) => setTimeout(res, 120));
+  const sid = Object.values(SPECIALTIES).find((s) => s.regionId === 'dt_caibe')!.id;
+  assert.equal((await call('POST', `/api/fields/${f2}/plant`, { specialtyId: sid }, nd)).body.error, 'het_han_thue');
+});

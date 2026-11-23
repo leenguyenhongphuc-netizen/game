@@ -75,9 +75,10 @@ export function parcelOf(seq: number): { sheet: number; parcel: number } { retur
 export const parcelCode = (provCode: string, sheet: number, parcel: number): string => `${provCode}.${String(sheet).padStart(4, '0')}.${String(parcel).padStart(4, '0')}`;
 
 // ---------------------------------------------------------------- sổ biến động (chuỗi băm)
-export type LedgerKind = 'cap_lan_dau' | 'chuyen_nhuong' | 'thu_hoi' | 'cap_doi';
+export type LedgerKind = 'cap_lan_dau' | 'chuyen_nhuong' | 'thu_hoi' | 'cap_doi' | 'cho_thue' | 'gia_han_thue' | 'het_thue';
 export const LEDGER_NAMES: Record<LedgerKind, string> = {
   cap_lan_dau: 'Cấp giấy chứng nhận lần đầu', chuyen_nhuong: 'Đăng ký biến động: chuyển nhượng', thu_hoi: 'Trả lại đất cho Nhà nước, thu hồi giấy chứng nhận', cap_doi: 'Cấp đổi giấy chứng nhận',
+  cho_thue: 'Nhà nước cho thuê đất trả tiền hằng năm', gia_han_thue: 'Gia hạn hợp đồng thuê đất', het_thue: 'Hết hạn hoặc trả lại đất thuê',
 };
 /** Chuỗi chuẩn để băm một bản ghi: thứ tự khoá cố định, không phụ thuộc cách lưu JSON. */
 export function ledgerPayload(r: { prev: string; lotId: number; kind: string; at: number; data: Record<string, unknown> }): string {

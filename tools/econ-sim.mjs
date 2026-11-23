@@ -24,6 +24,8 @@ const CAPITAL = { 1: 5e6, 10: 150e6, 20: 1.5e9, 30: 6e9 };
 const PLAY_H_PER_DAY = 3;
 /** Có tính cánh đồng (shared/farm.ts) cho nông dân không: --khong-dong để chỉ tính vườn 30 ô. */
 const FIELDS = !process.argv.includes('--khong-dong');
+/** Có tính ruộng thuê (hạn mức thuê theo cấp) không: --khong-thue để so với chỉ mua đứt. */
+const LEASE = !process.argv.includes('--khong-thue');
 /** Đặc sản đại diện: trái tươi giá vừa (xoài), trái đắt (sầu riêng), hàng khô (cà phê). */
 const SAMPLE = ['sau_rieng', 'xoai', 'ca_phe'].map((crop) => Object.values(SPECIALTIES).find((s) => s.crop === crop));
 const OLD_MULT = { trung_quoc: 1.25, lao_cam: 1.15, asean: 1.3, an_do: 1.35, trung_dong: 1.5, nhat_han: 1.6, nga: 1.45, uc_nz: 1.75, au_my: 1.9 };
@@ -35,7 +37,12 @@ const fmt = (v) => (Math.abs(v) >= 1e9 ? (v / 1e9).toFixed(2) + ' tỉ' : Math.a
 /** Đề xuất cho cánh đồng (shared/farm.ts): --dong-de-xuat mô phỏng với nhịp và năng suất này. */
 const FIELD_OVERRIDE = process.argv.includes('--dong-de-xuat') ? { pace: 1, yieldMult: 0.6 } : null;
 function farmer(level, after, withFields = true, maxTiles = 30) {
-  const blocks = farm && withFields ? Math.min(farm.fieldMaxBlocks(level), Math.floor((CAPITAL[level] * 0.8) / farm.fieldBlockPrice(SAMPLE[1].regionId))) : 0;
+  // mua đứt bằng vốn, cộng ruộng thuê của Nhà nước trong hạn mức thuê (shared/farm.ts: fieldLeaseMax, 1%/năm giá đất)
+  const owned = farm && withFields ? Math.min(farm.fieldMaxBlocks(level), Math.floor((CAPITAL[level] * 0.8) / farm.fieldBlockPrice(SAMPLE[1].regionId))) : 0;
+  const leased = farm && withFields && LEASE && farm.fieldLeaseMax ? Math.max(0, Math.min(farm.fieldLeaseMax(level), farm.fieldMaxBlocks(level) - owned)) : 0;
+  const blocks = owned + leased;
+  // tiền thuê một năm trả trước; một năm thuê = 3 ngày thật ≈ 3 × PLAY_H_PER_DAY giờ chơi
+  const rentPerPlayH = leased ? farm.fieldLeaseRent(SAMPLE[1].regionId, leased) / (3 * PLAY_H_PER_DAY) : 0;
   let best = 0, bestKgH = 0, bestRef = 0;
   for (const sp of SAMPLE) {
     const c = CROPS[sp.crop];
@@ -46,9 +53,9 @@ function farmer(level, after, withFields = true, maxTiles = 30) {
     const bulk = bulkSellFactor(0, kgDay);
     const seed = sp.refPrice * SEED_COST_RATIO;
     const unit = sp.refPrice * FARM_GATE_RATIO * QUALITY_MULT.A * bulk - seed;
-    if (unit * kgPerH * 8 > best) { best = unit * kgPerH * 8; bestKgH = kgPerH * 8; bestRef = sp.refPrice; }
+    if (unit * kgPerH * 8 - rentPerPlayH > best) { best = unit * kgPerH * 8 - rentPerPlayH; bestKgH = kgPerH * 8; bestRef = sp.refPrice; }
   }
-  return { income: best, note: `${30 + blocks * 100} ô`, kgH: bestKgH, ref: bestRef };
+  return { income: best, note: `${30 + blocks * 100} ô${leased ? ` (thuê ${leased} khối)` : ''}`, kgH: bestKgH, ref: bestRef };
 }
 /** Chủ xưởng: máy theo vốn; mua sỉ nguyên liệu, chế biến, bán thành phẩm (luật mới: có ép giá khi bán nhiều). */
 function workshop(level, after) {
