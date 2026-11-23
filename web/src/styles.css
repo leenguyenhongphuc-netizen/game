@@ -594,13 +594,14 @@ button.en-bar, button.lvl-badge { min-height: 40px; }
 .seed-bar { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 5px; background: var(--wood); border: 3px solid var(--wood-dark); border-radius: 18px; box-shadow: 0 4px 0 #2e1905; -webkit-overflow-scrolling: touch; }
 .seed-bar::-webkit-scrollbar { display: none; }
 .seed-chip { position: relative; flex: 0 0 auto; display: flex; }
-.seed-chip .seed { flex: none; display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 6px; align-items: center; justify-items: start; text-align: left; min-height: 48px; padding: 3px 30px 3px 8px; border-radius: 12px; background: var(--paper-2); line-height: 1.1; }
+.seed-chip .seed { flex: none; display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 6px; align-items: center; justify-items: start; text-align: left; min-height: 48px; padding: 3px 40px 3px 8px; border-radius: 12px; background: var(--paper-2); line-height: 1.1; }
 .seed-chip .seed .emoji { grid-row: 1 / 3; font-size: 1.5rem; }
 .seed-chip .seed strong { font-size: 0.8rem; max-width: 14ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .seed-chip .seed small { font-size: 0.72rem; color: var(--muted); }
 .seed-chip.on .seed { background: var(--gold); border-color: var(--gold-dark); box-shadow: 0 3px 0 var(--gold-dark); }
-.seed-i { position: absolute; top: 3px; right: 3px; width: 26px; height: 26px; min-height: 26px; padding: 0; border-radius: 50%; font-size: 0.8rem; font-style: italic; font-weight: 800; background: #fff; }
-.seed-i::after { content: ''; position: absolute; inset: -9px; }
+.seed-i { position: absolute; top: 50%; right: 1px; transform: translateY(-50%); width: 38px; height: 38px; min-height: 38px; padding: 0; border: 0; background: none; box-shadow: none; font-size: 0.8rem; font-style: italic; font-weight: 800; display: grid; place-items: center; }
+.seed-i::before { content: ''; position: absolute; inset: 7px; border-radius: 50%; background: #fff; border: 2px solid var(--wood); z-index: -1; }
+.seed-i:active:not(:disabled) { transform: translateY(-50%); box-shadow: none; }
 .seed-all { flex: 0 0 auto; display: grid; min-height: 48px; padding: 3px 12px; border-radius: 12px; line-height: 1.1; white-space: nowrap; }
 .seed-all small { font-weight: 500; font-size: 0.7rem; }
 .seed-info { background: var(--paper); border: 3px solid var(--wood); border-radius: 16px; padding: 8px 12px; box-shadow: 0 4px 0 var(--wood-dark); }
