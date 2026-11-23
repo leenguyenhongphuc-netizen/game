@@ -36,6 +36,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
   const [view, setView] = useState<ExamView>('tren');
   const [auto, setAuto] = useState(false);
   const [result, setResult] = useState<ExamResult | null>(null);
+  const [sheet, setSheet] = useState<{ rows: ReturnType<typeof summarize>; general: { points: number; text: string; out?: boolean }[]; firstBad: ItemId } | null>(null);
   const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null);
   const [showRules, setShowRules] = useState(false);
   const minUntil = useRef(0);
@@ -47,6 +48,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
   const finish = useCallback(async () => {
     const y = yard.current; if (!y || ended.current) return; ended.current = true;
     const sim = y.sim, base: ExamResult = { cls, passed: sim.passed, score: sim.outReason ? 0 : sim.score, seconds: Math.round(sim.t), out: sim.outReason, recorded: false };
+    setSheet({ rows: summarize(sim), general: sim.log.filter((l) => l.item === 0), firstBad: (sim.log.find((l) => l.item)?.item || 1) as ItemId });
     if (!sim.practice) {
       const waitMs = minUntil.current - Date.now(); if (waitMs > 0) await new Promise((r) => window.setTimeout(r, waitMs + 300)); // máy chủ không nhận bài nộp quá nhanh
       try { await api('POST', '/api/licenses/exam', { examId: examId.current, cls: props.cls, part: 'sa_hinh', score: base.score, detail: { seconds: base.seconds, out: base.out, penalties: sim.log.map((l) => ({ item: l.item, points: l.points, text: l.text })) } }); base.recorded = true; } catch { /* máy chủ chưa có phần thi sa hình: vẫn hiện kết quả */ }
@@ -70,7 +72,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
     const w = window as unknown as { __exam?: unknown; __examAuto?: boolean };
     w.__exam = {
       state: () => ({ item: y.sim.item, score: y.sim.score, t: y.sim.t, x: y.sim.x, y: y.sim.y, th: y.sim.th, v: y.sim.v, done: y.sim.done, passed: y.sim.passed, out: y.sim.outReason, log: y.sim.log, ...y.info() }),
-      setInput: (p: Partial<Input>) => { Object.assign(y.input, p); },
+      setInput: (p: Partial<Input>) => { y.auto = false; setAuto(false); y.input = { ...y.input, ...p }; },
       auto: (item?: ItemId) => { if (item) { y.sim.resetTo(item); } y.auto = true; setAuto(true); },
       view: (v: ExamView) => { y.setView(v); setView(v); },
     };
@@ -121,7 +123,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
         <p className="exam-note">Điều khiển: kéo vô-lăng để đánh lái (thả tay thì giữ nguyên góc lái), giữ GA hoặc PHANH, chọn số P/R/D. Trên máy tính dùng phím mũi tên hoặc WASD, phím cách để phanh.</p>
       </div>);
     if (phase === 'result' && result) {
-      const sim = yard.current?.sim, rows = sim ? summarize(sim) : [], general = sim ? sim.log.filter((l) => l.item === 0) : [];
+      const rows = sheet?.rows ?? [], general = sheet?.general ?? [];
       return (
         <div className="exam-card exam-result" data-passed={result.passed ? '1' : '0'}>
           <header><h2>{practice ? 'Kết quả buổi tập' : 'Kết quả sát hạch'}</h2><button className="exam-x" aria-label="Đóng" onClick={() => props.onClose(practice ? null : result)}>✕</button></header>
@@ -133,7 +135,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
           </ol>
           <div className="exam-start">
             {!props.practiceOnly && <button className="exam-go" disabled={busy} onClick={() => void begin(false)}>{practice ? '🏁 Vào thi' : '🔁 Thi lại'}{props.fee ? <small>lệ phí {fmtMoney(props.fee)}</small> : null}</button>}
-            <button className="exam-go alt" onClick={() => void begin(true, sim && sim.log.length ? ((sim.log.find((l) => l.item)?.item || 1) as ItemId) : 1)}>🎓 Tập lại bài bị lỗi</button>
+            <button className="exam-go alt" onClick={() => void begin(true, sheet?.firstBad ?? 1)}>🎓 Tập lại bài bị lỗi</button>
             <button className="exam-go ghost" onClick={() => props.onClose(practice ? null : result)}>Xong</button>
           </div>
         </div>);

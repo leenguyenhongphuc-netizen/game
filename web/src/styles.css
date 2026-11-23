@@ -632,3 +632,4 @@ button.en-bar, button.lvl-badge { min-height: 40px; }
 .wardrobe-row .pick { flex: 0 0 104px; min-height: 112px; display: grid; justify-items: center; align-content: start; gap: 2px; padding: 6px 4px; text-align: center; }
 .wardrobe-row .pick strong { font-size: 0.78rem; line-height: 1.15; } .wardrobe-row .pick small { font-size: 0.7rem; }
 .wardrobe-def { font-size: 2rem; line-height: 56px; height: 56px; }
+body.vv-peek .game .modal .modal-body > .tabs { display: none; }
