@@ -852,7 +852,7 @@ export class World {
     // Màn dọc: đẩy nhân vật lên nửa trên màn hình để thanh thao tác bên dưới không che.
     // Có khai báo vùng bị che (thanh trên, bảng dưới): dồn nhân vật vào giữa phần còn nhìn thấy; chưa khai báo thì giữ cách cũ.
     let wantLift = portrait ? 3.4 * k : 0;
-    if (this.insets) { const H = this.container.clientHeight || 1, off = (this.insets.bottom - this.insets.top) / 2 / H, D = Math.hypot(24 * k, 23 * k), viewH = 2 * D * Math.tan((this.camera.fov * Math.PI) / 360); wantLift = THREE.MathUtils.clamp(off * viewH / 0.72, -2 * k, 13 * k); }
+    if (this.insets) { const H = this.container.clientHeight || 1, off = (this.insets.bottom - this.insets.top) / 2 / H, D = Math.hypot(24 * k, 23 * k), viewH = 2 * D * Math.tan((this.camera.fov * Math.PI) / 360); wantLift = THREE.MathUtils.clamp(off * viewH / 0.72, -2 * k, 5 * k); }
     this.liftNow += (wantLift - this.liftNow) * (this.liftNow < -900 ? 1 : 1 - Math.exp(-dt * 5)); if (this.liftNow < -900) this.liftNow = wantLift;
     const lift = this.liftNow;
     if (!this.opts.demo) this.camera.position.set(this.camPos.x, 24 * k, this.camPos.z + 23 * k + lift);
