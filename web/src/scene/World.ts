@@ -9,7 +9,11 @@ import type { Zone } from '../../../shared/catalog.ts';
 import { PLOT_COLS, PLOT_ROWS, allowedTiles } from '../../../shared/rules.ts';
 import type { Role } from '../../../shared/rules.ts';
 import type { Avatar, DecorPlacement, PlotStyle } from '../../../shared/custom.ts';
-import { addHat, buildDecor, buildFence, buildHouse, buildRoleProp, hex, makeTruck } from './custom3d.ts';
+import { buildDecor, buildFence, buildRoleProp, hex } from './custom3d.ts';
+import { addAccessory, addHeadwear, addOutfitBody, outfitLook } from './wardrobe.ts';
+import type { Outfit } from './wardrobe.ts';
+import { GOODS_SPOTS, buildGoodProp, buildHomeHouse } from './houses.ts';
+import { buildPersonalRide, makeTruckKind, packRide } from './rides.ts';
 import type { Listing, Planting } from '../api.ts';
 import { GEO, buildPlant, fruitColor, mat, mesh, rng } from './plants.ts';
 import type { Stage } from './plants.ts';
@@ -104,22 +108,26 @@ function makeLabel(text: string, tone: LabelTone = 'paper', h = 0.92, floatBg?: 
 }
 
 interface Body { root: THREE.Group; legL: THREE.Mesh; legR: THREE.Mesh; armL: THREE.Group; armR: THREE.Group }
-function makeFarmer(shirt: number, hat = 'non_la'): Body {
+export function makeFarmer(shirt: number, hat = 'non_la', outfit: Outfit | null = null): Body {
   const root = new THREE.Group(), core = new THREE.Group();
-  const skin = mat(0xf8d3ae), cloth = mat(shirt), pants = mat(0x4f5f86), shoe = mat(0x6b4a2f), hair = mat(0x3a2a1c), dark = mat(0x2b2118);
-  const trim = mat(new THREE.Color(shirt).multiplyScalar(0.78).getHex());
+  const wear = outfitLook(outfit?.ao, shirt); // bộ đồ mua ở cửa hàng đổi màu áo, quần, giày và thân áo
+  const skin = mat(0xf8d3ae), cloth = mat(wear.cloth), pants = mat(wear.pants), shoe = mat(wear.shoe), hair = mat(0x3a2a1c), dark = mat(0x2b2118);
+  const trim = mat(new THREE.Color(wear.cloth).multiplyScalar(0.78).getHex());
   // chân ngắn tròn, có giày — dáng "chibi": đầu to, thân bầu
   const leg = (x: number) => { const m = mesh(GEO.cyl, pants, x, 0.26, 0, 0.13, 0.5, 0.14); m.add(mesh(GEO.ball, shoe, 0, -0.46, 0.35, 1.25, 0.22, 1.9)); return m; };
   const legL = leg(-0.16), legR = leg(0.16);
-  core.add(mesh(GEO.ball, cloth, 0, 0.84, 0, 0.4, 0.44, 0.34), mesh(GEO.cyl, trim, 0, 0.5, 0, 0.36, 0.1, 0.31)); // thân áo + gấu áo
-  core.add(mesh(GEO.ball, mat(0xfdf6e6), 0, 1.15, 0.05, 0.22, 0.1, 0.2)); // cổ áo
-  for (const y of [0.98, 0.8]) core.add(mesh(GEO.ball, mat(0xfdf6e6), 0, y, 0.33, 0.035)); // khuy
+  if (!addOutfitBody(core, outfit?.ao, wear)) {
+    core.add(mesh(GEO.ball, cloth, 0, 0.84, 0, 0.4, 0.44, 0.34), mesh(GEO.cyl, trim, 0, 0.5, 0, 0.36, 0.1, 0.31)); // thân áo + gấu áo
+    core.add(mesh(GEO.ball, mat(0xfdf6e6), 0, 1.15, 0.05, 0.22, 0.1, 0.2)); // cổ áo
+    for (const y of [0.98, 0.8]) core.add(mesh(GEO.ball, mat(0xfdf6e6), 0, y, 0.33, 0.035)); // khuy
+  }
   core.add(mesh(GEO.ball, skin, 0, 1.52, 0, 0.42));
   core.add(mesh(GEO.ball, hair, 0, 1.6, -0.1, 0.43, 0.38, 0.4)); // tóc sau gáy
   for (const x of [-0.15, 0.15]) core.add(mesh(GEO.ball, dark, x, 1.54, 0.37, 0.058, 0.075, 0.04), mesh(GEO.ball, mat(0xffffff), x + 0.02, 1.565, 0.4, 0.02));
   for (const x of [-0.25, 0.25]) core.add(mesh(GEO.ball, mat(0xf4a48c), x, 1.42, 0.31, 0.075, 0.05, 0.03)); // má hồng
   core.add(mesh(GEO.ball, mat(0xc9644a), 0, 1.4, 0.4, 0.06, 0.025, 0.02)); // miệng cười
-  addHat(core, hat);
+  if (outfit?.ao !== 'ao_mua' || outfit?.non) addHeadwear(core, outfit?.non, hat);
+  addAccessory(core, outfit?.phu_kien);
   root.add(bake(core), legL, legR); // phần thân, đầu, nón gộp lại theo chất liệu để ít lần vẽ
   const arm = (x: number) => { const g = new THREE.Group(); g.position.set(x, 1.06, 0); g.add(mesh(GEO.cyl, cloth, 0, -0.2, 0, 0.1, 0.42, 0.1), mesh(GEO.ball, skin, 0, -0.46, 0, 0.115)); g.rotation.z = x < 0 ? -0.12 : 0.12; root.add(g); return g; };
   const armL = arm(-0.44), armR = arm(0.44);
@@ -133,6 +141,8 @@ export interface LotData {
   plotId: number; ownerName: string; mine: boolean; friend: boolean; kind?: 'ground' | 'rooftop'; plantings: Planting[]; stall: Listing[];
   /** undefined = chưa rõ (vườn mẫu) thì coi như nhà vườn; null = chủ vườn chưa quay vai. */
   ownerRole?: Role | null; style?: PlotStyle | null; decor?: DecorPlacement[] | null; avatar?: Avatar | null;
+  /** Đồ mua ở trung tâm mua sắm đang dùng (áo, nón, phụ kiện, kiểu nhà, xe riêng) và các món nội thất, sân vườn đã có. Hiện mới có cho thửa của chính mình. */
+  equipped?: Equipped | null; goods?: string[] | null;
   /** Máy của chủ xưởng (lấy từ `factory` của GET /api/plots/:id). Thiếu thì thửa của chủ xưởng vẫn hiện một máy cơ bản. */
   factory?: FactoryData | null;
 }
@@ -141,6 +151,7 @@ function isFactory(d: LotData | null): boolean { return !!d && d.ownerRole === '
 function machinesOf(d: LotData): FactoryMachine[] { return (d.factory?.machines?.length ? d.factory.machines : BASIC_FACTORY.machines).slice(0, MACHINE_SPOTS.length); }
 function lotTiles(d: LotData): number[] { return isFactory(d) ? [] : allowedTiles(d.kind ?? 'ground', d.ownerRole === undefined ? 'nong_dan' : d.ownerRole); }
 export type WeatherKind = 'nang' | 'may' | 'mua' | 'nang_gat' | 'bao';
+export interface Equipped extends Outfit { nha?: string | null; xe?: string | null }
 export interface WorldState { regionId: string; lots: (LotData | null)[]; clockOffset: number; weather?: WeatherKind }
 export type Context =
   | { kind: 'none' }
@@ -265,7 +276,7 @@ class Lot {
     const ms = machinesOf(data!);
     st.add(buildFactoryYard(this.night, roofColor, ms.length));
     buildFence(st, style?.fence ?? 'trang', FENCE, roofColor);
-    const h = buildHouse(style?.house ?? zoneHouse(this.zone), wallColor, roofColor, this.night); h.position.set(0, 0, -10.4); st.add(h);
+    const h = buildHomeHouse(data?.equipped?.nha ?? style?.house ?? zoneHouse(this.zone), wallColor, roofColor, this.night); h.position.set(0, 0, -10.4); st.add(h);
     ms.forEach((m, i) => {
       const spot = MACHINE_SPOTS[i], model = buildMachine(m), group = bake(model.root);
       group.position.set(spot.x, 0, spot.z);
@@ -294,7 +305,7 @@ class Lot {
     const stone = mat(0xfaf3e3);
     for (let i = 0; i < 4; i++) st.add(mesh(GEO.cyl, stone, i % 2 ? 0.2 : -0.2, 0.05, FENCE.front - 0.6 - i * 0.75, 0.42, 0.06, 0.36));
     for (let i = 0; i < 9; i++) st.add(mesh(GEO.cyl, stone, -7.6 + (i % 2 ? 0.15 : -0.1), 0.05, 5.2 - i * 1.5, 0.4, 0.06, 0.34));
-    const h = buildHouse(style?.house ?? zoneHouse(this.zone), wallColor, roofColor, this.night); h.position.set(0, 0, -10.4);
+    const h = buildHomeHouse(data?.equipped?.nha ?? style?.house ?? zoneHouse(this.zone), wallColor, roofColor, this.night); h.position.set(0, 0, -10.4);
     h.add(mesh(GEO.cyl, mat(0xb5613c), -3.6, 0.55, 3.1, 0.45, 0.8, 0.45), mesh(GEO.cyl, mat(0x7fd3e8, { rough: 0.2 }), -3.6, 0.96, 3.1, 0.38, 0.03, 0.38));
     st.add(h);
     // Cây bóng mát, đống rơm, giếng trong sân
@@ -304,6 +315,9 @@ class Lot {
     // Công trình theo vai trò (xưởng, bãi cân hàng) và đồ trang trí do chủ vườn đặt
     const prop = isFactory(data) ? null : buildRoleProp(data?.ownerRole); if (prop) { prop.position.set(0, 0, 3.7); st.add(prop); }
     for (const d of data?.decor ?? []) { const o = buildDecor(d.item); o.position.set(d.x, 0, d.z); o.rotation.y = d.rot; st.add(o); }
+    // Nội thất, đồ sân vườn đã mua bày ở chỗ cố định quanh nhà; xe riêng đang dùng đỗ trong sân cạnh cổng
+    if (!isFactory(data)) for (const id of data?.goods ?? []) { const sp = GOODS_SPOTS[id], o = sp && buildGoodProp(id, this.night); if (o) { o.position.set(sp[0], 0, sp[1]); o.rotation.y = sp[2]; st.add(o); } }
+    { const ride = data?.equipped?.xe ? buildPersonalRide(data.equipped.xe) : null; if (ride) { ride.root.position.set(4.4, 0.04, 6.6); ride.root.rotation.y = Math.PI / 2 + 0.25; st.add(ride.root); } }
     {
     // Sạp bán hàng sát đường
     const s = new THREE.Group(); s.position.set(STALL.x, 0, STALL.z);
@@ -320,7 +334,7 @@ class Lot {
     this.group.add(bake(st), this.plantLayer);
     this.goods.position.set(STALL.x, 0, STALL.z); this.group.add(this.goods);
     if (this.slot !== 0) { // chủ nhà hàng xóm đứng trước hiên
-      this.npc = makeFarmer(hex(data?.avatar?.shirt, ROOFS[(this.slot + 2) % 5]), data?.avatar?.hat ?? 'non_la');
+      this.npc = makeFarmer(hex(data?.avatar?.shirt, ROOFS[(this.slot + 2) % 5]), data?.avatar?.hat ?? 'non_la', data?.equipped ?? null);
       this.npc.root.position.set(-1.6, 0, -6.4); this.group.add(this.npc.root);
     }
     this.built = kind;
@@ -331,7 +345,7 @@ class Lot {
     this.data = data;
     const want = data ? (data.kind === 'rooftop' ? 'roof' : 'farm') : this.slot === 0 ? 'none' : 'empty';
     if (want === 'none') { this.group.clear(); this.built = 'none'; return; }
-    const look = !data ? want : [want, this.zone, data.ownerRole, JSON.stringify(data.style ?? null), JSON.stringify(data.decor ?? null), JSON.stringify(data.avatar ?? null), isFactory(data) ? machinesOf(data).map((m) => `${m.id}:${m.kind}:${m.name}`).join(',') : ''].join('|');
+    const look = !data ? want : [want, this.zone, data.ownerRole, JSON.stringify(data.style ?? null), JSON.stringify(data.decor ?? null), JSON.stringify(data.avatar ?? null), JSON.stringify(data.equipped ?? null), (data.goods ?? []).join(','), isFactory(data) ? machinesOf(data).map((m) => `${m.id}:${m.kind}:${m.name}`).join(',') : ''].join('|');
     if (this.built !== want || this.look !== look) { this.rebuild(want); this.look = look; }
     if (!data) return;
     for (const f of this.fx) { const cur = machinesOf(data).find((m) => m.id === f.m.id); if (cur) f.m = cur; } // cập nhật mẻ đang chạy mà không dựng lại cảnh
@@ -432,7 +446,7 @@ export class World {
   private regionId = '';
   private player: Body;
   private avatarKey = '';
-  private truck: { root: THREE.Group; wheels: THREE.Mesh[] } | null = null;
+  private truck: { root: THREE.Group; wheels: THREE.Object3D[] } | null = null;
   private truckPos = new THREE.Vector3(-5.5, 0, ROAD_Z - 1.7);
   private truckYaw = Math.PI / 2;
   driving = false;
@@ -528,16 +542,16 @@ export class World {
   }
 
   /** Đổi áo, nón của nhân vật mình điều khiển. */
-  setAvatar(avatar: Avatar | null | undefined) {
-    const key = JSON.stringify(avatar ?? null); if (key === this.avatarKey) return; this.avatarKey = key;
+  setAvatar(avatar: Avatar | null | undefined, outfit: Outfit | null = null) {
+    const key = JSON.stringify([avatar ?? null, outfit ?? null]); if (key === this.avatarKey) return; this.avatarKey = key;
     this.scene.remove(this.player.root);
-    this.player = makeFarmer(hex(avatar?.shirt, 0x5aa9e6), avatar?.hat ?? 'non_la'); this.player.root.visible = !this.driving; this.scene.add(this.player.root);
+    this.player = makeFarmer(hex(avatar?.shirt, 0x5aa9e6), avatar?.hat ?? 'non_la', outfit); this.player.root.visible = !this.driving; this.scene.add(this.player.root);
   }
   /** Thương lái có xe tải đỗ trước cổng; truyền null để cất xe. */
-  setTruck(color: string | null) {
-    if (this.truck) { this.scene.remove(this.truck.root); this.truck = null; }
+  setTruck(color: string | null, kind: string | null = null) {
+    if (this.truck) { this.scene.remove(this.truck.root); freeBaked(this.truck.root); this.truck = null; }
     if (color === null) { if (this.driving) this.exitTruck(); return; }
-    this.truck = makeTruck(hex(color, 0xf08a6c)); this.scene.add(this.truck.root);
+    this.truck = packRide(makeTruckKind(kind, hex(color, 0xf08a6c))); this.scene.add(this.truck.root); // đúng loại xe đang dùng, gộp lưới để ít lần vẽ
     this.truck.root.position.copy(this.driving ? this.pos : this.truckPos); this.truck.root.rotation.y = this.truckYaw;
   }
   enterTruck() { if (!this.truck || this.driving) return; this.driving = true; this.pos.copy(this.truckPos); this.walkTo = null; this.vel.set(0, 0, 0); this.player.root.visible = false; }

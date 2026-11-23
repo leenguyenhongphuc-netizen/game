@@ -1,7 +1,7 @@
 // Buôn bán đường dài: thu mua sỉ khi xe tải tới một vùng, so sánh đi vé với tự lái, xuất khẩu.
 import { useCallback, useEffect, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES } from '../../shared/catalog.ts';
-import { EXPORT_MARKETS, EXPORT_MODES, LIMIT_REASONS, QUALITY_NAMES, TRAVEL_VS_TRUCK, fmtMoney } from '../../shared/rules.ts';
+import { BULK_EASY_KG, EXPORT_MARKETS, EXPORT_MODES, LIMIT_REASONS, QUALITY_NAMES, TRAVEL_VS_TRUCK, bulkSellFactor, fmtMoney, wholesaleQuote } from '../../shared/rules.ts';
 import type { ExportMarket, ExportMode, ExportQuote } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import type { Me } from './api.ts';
@@ -41,9 +41,14 @@ interface TradeInfo {
   regionId: string; homeRegionId: string; truckRegionId: string | null; role: string;
   here: boolean; canBuy: boolean; whyNot: string | null; canSellHere: boolean;
   cargo: { capacityKg: number; usedKg: number; freeKg: number };
-  buy: { specialtyId: string; refPrice: number; wholesalePrice: number; sellPrice: number; sellAt: 'nha' | 'vung_khac'; marginPerKg: number; supplyLeftKg: number; maxKg: number }[];
-  sell: { specialtyId: string; quality: 'A' | 'B' | 'C'; kg: number; priceHere: number; priceHome: number; diffPerKg: number }[];
+  buy: { specialtyId: string; refPrice: number; wholesalePrice: number; sellPrice: number; sellAt: 'nha' | 'vung_khac'; marginPerKg: number; supplyLeftKg: number; maxKg: number; supplyTotalKg?: number; boughtTodayKg?: number; glut?: number; sellMarketSold24hKg?: number }[];
+  tripCost?: { km: number; total: number; energyCost: number; tollCost: number; upkeepCost: number; spoilRate: number; cold: boolean } | null;
+  sell: { specialtyId: string; quality: 'A' | 'B' | 'C'; kg: number; priceHere: number; priceHome: number; diffPerKg: number; soldHere24hKg?: number; avgPriceHereAll?: number }[];
 }
+
+/** Khối lượng dễ đọc: dưới 1 tấn ghi kg, từ 1 tấn ghi tấn. */
+const fmtKg = (kg: number) => (kg >= 1000 ? `${(Math.round(kg / 10) / 100).toLocaleString('vi-VN')} tấn` : `${kg.toLocaleString('vi-VN')} kg`);
+const QUICK: [string, number][] = [['+100 kg', 100], ['+1 tấn', 1000], ['+5 tấn', 5000]];
 
 /** Bảng "Buôn bán ở đây": tới một vùng là thấy ngay mua gì, bán gì, lời bao nhiêu. */
 export function TradePanel({ me, regionId, refresh, openStock }: { me: Me; regionId: string; refresh: () => void; openStock: () => void }) {
@@ -62,29 +67,49 @@ export function TradePanel({ me, regionId, refresh, openStock }: { me: Me; regio
       {info.canBuy ? (
         <div className="cargo" aria-label={`Thùng xe đã chất ${info.cargo.usedKg} trên ${info.cargo.capacityKg} kg`}>
           <div className="bar"><i style={{ width: `${Math.round(used * 100)}%` }} /></div>
-          <small>Thùng xe: <b>{info.cargo.usedKg}/{info.cargo.capacityKg} kg</b> · còn chở được {info.cargo.freeKg} kg</small>
+          <small>Thùng xe: <b>{info.cargo.capacityKg >= 1000 ? `${fmtKg(info.cargo.usedKg)} / ${fmtKg(info.cargo.capacityKg)}` : `${info.cargo.usedKg}/${info.cargo.capacityKg} kg`}</b> · còn chở được {fmtKg(info.cargo.freeKg)}</small>
+          {info.tripCost && <small>Chi phí chạy về nhà ({info.tripCost.km} km): khoảng <b>{fmtMoney(info.tripCost.total)}</b>{info.tripCost.spoilRate > 0 ? ` · hàng tươi hao ${(info.tripCost.spoilRate * 100).toLocaleString('vi-VN')}% dọc đường${info.tripCost.cold ? ' (thùng lạnh)' : ' (thùng thường; thùng lạnh hao ít hơn 5 lần)'}` : ''}</small>}
         </div>
       ) : <p className="notice">{info.whyNot ?? 'Chỉ thương lái lái xe tải tới đây mới thu mua sỉ được.'}</p>}
       {info.buy.map((b) => {
-        const sp = SPECIALTIES[b.specialtyId], q = Math.min(qty[b.specialtyId] ?? Math.min(100, b.maxKg), b.maxKg);
+        const sp = SPECIALTIES[b.specialtyId], q = Math.max(0, Math.min(qty[b.specialtyId] ?? Math.min(100, b.maxKg), b.maxKg));
         const lead = b.sellAt === 'nha' ? `Chở về ${home} bán` : 'Chở sang vùng khác bán';
+        const set = (v: number) => setQty({ ...qty, [b.specialtyId]: Math.max(0, Math.min(b.maxKg, Math.floor(v) || 0)) });
+        // Giá mua trung bình tăng theo lượng (vét nhiều thì đắt), giá bán trung bình giảm theo lượng xả ở chợ nơi đến.
+        const buyQ = b.supplyTotalKg ? wholesaleQuote(b.refPrice, b.glut ?? 1, b.supplyTotalKg, b.boughtTodayKg ?? 0, q) : { unit: b.wholesalePrice, total: b.wholesalePrice * q };
+        const keep = info.tripCost ? 1 - info.tripCost.spoilRate : 1, arriveKg = Math.round(q * keep);
+        const bulk = bulkSellFactor(b.sellMarketSold24hKg ?? 0, arriveKg), sellUnit = Math.round((b.sellPrice * bulk) / 100) * 100;
+        const profit = sellUnit * arriveKg - buyQ.total - (info.tripCost?.total ?? 0);
+        const drop = Math.round((1 - bulk) * 100);
         return (
-          <div className="deal" key={b.specialtyId}>
+          <div className="deal" key={b.specialtyId} style={{ flexWrap: 'wrap' }}>
             <span className="emoji" aria-hidden="true">{CROPS[sp.crop].emoji}</span>
             <div className="grow">
               <strong>{sp.name}</strong>
-              <small>Mua sỉ <b>{fmtMoney(b.wholesalePrice)}</b>/kg · {lead} <b>{fmtMoney(b.sellPrice)}</b>/kg</small>
-              <span className={b.marginPerKg > 0 ? 'tag' : 'tag bad'}>{b.marginPerKg > 0 ? `Lời ${fmtMoney(b.marginPerKg)}/kg` : `Lỗ ${fmtMoney(-b.marginPerKg)}/kg`} · vùng còn {b.supplyLeftKg} kg hôm nay</span>
+              <small>Mua sỉ từ <b>{fmtMoney(b.wholesalePrice)}</b>/kg · {lead} <b>{fmtMoney(b.sellPrice)}</b>/kg</small>
+              <span className={b.marginPerKg > 0 ? 'tag' : 'tag bad'}>{b.marginPerKg > 0 ? `Lời tới ${fmtMoney(b.marginPerKg)}/kg` : `Lỗ ${fmtMoney(-b.marginPerKg)}/kg`} · vùng còn {fmtKg(b.supplyLeftKg)} hôm nay</span>
             </div>
             {info.canBuy && b.maxKg > 0 && (
-              <div className="deal-buy">
-                <div className="stepper">
-                  <button aria-label="Bớt 50 kg" disabled={q <= 50} onClick={() => setQty({ ...qty, [b.specialtyId]: Math.max(50, q - 50) })}>−</button>
-                  <b>{q} kg</b>
-                  <button aria-label="Thêm 50 kg" disabled={q >= b.maxKg} onClick={() => setQty({ ...qty, [b.specialtyId]: Math.min(b.maxKg, q + 50) })}>+</button>
+              <div className="deal-buy" style={{ flex: '1 1 100%', display: 'grid', gap: 6 }}>
+                <div className="stepper" style={{ flexWrap: 'wrap', justifyContent: 'flex-start', gap: 6 }}>
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <input type="number" inputMode="numeric" min={0} max={b.maxKg} step={50} value={q} aria-label={`Số ki-lô-gam ${sp.name} muốn mua`}
+                      onChange={(e) => set(Number(e.target.value))} style={{ width: 96, minHeight: 44, fontSize: '1rem', textAlign: 'right' }} />
+                    <b>kg</b>
+                  </label>
+                  {QUICK.map(([label, add]) => <button key={label} type="button" disabled={q >= b.maxKg} onClick={() => set(q + add)} style={{ minHeight: 44, width: 'auto', padding: '0 10px' }}>{label}</button>)}
+                  <button type="button" disabled={q >= b.maxKg} onClick={() => set(b.maxKg)} style={{ minHeight: 44, width: 'auto', padding: '0 10px' }}>Đầy xe</button>
+                  <button type="button" disabled={q === 0} onClick={() => set(0)} style={{ minHeight: 44, width: 'auto', padding: '0 10px' }}>Xoá</button>
                 </div>
-                <button className="go" disabled={act.busy || me.user.cash < q * b.wholesalePrice} onClick={() => act.run(() => api('POST', '/api/wholesale/buy', { specialtyId: b.specialtyId, kg: q }))}>
-                  Mua {fmtMoney(q * b.wholesalePrice)}
+                {q > 0 && (
+                  <small>
+                    {fmtKg(q)} · giá mua trung bình <b>{fmtMoney(buyQ.unit)}</b>/kg{buyQ.unit > b.wholesalePrice ? ' (mua nhiều nên giá lên)' : ''} · còn chỗ {fmtKg(Math.max(0, info.cargo.freeKg - q))} trên xe
+                    {b.sellAt === 'nha' && <><br />Bán ở {home} trung bình <b>{fmtMoney(sellUnit)}</b>/kg{arriveKg < q ? ` cho ${fmtKg(arriveKg)} còn lại sau hao hụt` : ''} · <b style={{ color: profit >= 0 ? 'var(--green-dark)' : '#b3261e' }}>{profit >= 0 ? `lời dự kiến ${fmtMoney(profit)}` : `lỗ dự kiến ${fmtMoney(-profit)}`}</b> sau chi phí chuyến</>}
+                  </small>
+                )}
+                {q > 0 && b.sellAt === 'nha' && drop >= 5 && <small className="tag bad" role="status">Xả {fmtKg(arriveKg)} một lúc làm giá ở {home} rớt khoảng {drop}%. Chợ chỉ giữ giá cho khoảng {fmtKg(BULK_EASY_KG)} đầu mỗi ngày: chia ra bán ở vài vùng sẽ lời hơn.</small>}
+                <button className="go" disabled={act.busy || q <= 0 || me.user.cash < buyQ.total} onClick={() => act.run(() => api('POST', '/api/wholesale/buy', { specialtyId: b.specialtyId, kg: q }))}>
+                  Mua {fmtKg(q)} · {fmtMoney(buyQ.total)}
                 </button>
               </div>
             )}
@@ -103,7 +128,7 @@ export function TradePanel({ me, regionId, refresh, openStock }: { me: Me; regio
                 <span className="emoji" aria-hidden="true">{CROPS[sp.crop].emoji}</span>
                 <div className="grow">
                   <strong>{sp.name} <small>· {QUALITY_NAMES[s.quality]} · {s.kg} kg</small></strong>
-                  <small>Ở đây <b>{fmtMoney(s.priceHere)}</b>/kg · ở nhà {fmtMoney(s.priceHome)}/kg</small>
+                  <small>Ở đây <b>{fmtMoney(s.priceHere)}</b>/kg · ở nhà {fmtMoney(s.priceHome)}/kg{s.avgPriceHereAll !== undefined && s.avgPriceHereAll < s.priceHere ? ` · bán hết ${fmtKg(s.kg)} một lúc chỉ còn khoảng ${fmtMoney(s.avgPriceHereAll)}/kg` : ''}</small>
                   {s.diffPerKg !== 0 && <span className={s.diffPerKg > 0 ? 'tag' : 'tag bad'}>{s.diffPerKg > 0 ? `Bán ở đây hơn ${fmtMoney(s.diffPerKg * s.kg)}` : `Bán ở đây thiệt ${fmtMoney(-s.diffPerKg * s.kg)}`}</span>}
                 </div>
               </div>

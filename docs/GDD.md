@@ -519,3 +519,21 @@ Cân bằng và kẽ hở còn lại: giống năng suất cao cộng dồn vớ
 ## Xuất khẩu: bỏ trần số lô theo cấp
 
 Trần "số lô đang trên đường" theo cấp đã bỏ (chỉ còn mức chặn 20 lô để tránh gửi dồn bất thường). Giới hạn thật là lượng hàng trong kho và mức tối thiểu mỗi đường. Tàu container viễn dương nhận hàng lẻ ghép container từ 200 kg: phí cố định bằng một phần tư, cước mỗi kg gấp ba; máy chủ tự lấy cách tính rẻ hơn giữa hàng lẻ và nguyên container (điểm hoà vốn khoảng 9 tấn).
+
+## Thu mua sỉ theo tải trọng xe (cập nhật)
+
+- **Nguồn hàng của vùng:** mỗi đặc sản có khoảng 40 tấn mỗi ngày cho tất cả thương lái (`WHOLESALE_BASE_KG`); chính vụ ×1,5, trái vụ ×0,4. Một lần mua tối đa bằng chỗ trống trên chiếc xe đang lái: xe 15 tấn mua 15 tấn, đầu kéo khoảng 28 tấn.
+- **Đường cung (giá mua tăng dần):** 5 tấn đầu của vùng trong ngày giá 90% tham chiếu, sau đó tăng đều tới 105% khi cạn nguồn (`wholesaleRatioAt`, `wholesaleQuote`). Giá một lần mua là giá trung bình của đúng đoạn đường cung đó.
+- **Sức mua của chợ nơi đến (giá bán giảm dần):** mỗi chợ vùng giữ giá cho 1 tấn đầu mỗi loại trong 24 giờ, sau đó giá rớt đều tới −45% ở mốc 30 tấn (`bulkSellFactor`). Áp cho thương lái và người tự lái xe bán tại nơi xe đỗ; cộng dồn với hệ số được mùa toàn máy chủ đã có.
+- **Hao hụt đường dài:** hàng vừa thu mua sỉ hao 0,5% mỗi 100 km đường bộ, tối đa 6%; xe thùng lạnh chỉ hao 1/5 (`spoilRate`). Trừ khi chuyến xe tới nơi.
+- **Cân bằng:** mua rồi bán tại chỗ luôn lỗ (giá tại vườn 85% < giá mua ≥ 90%, còn bị ép giá). Chở xa: 1 tấn lời khoảng 22% trước chi phí; 15 tấn lời mỗi kg thấp hơn nhưng tổng lời cao hơn; vét cạn 40 tấn rồi xả vào một chợ thì lỗ. Kẽ hở còn lại: chia một xe lớn ra bán ở nhiều chợ gần nhau để né ép giá (tốn thêm chuyến); xả 15 tấn làm hệ số được mùa toàn máy chủ chạm đáy 24 giờ, ảnh hưởng giá của nhà vườn cùng loại. Các con số chưa chơi thử để cân.
+
+## Bằng lái: thời hạn, điểm, thi và đổi (cập nhật)
+
+Viết theo hiểu biết sẵn có về Luật Trật tự, an toàn giao thông đường bộ 2024, **chưa đối chiếu văn bản**.
+
+- **Thời hạn:** A1, B1 không thời hạn; B, C1 10 năm; C, CE 5 năm. Một "năm bằng lái" = 3 ngày thật (`LICENSE_YEAR_DAYS`), nên B/C1 hết hạn sau 30 ngày thật, C/CE sau 15 ngày. Thời hạn không theo `TIME_SCALE`; máy chủ có biến riêng `LICENSE_TIME_SCALE` (mặc định 1) để tua nhanh khi cần.
+- **Cấp mới:** phải đạt lý thuyết (từ 80/100) và, với các hạng ô tô (B trở lên), đạt sa hình (từ 80/100) trong vòng 1 "năm"; mỗi lượt thi thu lệ phí (lý thuyết 100.000đ, sa hình 300.000đ), rồi mới đóng lệ phí cấp bằng.
+- **Điểm:** mỗi bằng 12 điểm. Bị phạt quá tốc độ trong chuyến xe thì trừ theo mức phạt (2, 4, 6 điểm…). Hết điểm bằng bị tạm khoá, thi lại lý thuyết đạt thì phục hồi 12 điểm. 12 "tháng" không bị trừ thì tự đủ điểm lại.
+- **Hết hạn:** không được bắt đầu chuyến bằng xe cần hạng đó. Đổi bằng (lệ phí 135.000đ): còn hạn hoặc quá hạn dưới 3 "tháng" đổi thẳng; quá 3 tháng đến dưới 1 năm phải thi lại lý thuyết; từ 1 năm phải thi lại cả sa hình.
+- **Đơn giản hoá:** không có khám sức khoẻ, không có thi đường trường và mô phỏng; bài thi do phía người chơi chấm điểm, máy chủ chỉ kiểm tra khoảng điểm và thời gian làm bài tối thiểu.

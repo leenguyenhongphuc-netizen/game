@@ -287,8 +287,8 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       if (row.suspended) throw bad('bang_bi_khoa', 'Bằng đang bị khoá vì hết điểm: thi lại lý thuyết để phục hồi trước.', 409);
       const mode = renewMode(row.overdueMs * lts);
       if (mode !== 'doi') {
-        // Chỉ tính bài thi làm SAU ngày hết hạn.
-        const after = new Date(row.expiresAt);
+        // Chỉ tính bài thi làm sau ngày hết hạn (và sau lần cấp gần nhất).
+        const after = new Date(Math.max(row.expiresAt, row.issuedAt));
         const done = (await q.query(`select part from license_exams where user_id = $1 and cls = $2 and passed and finished_at >= $3`, [userId, cls, after])).rows.map((r) => r.part as string);
         if (!done.includes('ly_thuyet')) throw bad('chua_thi_ly_thuyet', `Bằng quá hạn đã lâu: phải thi lại lý thuyết${mode === 'thi_lai' && needsYard(cls) ? ' và sa hình' : ''} rồi mới được cấp lại.`, 409);
         if (mode === 'thi_lai' && needsYard(cls) && !done.includes('sa_hinh')) throw bad('chua_thi_sa_hinh', 'Bằng quá hạn trên 1 năm: phải thi lại cả sa hình rồi mới được cấp lại.', 409);

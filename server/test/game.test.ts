@@ -1540,7 +1540,7 @@ test('thu mua sỉ: chỉ thương lái, đúng vùng xe đỗ, theo sức chở
   const buy = await call('POST', '/api/wholesale/buy', { specialtyId: 'xoai_hoa_loc', kg: 200 }, cookie);
   assert.equal(buy.status, 200, JSON.stringify(buy.body));
   assert.deepEqual([buy.body.unitPrice, buy.body.total, buy.body.cargo, buy.body.supplyLeftKg],
-    [unit, unit * 200, { capacityKg: TRUCK.cargoKg, usedKg: 200, freeKg: TRUCK.cargoKg - 200 }, wholesaleSupplyKg(null) - 200]);
+    [unit, unit * 200, { capacityKg: TRUCK.cargoKg, usedKg: 200, freeKg: TRUCK.cargoKg - 200 }, wholesaleSupplyKg(false) - 200]);
   const full = await call('POST', '/api/wholesale/buy', { specialtyId: 'xoai_hoa_loc', kg: TRUCK.cargoKg - 199 }, cookie);
   assert.deepEqual([full.status, full.body.error], [409, 'day_xe']);
   assert.equal((await call('POST', '/api/wholesale/buy', { specialtyId: 'xoai_hoa_loc', kg: TRUCK.cargoKg + 1 }, cookie)).status, 400);
