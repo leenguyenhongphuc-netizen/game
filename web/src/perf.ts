@@ -8,11 +8,10 @@ import type { WebGLRenderer } from 'three';
 export type QualityPref = 'thap' | 'vua' | 'cao' | 'tu_dong';
 /** Bậc chất lượng: 0 cao nhất … 3 thấp nhất. */
 export type QualityLevel = 0 | 1 | 2 | 3;
-export interface PerfStats { name: string; fps: number; ms: number; level: QualityLevel; pref: QualityPref; pixelRatio: number; pixels: number; calls: number; triangles: number; width: number; height: number; locked: boolean }
+export interface PerfStats { jitter: number; late: number; levelChanges: number; pace30: boolean; name: string; fps: number; ms: number; level: QualityLevel; pref: QualityPref; pixelRatio: number; pixels: number; calls: number; triangles: number; width: number; height: number; locked: boolean }
 
 const SCALE = [1, 0.85, 0.7, 0.6] as const;
-const PREF_KEY = 'vv-quality', LEVEL_KEY = 'vv-quality-level', FPS_KEY = 'vv-fps';
-const SLOW_MS = 22, FAST_MS = 17.6; // 60 Hz chạy trọn là 16,7 ms mỗi khung: dưới 17,6 coi như đủ mượt
+const PREF_KEY = 'vv-quality', LEVEL_KEY = 'vv-quality-level', FPS_KEY = 'vv-fps', PACE_KEY = 'vv-pace30';
 const LS = { get(k: string) { try { return localStorage.getItem(k); } catch { return null; } }, set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* bỏ qua */ } } };
 
 const nav = typeof navigator !== 'undefined' ? navigator : ({} as Navigator);
@@ -29,7 +28,7 @@ export function qualityPref(): QualityPref { const v = LS.get(PREF_KEY); return 
 /** Người chơi tự chọn mức đồ hoạ (để gắn vào Hồ sơ): 'thap' | 'vua' | 'cao' | 'tu_dong'. Áp ngay cho cảnh đang chạy. */
 export function setQualityPref(p: QualityPref) { LS.set(PREF_KEY, p); for (const q of stack) q.applyPref(); }
 const fixedLevel = (p: QualityPref): QualityLevel | null => (p === 'thap' ? 3 : p === 'vua' ? 1 : p === 'cao' ? 0 : null);
-function startLevel(): QualityLevel { const f = fixedLevel(qualityPref()); if (f !== null) return f; if (AUTOMATED) return 0; const n = Number(LS.get(LEVEL_KEY)); return (n >= 0 && n <= 3 ? Math.round(n) : 0) as QualityLevel; }
+function startLevel(): QualityLevel { const f = fixedLevel(qualityPref()); if (f !== null) return f; if (AUTOMATED) return 0; let n = Number(LS.get(LEVEL_KEY)); n = n >= 0 && n <= 3 ? Math.round(n) : 0; if (n > 0 && Date.now() - Number(LS.get(LEVEL_KEY + '-at') ?? 0) > 86_400_000) { n--; LS.set(LEVEL_KEY, String(n)); LS.set(LEVEL_KEY + '-at', String(Date.now())); } return n as QualityLevel; }
 
 /** Tỉ lệ điểm ảnh cho một khung cỡ w×h (px CSS) ở bậc cho trước. */
 export function pixelRatioFor(w: number, h: number, level: QualityLevel = 0): number {
@@ -56,17 +55,34 @@ export interface QualityOptions {
   onLevel?: (level: QualityLevel) => void;
 }
 
+/** Nhịp vẽ chung của máy trong phiên này: 0 = theo màn hình, 30 = đều 30 khung/giây. Chốt một lần, không bật tắt qua lại. */
+let pace30 = false, levelChanges = 0;
+try { const v = JSON.parse(LS.get(PACE_KEY) ?? 'null') as { on?: boolean; at?: number } | null; if (v?.on && Date.now() - (v.at ?? 0) < 3 * 86_400_000) pace30 = true; } catch { /* bỏ qua */ }
+const fake = () => (window as unknown as { __fakeDt?: number[] }).__fakeDt;
+let fakeI = 0;
+/** Bước thời gian (giây) cho mô phỏng: thời gian thật kẹp 1–100 ms. Khi thử, window.__fakeDt = [16, 33, 50] ép nhịp không đều để soát chuyển động có đều theo thời gian không. */
+export function stepDt(realSeconds: number): number {
+  const f = fake(); if (f && f.length) return f[fakeI++ % f.length] / 1000;
+  return Math.min(0.1, Math.max(0.001, realSeconds));
+}
+/** Hệ số làm mượt không phụ thuộc số khung: rate60 là phần tiến lại mỗi khung ở 60 khung/giây. */
+export function ease(rate60: number, dt: number): number { return 1 - Math.pow(1 - rate60, dt * 60); }
+/** Ghi vết từng khung khi window.__trace là một mảng (để đo độ đều của chuyển động). */
+export function trace(rec: Record<string, number>) { const t = (window as unknown as { __trace?: Record<string, number>[] }).__trace; if (t && t.length < 20000) t.push(rec); }
+
 export class Quality {
   level: QualityLevel;
   private w = 1; private h = 1; private ratio = 1;
   private last = 0; private acc = 0; private n = 0; private avg = 16.7;
-  private calm = 0;          // số giây liên tục mượt
-  private hold = 0;          // thời điểm sớm nhất được đổi bậc tiếp
-  private raisedAt = 0;      // lần nâng bậc gần nhất
-  private backoff = 6;       // phải mượt bao nhiêu giây mới nâng; nâng hụt thì gấp đôi
-  private shown = 0; private disposed = false;
-  private half = false; private halfUntil = 0; private skip = false;
-  /** Lần tick vừa rồi trả false vì đang chủ động chạy nửa nhịp (30 khung/giây) chứ không phải vì cảnh bị che: cảnh KHÔNG được bỏ thời gian đã trôi. */
+  private late = 0; private sq = 0; private jitter = 0; private lateShown = 0;
+  private base = 16.7;       // chu kỳ làm tươi ước lượng của màn hình (ms)
+  private lows: number[] = [];
+  private age = 0;           // số ms cảnh đã thật sự chạy
+  private bad = 0;           // số giây liên tiếp bị trễ khung
+  private shown = ''; private disposed = false;
+  /** Cảnh báo cho biết nhân vật/xe đang di chuyển: không đổi cỡ bộ đệm lúc này (đổi cỡ gây khựng thấy rõ). */
+  busy = false;
+  /** Lần tick vừa rồi trả false vì đang chủ động giữ nhịp 30 khung/giây chứ không phải vì cảnh bị che: cảnh KHÔNG được bỏ thời gian đã trôi. */
   throttled = false;
   private renderer: WebGLRenderer; private opts: QualityOptions;
 
@@ -83,6 +99,7 @@ export class Quality {
   get active() { return stack[stack.length - 1] === this && !(typeof document !== 'undefined' && document.hidden); }
   get locked() { return AUTOMATED || fixedLevel(qualityPref()) !== null; }
   get pixelRatio() { return this.ratio; }
+  get half() { return pace30; }
 
   /** Gọi mỗi khi khung chứa đổi cỡ: đặt tỉ lệ điểm ảnh theo ngân sách rồi đặt cỡ canvas. */
   resize(w: number, h: number) { this.w = Math.max(1, w); this.h = Math.max(1, h); this.apply(); }
@@ -93,46 +110,52 @@ export class Quality {
   applyPref() { const f = fixedLevel(qualityPref()); if (f !== null && f !== this.level) this.setLevel(f); }
   private setLevel(l: QualityLevel) {
     if (l === this.level) return;
-    this.level = l; this.apply(); this.opts.onLevel?.(l);
-    if (!this.locked) LS.set(LEVEL_KEY, String(l));
+    this.level = l; levelChanges++; this.apply(); this.opts.onLevel?.(l);
+    if (!this.locked) { LS.set(LEVEL_KEY, String(l)); LS.set(LEVEL_KEY + '-at', String(Date.now())); }
   }
 
-  /** Gọi ở đầu mỗi khung hình. Trả false nếu cảnh đang bị che hoặc tab ẩn: bỏ qua khung này. */
+  /** Gọi ở đầu mỗi khung hình. Trả false nếu cảnh đang bị che, tab ẩn, hoặc đang giữ nhịp 30: bỏ qua khung này. */
   tick(now = performance.now()): boolean {
     if (this.disposed) return false;
     this.throttled = false;
     if (!this.active) { this.last = 0; return false; }
-    // Máy không giữ nổi nhịp nhanh dù đã ở bậc thấp nhất: chạy đều 30 khung/giây (khung đều dễ chịu hơn khung giật).
-    if (this.half) { if (now > this.halfUntil) { this.half = false; this.skip = false; } else { this.skip = !this.skip; if (this.skip) { this.throttled = true; return false; } } }
+    // Nhịp 30 đều: chỉ vẽ khi đã cách khung trước gần 2 chu kỳ màn hình (tính theo thời gian nên đúng cả với màn 120 Hz).
+    if (pace30 && !fake() && this.last && now - this.last < 33.3 - this.base * 0.45) { this.throttled = true; return false; }
     const dt = this.last ? now - this.last : 0; this.last = now;
     if (dt > 0 && dt < 1000) { // khung dài cả giây là do chuyển tab, nạp cảnh: không tính
-      this.acc += dt; this.n++;
+      this.age += dt;
+      if (this.lows.length < 40 && this.age > 300) { this.lows.push(dt); if (this.lows.length === 40) { const q = [...this.lows].sort((a, b) => a - b)[8]; this.base = q < 10 ? 8.33 : q < 13 ? 11.1 : 16.7; } }
+      const target = pace30 ? 33.3 : Math.max(this.base, 16.7); // trình duyệt di động vẽ tối đa 60 khung/giây
+      this.acc += dt; this.n++; this.sq += dt * dt; if (dt > target * 1.45) this.late++;
       if (this.acc >= 1000 && this.n >= 3) {
-        this.avg = this.acc / this.n; this.acc = 0; this.n = 0;
-        if (!this.locked) this.adapt(now);
+        this.avg = this.acc / this.n; this.jitter = Math.sqrt(Math.max(0, this.sq / this.n - this.avg * this.avg));
+        const lateRatio = this.late / this.n; this.lateShown = this.late;
+        this.acc = 0; this.n = 0; this.sq = 0; this.late = 0;
+        if (!this.locked && this.age > 1200) this.adapt(lateRatio, target);
         if (wantBox()) this.paint();
       }
     }
     return true;
   }
-  private adapt(now: number) {
-    if (this.avg > SLOW_MS) {
-      this.calm = 0;
-      if (this.level === 3 && !this.half && this.avg < 60 && now >= this.hold) { this.half = true; this.halfUntil = now + 30_000; this.hold = now + 2000; }
-      if (now >= this.hold && this.level < 3) {
-        // vừa nâng xong đã chậm lại: mức đó quá sức máy, lần sau phải mượt lâu gấp đôi mới thử nâng
-        if (this.raisedAt && now - this.raisedAt < 12_000) this.backoff = Math.min(600, this.backoff * 2.5);
-        this.setLevel((this.level + 1) as QualityLevel); this.hold = now + 1500;
-      }
-    } else if (this.avg < FAST_MS) {
-      this.calm++;
-      if (this.calm >= this.backoff && now >= this.hold && this.level > 0) { this.setLevel((this.level - 1) as QualityLevel); this.raisedAt = now; this.hold = now + 3000; this.calm = 0; }
-    } else this.calm = Math.max(0, this.calm - 1);
+  /**
+   * Giữ nhịp khung ĐỀU thay vì cố chạy nhanh:
+   *  - Trong 5 giây đầu của cảnh (pha đo): hễ trễ khung là hạ một bậc ngay; hết bậc mà vẫn trễ thì chốt nhịp 30 cho cả phiên.
+   *  - Sau pha đo: giữ nguyên. Chỉ khi trễ kéo dài 3 giây mới hạ tiếp, và chờ lúc nhân vật đứng yên mới đổi cỡ bộ đệm.
+   *  - Không tự nâng bậc trong phiên (nâng rồi lại hạ chính là nguồn gây giật lặp lại); lần mở game sau mới thử lại bậc cao hơn.
+   */
+  private adapt(lateRatio: number, target: number) {
+    const slow = lateRatio > 0.08 || this.avg > target * 1.18;
+    this.bad = slow ? this.bad + 1 : 0;
+    if (!slow) return;
+    const settling = this.age < 5500;
+    if (!settling && (this.bad < 3 || this.busy)) return;
+    if (this.level < 3) { this.setLevel((this.level + 1) as QualityLevel); this.bad = 0; }
+    else if (!pace30 && this.avg < 70) { pace30 = true; this.bad = 0; LS.set(PACE_KEY, JSON.stringify({ on: true, at: Date.now() })); }
   }
 
   stats(): PerfStats {
     const i = this.renderer.info.render;
-    return { name: this.opts.name, fps: Math.round(1000 / this.avg), ms: Math.round(this.avg * 10) / 10, level: this.level, pref: qualityPref(), pixelRatio: Math.round(this.ratio * 100) / 100, pixels: Math.round(this.w * this.h * this.ratio * this.ratio), calls: i.calls, triangles: i.triangles, width: this.w, height: this.h, locked: this.locked };
+    return { jitter: Math.round(this.jitter * 10) / 10, late: this.lateShown, levelChanges, pace30, name: this.opts.name, fps: Math.round(1000 / this.avg), ms: Math.round(this.avg * 10) / 10, level: this.level, pref: qualityPref(), pixelRatio: Math.round(this.ratio * 100) / 100, pixels: Math.round(this.w * this.h * this.ratio * this.ratio), calls: i.calls, triangles: i.triangles, width: this.w, height: this.h, locked: this.locked };
   }
   private paint() {
     if (!box) {
@@ -140,8 +163,8 @@ export class Quality {
       box.style.cssText = 'position:fixed;left:calc(4px + env(safe-area-inset-left));top:calc(4px + env(safe-area-inset-top));z-index:99999;font:600 11px/1.25 ui-monospace,Menlo,monospace;color:#d8ffd0;background:#000b;padding:4px 6px;border-radius:6px;pointer-events:none;white-space:pre';
       document.body.appendChild(box);
     }
-    const s = this.stats(); if (s.fps === this.shown && box.textContent) return; this.shown = s.fps;
-    box.textContent = `${s.name} ${s.fps} fps ${s.ms} ms\nbậc ${s.level}${s.locked ? ' (cố định)' : ''}${this.half ? ' · nhịp 30' : ''} · x${s.pixelRatio} · ${(s.pixels / 1e6).toFixed(2)} Mpx\n${s.calls} lần vẽ · ${Math.round(s.triangles / 1000)}k tam giác`;
+    const s = this.stats();
+    box.textContent = `${s.name} ${s.fps} fps ${s.ms} ms\nbậc ${s.level}${s.locked ? ' (cố định)' : ''}${this.half ? ' · nhịp 30' : ''} · x${s.pixelRatio} · ${(s.pixels / 1e6).toFixed(2)} Mpx\n${s.calls} lần vẽ · ${Math.round(s.triangles / 1000)}k tam giác\nđộ đều ±${s.jitter} ms · trễ ${s.late} khung/giây · đổi bậc ${s.levelChanges} lần`; void this.shown;
   }
 
   dispose() {

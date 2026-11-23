@@ -107,6 +107,10 @@ export function lySon(kit: Kit, _s: Sight): SightSet & Spots {
   const last = path[path.length - 1];
   return {
     path, half: 2.1, npcs: 10, startYaw: 0,
+    extras: [
+      { frac: 0.3, kind: 'hoi_dap', name: 'Hỏi nhanh có thưởng', fact: 'Tỏi Lý Sơn trồng trên lớp cát trắng san hô phủ lên nền đất đỏ bazan, nên củ nhỏ, thơm và ít hăng.', q: 'Ruộng tỏi Lý Sơn phủ lớp gì lên trên nền đất đỏ bazan?', options: ['Bùn phù sa sông', 'Cát trắng san hô', 'Tro núi lửa đen'], answer: 1 },
+      { frac: 0.9, kind: 'ngam_canh', name: 'Ngắm đảo từ sườn Thới Lới', fact: 'Lý Sơn sinh ra từ núi lửa, trên đảo còn năm miệng núi lửa đã tắt. Thới Lới là ngọn cao nhất, từ đây thấy ruộng tỏi ô vuông trải tới sát biển.' },
+    ],
     stops: [
       { id: 'cang', at: V(-70, 1.3, 84), look: V(0, 16, 0) },
       { id: 'ruong_toi', at: V(-41, 0, 25), look: V(-28, 0.4, 6) },

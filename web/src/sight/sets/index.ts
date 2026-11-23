@@ -15,8 +15,9 @@ import { bayMau } from './dn_bay_mau.ts';
 import { tamThanh } from './dn_tam_thanh.ts';
 import { lySon } from './qng_ly_son.ts';
 
+import { decorate } from '../guide.ts';
 export type SetBuilder = (kit: Kit, sight: Sight) => SightSet;
-export const SETS: Record<string, SetBuilder> = {
+const RAW: Record<string, SetBuilder> = {
   dn_hoi_an: hoiAn,
   dn_my_son: mySon,
   dn_cau_rong: cauRong,
@@ -37,3 +38,5 @@ export const SETS: Record<string, SetBuilder> = {
   'kind:cau': cauRong,
   'kind:den_thap': mySon,
 };
+/** Mọi set đều được bọc thêm lớp dẫn đường và điểm tương tác phụ dùng chung. */
+export const SETS: Record<string, SetBuilder> = Object.fromEntries(Object.entries(RAW).map(([k, f]) => [k, (kit: Kit, sight: Sight) => decorate(kit, sight, f(kit, sight))]));

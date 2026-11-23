@@ -1,7 +1,7 @@
 // Máy chạy cảnh đi bộ tham quan: dựng cảnh từ một bộ (set), cho nhân vật đi trong hành lang quanh lối đi,
 // camera sau lưng tầm thấp, cột mốc điểm dừng, khách tham quan đi lại.
 import * as THREE from 'three';
-import { IS_MOBILE, Quality, debugScene, rendererParams } from '../perf.ts';
+import { IS_MOBILE, Quality, debugScene, rendererParams, ease, stepDt, trace } from '../perf.ts';
 import { bake } from '../scene/World.ts';
 import { bakeColored } from '../scene/batch.ts';
 /** Địa danh đã rà: vật sống chỉ chuyển động theo cả cụm nên gộp được. */
@@ -18,7 +18,7 @@ export interface SightShop { id: string; name: string; kind: string; emoji: stri
 /** Hộp chắn máy ảnh: [minX, minY, minZ, maxX, maxY, maxZ]. */
 type Blocker = [number, number, number, number, number, number];
 
-const SPEED = 4.6, RADIUS = 3.4;
+const SPEED = 4.6, RADIUS = 4.2, BRIDGE = 1.5;
 
 export class SightScene {
   private renderer: THREE.WebGLRenderer; private scene = new THREE.Scene(); private camera: THREE.PerspectiveCamera;
@@ -34,6 +34,10 @@ export class SightScene {
   private nearIdx: number | null = null; private dismissed: number | null = null; private lookAt: THREE.Vector3 | null = null;
   private seen: Set<string>; private autoWait = 0; private hudT = 0; private disposed = false;
   auto = false; speedMul = 1;
+  /** Bán kính kích hoạt của từng điểm dừng (m): tối thiểu 4,2; nới thêm khi có nhánh đường khác chạy sát bên để đứng ở nhánh đó vẫn mở được. */
+  private trig: number[] = [];
+  private goal: { p: THREE.Vector3; stop: number | null } | null = null; private vmag = 0; private lastHud = '';
+  private tapStart: { x: number; y: number; t: number } | null = null;
 
   constructor(private host: HTMLElement, private sight: Sight, seen: string[], private cb: SightCallbacks, private shops?: SightShop[]) {
     this.seen = new Set(seen);
@@ -51,6 +55,9 @@ export class SightScene {
     const sd = s.light.sunDir ?? [0.5, 1, 0.35];
     const fill = new THREE.DirectionalLight(s.light.ambientColor ?? 0xffffff, s.fill ?? 0.45); fill.position.set(-sd[0], 0.5, -sd[2]); this.scene.add(fill);
     this.cum = [0]; for (let i = 1; i < s.path.length; i++) this.cum.push(this.cum[i - 1] + s.path[i].distanceTo(s.path[i - 1])); this.total = this.cum[this.cum.length - 1];
+    this.trig = s.stops.map((st) => { const o = this.otherLeg(st.at); return o < 8 ? Math.min(9, Math.max(RADIUS, o + s.half + 0.6)) : RADIUS; });
+    (window as unknown as { __sightScene?: SightScene }).__sightScene = this;
+    host.addEventListener('pointerdown', this.onTapDown, true); host.addEventListener('pointerup', this.onTapUp, true);
     this.furnish();
     this.collectBlockers();
     // Vật "sống" chỉ chuyển động theo cả cụm (thuyền dập dềnh…): gộp các khối màu trơn bên trong từng cụm để mỗi cụm còn vài lần vẽ.
@@ -95,6 +102,7 @@ export class SightScene {
       const ring = new THREE.Mesh(ringG, new THREE.MeshBasicMaterial({ color: done ? 0x7ccf4f : 0xffd23f, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide })); ring.position.copy(st.at).y += 0.12;
       const beam = new THREE.Mesh(beamG, new THREE.MeshBasicMaterial({ color: done ? 0x9be07a : 0xffe680, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })); beam.position.copy(st.at).y += 2.5;
       const num = numberSprite(i + 1, done); num.position.copy(st.at).y += 3.4;
+      const zone = new THREE.Mesh(new THREE.RingGeometry(RADIUS - 0.12, RADIUS, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide })); zone.position.copy(st.at).y += 0.1; this.scene.add(zone);
       this.scene.add(ring, beam, num); this.markers.push({ ring, beam, num, s: this.project(st.at).s });
     });
   }
@@ -114,9 +122,9 @@ export class SightScene {
     s.stops.forEach((st, i) => {
       const pr = this.project(st.at), a = this.at(Math.min(this.total, pr.s + 1.4)), nx = -a.dir.z, nz = a.dir.x;
       // bảng đặt ở phía đối diện với công trình cần nhìn để không che tầm mắt
-      const side = st.look ? ((st.look.x - a.p.x) * nx + (st.look.z - a.p.z) * nz > 0 ? -1 : 1) : (i % 2 ? 1 : -1), off = s.half - 0.2;
+      const side = st.look ? ((st.look.x - a.p.x) * nx + (st.look.z - a.p.z) * nz > 0 ? -1 : 1) : (i % 2 ? 1 : -1), off = s.half + 0.7;
       const b = infoBoard(); b.position.set(a.p.x + nx * off * side, a.p.y, a.p.z + nz * off * side); b.rotation.y = Math.atan2(-nx * side, -nz * side); this.kit.add(b);
-      const o = i % 2 ? bench(0x8d8478) : potPlant([0xe85aa0, 0xffd23f, 0xf3ead2][i % 3], 1.3), c = this.at(Math.max(0, pr.s - 2.6));
+      const o = i % 2 ? bench(0x8d8478) : potPlant([0xe85aa0, 0xffd23f, 0xf3ead2][i % 3], 1.3), c = this.at(Math.max(0, pr.s - 3.4));
       o.position.set(c.p.x + (-c.dir.z) * off * side, c.p.y, c.p.z + c.dir.x * off * side); o.rotation.y = Math.atan2(c.dir.x, c.dir.z); this.kit.add(o);
     });
   }
@@ -209,7 +217,68 @@ export class SightScene {
     return best;
   }
 
-  setMove(x: number, y: number) { this.move.set(x, y); }
+  /** Khoảng cách từ p tới nhánh đường KHÁC (cách xa theo quãng đường) gần nhất; không có thì vô cực. */
+  private otherLeg(p: THREE.Vector3): number {
+    const path = this.set.path, own = this.project(p).s; let best = 1e9;
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1], dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1e-6;
+      const t = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2)), sAt = this.cum[i] + (this.cum[i + 1] - this.cum[i]) * t;
+      if (Math.abs(sAt - own) < 14 || Math.abs(a.y + (b.y - a.y) * t - p.y) > 2.5) continue;
+      best = Math.min(best, Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t));
+    }
+    return best;
+  }
+  /** Điểm (x, z) có đi được không: trong hành lang của một đoạn, hoặc nằm giữa hai nhánh đường chạy sát nhau (khe hẹp giữa hai lối coi như thông). */
+  private walkable(x: number, y: number, z: number): boolean {
+    const path = this.set.path, h = this.set.half; let d1 = 1e9, s1 = 0; const near: [number, number][] = [];
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i], b = path[i + 1], dx = b.x - a.x, dz = b.z - a.z, l2 = dx * dx + dz * dz || 1e-6;
+      const t = Math.min(1, Math.max(0, ((x - a.x) * dx + (z - a.z) * dz) / l2)); if (Math.abs(a.y + (b.y - a.y) * t - y) > 2.5) continue;
+      const d = Math.hypot(x - a.x - dx * t, z - a.z - dz * t); if (d <= h) return true;
+      const sAt = this.cum[i] + (this.cum[i + 1] - this.cum[i]) * t; if (d < d1) { d1 = d; s1 = sAt; } if (d <= 2 * h + 2 * BRIDGE) near.push([d, sAt]);
+    }
+    // nằm giữa hai nhánh đường cách nhau không quá 2×BRIDGE (tính từ mép lối): tổng khoảng cách tới hai nhánh xấp xỉ khoảng cách giữa chúng
+    for (const [d, sAt] of near) if (Math.abs(sAt - s1) > 14 && d1 + d <= 2 * h + 2 * BRIDGE) return true;
+    return false;
+  }
+  /** Tự đi tới một điểm trên mặt đất (được kéo về trong lối đi). */
+  walkTo(point: { x: number; y?: number; z: number }) {
+    const v = new THREE.Vector3(point.x, point.y ?? this.state.pos.y, point.z), pr = this.project(v, this.state.seg);
+    if (pr.d > this.set.half && !this.walkable(v.x, pr.q.y, v.z)) { const k = this.set.half / pr.d; v.x = pr.q.x + (v.x - pr.q.x) * k; v.z = pr.q.z + (v.z - pr.q.z) * k; }
+    v.y = pr.q.y; this.goal = { p: v, stop: null };
+  }
+  /** Tự đi tới điểm dừng thứ i (bỏ trống: điểm kế tiếp chưa xem). */
+  walkToStop(i?: number) {
+    const stops = this.set.stops; let k = i ?? stops.findIndex((x) => !this.seen.has(x.id)); if (k < 0) k = stops.length - 1; k = Math.max(0, Math.min(stops.length - 1, k));
+    if (this.dismissed === k) this.dismissed = null; this.goal = { p: stops[k].at.clone(), stop: k };
+  }
+  cancelWalk() { this.goal = null; }
+  private onTapDown = (e: PointerEvent) => { this.tapStart = { x: e.clientX, y: e.clientY, t: performance.now() }; };
+  private onTapUp = (e: PointerEvent) => {
+    const t = this.tapStart; this.tapStart = null; if (!t || performance.now() - t.t > 320 || Math.hypot(e.clientX - t.x, e.clientY - t.y) > 9) return;
+    if ((e.target as HTMLElement | null)?.closest?.('button, a, input, [role="dialog"]')) return;
+    const r = this.renderer.domElement.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    // chạm trúng cột mốc (tính theo màn hình) thì đi tới điểm dừng đó
+    const v = new THREE.Vector3(); let hit = -1, hd = 56;
+    this.markers.forEach((m, i) => { for (const y of [0.2, 2.2, 3.4]) { v.copy(this.set.stops[i].at); v.y += y; if (v.distanceTo(this.camera.position) > 70) return; v.project(this.camera); if (v.z > 1) return; const d = Math.hypot((v.x * 0.5 + 0.5) * r.width + r.left - e.clientX, (-v.y * 0.5 + 0.5) * r.height + r.top - e.clientY); if (d < hd) { hd = d; hit = i; } } });
+    if (hit >= 0) { this.walkToStop(hit); return; }
+    const ray = new THREE.Raycaster(); ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera);
+    const g = new THREE.Vector3(); if (ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.state.pos.y), g) && g.distanceTo(this.state.pos) < 60) this.walkTo(g);
+  };
+  /** Soát bộ cảnh: mỗi điểm dừng phải nằm trong lối đi và mở được khi đứng trên lối. Trả danh sách lỗi (rỗng là đạt). */
+  audit(): string[] {
+    const out: string[] = [], s = this.set;
+    s.stops.forEach((st, i) => {
+      const pr = this.project(st.at); if (pr.d > s.half + 0.05) out.push(`${st.id}: cột mốc cách lối đi ${pr.d.toFixed(1)} m (nửa bề rộng ${s.half})`);
+      if (pr.d > this.trig[i] - 0.5) out.push(`${st.id}: xa lối đi hơn bán kính kích hoạt`);
+      if (Math.abs(pr.q.y - st.at.y) > 1.5) out.push(`${st.id}: lệch cao độ ${Math.abs(pr.q.y - st.at.y).toFixed(1)} m so với lối đi`);
+      const o = this.otherLeg(st.at); if (o < 8 && o + s.half > this.trig[i]) out.push(`${st.id}: nhánh đường bên cạnh (${o.toFixed(1)} m) không mở được`);
+    });
+    return out;
+  }
+  triggers() { return this.trig.slice(); }
+
+  setMove(x: number, y: number) { this.move.set(x, y); if (x * x + y * y > 0.01) this.goal = null; }
   look(dx: number, dy: number) { this.yaw += dx; this.pitch = Math.min(0.75, Math.max(-0.45, this.pitch + dy)); this.lookAt = null; this.postcard = null; }
   private onKey = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (e.type === 'keydown') this.keys.add(k); else this.keys.delete(k); };
   private keyMove(): THREE.Vector2 {
@@ -233,32 +302,48 @@ export class SightScene {
 
   private step(dt: number) {
     const st = this.state, s = this.set; let mv = this.move.clone().add(this.keyMove()); if (mv.lengthSq() > 1) mv.normalize();
-    if (this.auto && this.nearIdx === null) {
+    if (mv.lengthSq() > 0.0025) this.goal = null;
+    let wantYaw: number | null = null;
+    if (this.auto && this.nearIdx === null && !this.goal) {
       // tự đi dọc tuyến: hướng tới điểm phía trước trên lối đi
       const target = this.at(st.s + 2.5).p, dx = target.x - st.pos.x, dz = target.z - st.pos.z, l = Math.hypot(dx, dz);
       if (l > 0.05 && st.s < this.total - 0.3) { const ang = Math.atan2(dx, -dz) - this.yaw; mv = new THREE.Vector2(Math.sin(ang), Math.cos(ang)); }
+    } else if (this.goal) {
+      // tự đi tới chỗ vừa chạm: gần và thông thì đi thẳng, xa thì men theo lối đi
+      const g = this.goal, gx = g.p.x - st.pos.x, gz = g.p.z - st.pos.z, gd = Math.hypot(gx, gz);
+      if (gd < 0.45 || (g.stop !== null && (this.nearIdx === g.stop || this.seen.has(s.stops[g.stop].id) && gd < 1.2))) this.goal = null;
+      else {
+        let tx = g.p.x, tz = g.p.z, direct = gd < 16 && Math.abs(g.p.y - st.pos.y) < 2;
+        if (direct) for (let k = 1; k < 8 && direct; k++) { const f = k / 8; if (!this.walkable(st.pos.x + gx * f, st.pos.y, st.pos.z + gz * f)) direct = false; }
+        if (!direct) { const gs = this.project(g.p).s, dir = gs >= st.s ? 1 : -1, a = this.at(st.s + dir * 2.5).p; tx = a.x; tz = a.z; if (Math.abs(gs - st.s) < 0.6) { tx = g.p.x; tz = g.p.z; } }
+        const ang = Math.atan2(tx - st.pos.x, -(tz - st.pos.z)) - this.yaw, k = Math.min(1, gd / 1.4 + 0.3); mv = new THREE.Vector2(Math.sin(ang) * k, Math.cos(ang) * k); wantYaw = ang + this.yaw;
+      }
     }
-    const sp = mv.length(); this.moving += ((sp > 0.05 ? 1 : 0) - this.moving) * Math.min(1, dt * 10);
-    if (sp > 0.05 && this.nearIdxBlocking() === false) {
-      const ang = this.yaw + Math.atan2(mv.x, mv.y), v = SPEED * Math.min(1, sp) * this.speedMul * dt;
+    const sp = Math.min(1, mv.length()), blocked = this.nearIdxBlocking();
+    // tốc độ có gia tốc, giảm tốc: không giật khi cần gạt nhảy bậc
+    this.vmag += ((sp > 0.05 && !blocked ? sp : 0) - this.vmag) * (1 - Math.exp(-dt * 9));
+    this.moving += ((sp > 0.05 ? 1 : 0) - this.moving) * (1 - Math.exp(-dt * 10));
+    if (sp > 0.05 && !blocked) this.moveAng = this.yaw + Math.atan2(mv.x, mv.y);
+    if (this.vmag > 0.02 && !blocked) {
+      const ang = this.moveAng, v = SPEED * this.vmag * this.speedMul * dt;
       const nx = st.pos.x + Math.sin(ang) * v, nz = st.pos.z - Math.cos(ang) * v;
-      const pr = this.project(new THREE.Vector3(nx, st.pos.y, nz), st.seg); let px = nx, pz = nz;
-      if (pr.d > s.half) { const k = s.half / pr.d; px = pr.q.x + (nx - pr.q.x) * k; pz = pr.q.z + (nz - pr.q.z) * k; }
-      st.pos.set(px, st.pos.y + (pr.q.y - st.pos.y) * Math.min(1, dt * 14), pz); st.s = pr.s; st.seg = pr.seg;
-      let dh = ang - this.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); this.heading += dh * Math.min(1, dt * 12);
+      const pr = this.project(this.tmp.set(nx, st.pos.y, nz), st.seg); let px = nx, pz = nz;
+      if (pr.d > s.half && !this.walkable(nx, pr.q.y, nz)) { const k = s.half / pr.d; px = pr.q.x + (nx - pr.q.x) * k; pz = pr.q.z + (nz - pr.q.z) * k; }
+      st.pos.set(px, st.pos.y + (pr.q.y - st.pos.y) * (1 - Math.exp(-dt * 14)), pz); st.s = pr.s; st.seg = pr.seg;
+      let dh = ang - this.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); this.heading += dh * (1 - Math.exp(-dt * 12));
       // camera tự xoay theo hướng đi khi người chơi không tự xoay
-      if (!this.lookAt) { let dy = this.heading - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); if (Math.abs(dy) < 2.6) this.yaw += dy * Math.min(1, dt * (this.auto ? 3.2 : 1.5)); }
+      if (!this.lookAt) { let dy = (wantYaw ?? this.heading) - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); if (Math.abs(dy) < 2.6) this.yaw += dy * (1 - Math.exp(-dt * (this.auto || this.goal ? 3.2 : 1.5))); }
     }
     // điểm dừng gần nhất
     let near: number | null = null;
-    s.stops.forEach((sp2, i) => { if (Math.hypot(sp2.at.x - st.pos.x, sp2.at.z - st.pos.z) < RADIUS && Math.abs(sp2.at.y - st.pos.y) < 3) near = i; });
+    let nd = 1e9; for (let i = 0; i < s.stops.length; i++) { const a = s.stops[i].at, d = Math.hypot(a.x - st.pos.x, a.z - st.pos.z); if (d < this.trig[i] && Math.abs(a.y - st.pos.y) < 3 && d < nd) { nd = d; near = i; } }
     if (near === null) this.dismissed = null;
     const open = near !== null && near !== this.dismissed ? near : null;
     if (open !== this.nearIdx) {
       this.nearIdx = open; st.near = open === null ? null : s.stops[open].id; this.cb.onNear(open);
       if (open !== null) { this.lookAt = s.stops[open].look ?? null; this.postcard = this.postcardOf(open); s.onStop?.(s.stops[open].id); this.autoWait = 0; } else { this.lookAt = null; this.postcard = null; }
     }
-    if (this.lookAt) { const want = Math.atan2(this.lookAt.x - st.pos.x, -(this.lookAt.z - st.pos.z)); let dy = want - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); this.yaw += dy * Math.min(1, dt * 3); const wp = Math.max(-0.45, Math.min(0.55, 0.16 - Math.atan2(this.lookAt.y - st.pos.y - 2, Math.hypot(this.lookAt.x - st.pos.x, this.lookAt.z - st.pos.z)) * 0.9)); this.pitch += (wp - this.pitch) * Math.min(1, dt * 3); }
+    if (this.lookAt) { const want = Math.atan2(this.lookAt.x - st.pos.x, -(this.lookAt.z - st.pos.z)); let dy = want - this.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); this.yaw += dy * (1 - Math.exp(-dt * 3)); const wp = Math.max(-0.45, Math.min(0.55, 0.16 - Math.atan2(this.lookAt.y - st.pos.y - 2, Math.hypot(this.lookAt.x - st.pos.x, this.lookAt.z - st.pos.z)) * 0.9)); this.pitch += (wp - this.pitch) * (1 - Math.exp(-dt * 3)); }
   }
   /** Góc máy "bưu thiếp" của một điểm dừng: chỗ bộ cảnh khai báo, hoặc lùi sau lưng nhân vật theo hướng nhìn công trình. */
   private postcardOf(i: number): { pos: THREE.Vector3; look: THREE.Vector3 } | null {
@@ -271,13 +356,15 @@ export class SightScene {
   }
   /** Khi thẻ thuyết minh đang mở ở chế độ tự đi thì đứng yên chờ chụp. */
   private nearIdxBlocking(): boolean { return this.auto && this.nearIdx !== null; }
+  private moveAng = 0; private tmp = new THREE.Vector3(); private dtNow = 1 / 60;
 
   private placeCamera(snap = false) {
     const p = this.state.pos, portrait = this.camera.aspect < 1;
     if (this.postcard) {
+      this.wasPostcard = true;
       // đang xem thuyết minh: máy ảnh lướt tới góc ngắm đẹp, đẩy công trình lên phần màn không bị thẻ che
-      if (snap) this.camera.position.copy(this.postcard.pos); else this.camera.position.lerp(this.postcard.pos, 0.07);
-      this.camLook.lerp(this.postcard.look, snap ? 1 : 0.09); this.camera.lookAt(this.camLook); this.camera.rotateX(-(portrait ? 0.07 : 0.02));
+      if (snap) this.camera.position.copy(this.postcard.pos); else this.camera.position.lerp(this.postcard.pos, ease(0.07, this.dtNow));
+      this.camLook.lerp(this.postcard.look, snap ? 1 : ease(0.09, this.dtNow)); this.camera.lookAt(this.camLook); this.camera.rotateX(-(portrait ? 0.07 : 0.02));
       this.zoom(portrait ? 74 : 54, snap); return;
     }
     this.zoom(portrait ? 62 : 52, snap);
@@ -289,20 +376,23 @@ export class SightScene {
     const pr = this.project(far, this.state.seg), lim = this.set.half + 4.5;
     if (pr.d > lim) { const k = lim / pr.d; far.x = pr.q.x + (far.x - pr.q.x) * k; far.z = pr.q.z + (far.z - pr.q.z) * k; }
     const k = this.clear(head, far), wantDist = Math.max(1.6, distMax * Math.max(0.2, k - 0.06));
-    this.camDist += (wantDist - this.camDist) * (wantDist < this.camDist ? 0.5 : 0.06); if (snap) this.camDist = wantDist;
+    this.camDist += (wantDist - this.camDist) * ease(wantDist < this.camDist ? 0.2 : 0.05, this.dtNow); if (snap) this.camDist = wantDist;
     const t = this.camDist / distMax, want = new THREE.Vector3().lerpVectors(head, far, t); want.y += (1 - t) * 1.1;
-    if (snap) this.camera.position.copy(want); else this.camera.position.lerp(want, 0.22);
+    // Máy ảnh gắn theo đầu nhân vật; chỉ làm mượt ĐỘ LỆCH so với đầu (góc, khoảng cách đổi chậm), không 'đuổi theo' vị trí:
+    // đuổi theo bằng lerp làm khoảng trễ đổi theo thời gian từng khung, cảnh giật theo nhịp dù nhân vật đi đều.
+    want.sub(head); if (snap) this.camOff.copy(want); else { if (this.wasPostcard) this.camOff.copy(this.camera.position).sub(head); this.camOff.lerp(want, ease(0.22, this.dtNow)); }
+    this.wasPostcard = false; this.camera.position.copy(head).add(this.camOff);
     const ahead = 9, ly = p.y + 2.6 - this.pitch * (this.pitch < 0 ? 14 : 3.2) + (portrait ? 1.6 : 0.7);
     this.camLook.set(p.x + Math.sin(this.yaw) * ahead, ly, p.z - Math.cos(this.yaw) * ahead);
     this.camera.lookAt(this.camLook);
   }
-  private camLook = new THREE.Vector3();
-  private zoom(fov: number, snap: boolean) { const f = snap ? fov : this.camera.fov + (fov - this.camera.fov) * 0.08; if (Math.abs(f - this.camera.fov) > 0.01) { this.camera.fov = f; this.camera.updateProjectionMatrix(); } }
+  private camLook = new THREE.Vector3(); private camOff = new THREE.Vector3(); private wasPostcard = false;
+  private zoom(fov: number, snap: boolean) { const f = snap ? fov : this.camera.fov + (fov - this.camera.fov) * ease(0.08, this.dtNow); if (Math.abs(f - this.camera.fov) > 0.01) { this.camera.fov = f; this.camera.updateProjectionMatrix(); } }
   private frame = (now: number) => {
     if (this.disposed) return; this.raf = requestAnimationFrame(this.frame);
     if (!this.quality.tick(now)) { if (!this.quality.throttled) this.last = now; return; }
-    const dt = Math.min(0.05, (now - this.last) / 1000); this.last = now; this.time += dt;
-    this.step(dt);
+    const dt = stepDt((now - this.last) / 1000); this.last = now; this.time += dt; this.dtNow = dt;
+    this.step(dt); this.quality.busy = this.vmag > 0.05;
     const st = this.state, sw = Math.sin(this.time * 9) * 0.7 * this.moving;
     this.player.position.copy(st.pos); this.player.position.y += Math.abs(Math.sin(this.time * 9)) * 0.05 * this.moving; this.player.rotation.y = -this.heading;
     this.legs[0].rotation.x = sw; this.legs[1].rotation.x = -sw; this.arms[0].rotation.x = -sw * 0.8; this.arms[1].rotation.x = sw * 0.8;
@@ -329,7 +419,9 @@ export class SightScene {
     for (const t of this.kit.ticks) t(this.time, dt, st);
     this.placeCamera();
     this.renderer.render(this.scene, this.camera);
-    this.hudT -= dt; if (this.hudT <= 0) { this.hudT = 0.12; this.cb.onHud(this.hud()); }
+    trace({ t: now, dt, x: st.pos.x, z: st.pos.z, cx: this.camera.position.x, cy: this.camera.position.y, cz: this.camera.position.z, yaw: this.yaw, level: this.quality.level, ratio: this.quality.pixelRatio });
+    // Thanh chỉ đường chỉ báo cho giao diện khi con số thật sự đổi (mỗi lần báo là một lần React vẽ lại): tối đa 4 lần/giây
+    this.hudT -= dt; if (this.hudT <= 0) { this.hudT = 0.25; const h = this.hud(), key = `${h.near}|${h.next}|${Math.round(h.dist)}|${Math.round(h.bearing * 4)}`; if (key !== this.lastHud) { this.lastHud = key; this.cb.onHud(h); } }
   };
   private hud(): SightHud {
     const s = this.set, st = this.state; let next = s.stops.findIndex((x) => !this.seen.has(x.id)); if (next < 0) next = s.stops.length - 1;
@@ -347,7 +439,7 @@ export class SightScene {
   private resize = () => { const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1; this.quality.resize(w, h); this.camera.aspect = w / h; this.camera.fov = w < h ? 62 : 52; this.camera.updateProjectionMatrix(); };
   dispose() {
     this.disposed = true; cancelAnimationFrame(this.raf); this.quality.dispose();
-    window.removeEventListener('resize', this.resize); window.removeEventListener('keydown', this.onKey); window.removeEventListener('keyup', this.onKey);
+    window.removeEventListener('resize', this.resize); window.removeEventListener('keydown', this.onKey); window.removeEventListener('keyup', this.onKey); this.host.removeEventListener('pointerdown', this.onTapDown, true); this.host.removeEventListener('pointerup', this.onTapUp, true);
     this.scene.traverse((o) => { const m = o as THREE.Mesh; if (m.geometry && !SHARED.has(m.geometry)) m.geometry.dispose(); const mm = m.material as THREE.MeshStandardMaterial | undefined; if (m.isMesh && mm && mm.map && (mm.map as THREE.Texture).image && !(mm.map instanceof THREE.CanvasTexture)) { mm.map.dispose(); mm.dispose(); } else if (m.isMesh && mm?.map && mm.map.userData?.own) { mm.map.dispose(); mm.dispose(); } const sp = o as THREE.Sprite; if (sp.isSprite) { sp.material.map?.dispose(); sp.material.dispose(); } });
     (this.scene.background as THREE.Texture | null)?.dispose?.(); this.renderer.dispose(); this.renderer.forceContextLoss(); this.renderer.domElement.remove();
   }

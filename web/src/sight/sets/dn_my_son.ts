@@ -3,7 +3,7 @@
 // rồi vòng về nhà múa. Núi Răng Mèo (Mahaparvata) đứng ở phía nam.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, ball, bead, box, cone, cyl, gable, grp, label, mountain, palm, person, rock, signPost, tree } from '../SightKit.ts';
+import { Kit, V, ball, bead, box, cone, cyl, gable, grp, label, forestMountain, palm, person, rock, signPost, tree } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
 
 const BRICK = 0xb4593c, BRICK2 = 0x9c4a32, BRICK3 = 0xc46a48, MOSS = 0x6f7a48, SAND = 0xbcae90, DARK = 0x3a2420;
@@ -55,8 +55,8 @@ export function mySon(kit: Kit, _s: Sight): SightSet {
   const r = kit.r, G = 0x86b060;
   kit.ground(G, 900);
   // núi bao quanh thung lũng; Răng Mèo ở phía nam có đỉnh nhọn lệch như chiếc răng
-  for (let i = 0; i < 16; i++) { const a = i / 16 * 6.28, d = 230 + r() * 60; if (Math.abs(a - Math.PI / 2) < 0.35) continue; kit.add(mountain(i % 2 ? 0x5d8f6a : 0x6a9c70, Math.cos(a) * d, Math.sin(a) * d, 90 + r() * 50, 70 + r() * 60, r)); }
-  kit.add(mountain(0x4f8362, 10, 300, 130, 150, r), cone(0x457858, 26, 150, 292, 30, 90), cone(0x4f8362, -8, 128, 300, 26, 60));
+  for (let i = 0; i < 16; i++) { const a = i / 16 * 6.28, d = 230 + r() * 60; if (Math.abs(a - Math.PI / 2) < 0.35) continue; kit.add(forestMountain(i % 2 ? 0x5d8f6a : 0x6a9c70, Math.cos(a) * d, Math.sin(a) * d, 90 + r() * 50, 70 + r() * 60, r)); }
+  kit.add(forestMountain(0x4f8362, 10, 300, 130, 150, r), cone(0x457858, 26, 150, 292, 30, 90), cone(0x4f8362, -8, 128, 300, 26, 60));
   // suối Khe Thẻ chảy tây → đông ở phía bắc, một nhánh chảy xuống giữa nhóm BCD và nhóm A
   kit.add(box(0x6a8a5a, 0, -0.3, -84, 400, 0.7, 13)); kit.water(0x6fb0b4, 0, -84, 400, 9, 0.06, 0.9);
   kit.add(box(0x6a8a5a, 26, -0.3, 0, 8, 0.7, 170)); kit.water(0x6fb0b4, 26, 0, 5, 170, 0.06, 0.9);
@@ -110,6 +110,10 @@ export function mySon(kit: Kit, _s: Sight): SightSet {
   kit.motes(60, 0xfff4c8, 0.5, () => V(-40 + r() * 100, 1 + r() * 8, -60 + r() * 100), (p, i, t) => { p.y += Math.sin(t * 0.5 + i) * 0.003; p.x += Math.cos(t * 0.3 + i) * 0.004; });
   return {
     path, half: 2.1, npcs: 9,
+    extras: [
+      { frac: 0.5, kind: 'hoi_dap', name: 'Hỏi nhanh có thưởng', fact: 'Các đền tháp Mỹ Sơn thờ thần Shiva của Ấn Độ giáo, biểu tượng là bộ Linga – Yoni bằng sa thạch.', q: 'Đền tháp ở Mỹ Sơn chủ yếu thờ vị thần nào?', options: ['Thần Shiva', 'Thần Vishnu', 'Phật Thích Ca'], answer: 0 },
+      { frac: 0.76, kind: 'ngam_canh', name: 'Ngắm thung lũng Mỹ Sơn', fact: 'Thánh địa nằm lọt trong một thung lũng kín có núi bao quanh. Người Chăm xưa coi ngọn núi phía nam là núi thiêng che chở cho các đền tháp.' },
+    ],
     stops: [
       { id: 'cong', at: V(0, 0, -131), look: V(0, 5, -124) },
       { id: 'suoi', at: V(0, 0.62, -86), look: V(30, 0, -84) },

@@ -4,6 +4,8 @@ import type { JSX, PointerEvent as RPointerEvent } from 'react';
 import { sight as findSight } from '../../../shared/sights.ts';
 import { SightScene } from './SightScene.ts';
 import type { SightHud, SightShop } from './SightScene.ts';
+import { guide } from './guide.ts';
+import type { SightExtra } from './SightKit.ts';
 import './sight.css';
 
 interface TestHook { goto: (i: number) => void; snap: () => void; pos: () => unknown; info: () => unknown; close: () => void }
@@ -23,8 +25,6 @@ const ART = `${import.meta.env.BASE_URL}art/sights/`;
 /** Ảnh có thể thiếu: lỗi tải thì ẩn cả khung chứa. */
 const hideOnError = (e: { currentTarget: HTMLImageElement }) => { (e.currentTarget.closest('[data-art]') as HTMLElement | null ?? e.currentTarget).style.display = 'none'; };
 const today = () => { const d = new Date(), z = (n: number) => String(n).padStart(2, '0'); return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()}`; };
-/** Câu đầu của lời thuyết minh, dùng làm dòng tóm tắt. */
-const firstLine = (t: string) => { const m = t.match(/^.*?[.!?](\s|$)/); return (m ? m[0] : t).trim(); };
 
 export function SightWalk(props: SightWalkProps): JSX.Element {
   const s = findSight(props.sightId);
@@ -34,7 +34,6 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const [near, setNear] = useState<number | null>(null);
   const [hud, setHud] = useState<SightHud | null>(null);
   const [flash, setFlash] = useState(0);
-  const [open, setOpen] = useState(false);
   const [shop, setShop] = useState<number | null>(null);
   const [splash, setSplash] = useState<'on' | 'fade' | 'off'>('on');
   const [stamp, setStamp] = useState<{ k: number; name: string } | null>(null);
@@ -42,6 +41,11 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const [stick, setStick] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
   const ptr = useRef<{ move: number | null; look: number | null; lx: number; ly: number; ox: number; oy: number }>({ move: null, look: null, lx: 0, ly: 0, ox: 0, oy: 0 });
   const nearRef = useRef<number | null>(null); nearRef.current = near;
+  const [album, setAlbum] = useState(false);
+  const [exNear, setExNear] = useState<number | null>(null);
+  const [ex, setEx] = useState<{ i: number; x: SightExtra; pick: number | null; pan: boolean } | null>(null);
+  const [exDone, setExDone] = useState<number[]>([]);
+  const [bonus, setBonus] = useState<{ k: number; xp: number } | null>(null);
 
   const snap = () => {
     const i = nearRef.current; if (i === null || !s) return; const id = s.stops[i].id;
@@ -52,7 +56,7 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   useEffect(() => {
     if (!s || !host.current) return;
     const w = window as W;
-    const sc = new SightScene(host.current, s, seenRef.current, { onNear: (i) => { setNear(i); setOpen(false); }, onHud: setHud, onShop: setShop }, props.shops);
+    const sc = new SightScene(host.current, s, seenRef.current, { onNear: (i) => { setNear(i); setAlbum(false); if (i !== null) setEx(null); }, onHud: setHud, onShop: setShop }, props.shops);
     sc.auto = !!w.__sightAuto; sc.speedMul = w.__sightAuto && w.__rideStep ? 6 : 1; scene.current = sc;
     w.__sight = { goto: (i) => sc.goto(i), snap, pos: () => sc.pos(), info: () => sc.info(), close };
     const t = window.setTimeout(() => setHint(false), 9000);
@@ -62,6 +66,24 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.sightId]);
 
+  // cảnh đọc trạng thái này để tô trụ mốc và vẽ dải mũi tên trên nền
+  useEffect(() => { guide.next = hud?.next ?? 0; guide.seen = new Set(seen); }, [hud?.next, seen]);
+  useEffect(() => { guide.quiet = !!ex?.pan; }, [ex?.pan]);
+  // điểm tương tác phụ: dò vị trí người chơi vài lần mỗi giây
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const sc = scene.current; if (!sc) return; const p = sc.pos(); let best: number | null = null, bd = 4.4 * 4.4;
+      guide.extras.forEach((x, i) => { const d = (x.at.x - p.x) ** 2 + (x.at.z - p.z) ** 2; if (d < bd) { bd = d; best = i; } });
+      setExNear((v) => (v === best ? v : best));
+    }, 300);
+    return () => window.clearInterval(t);
+  }, [props.sightId]);
+  // ngắm toàn cảnh: máy quay tự lia trọn một vòng trong 4 giây
+  useEffect(() => {
+    if (!ex?.pan) return; let n = 0; const steps = 100;
+    const t = window.setInterval(() => { scene.current?.look(Math.PI * 2 / steps, 0); if (++n >= steps) { window.clearInterval(t); setEx((e) => (e ? { ...e, pan: false } : e)); } }, 40);
+    return () => window.clearInterval(t);
+  }, [ex?.pan]);
   // chế độ tự đi: tới điểm nào tự chụp rồi đi tiếp
   useEffect(() => {
     const w = window as W; if (!w.__sightAuto || near === null || !s) return;
@@ -96,24 +118,37 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const next = hud ? s.stops[hud.next] : s.stops[0], allSeen = seen.length >= s.stops.length;
   const leave = (toMarket: boolean) => props.onExit({ stops: seenRef.current, toMarket });
   const xp = props.xpPerStop ?? 10, en = props.energy, shopNear = shop !== null && props.shops ? props.shops[shop] : null;
+  const walker = scene.current as unknown as { walkToStop?: (i: number) => void } | null, canWalk = typeof walker?.walkToStop === 'function';
+  const exHere = exNear !== null && !stop && !ex ? guide.extras[exNear] : null;
+  const EX_LABEL = { ngam_canh: ['🔭', 'Ngắm toàn cảnh'], hoi_dap: ['❓', 'Hỏi nhanh có thưởng'], thu_vat: ['✨', 'Lại gần xem'] } as const;
+  const finishEx = (i: number, gain: number) => { if (!exDone.includes(i)) { setExDone((d) => [...d, i]); guide.done.add(i); if (gain > 0) setBonus({ k: Date.now(), xp: gain }); } };
+  const openEx = () => { if (exNear === null) return; const x = guide.extras[exNear]; setEx({ i: exNear, x, pick: null, pan: x.kind === 'ngam_canh' }); if (x.kind !== 'hoi_dap') finishEx(exNear, x.kind === 'ngam_canh' ? 5 : 3); };
+  const pct = en ? Math.max(0, Math.min(100, en.value / Math.max(1, en.max) * 100)) : 0;
   return (
-    <div className={`sw${en ? ' has-energy' : ''}`} data-stop={stop?.id ?? ''} data-seen={seen.length}>
+    <div className="sw" data-stop={stop?.id ?? ''} data-seen={seen.length}>
       <div className="sw-scene" ref={host} onPointerDown={down} onPointerMove={moveP} onPointerUp={up} onPointerCancel={up} />
       <div className="sw-top">
         <div className="sw-bar">
-          <div className="sw-title"><b aria-hidden="true">{s.emoji}</b><span>{s.name}</span><small>{seen.length}/{s.stops.length} dấu</small></div>
-          <ol className="sw-dots" aria-label="Các điểm dừng">
+          <div className="sw-title"><b aria-hidden="true">{s.emoji}</b><span>{s.name}</span></div>
+          <ol className="sw-dots" aria-label={`Đã đóng ${seen.length} trên ${s.stops.length} dấu`}>
             {s.stops.map((x, i) => <li key={x.id} className={(seen.includes(x.id) ? 'done ' : '') + (hud?.next === i && !allSeen ? 'next' : '')} title={x.name}>{seen.includes(x.id) ? '✓' : i + 1}</li>)}
           </ol>
-          {en && <div className="sw-energy" role="img" aria-label={`Thể lực ${Math.round(en.value)} trên ${en.max}`}><span aria-hidden="true">⚡</span><div><i style={{ width: `${Math.max(0, Math.min(100, en.value / Math.max(1, en.max) * 100))}%` }} /></div><small>{Math.round(en.value)}/{en.max}</small></div>}
+          {en && <div className={`sw-energy${pct < 25 ? ' low' : ''}`} role="img" aria-label={`Thể lực ${Math.round(en.value)} trên ${en.max}`}><span aria-hidden="true">⚡</span><div><i style={{ width: `${pct}%` }} /></div></div>}
         </div>
         <button className="sw-leave" onClick={() => leave(false)}>Rời đi</button>
       </div>
-      {!stop && hud && (
+      {!stop && !ex && hud && (
         <div className="sw-guide">
           <i style={{ transform: `rotate(${hud.bearing}rad)` }} aria-hidden="true">➤</i>
-          <span>{allSeen ? 'Đã xem hết · ra cổng ở' : 'Tiếp theo:'} <b>{hud.next + 1}. {next.name}</b></span>
+          <span>{allSeen ? 'Ra cổng:' : 'Tới:'} <b>{hud.next + 1}. {next.name}</b></span>
           <small>{Math.round(hud.dist)} m</small>
+          {canWalk && hud.dist > 3 && <button className="sw-walk" onClick={() => walker!.walkToStop!(hud.next)}>▶ Đi tới</button>}
+        </div>
+      )}
+      {seen.length > 0 && !stop && !ex && (
+        <div className={`sw-album${album ? ' open' : ''}`}>
+          <button className="sw-album-btn" aria-expanded={album} aria-label={`Ảnh đã chụp: ${seen.length}`} onClick={() => setAlbum((a) => !a)}><span aria-hidden="true">📷</span>{seen.length}</button>
+          {album && <ul>{s.stops.filter((x) => seen.includes(x.id)).map((x) => <li key={x.id} data-art><img src={`${ART}${s.id}-s.jpg`} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} /><span>{x.name}</span></li>)}</ul>}
         </div>
       )}
       {hint && !stop && <div className="sw-hint">Kéo nửa dưới màn hình để đi · kéo nửa trên để nhìn quanh</div>}
@@ -127,26 +162,46 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
           <strong className="sw-xp">+{xp} XP</strong>
         </div>
       )}
-      {shopNear && !stop && <button className="sw-shop" onClick={() => props.onShop?.(shopNear.id)}><span aria-hidden="true">🛒</span> {shopNear.emoji} {shopNear.name}</button>}
+      {bonus && <strong className="sw-bonus" key={bonus.k} aria-hidden="true">+{bonus.xp} XP</strong>}
+      {exHere && <button className={`sw-extra${exDone.includes(exNear!) ? ' done' : ''}`} onClick={openEx}><span aria-hidden="true">{exHere.emoji ?? EX_LABEL[exHere.kind][0]}</span> {exHere.kind === 'thu_vat' ? exHere.name : EX_LABEL[exHere.kind][1]}</button>}
+      {shopNear && !stop && !exHere && !ex && <button className="sw-shop" onClick={() => props.onShop?.(shopNear.id)}><span aria-hidden="true">🛒</span> {shopNear.emoji} {shopNear.name}</button>}
+      {ex && ex.x.kind === 'ngam_canh' && (
+        <div className="sw-pan" role="dialog" aria-label={ex.x.name}>
+          <b>🔭 {ex.x.name}</b><p>{ex.x.fact}</p>
+          {!ex.pan && <button onClick={() => setEx(null)}>Xong</button>}
+        </div>
+      )}
+      {ex && ex.x.kind !== 'ngam_canh' && (
+        <div className="sw-ex" role="dialog" aria-label={ex.x.name}>
+          <div className="sw-ex-head"><span aria-hidden="true">{ex.x.emoji ?? EX_LABEL[ex.x.kind][0]}</span><b>{ex.x.name}</b><button className="sw-x" aria-label="Đóng" onClick={() => setEx(null)}>✕</button></div>
+          {ex.x.kind === 'hoi_dap' && <>
+            <p className="sw-q">{ex.x.q}</p>
+            <div className="sw-opts">{(ex.x.options ?? []).map((o, k) => (
+              <button key={o} disabled={ex.pick !== null} className={ex.pick === null ? '' : k === ex.x.answer ? 'right' : k === ex.pick ? 'wrong' : ''}
+                onClick={() => { setEx({ ...ex, pick: k }); finishEx(ex.i, k === ex.x.answer ? 15 : 0); }}>{o}</button>
+            ))}</div>
+            {ex.pick !== null && <p className="sw-fact"><b>{ex.pick === ex.x.answer ? 'Chính xác! ' : 'Chưa đúng. '}</b>{ex.x.fact}</p>}
+          </>}
+          {ex.x.kind === 'thu_vat' && <p className="sw-fact">{ex.x.fact}</p>}
+          {(ex.x.kind === 'thu_vat' || ex.pick !== null) && <div className="sw-actions"><button className="sw-next" onClick={() => setEx(null)}>Đi tiếp ›</button></div>}
+        </div>
+      )}
       {stop && (
-        <div className={`sw-card${open ? ' open' : ''}${got ? ' got' : ''}`} role="dialog" aria-label={stop.name}>
-          <div className="sw-card-row">
-            <button className="sw-card-main" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-              <span className="sw-num">{got ? '✓' : near! + 1}</span>
-              <span className="sw-card-text"><b>{stop.name}</b><small>{open ? 'Chạm để thu gọn' : firstLine(stop.fact)}</small></span>
-              <i aria-hidden="true">{open ? '▾' : '▴'}</i>
-            </button>
-            {!got && <button className="sw-snap" aria-label="Chụp ảnh lưu niệm, đóng dấu hộ chiếu" onClick={snap}><span aria-hidden="true">📸</span></button>}
-            {got && !last && <button className="sw-next" onClick={close}>Đi tiếp ›</button>}
-          </div>
-          {open && <div className="sw-post" data-art><img src={`${ART}${s.id}-s.jpg`} alt={`Bưu thiếp ${s.name}`} onError={hideOnError} /><span>{s.name}</span></div>}
-          {open && <p className="sw-fact">{stop.fact}</p>}
-          {(open || (got && last)) && (
-            <div className="sw-actions">
-              {got && last && <button className="sw-go" onClick={() => leave(true)}>Ra cổng → Siêu thị đặc sản</button>}
-              {(last || !got) && <button onClick={close}>{last ? 'Ở lại ngắm thêm' : 'Để sau'}</button>}
+        <div className={`sw-card${got ? ' got' : ''}`} role="dialog" aria-label={stop.name}>
+          <div className="sw-card-body">
+            <div className="sw-thumb" data-art><img src={`${ART}${s.id}-s.jpg`} alt="" onError={hideOnError} />{got && <em>Đã đóng dấu</em>}</div>
+            <div className="sw-card-text">
+              <small>Điểm dừng {near! + 1}/{s.stops.length}</small>
+              <b>{stop.name}</b>
             </div>
-          )}
+          </div>
+          <p className="sw-fact">{stop.fact}</p>
+          <div className="sw-actions">
+            {!got && <button className="sw-snap" onClick={snap}><span aria-hidden="true">📸</span> Chụp ảnh, đóng dấu</button>}
+            {got && !last && <button className="sw-next" onClick={close}>Đi tiếp ›</button>}
+            {got && last && <button className="sw-go" onClick={() => leave(true)}>Ra cổng → Siêu thị đặc sản</button>}
+            {(!got || last) && <button className="sw-later" onClick={close}>{last ? 'Ở lại ngắm thêm' : 'Để sau'}</button>}
+          </div>
         </div>
       )}
     </div>

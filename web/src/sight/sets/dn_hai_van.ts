@@ -3,7 +3,7 @@
 // cổng "Thiên hạ đệ nhất hùng quan" nhìn về nam (Đà Nẵng). Phía bắc dưới chân đèo là đầm Lập An và vịnh Lăng Cô.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, ball, box, cone, cyl, gable, grp, label, mountain, person, rock, stall, tree } from '../SightKit.ts';
+import { Kit, V, ball, box, cone, cyl, gable, grp, label, forestMountain, person, rock, stall, tree } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
 import { bake as bakeIt, cloud, flagPole, slab, wave } from './_extra.ts';
 import type { Spots } from './_extra.ts';
@@ -25,7 +25,7 @@ export function haiVan(kit: Kit, _s: Sight): SightSet & Spots {
     kit.along(path[i], path[i + 1], 6, 4.6, () => box(0xc9ccd0, 0, 0.62, 0, 0.12, 0.3, 6.2, Math.atan2(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z)), [i === 5 || i === 6 || i === 7 ? 1 : -1].map((s) => -s));
   }
   // dãy núi Bạch Mã – Hải Vân phía tây, rừng trên sườn
-  kit.add(mountain(0x3f7a4e, -150, -10, 150, 120, r, -3), mountain(0x4a8556, -110, 140, 120, 80, r, -3), mountain(0x3f7a4e, -370, -190, 170, 140, r, -3), mountain(0x558f5a, -60, -40, 70, 70, r, -3), mountain(0x4a8556, 20, 40, 60, 34, r, -3));
+  kit.add(forestMountain(0x3f7a4e, -150, -10, 150, 120, r, -3), forestMountain(0x4a8556, -110, 140, 120, 80, r, -3), forestMountain(0x3f7a4e, -370, -190, 170, 140, r, -3), forestMountain(0x558f5a, -60, -40, 70, 70, r, -3), forestMountain(0x4a8556, 20, 40, 60, 34, r, -3));
   for (let i = 0; i < 70; i++) { const k = Math.floor(r() * 9), p = path[k].clone().lerp(path[k + 1], r()), side = r() < 0.6 ? -1 : 1, off = 7 + r() * 11; const t = tree(r, 0.9 + r() * 0.9, r() < 0.6); t.position.set(p.x + side * off, p.y - 0.4, p.z + (r() - 0.5) * 6); if (Math.hypot(t.position.x - 40, t.position.z - 30) < 20 && side > 0) continue; kit.add(t); }
   for (let i = 0; i < 26; i++) { const k = Math.floor(r() * 9), p = path[k].clone().lerp(path[k + 1], r()); kit.add(rock(0x9a9084, p.x + (r() < 0.5 ? -1 : 1) * (5.6 + r() * 3), p.y + 0.2, p.z, 0.8 + r() * 1.2, 0.6 + r(), 0.8 + r(), r() * 3)); }
   // chân đèo: biển chỉ dẫn, xe máy phượt, biển báo đèo dốc
@@ -75,7 +75,7 @@ export function haiVan(kit: Kit, _s: Sight): SightSet & Spots {
   kit.add(box(0x6fae62, -190, -3, -420, 420, 1.4, 320), box(0x53c7c0, -130, -2.2, -330, 150, 0.2, 130), box(0xfbf3d6, -40, -2.1, -300, 26, 0.3, 230), box(0xfbf3d6, -150, -2.1, -252, 200, 0.3, 14), box(0xffffff, -24, -2.2, -300, 5, 0.2, 230));
   for (let i = 0; i < 26; i++) kit.add(box([0xf1e3b8, 0xe9c9c0, 0xbfe0e6][i % 3], -46 + r() * 10, -1.2, -400 + i * 8, 4, 2, 4), cone(0xa8482f, -46 + r() * 2, 0.4, -400 + i * 8, 3.4, 1.4));
   kit.add(box(0xb9b2a4, -90, -1.2, -246, 110, 0.5, 2.2)); for (let i = 0; i < 9; i++) kit.add(cyl(0x9a958a, -140 + i * 12, -2.2, -246, 0.7, 2));
-  kit.add(mountain(0x4a8556, -330, -480, 180, 130, r, -3), mountain(0x3f7a4e, -120, -560, 150, 90, r, -3));
+  kit.add(forestMountain(0x4a8556, -330, -480, 180, 130, r, -3), forestMountain(0x3f7a4e, -120, -560, 150, 90, r, -3));
   // đường sắt Bắc Nam và đoàn tàu bám sườn núi phía biển
   kit.add(box(0x6b6258, 62, 3.4, -150, 5, 0.4, 260), box(0x3a3a3a, 61, 3.7, -150, 0.2, 0.2, 260), box(0x3a3a3a, 63, 3.7, -150, 0.2, 0.2, 260), box(ROCK, 56, -0.6, -150, 14, 8, 260));
   const train = grp(62, 3.8, -170); train.add(box(0x1f5fa8, 0, 1.5, -16, 2.8, 2.8, 9), box(0xd2301e, 0, 1.0, -16, 2.86, 0.5, 9.04)); for (let i = 0; i < 4; i++) train.add(box([0xd2301e, 0x2f7d5a][i % 2], 0, 1.5, -5 + i * 10.4, 2.8, 2.8, 9.8), box(0xf4f1ea, 0, 2.1, -5 + i * 10.4, 2.86, 0.8, 8.6));
@@ -83,7 +83,7 @@ export function haiVan(kit: Kit, _s: Sight): SightSet & Spots {
   // ---- phía NAM: vịnh Đà Nẵng, thành phố xa, bán đảo Sơn Trà
   kit.add(box(0x7fae6a, -260, -3, 330, 400, 1.4, 260), box(0xfbf3d6, -60, -2.4, 300, 14, 0.3, 240));
   for (let i = 0; i < 60; i++) { const h = 6 + r() * 26; kit.add(box([0xe8e4d8, 0xcfd8e0, 0xf1e3b8, 0xb9cfd6][i % 4], -80 - r() * 130, h / 2 - 2.4, 240 + r() * 190, 6 + r() * 6, h, 6 + r() * 6)); }
-  kit.add(mountain(0x3f7a4e, 260, 330, 110, 70, r, -3), mountain(0x4a8556, 180, 370, 80, 50, r, -3), cyl(0xffffff, 150, 14, 345, 1.6, 12), ball(0xffffff, 150, 21, 345, 2));
+  kit.add(forestMountain(0x3f7a4e, 260, 330, 110, 70, r, -3), forestMountain(0x4a8556, 180, 370, 80, 50, r, -3), cyl(0xffffff, 150, 14, 345, 1.6, 12), ball(0xffffff, 150, 21, 345, 2));
   for (let i = 0; i < 7; i++) kit.add(grp(110 + r() * 160, -2.9, 60 + r() * 220, r() * 6, ball([0x2a6f9a, 0xd2553a, 0x3fa56a][i % 3], 0, 0.5, 0, 1.6, 1, 5), box(0xf4f1ea, 0, 1.6, 0.8, 1.8, 1.4, 2.6)));
   void cone; void THREE;
 

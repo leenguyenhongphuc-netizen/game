@@ -2,7 +2,7 @@
 // qua trạm thu phí ETC, ra đường tỉnh tới cổng chào. Chặng biển đi theo luồng có phao số.
 import * as THREE from 'three';
 import { bakeColored } from '../scene/batch.ts';
-import { IS_MOBILE, Quality, debugScene, rendererParams } from '../perf.ts';
+import { IS_MOBILE, Quality, debugScene, rendererParams , stepDt } from '../perf.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { REGIONS } from '../../../shared/catalog.ts';
 import type { Zone } from '../../../shared/catalog.ts';
@@ -926,7 +926,7 @@ export class DriveScene {
   private frame() {
     if (this.disposed) return;
     if (this.quality && !this.quality.tick()) { if (!this.quality.throttled) this.clock.getDelta(); return; }
-    const dt = Math.min(this.clock.getDelta(), 0.05), t = this.clock.elapsedTime;
+    const dt = stepDt(this.clock.getDelta()), t = this.clock.elapsedTime;
     if (this.running && !this.arrived) this.step(dt);
     const boat = this.mode === 'boat', s = this.s, live = this.running && !this.arrived && this.switching <= 0;
     this.cx = this.center(s);

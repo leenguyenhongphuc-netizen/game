@@ -2,7 +2,7 @@
 // Lên tới nơi là Cầu Vàng (dải cầu cong màu vàng trên hai bàn tay đá), rồi vườn hoa Le Jardin, cuối cùng là Làng Pháp trên đỉnh.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, ball, bead, box, cone, cyl, gable, glow, grp, hip, label, lampPost, mountain, rock, stairs, tree } from '../SightKit.ts';
+import { Kit, V, ball, bead, box, cone, cyl, gable, glow, grp, hip, label, lampPost, forestMountain, rock, stairs, tree } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
 
 const STONE = 0x8a8f88, STONE2 = 0x767c76, MOSSY = 0x6f8a5a, GOLD = 0xe9b530, H = 70;
@@ -19,7 +19,7 @@ export function baNa(kit: Kit, _s: Sight): SightSet {
   const r = kit.r;
   kit.ground(0x6a9c62, 1400, 0);
   // núi rừng: sườn núi lớn dưới tuyến cáp và đỉnh Bà Nà
-  kit.add(mountain(0x4f8a5a, -60, -60, 260, H - 30, r, -6), cyl(0x5a9560, -46, H / 2 - 1, -112, 52, H, 62), cyl(0x4f8a5a, -46, H / 2 - 8, -112, 62, H - 14, 72), cyl(0x5a9560, 2, H / 2 - 1, 2, 13, H, 13), mountain(0x457f52, 240, -220, 200, 90, r), mountain(0x5a9560, -330, 120, 210, 80, r), mountain(0x4a8556, 60, -420, 240, 110, r));
+  kit.add(forestMountain(0x4f8a5a, -60, -60, 260, H - 30, r, -6), cyl(0x5a9560, -46, H / 2 - 1, -112, 52, H, 62), cyl(0x4f8a5a, -46, H / 2 - 8, -112, 62, H - 14, 72), cyl(0x5a9560, 2, H / 2 - 1, 2, 13, H, 13), forestMountain(0x457f52, 240, -220, 200, 90, r), forestMountain(0x5a9560, -330, 120, 210, 80, r), forestMountain(0x4a8556, 60, -420, 240, 110, r));
   for (let i = 0; i < 240; i++) { const a = r() * 6.28, d = 30 + r() * 230, x = -60 + Math.cos(a) * d, z = -60 + Math.sin(a) * d, y = Math.max(0, (H - 30) * (1 - d / 260)) - 6; if (Math.hypot((x + 46) / 64, (z + 112) / 74) < 1 || Math.hypot(x - 2, z - 2) < 15) continue; const t = tree(r, 1.6 + r() * 1.6, r() < 0.7); t.position.set(x, y, z); kit.add(t); }
   // mây dưới chân
   const clouds: THREE.Mesh[] = [], cm = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.86, depthWrite: false });
@@ -57,7 +57,7 @@ export function baNa(kit: Kit, _s: Sight): SightSet {
   }
   for (const [t, s] of [[0.3, 1.25], [0.72, 1.25]] as const) { const p = bridgePt(t), out = Math.atan2(p.x - CXc, p.z - CZc), h = hand(r, s); h.position.set(p.x - Math.sin(out) * (10.6 * s - 4.2), H - 6.8 * s + 3.6, p.z - Math.cos(out) * (10.6 * s - 4.2)); h.rotation.y = out; kit.add(h); }
   kit.live(label('Cầu Vàng', bridgePt(0.5).x - 6, H + 16, bridgePt(0.5).z + 6, '#b8860b', 1.3));
-  kit.add(mountain(0x4f8a5a, CXc - 4, CZc - 4, 40, H - 4, r), cyl(0x5a9560, CXc - 6, (H - 3) / 2, CZc + 2, 27, H - 3));
+  kit.add(forestMountain(0x4f8a5a, CXc - 4, CZc - 4, 40, H - 4, r), cyl(0x5a9560, CXc - 6, (H - 3) / 2, CZc + 2, 27, H - 3));
   for (let i = 0; i < 30; i++) { const a = r() * 6.28, d = 6 + r() * 19; const t = tree(r, 1.2 + r(), r() < 0.6); t.position.set(CXc - 6 + Math.cos(a) * d, H - 3, CZc + 2 + Math.sin(a) * d); kit.add(t); }
   // ---- vườn hoa Le Jardin d'Amour
   const E = bridgePt(1), GX = E.x - 4, GZ = E.z - 26;

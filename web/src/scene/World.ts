@@ -1,6 +1,6 @@
 // Thế giới xóm vườn 3D: đường làng, các lô vườn (nhà mình và hàng xóm), nhân vật chạy bằng cần điều khiển.
 import * as THREE from 'three';
-import { IS_MOBILE, Quality, debugScene, SHADOW_MAP, rendererParams } from '../perf.ts';
+import { IS_MOBILE, Quality, debugScene, SHADOW_MAP, rendererParams , stepDt, trace } from '../perf.ts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { CROPS, REGIONS, SPECIALTIES, processOf } from '../../../shared/catalog.ts';
 import type { Zone } from '../../../shared/catalog.ts';
@@ -436,7 +436,7 @@ export class World {
   driving = false;
   private pos = new THREE.Vector3(-7, 0, ROAD_Z + 0.5);
   private vel = new THREE.Vector3();
-  private camPos = new THREE.Vector3();
+  private camPos = new THREE.Vector3(); private camLag = new THREE.Vector3(); private camTmp = new THREE.Vector3();
   private input = new THREE.Vector2();
   private keys = new Set<string>();
   private walkTo: THREE.Vector3 | null = null;
@@ -512,7 +512,7 @@ export class World {
   /** Bậc chất lượng đổi: tắt bóng đổ, bớt mưa, kéo sương và tầm nhìn gần lại. */
   private applyQuality(l: number) {
     this.qLevel = l;
-    if (this.sun) this.sun.castShadow = l < 2;
+    if (this.sun) this.sun.castShadow = IS_MOBILE ? l < 1 : l < 2;
     if (this.rain) this.rain.count = [900, 600, 380, 240][l];
     this.applyFog();
   }
@@ -565,7 +565,7 @@ export class World {
       if (!s.moved && performance.now() - s.t < 500 && e.type === 'pointerup') { // chạm nhanh: chạy tới điểm đó
         const r = el.getBoundingClientRect(), ray = new THREE.Raycaster();
         ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera);
-        const hit = new THREE.Vector3(); if (ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) this.walkTo = hit;
+        const hit = new THREE.Vector3(); if (ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) { this.walkTo = this.snapTap(hit); this.detour = null; }
       }
     };
     on(el, 'pointerup', end); on(el, 'pointercancel', end);
@@ -812,6 +812,14 @@ export class World {
     this.scene.add(s); this.floats.push({ s, life: 1.6 });
   }
   /** Cho nhân vật tự chạy tới một ô (dùng cho nút dẫn đường và kiểm thử). */
+  /** Chạm vào một ô đất thì đi tới đúng tâm ô đó; chạm chỗ khác thì đi tới chỗ chạm. */
+  private snapTap(hit: THREE.Vector3): THREE.Vector3 {
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const lot = this.lots[i]; if (!lot?.data) continue; const l = toLocal(i, hit.x, hit.z);
+      if (Math.abs(l.x) < PLOT_COLS && Math.abs(l.z) < PLOT_ROWS) { const tile = Math.floor((l.z + PLOT_ROWS) / TILE) * PLOT_COLS + Math.floor((l.x + PLOT_COLS) / TILE); if (lotTiles(lot.data).includes(tile) || lot.data.plantings.some((q) => q.tile === tile)) return this.worldOfTile(i, tile); }
+    }
+    return hit;
+  }
   goToTile(lot: number, tile: number) { this.walkTo = this.worldOfTile(lot, tile); }
   teleportToTile(lot: number, tile: number) { this.pos.copy(this.worldOfTile(lot, tile)); this.walkTo = null; this.vel.set(0, 0, 0); }
   /** Đưa nhân vật tới trước trạm máy thứ `index` của xưởng (dùng cho nút dẫn đường và kiểm thử). */
@@ -831,27 +839,38 @@ export class World {
     if (!this.quality.tick()) { if (!this.quality.throttled) this.clock.getDelta(); return; }
     this.frameNo++;
     if (this.paused && !this.opts.demo && this.frameNo % 8 !== 0) return;
-    const dt = Math.min(this.clock.getDelta(), 0.05), t = this.clock.elapsedTime, now = Date.now() + (this.state?.clockOffset ?? 0);
-    this.movePlayer(dt, t);
+    const dt = stepDt(this.clock.getDelta()), t = this.clock.elapsedTime, now = Date.now() + (this.state?.clockOffset ?? 0);
+    this.movePlayer(dt, t); this.quality.busy = this.vel.lengthSq() > 0.05;
     this.updateContext(now, t);
     for (const lot of this.lots) lot.animate(t, now, this);
     // Máy quay bám theo nhân vật
-    this.camPos.lerp(this.pos, 1 - Math.pow(0.002, dt));
+    // Máy quay gắn cứng theo nhân vật, chỉ trễ một khoảng tỉ lệ với vận tốc (đã làm mượt). Trước đây máy quay 'đuổi theo' vị trí bằng lerp:
+    // khi thời gian mỗi khung không đều, khoảng trễ đổi theo từng khung nên cả cảnh giật theo nhịp dù nhân vật đi đều.
+    this.camLag.lerp(this.camTmp.copy(this.vel).multiplyScalar(-0.16), 1 - Math.exp(-dt * 6)); this.camPos.copy(this.pos).add(this.camLag);
     const portrait = this.camera.aspect < 0.9, k = (portrait ? 1.12 : 1) * this.zoom * (this.driving ? 1.15 : 1);
     if (this.opts.demo) { const a = 0.55 + Math.sin(t * 0.08) * 0.22; this.camera.position.set(Math.sin(a) * 30, 26, 4 + Math.cos(a) * 30); }
     // Màn dọc: đẩy nhân vật lên nửa trên màn hình để thanh thao tác bên dưới không che.
-    const lift = portrait ? 3.4 * k : 0;
+    // Có khai báo vùng bị che (thanh trên, bảng dưới): dồn nhân vật vào giữa phần còn nhìn thấy; chưa khai báo thì giữ cách cũ.
+    let wantLift = portrait ? 3.4 * k : 0;
+    if (this.insets) { const H = this.container.clientHeight || 1, off = (this.insets.bottom - this.insets.top) / 2 / H, D = Math.hypot(24 * k, 23 * k), viewH = 2 * D * Math.tan((this.camera.fov * Math.PI) / 360); wantLift = THREE.MathUtils.clamp(off * viewH / 0.72, -2 * k, 13 * k); }
+    this.liftNow += (wantLift - this.liftNow) * (this.liftNow < -900 ? 1 : 1 - Math.exp(-dt * 5)); if (this.liftNow < -900) this.liftNow = wantLift;
+    const lift = this.liftNow;
     if (!this.opts.demo) this.camera.position.set(this.camPos.x, 24 * k, this.camPos.z + 23 * k + lift);
     if (this.opts.demo) this.camera.lookAt(0, 0.8, 2);
     else this.camera.lookAt(this.camPos.x, 0.8, this.camPos.z - 1.2 + lift);
     // Mặt trời bám theo máy quay theo từng nấc 2 m để bóng không rung; bản đồ bóng dựng lại cách khung (điện thoại) hoặc mỗi khung (máy tính)
     const sx = Math.round(this.camPos.x / 2) * 2, sz = Math.round(this.camPos.z / 2) * 2;
     this.sun.target.position.set(sx, 0, sz); this.sun.position.set(sx + this.sky.dir[0], this.sky.dir[1], sz + this.sky.dir[2]);
-    if (this.sun.castShadow) { const every = IS_MOBILE ? (this.qLevel >= 1 ? 3 : 2) : 1, key = `${sx},${sz}`; if (this.frameNo % every === 0 || key !== this.shadowKey) { this.renderer.shadowMap.needsUpdate = true; this.shadowKey = key; } }
+    if (this.sun.castShadow) { const every = 1, key = `${sx},${sz}`; if (this.frameNo % every === 0 || key !== this.shadowKey) { this.renderer.shadowMap.needsUpdate = true; this.shadowKey = key; } }
     this.updateGuide(now, t);
     this.animateLife(dt, t);
     this.renderer.render(this.scene, this.camera);
+    trace({ t: performance.now(), dt, x: this.pos.x, z: this.pos.z, cx: this.camera.position.x, cy: this.camera.position.y, cz: this.camera.position.z, yaw: 0, level: this.quality.level, ratio: this.quality.pixelRatio });
   }
+  private insets: { top: number; bottom: number } | null = null; private liftNow = -999;
+  /** Khai báo phần màn hình bị giao diện che (px): máy quay dồn nhân vật vào giữa vùng còn nhìn thấy. Gọi với null để trả về mặc định. */
+  setViewInsets(i: { top?: number; bottom?: number } | null) { this.insets = i ? { top: Math.max(0, i.top ?? 0), bottom: Math.max(0, i.bottom ?? 0) } : null; }
+  private detour: { until: number; x: number; z: number; n: number } | null = null; private stuckT = 0;
 
   private movePlayer(dt: number, t: number) {
     const dir = new THREE.Vector3();
@@ -867,7 +886,7 @@ export class World {
       if (dir.lengthSq() > 1) dir.normalize();
       if (dir.lengthSq() < 0.01 && this.walkTo) {
         dir.subVectors(this.walkTo, this.pos).setY(0); const d = dir.length();
-        if (d < 0.25) { this.walkTo = null; dir.set(0, 0, 0); } else dir.normalize().multiplyScalar(Math.min(1, d / 1.2 + 0.35));
+        if (d < 0.25) { this.walkTo = null; this.detour = null; dir.set(0, 0, 0); } else { dir.normalize(); if (this.detour && t < this.detour.until) dir.set(dir.x * 0.35 + this.detour.x, 0, dir.z * 0.35 + this.detour.z).normalize(); dir.multiplyScalar(Math.min(1, d / 1.2 + 0.35)); }
       }
     }
     this.vel.lerp(dir.multiplyScalar(this.driving ? 13 : 7.5), 1 - Math.pow(this.driving ? 0.02 : 0.0005, dt));
@@ -890,7 +909,11 @@ export class World {
       else { this.pos.copy(before); }
     }
     this.pos.x = THREE.MathUtils.clamp(this.pos.x, -WORLD.x, WORLD.x); this.pos.z = THREE.MathUtils.clamp(this.pos.z, WORLD.zMin, WORLD.zMax);
-    if (this.walkTo && before.distanceTo(this.pos) < 0.4 * 7.5 * dt * 0.2 && this.vel.length() > 2) this.walkTo = null; // kẹt vật cản thì dừng
+    // Vướng vật cản khi tự đi: lách sang bên (đổi bên mỗi lần), thử vài lần không qua mới dừng
+    if (this.walkTo) {
+      if (before.distanceTo(this.pos) < 7.5 * dt * 0.3 && this.vel.length() > 2) this.stuckT += dt; else this.stuckT = Math.max(0, this.stuckT - dt * 2);
+      if (this.stuckT > 0.18) { this.stuckT = 0; const n = (this.detour?.n ?? 0) + 1, to = new THREE.Vector3().subVectors(this.walkTo, this.pos).setY(0).normalize(), side = n % 2 ? 1 : -1; if (n > 6) { this.walkTo = null; this.detour = null; } else this.detour = { until: t + 0.35 + n * 0.12, x: -to.z * side, z: to.x * side, n }; }
+    } else { this.detour = null; this.stuckT = 0; }
     const p = this.player, speed = this.vel.length();
     p.root.position.copy(this.pos);
     if (speed > 0.4) {

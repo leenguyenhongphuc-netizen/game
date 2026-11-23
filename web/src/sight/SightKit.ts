@@ -31,6 +31,17 @@ export interface SightSet {
   skyDecor?: 'auto' | 'none';
   /** Cường độ đèn hắt ngược hướng nắng để mặt khuất của công trình không tối sầm (mặc định 0.45). */
   fill?: number;
+  /** Điểm tương tác phụ dọc tuyến (ngắm cảnh, hỏi đáp, vật đặc trưng); bỏ trống thì tự sinh hai điểm. */
+  extras?: SightExtra[];
+}
+/** Điểm tương tác phụ: không bắt buộc để hoàn thành chuyến tham quan. */
+export interface SightExtra {
+  /** Vị trí trong cảnh; hoặc bỏ trống và cho frac (0–1 dọc lối đi) để tự đặt sát mép lối. */
+  at?: THREE.Vector3; frac?: number; kind: 'ngam_canh' | 'hoi_dap' | 'thu_vat'; name: string; fact: string;
+  /** hoi_dap: câu hỏi, ba đáp án và chỉ số đáp án đúng. */
+  q?: string; options?: string[]; answer?: number;
+  /** thu_vat: biểu tượng hiện trên nút. */
+  emoji?: string;
 }
 
 const glowCache = new Map<number, THREE.MeshBasicMaterial>();
@@ -97,11 +108,25 @@ export function person(i: number, hat = i % 3 === 0 ? 1 : i % 3 === 1 ? 2 : 0, s
 }
 /** Biển gỗ có chữ cắm trên cột. */
 export function signPost(text: string, x: number, y: number, z: number, bg = '#7a4a22', scale = 1): THREE.Group {
-  const sp = makeSign(text, bg); sp.scale.multiplyScalar(0.62 * scale); sp.position.y = 2.9 * scale;
+  const sp = makeSign(text, bg); sp.scale.multiplyScalar(0.62 * scale); sp.position.y = 2.9 * scale; tameSign(sp);
   return grp(x, y, z, 0, cyl(0x7a5a3c, 0, 1.2 * scale, 0, 0.09, 2.4 * scale), sp);
 }
 /** Biển chữ lơ lửng (tên công trình). */
-export function label(text: string, x: number, y: number, z: number, bg = '#7a4a22', scale = 1): THREE.Sprite { const sp = makeSign(text, bg); sp.scale.multiplyScalar(scale); sp.position.set(x, y, z); return sp; }
+export function label(text: string, x: number, y: number, z: number, bg = '#7a4a22', scale = 1): THREE.Sprite { const sp = makeSign(text, bg); sp.scale.multiplyScalar(scale); sp.position.set(x, y, z); return tameSign(sp); }
+const _wp = new THREE.Vector3();
+/** Biển chữ không bao giờ phóng to che màn: lại gần thì thu nhỏ dần cho bề ngang trên màn giữ nguyên, sát quá (< 6 m) thì mờ hẳn. */
+export function tameSign(sp: THREE.Sprite): THREE.Sprite {
+  let bx = 0, by = 0;
+  sp.onBeforeRender = (_r, _s, camera) => {
+    if (!bx) { bx = sp.scale.x; by = sp.scale.y; }
+    const d = sp.getWorldPosition(_wp).distanceTo(camera.position), pw = sp.parent ? sp.parent.getWorldScale(_wq).x : 1;
+    const cam = camera as THREE.PerspectiveCamera, narrow = cam.aspect < 1 ? cam.aspect : 1; // màn dọc hẹp: biển phải nhỏ hơn nữa
+    const k = Math.min(1, d / (bx * pw * (3.2 / narrow) * 0.62));
+    sp.scale.set(bx * k, by * k, 1); sp.material.opacity = Math.max(0, Math.min(1, (d - 6) / 7)); sp.updateMatrixWorld();
+  };
+  return sp;
+}
+const _wq = new THREE.Vector3();
 export function lampPost(x: number, y: number, z: number, h = 3.6, c = 0xffd98a): THREE.Group { return grp(x, y, z, 0, cyl(0x3d3a36, 0, h / 2, 0, 0.07, h), box(0x3d3a36, 0, h, 0, 0.5, 0.06, 0.06), ball(glow(c), 0.22, h - 0.2, 0, 0.17), ball(glow(c), -0.22, h - 0.2, 0, 0.17)); }
 // Ba dáng đèn lồng Hội An: tròn, củ tỏi (phình dưới thon trên), trái trám (hai chóp úp vào nhau). Ít mặt vì số lượng rất nhiều.
 const lathe = (pts: [number, number][]) => new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), 6);
@@ -331,4 +356,52 @@ export function photoPlane(m: THREE.Material, w: number, h: number, crop: [numbe
   const g = new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0), uv = g.attributes.uv as THREE.BufferAttribute, [x0, y0, x1, y1] = crop;
   for (let i = 0; i < uv.count; i++) uv.setXY(i, x0 + uv.getX(i) * (x1 - x0), (1 - y1) + uv.getY(i) * (y1 - y0));
   return new THREE.Mesh(g, m);
+}
+
+// ---- hình dùng chung cho các địa danh biển đảo, làng chài
+/** Đồi núi phủ rừng: chùm khối tròn dẹt nhiều sắc xanh, mặt lấm tấm tán cây — thay cho núi hình chóp phẳng. */
+export function hill(x: number, z: number, rx: number, rz: number, h: number, r: () => number, tones: number[] = [0x2f6b45, 0x3f7a4e, 0x4d8c58, 0x5c9a60], y = 0): THREE.Group {
+  const g = grp(x, y, z), n = 5 + Math.floor(r() * 3);
+  g.add(bead(tones[1], 0, 0, 0, rx * 0.72, h, rz * 0.72));
+  for (let i = 0; i < n; i++) { const a = (i / n) * 6.28 + r(), d = 0.2 + r() * 0.4; g.add(bead(tones[i % tones.length], Math.cos(a) * rx * d, 0, Math.sin(a) * rz * d, rx * (0.5 + r() * 0.3), h * (0.45 + r() * 0.4), rz * (0.5 + r() * 0.3))); }
+  const m = Math.round(Math.min(46, 10 + (rx + rz) / 7));
+  for (let i = 0; i < m; i++) { const a = r() * 6.28, d = Math.sqrt(r()) * 0.8, s = ((rx + rz) / 2) * (0.07 + r() * 0.05); g.add(bead(tones[(i + (r() < 0.3 ? 1 : 0)) % tones.length], Math.cos(a) * rx * d, h * (1 - d * d) * 0.82, Math.sin(a) * rz * d, s, s * 0.62, s)); }
+  return g;
+}
+/** Ca nô cao tốc chở khách: thân trắng sọc màu, kính chắn gió, mái che, máy đuôi tôm. Mũi hướng -z. */
+export function speedboat(stripe = 0x2a6f9a, len = 8): THREE.Group {
+  const k = len / 8;
+  return grp(0, 0, 0, 0, bead(0xf6f4ee, 0, 0.35 * k, 0, 1.25 * k, 0.75 * k, 4.1 * k), box(stripe, 0, 0.62 * k, 0.2 * k, 2.3 * k, 0.16 * k, 6.4 * k), box(0xf6f4ee, 0, 0.82 * k, 0.4 * k, 2.1 * k, 0.24 * k, 5.6 * k),
+    box(0x9fd8f0, 0, 1.35 * k, -1.5 * k, 1.8 * k, 0.8 * k, 0.1 * k), box(0xf6f4ee, 0, 2.05 * k, 0.3 * k, 2.0 * k, 0.1 * k, 3.8 * k), cyl(0xcfd6e0, -0.9 * k, 1.45 * k, 2.0 * k, 0.04 * k, 1.2 * k), cyl(0xcfd6e0, 0.9 * k, 1.45 * k, 2.0 * k, 0.04 * k, 1.2 * k),
+    cyl(0xcfd6e0, -0.9 * k, 1.45 * k, -1.4 * k, 0.04 * k, 1.2 * k), cyl(0xcfd6e0, 0.9 * k, 1.45 * k, -1.4 * k, 0.04 * k, 1.2 * k), box(0x2b2f36, 0, 0.9 * k, 3.5 * k, 0.5 * k, 0.9 * k, 0.5 * k), box(0xe2573c, 0, 1.1 * k, 0.8 * k, 1.5 * k, 0.3 * k, 2.2 * k));
+}
+/** Ghe gỗ đánh cá sơn xanh đỏ có ca-bin nhỏ và cờ. Mũi hướng -z. */
+export function fishingBoat(hull = 0x2a6f9a, trim = 0xd2553a, len = 9): THREE.Group {
+  const k = len / 9;
+  return grp(0, 0, 0, 0, bead(hull, 0, 0.3 * k, 0, 1.5 * k, 1.0 * k, 4.6 * k), box(trim, 0, 0.92 * k, 0, 2.7 * k, 0.16 * k, 7.6 * k), box(0xd9c7a0, 0, 0.98 * k, 0, 2.3 * k, 0.1 * k, 7 * k), box(0xf4f1ea, 0, 1.8 * k, 1.5 * k, 1.9 * k, 1.5 * k, 2.4 * k), box(0x3f6f8f, 0, 2.0 * k, 0.28 * k, 1.5 * k, 0.6 * k, 0.06 * k),
+    box(trim, 0, 2.62 * k, 1.5 * k, 2.2 * k, 0.14 * k, 2.8 * k), cyl(0x5a4a34, 0, 2.6 * k, -1.2 * k, 0.06 * k, 3.4 * k), box(0xd8281e, 0.42 * k, 4.0 * k, -1.2 * k, 0.8 * k, 0.5 * k, 0.03 * k), bead(0x1d1d1d, 0, 1.3 * k, -4.2 * k, 0.16 * k, 0.16 * k, 0.1 * k), box(0xe2a33c, 0.9 * k, 1.25 * k, -1.6 * k, 0.6 * k, 0.4 * k, 0.9 * k));
+}
+/** Thúng chai (thuyền thúng tròn) úp hoặc ngửa trên bãi. */
+export function basketBoat(s = 1, upside = false): THREE.Group {
+  const g = grp(0, 0, 0, 0, bead(0x4a3a2a, 0, upside ? 0 : 0.42 * s, 0, 1.05 * s, 0.5 * s, 1.05 * s), cyl(0x8a6a48, 0, upside ? 0.06 : 0.44 * s, 0, 1.08 * s, 0.07 * s));
+  if (!upside) g.add(cyl(0x2f2620, 0, 0.47 * s, 0, 0.95 * s, 0.03 * s), box(0x9a7150, 0.3 * s, 0.62 * s, 0, 0.1 * s, 0.05 * s, 1.5 * s));
+  return g;
+}
+/** Giàn phơi lưới: hai cọc, lưới xanh rủ, phao cam. Dài theo trục z. */
+export function netRack(len = 5, c = 0x5f9fa8): THREE.Group {
+  const g = grp(0, 0, 0, 0, cyl(0x7a5a3c, 0, 1, -len / 2, 0.07, 2), cyl(0x7a5a3c, 0, 1, len / 2, 0.07, 2), box(0x7a5a3c, 0, 1.96, 0, 0.06, 0.06, len), box(c, 0, 1.3, 0, 0.05, 1.3, len * 0.96), box(shade(c, 0.8), 0.04, 0.9, 0, 0.05, 0.5, len * 0.9));
+  for (let i = 0; i < 5; i++) g.add(bead(0xff8a3d, 0, 1.92, -len / 2 + (i + 0.5) * (len / 5), 0.12));
+  return g;
+}
+/** Võng mắc giữa hai thân cọc, treo dưới bóng dừa. Dài theo trục x. */
+export function hammock(c = 0xe2573c): THREE.Group {
+  return grp(0, 0, 0, 0, cyl(0x7a5a3c, -1.5, 0.9, 0, 0.09, 1.8), cyl(0x7a5a3c, 1.5, 0.9, 0, 0.09, 1.8), bead(c, 0, 0.78, 0, 1.35, 0.26, 0.5), box(0xf4f1ea, 0, 0.84, 0, 2.2, 0.04, 0.12));
+}
+/** Dù che nắng và ghế nằm bãi biển. */
+export function beachSet(c = 0xffd23f): THREE.Group {
+  return grp(0, 0, 0, 0, cyl(0xd8d2c4, 0, 1.2, 0, 0.05, 2.4), cone(c, 0, 2.5, 0, 1.6, 0.55), box(0xf4f1ea, 1.1, 0.28, 0.3, 0.7, 0.08, 1.9), box(0xf4f1ea, 1.1, 0.5, -0.5, 0.7, 0.5, 0.08), box(0x8a6a48, 1.1, 0.14, 0.3, 0.6, 0.24, 1.6));
+}
+/** Núi phủ rừng cùng tham số với mountain(): dùng thay núi hình chóp ở các địa danh có rừng. */
+export function forestMountain(c: number, x: number, z: number, radius: number, h: number, r: () => number, y = 0): THREE.Group {
+  return hill(x, z, radius, radius * 0.9, h, r, [shade(c, 0.82), c, shade(c, 1.12), shade(c, 0.94)], y);
 }

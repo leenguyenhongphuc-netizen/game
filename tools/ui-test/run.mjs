@@ -45,7 +45,7 @@ function audit(touch) {
     if (touch && !el.closest('svg') && !el.classList.contains('link') && (r.width < 38 || r.height < 38)) issues.push({ level: 'warn', rule: 'nut-qua-nho', detail: `${label(el)} ${Math.round(r.width)}×${Math.round(r.height)}` });
   }
   // 2. Khối giao diện nổi tràn khỏi màn hình
-  const blocks = ['.dg-top', '.dg-hud', '.tr-cap', '.tr-hud', '.sw-top', '.sw-card', '.sw-guide', '.context', '.hud-top', '.chips', '.quest', '.plot-switch', '.toast', '.ctx-bar', '.ctx-detail', '.dock', '.modal', '.card', '.wheel-wrap', '.wheel-head', '.brand'];
+  const blocks = ['.dg-top', '.dg-hud', '.tr-cap', '.tr-hud', '.sw-top', '.sw-card', '.sw-guide', '.context', '.hud-top', '.chips', '.quest', '.plot-switch', '.hud-pop', '.farm-bar', '.toast', '.ctx-bar', '.ctx-detail', '.dock', '.modal', '.card', '.wheel-wrap', '.wheel-head', '.brand'];
   const rects = {};
   for (const sel of blocks) for (const el of document.querySelectorAll(sel)) {
     if (!visible(el)) continue;
@@ -54,7 +54,7 @@ function audit(touch) {
   }
   // 3. Các khối nổi đè lên nhau
   const hit = (a, b) => a && b && a.left < b.right - 2 && b.left < a.right - 2 && a.top < b.bottom - 2 && b.top < a.bottom - 2;
-  for (const [a, b] of [['.hud-top', '.chips'], ['.hud-top', '.quest'], ['.chips', '.quest'], ['.quest', '.plot-switch'], ['.chips', '.plot-switch'], ['.ctx-bar', '.dock'], ['.ctx-detail', '.dock'], ['.modal', '.dock'], ['.modal', '.hud-top'], ['.toast', '.hud-top'], ['.toast', '.quest'], ['.toast', '.plot-switch'], ['.context', '.dock'], ['.wheel-wrap', '.wheel-head']]) {
+  for (const [a, b] of [['.hud-top', '.chips'], ['.hud-top', '.quest'], ['.chips', '.quest'], ['.quest', '.plot-switch'], ['.hud-top', '.hud-row'], ['.farm-bar', '.dock'], ['.ctx-bar', '.farm-bar'], ['.ctx-bar', '.dock'], ['.ctx-detail', '.dock'], ['.modal', '.dock'], ['.modal', '.hud-top'], ['.toast', '.hud-top'], ['.toast', '.quest'], ['.toast', '.plot-switch'], ['.context', '.dock'], ['.wheel-wrap', '.wheel-head']]) {
     if (hit(rects[a], rects[b])) issues.push({ level: 'error', rule: 'khoi-de-nhau', detail: `${a} đè lên ${b}` });
   }
   // 4. Chữ bị cắt mà không có dấu ba chấm
@@ -111,9 +111,9 @@ for (const dev of DEVICES) {
     await step('vong-quay', async () => { await page.getByRole('button', { name: /Xác nhận và nhận vườn/ }).click(); await page.getByRole('button', { name: 'Quay', exact: true }).waitFor(); await shot('vong-quay'); });
     await step('vong-quay-ket-qua', async () => { await page.getByRole('button', { name: 'Quay', exact: true }).click(); await page.getByRole('button', { name: 'Vào xóm' }).waitFor({ timeout: 40000 }); await shot('vong-quay-ket-qua'); });
     await step('xom', async () => { execFileSync('psql', [DB, '-qc', "update users set role = 'nong_dan' where username like 'ui\\_%' and role = 'xuong'"]); await page.getByRole('button', { name: 'Vào xóm' }).click(); await page.waitForFunction(() => window.__vuon); await page.waitForTimeout(2500); await shot('xom'); });
-    await step('dung-tren-o-trong', async () => { await world('w.teleportToTile(0, 8)'); await page.locator('.ctx-btn').first().waitFor(); await shot('dung-tren-o-trong'); });
-    await step('chon-giong', async () => { await page.locator('.ctx-btn.go').click(); await page.locator('.seed').first().waitFor(); await shot('chon-giong'); });
-    await step('cay-dang-lon', async () => { await page.locator('.seed:not([disabled])').first().click(); await page.waitForTimeout(1200); await shot('cay-dang-lon'); await page.locator('.ctx-btn').first().click(); await shot('chi-tiet-cay'); });
+    await step('dung-tren-o-trong', async () => { await world('w.teleportToTile(0, 8)'); await page.locator('.seed-bar').waitFor(); await page.locator('.ctx-pill, .ctx-btn').first().waitFor(); await shot('dung-tren-o-trong'); });
+    await step('chon-giong', async () => { await page.locator('.seed:not([disabled])').first().click(); await page.locator('.ctx-btn.go').waitFor(); await shot('chon-giong'); await page.locator('.seed-i').first().click(); await page.locator('.seed-info').waitFor(); await shot('thong-tin-giong'); await page.locator('.seed-info .round').click(); });
+    await step('cay-dang-lon', async () => { await page.locator('.ctx-btn.go').click(); await page.waitForTimeout(1200); await shot('cay-dang-lon'); await page.locator('.ctx-btn').first().click(); await shot('chi-tiet-cay'); });
     await step('kho', async () => { await world('w.goHome()'); await dock(/Kho/); await shot('kho'); await page.getByRole('button', { name: 'Đơn hàng', exact: true }).click(); await shot('don-hang'); await page.getByRole('button', { name: 'Xưởng', exact: true }).click(); await shot('xuong'); await closeModal(); });
     await step('cho', async () => { await dock(/Chợ/); await shot('cho'); await page.getByRole('button', { name: 'Bảng giá' }).click(); await shot('bang-gia'); await closeModal(); });
     await step('xom-lang', async () => { await dock(/Xóm/); await shot('ban-be'); await page.getByRole('button', { name: 'Hợp tác xã' }).click(); await shot('hop-tac-xa'); await closeModal(); });

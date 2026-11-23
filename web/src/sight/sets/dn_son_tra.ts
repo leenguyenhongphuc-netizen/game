@@ -2,7 +2,7 @@
 // bờ biển Đà Nẵng cong dài về phía nam tới Ngũ Hành Sơn. Chùa tựa lưng vào núi, tượng Quan Thế Âm 67 m quay mặt ra biển.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, ball, bead, box, cone, cyl, glow, grp, label, lampPost, mountain, palm, rock, stairs, templeRoof, tree } from '../SightKit.ts';
+import { Kit, V, ball, bead, box, cone, cyl, glow, grp, label, lampPost, forestMountain, palm, rock, stairs, templeRoof, tree } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
 
 const WHITE = 0xf6f4ee, WH2 = 0xe6e3da, RED = 0xa8322a, TILE = 0xb8623a, Y0 = 14;
@@ -18,7 +18,7 @@ export function sonTra(kit: Kit, _s: Sight): SightSet {
   const r = kit.r;
   kit.water(0x2f9fc4, 0, 300, 2400, 1400, -0.3, 1);
   // núi Sơn Trà phía bắc phủ rừng; sườn thoải xuống biển phía nam
-  kit.add(box(0x6a9c62, 0, Y0 / 2 - 1, -30, 520, Y0, 150), box(0x5f9058, 0, Y0 / 2 - 5, 56, 520, Y0 - 8, 60), mountain(0x3f7a4e, -40, -400, 300, 190, r, 0), mountain(0x4a8556, 280, -330, 220, 130, r), mountain(0x4a8556, -340, -300, 200, 110, r));
+  kit.add(box(0x6a9c62, 0, Y0 / 2 - 1, -30, 520, Y0, 150), box(0x5f9058, 0, Y0 / 2 - 5, 56, 520, Y0 - 8, 60), forestMountain(0x3f7a4e, -40, -400, 300, 190, r, 0), forestMountain(0x4a8556, 280, -330, 220, 130, r), forestMountain(0x4a8556, -340, -300, 200, 110, r));
   for (let i = 0; i < 230; i++) { const x = -230 + r() * 460, z = -110 + r() * 150; if (Math.abs(x) < 64 && z > -62 && z < 44) continue; if (x > 60 && x < 150 && z > -40 && z < 30 && r() < 0.8) continue; const t = tree(r, 1.4 + r() * 1.8, r() < 0.75); t.position.set(x, z > 44 ? Y0 - 8 : Y0, z); kit.add(t); }
   for (let i = 0; i < 60; i++) kit.add(rock(0x8a8f88, -240 + r() * 480, 1, 86 + r() * 8, 3 + r() * 3, 2 + r() * 2, 3 + r() * 3, r() * 3));
   // đường Hoàng Sa ven biển
@@ -74,6 +74,10 @@ export function sonTra(kit: Kit, _s: Sight): SightSet {
   kit.pave(0xb9a98f, path, 3.6, 8);
   return {
     path, half: 2.2, npcs: 10,
+    extras: [
+      { frac: 0.2, kind: 'ngam_canh', name: 'Ngắm vịnh Đà Nẵng', fact: 'Bán đảo Sơn Trà nhô ra biển như một bức bình phong chắn gió cho vịnh Đà Nẵng; rừng ở đây là khu bảo tồn thiên nhiên.' },
+      { frac: 0.45, kind: 'hoi_dap', name: 'Hỏi nhanh có thưởng', fact: 'Tượng Quan Thế Âm ở chùa Linh Ứng Bãi Bụt cao 67 m, đứng trên toà sen, bên trong có 17 tầng.', q: 'Tượng Quan Thế Âm ở chùa Linh Ứng Sơn Trà cao bao nhiêu mét?', options: ['37 m', '67 m', '97 m'], answer: 1 },
+    ],
     stops: [
       { id: 'duong_ven_bien', at: V(-34, Y0 - 8, 70), look: V(-200, 0, 300) },
       { id: 'cong_chua', at: V(0, Y0 - 8, 62), look: V(0, Y0 + 7, 40) },
