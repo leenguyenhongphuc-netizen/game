@@ -38,6 +38,9 @@ import { ContractsPanel } from './contracts.tsx';
 import { PropertiesPanel } from './properties.tsx';
 import { ExportDeskDialog } from './exportDesk.tsx';
 import { FieldHud } from './fieldHud.tsx';
+import { AdminCenter } from './admin/AdminCenter.tsx';
+import { onAdminCenter, openAdminCenter } from './admin/open.ts';
+import type { AdminOpen } from './admin/open.ts';
 import { canUse, khoTabs } from '../../shared/roles.ts';
 import { SeedPicker, quickSeeds, useSeedPrefs } from './seeds.tsx';
 import type { KhoTab } from '../../shared/roles.ts';
@@ -303,6 +306,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua' | 'tui' | 'dunghop' | 'ruong' | 'hopdong'>('kho');
   const [heli, setHeli] = useState<HeliTourData | null>(null);
   const [desk, setDesk] = useState(false);
+  const [adminAt, setAdminAt] = useState<AdminOpen | null>(null);
+  useEffect(() => onAdminCenter(setAdminAt), []);
   useEffect(() => { worldRef.current?.setExportDeskVisible?.(!!me && canUse(me.user.role, 'xuat_khau')); });
   type FactoryView = { machines: { id: number | string; kind: string; name: string; level?: number; slots?: number; jobs?: { recipeId?: string; doneAt?: number; done?: boolean }[] }[] };
   const [factory, setFactory] = useState<FactoryView | null>(null);
@@ -709,6 +714,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       {sightWalk && shopOpen && <ShopSheet sightId={sightWalk.sight.id} shopId={shopOpen} onClose={() => setShopOpen(null)} onChanged={() => { void refresh(); }} />}
       {desk && <ExportDeskDialog onClose={() => setDesk(false)} onContracts={() => { setDesk(false); setKhoTab('hopdong'); setTab('kho'); }} onExport={() => { setDesk(false); setKhoTab('xuat'); setTab('kho'); }} />}
       {me?.user.role === 'nong_dan' && !tour && <FieldHud getWorld={() => worldRef.current} />}
+      {adminAt && <AdminCenter province={adminAt.province} counter={adminAt.counter} onClose={() => setAdminAt(null)} onChanged={reload} onCoop={() => { setAdminAt(null); setXomTab('htx'); setTab('ban'); }} onLicense={() => { setAdminAt(null); setShopTab('baixe'); setTab('trangtri'); }} />}
       {heli && <HeliTour tour={heli} onDone={() => setHeli(null)} />}
       {importRide && <ImportRide order={importRide} onDone={() => { setImportRide(null); setKhoTab('xuong'); setTab('kho'); }} />}
       {cert !== null && <LandCertificate plotId={cert} onClose={() => setCert(null)} />}
@@ -754,6 +760,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                   {canUse(me.user.role, 'hop_tac_xa') && <button aria-selected={xomTab === 'htx'} onClick={() => setXomTab('htx')}>Hợp tác xã</button>}
                   <button aria-selected={xomTab === 'qua'} onClick={() => { setXomTab('qua'); setUnseen(0); }}>Quà tặng{unseen > 0 ? ` (${unseen})` : ''}</button>
                 </div>
+                <button className="ghost" style={{ width: '100%', marginBottom: 8 }} onClick={() => openAdminCenter(REGIONS[me.user.homeRegionId!].province)}>🏛️ Trung tâm hành chính công {REGIONS[me.user.homeRegionId!].province}</button>
                 {xomTab === 'ban' && <FriendsPanel onChanged={() => { reload(); void loadSocial(); }} visit={visit} />}
                 {xomTab === 'htx' && canUse(me.user.role, 'hop_tac_xa') && <CoopPanel me={me} onChanged={reload} />}
                 {xomTab === 'qua' && <GiftsPanel />}

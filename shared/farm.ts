@@ -4,6 +4,7 @@ import { CROPS, REGIONS, SPECIALTIES, processOf } from './catalog.ts';
 import type { Specialty } from './catalog.ts';
 import { landPrice, seedCost, stepWaitMs } from './rules.ts';
 import { lotPrice } from './land.ts';
+import { LICENSE_YEAR_MS } from './vehicles.ts';
 
 /** Một khối cánh đồng = 100 ô × 25 m² = 2.500 m² (0,25 ha). */
 export const FIELD_BLOCK_TILES = 100;
@@ -31,6 +32,24 @@ export function fieldBlockPrice(regionId: string): number {
   const province = REGIONS[regionId]?.province;
   const lp = province ? lotPrice(province, 'nong_nghiep') : 0;
   return lp || Math.round((landPrice(regionId) * FIELD_PRICE_RATIO) / 1_000_000) * 1_000_000;
+}
+/**
+ * THUÊ ĐẤT NÔNG NGHIỆP (song song với mua đứt): Nhà nước cho thuê trả tiền hằng năm. Đơn giá thuê một năm = tỉ lệ % × giá đất
+ * theo bảng giá của tỉnh; tỉ lệ do UBND tỉnh quy định theo Điều 26 Nghị định 103/2024/NĐ-CP (sửa đổi bởi NĐ 291/2025/NĐ-CP):
+ * đất sản xuất nông nghiệp Hà Tĩnh 1,0%, Tây Ninh 1%, Thái Bình 0,8%, Điện Biên 0,8–0,9% (thuvienphapluat.vn, thuviennhadat.vn) → dùng 1%/năm.
+ * Thửa thuê vẫn có mã thửa nhưng người thuê chỉ có HỢP ĐỒNG THUÊ (không phải giấy chứng nhận), không chuyển nhượng được; hết hạn mà không
+ * gia hạn thì đất trả về quỹ (cây đang trồng được để tới khi thu hoạch, nhưng không gieo vụ mới).
+ * Hạn mức thuê theo cấp giữ cho nhà nông cấp 5–15 (ít vốn) có ruộng làm mà không lấn át hai vai kia (tools/econ-sim.mjs).
+ */
+export const LEASE_RATE_PER_YEAR = 0.01;
+/** Một "năm thuê" bằng một năm hành chính trong game (shared/admin.ts: 3 ngày thật), chia TIME_SCALE ở máy chủ. */
+export const LEASE_YEAR_MS = LICENSE_YEAR_MS;
+export function fieldLeaseMax(level: number): number {
+  return level < FIELD_MIN_LEVEL ? 0 : Math.min(fieldMaxBlocks(level), 1 + Math.floor((level - FIELD_MIN_LEVEL) / 3));
+}
+/** Tiền thuê một năm cho `blocks` khối ở vùng này (làm tròn nghìn đồng). */
+export function fieldLeaseRent(regionId: string, blocks: number, years = 1): number {
+  return Math.round((fieldBlockPrice(regionId) * LEASE_RATE_PER_YEAR * blocks * years) / 1000) * 1000;
 }
 export function fieldRegionAllowed(level: number, regionId: string, homeRegionId: string | null): boolean {
   return Object.hasOwn(REGIONS, regionId) && (regionId === homeRegionId || level >= FIELD_ANY_REGION_LEVEL);

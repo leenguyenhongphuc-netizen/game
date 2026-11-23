@@ -7,6 +7,9 @@ import { QUALITY_NAMES, fmtMoney } from '../../shared/rules.ts';
 import type { Quality } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import { fmtDuration, useAction } from './ui.ts';
+import { DealCard, LotLookup, short } from './admin/landDeals.tsx';
+import type { DealView } from './admin/landDeals.tsx';
+import { openAdminCenter } from './admin/open.ts';
 
 type Kind = 'cua_hang' | 'sieu_thi' | 'xuong';
 const isShop = (k: Kind) => k === 'sieu_thi' || k === 'cua_hang';
@@ -94,9 +97,11 @@ function BuyKind({ k, province, busy, onBuy }: { k: KindView; province: string; 
         <span className="emoji" aria-hidden="true">{k.emoji}</span>
         <div className="grow"><strong>Mở {k.name.toLowerCase()} của bạn ở {province}</strong><br /><small>{k.note}</small></div>
       </div>
-      {k.cost && <small>{k.lots} thửa đất ({k.cost.lots ? `mua thêm ${k.cost.lots} thửa × ${fmtMoney(k.cost.lotPrice)}, gồm trước bạ: ${fmtMoney(k.cost.land)}` : 'dùng thửa trống bạn đã có'}) · xây {fmtMoney(k.cost.build)} · giấy phép {fmtMoney(k.cost.permit)} · xây {k.buildHours} giờ</small>}
+      {k.cost && <small>{k.lots} thửa đất ({k.cost.lots ? `mua thêm ${k.cost.lots} thửa × ${fmtMoney(k.cost.lotPrice)}, gồm trước bạ: ${fmtMoney(k.cost.land)}` : 'dùng thửa trống bạn đã có'}) · xây {fmtMoney(k.cost.build)} · thiết kế, thẩm định {fmtMoney(k.cost.permit)} · xây {k.buildHours} giờ</small>}
+      <small className="muted">Cần đứng tên đủ {k.lots} thửa trống và có giấy phép xây dựng (Quầy 4, Trung tâm hành chính công {province}) trước khi khởi công.</small>
       {k.blocked ? <small className="error">{k.blocked}</small>
-        : <button className="primary prop-open" disabled={busy} onClick={onBuy}>Mở {k.name.toLowerCase()} ở {province}<small>{k.cost ? fmtMoney(k.cost.total) : ''}</small></button>}
+        : <div className="land-act"><button className="primary prop-open" disabled={busy} onClick={onBuy}>Khởi công {k.name.toLowerCase()} ở {province}<small>{k.cost ? fmtMoney(k.cost.total) : ''}</small></button>
+            <button className="ghost" onClick={() => openAdminCenter(province, 'xay_dung')}>🏗️ Xin giấy phép</button></div>}
     </div>
   );
 }
@@ -171,22 +176,38 @@ interface UseRow {
 }
 interface LotView {
   id: number; province: string; use: LandUse; useName: string; emoji: string; areaM2: number; pricePaid: number; certNo: string; ownerName: string | null;
+  parcelCode: string | null; serial: string | null; sheet: number | null; parcel: number | null; inDeal: boolean;
   mine: boolean; propertyId: number | null; fieldId: number | null; listingPrice: number | null; statePrice: number; used: boolean;
 }
-interface LandData { province: string | null; summary: UseRow[] | null; mine: LotView[]; listings: LotView[]; resale: { min: number; max: number } }
+interface LandData { province: string | null; summary: UseRow[] | null; mine: LotView[]; listings: LotView[]; deals: DealView[]; resale: { min: number; max: number } }
 
-const short = (v: number) => (v >= 1e9 ? `${(v / 1e9).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} tỉ` : v >= 1e6 ? `${Math.round(v / 1e6).toLocaleString('vi-VN')} triệu` : fmtMoney(v));
+/** Giấy chứng nhận thu nhỏ: số phát hành, mã thửa (tờ bản đồ, số thửa), loại đất, diện tích. */
+function CertBadge({ l }: { l: LotView }) {
+  return (
+    <div className="land-cert">
+      <span aria-hidden="true">{l.emoji}</span>
+      <div>
+        <strong>Thửa {l.parcelCode ?? l.certNo}{l.serial ? <span className="cert-serial">Sổ {l.serial}</span> : null}</strong>
+        <small>Tờ bản đồ số {l.sheet ?? '—'}, thửa số {l.parcel ?? '—'} · {l.useName} · {l.areaM2.toLocaleString('vi-VN')} m²</small>
+      </div>
+    </div>
+  );
+}
 
-/** Bảng quỹ đất một tỉnh: còn bao nhiêu thửa mỗi loại, giá m², giá thửa, tổng giá trị; thửa của bạn (sổ đỏ) và thửa người khác rao bán. */
+/** Bảng quỹ đất một tỉnh: còn bao nhiêu thửa mỗi loại, giá m², giá thửa, tổng giá trị; sổ của bạn; thửa người khác rao bán (trả giá);
+ *  hồ sơ chuyển nhượng đang làm (công chứng → đăng ký biến động → thuế → nhận sổ ở Trung tâm hành chính công); tra cứu thửa. */
 export function LandRegistry({ province, onChanged }: { province: string; onChanged?: () => void }) {
   const [d, setD] = useState<LandData | null>(null);
   const [ask, setAsk] = useState<Record<number, number>>({});
+  const [bid, setBid] = useState<Record<number, number>>({});
+  const [hist, setHist] = useState<string | null>(null);
   const load = useCallback(async () => setD(await api<LandData>('GET', `/api/land?province=${encodeURIComponent(province)}`)), [province]);
   useEffect(() => { void load(); }, [load]);
   const act = useAction(() => { void load(); onChanged?.(); });
   if (!d?.summary) return <p className="hint">Đang mở sổ địa chính…</p>;
   const mineHere = d.mine.filter((l) => l.province === province), others = d.mine.filter((l) => l.province !== province);
   const forSale = d.listings.filter((l) => !l.mine);
+  const live = d.deals.filter((x) => x.status !== 'hoan_tat' && x.status !== 'da_huy'), past = d.deals.filter((x) => x.status === 'hoan_tat' || x.status === 'da_huy');
   return (
     <div className="land">
       <div className="land-grid" aria-label={`Quỹ đất ${province}`}>
@@ -204,39 +225,67 @@ export function LandRegistry({ province, onChanged }: { province: string; onChan
               : !r.open ? <small className="muted">{r.note}</small>
               : r.blocked ? <small className="error">{r.blocked}</small>
               : <button className="primary land-buy" disabled={act.busy || r.left < 1} onClick={() => act.run(() => api('POST', '/api/land/buy', { province, use: r.use, count: 1 }))}>
-                  Mua 1 thửa<small>{short(r.cost.total)}, gồm trước bạ {short(r.cost.registration)}</small>
+                  Nhận giao 1 thửa<small>{short(r.cost.total)}, gồm trước bạ {short(r.cost.registration)}</small>
                 </button>}
           </div>
         ))}
       </div>
       {act.error && <p className="error" role="alert">{act.error}</p>}
-      <h4>Sổ đỏ của bạn ở {province} ({mineHere.length})</h4>
+      {d.deals.length > 0 && <>
+        <h4>Hồ sơ chuyển nhượng ({live.length} đang làm)</h4>
+        {live.map((x) => <DealCard key={x.id} d={x} onChanged={() => { void load(); onChanged?.(); }} />)}
+        {past.length > 0 && <details><summary>Hồ sơ đã xong, đã huỷ ({past.length})</summary>{past.map((x) => <DealCard key={x.id} d={x} onChanged={() => void load()} />)}</details>}
+      </>}
+      <h4>Giấy chứng nhận của bạn ở {province} ({mineHere.length})</h4>
       {mineHere.length === 0 && <p className="hint">Chưa có thửa nào ở đây.</p>}
       {mineHere.map((l) => {
         const lo = Math.round(l.statePrice * d.resale.min), hi = Math.round(l.statePrice * d.resale.max), v = ask[l.id] ?? l.listingPrice ?? l.statePrice;
         return (
           <div className="land-lot" key={l.id}>
-            <div className="land-cert"><span aria-hidden="true">{l.emoji}</span><div><strong>{l.certNo}</strong><small>{l.useName} · {l.areaM2.toLocaleString('vi-VN')} m² · mua {short(l.pricePaid)}{l.propertyId ? ' · đã có công trình' : l.fieldId ? ' · đang làm ruộng' : ' · đất trống'}</small></div></div>
-            {!l.used && (l.listingPrice != null
+            <CertBadge l={l} />
+            <small className="land-use">{l.propertyId ? 'Đã có công trình' : l.fieldId ? 'Đang làm ruộng' : 'Đất trống'} · nhận {short(l.pricePaid)}</small>
+            {!l.used && (l.inDeal ? <small className="muted">Đang làm thủ tục chuyển nhượng</small>
+              : l.listingPrice != null
               ? <div className="land-act"><small>Đang rao {short(l.listingPrice)}</small><button className="ghost" disabled={act.busy} onClick={() => act.run(() => api('POST', `/api/land/${l.id}/unlist`, {}))}>Thôi rao</button></div>
               : <div className="land-act">
-                  <input type="number" inputMode="numeric" min={lo} max={hi} step={1_000_000} value={v} aria-label={`Giá rao ${l.certNo}`} onChange={(e) => setAsk({ ...ask, [l.id]: Number(e.target.value) || 0 })} />
+                  <input type="number" inputMode="numeric" min={lo} max={hi} step={1_000_000} value={v} aria-label={`Giá rao thửa ${l.parcelCode}`} onChange={(e) => setAsk({ ...ask, [l.id]: Number(e.target.value) || 0 })} />
                   <button className="ghost" disabled={act.busy || v < lo || v > hi} onClick={() => act.run(() => api('POST', `/api/land/${l.id}/list`, { price: v }))}>Rao bán</button>
                   <small>bạn nhận {short(Math.round(v * 0.98))} (trừ thuế TNCN 2%)</small>
                 </div>)}
+            {l.parcelCode && <button className="ghost" onClick={() => setHist(hist === l.parcelCode ? null : l.parcelCode)}>{hist === l.parcelCode ? 'Ẩn lịch sử' : 'Lịch sử thửa'}</button>}
+            {hist && hist === l.parcelCode && <LotLookup key={hist} initial={hist} />}
           </div>
         );
       })}
       {others.length > 0 && <p className="muted">Bạn còn {others.length} thửa ở tỉnh khác: {[...new Set(others.map((l) => l.province))].join(', ')}.</p>}
       <h4>Người chơi rao bán ở {province} ({forSale.length})</h4>
       {forSale.length === 0 && <p className="hint">Chưa ai rao bán đất ở đây.</p>}
-      {forSale.map((l) => (
-        <div className="land-lot" key={l.id}>
-          <div className="land-cert"><span aria-hidden="true">{l.emoji}</span><div><strong>{l.useName} · {l.areaM2.toLocaleString('vi-VN')} m² · {short(l.listingPrice ?? 0)}</strong><small>của {l.ownerName} · giá nhà nước {short(l.statePrice)} · {l.certNo}</small></div></div>
-          <button className="primary" disabled={act.busy} onClick={() => act.run(() => api('POST', `/api/land/${l.id}/purchase`, {}))}>Mua lại</button>
-        </div>
-      ))}
-      <small className="muted">Người mua nộp lệ phí trước bạ 0,5% và phí cấp sổ; người bán nộp thuế thu nhập cá nhân 2%. Giá rao trong khoảng {Math.round(d.resale.min * 100)}%–{Math.round(d.resale.max * 100)}% giá nhà nước.</small>
+      {forSale.map((l) => {
+        const lo = Math.round(l.statePrice * d.resale.min), hi = Math.round(l.statePrice * d.resale.max), v = bid[l.id] ?? l.listingPrice ?? l.statePrice;
+        return (
+          <div className="land-lot" key={l.id}>
+            <CertBadge l={l} />
+            <small className="land-use">của {l.ownerName} · rao {short(l.listingPrice ?? 0)} · giá nhà nước {short(l.statePrice)}</small>
+            {l.inDeal ? <small className="muted">Đang làm thủ tục với người khác</small> : (
+              <div className="land-act">
+                <input type="number" inputMode="numeric" min={lo} max={hi} step={1_000_000} value={v} aria-label={`Giá trả thửa ${l.parcelCode}`} onChange={(e) => setBid({ ...bid, [l.id]: Number(e.target.value) || 0 })} />
+                <button className="primary" disabled={act.busy || v < lo || v > hi} onClick={() => act.run(() => api('POST', `/api/land/${l.id}/offer`, { price: v }))}>Trả giá</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <details className="land-law"><summary>Thủ tục chuyển nhượng (Luật Đất đai 2024)</summary>
+        <ol>
+          <li>Hai bên thoả thuận giá: bên mua trả giá, bên bán đồng ý.</li>
+          <li>Cả hai cùng tới <b>Văn phòng công chứng</b> (Quầy 1, Trung tâm hành chính công nơi có đất) ký hợp đồng. Bên mua chuyển tiền vào tài khoản phong toả, nộp phí công chứng.</li>
+          <li>Nộp hồ sơ đăng ký biến động ở <b>Văn phòng đăng ký đất đai</b> (Quầy 2).</li>
+          <li><b>Chi cục thuế</b> ra thông báo; bên bán nộp thuế TNCN 2%, bên mua nộp lệ phí trước bạ 0,5% và lệ phí cấp sổ (Quầy 3).</li>
+          <li>Văn phòng đăng ký chỉnh lý hồ sơ trong 10 ngày làm việc; bên mua nhận <b>giấy chứng nhận mới</b> (số phát hành mới), sổ cũ bị thu hồi, tiền chuyển cho bên bán.</li>
+        </ol>
+        <small className="muted">Mỗi thửa có mã thửa cố định và giấy chứng nhận số phát hành duy nhất. Mọi biến động ghi vào sổ biến động dạng chuỗi băm: sửa một dòng là cả chuỗi phía sau lệch mã, ai cũng tra được.</small>
+      </details>
+      <button className="ghost" onClick={() => openAdminCenter(province)}>🏛️ Tới Trung tâm hành chính công {province}</button>
     </div>
   );
 }

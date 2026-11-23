@@ -190,7 +190,7 @@ test('tự lái máy cày trên ruộng: ô đi qua được tính, chạy quá 
   const after = (await call('GET', '/api/fields', undefined, ck)).body.fields.find((f: { id: number }) => f.id === id);
   assert.equal(after.stepIndex, datIdx + 1, 'đủ ô thì sang bước kế');
   assert.equal(after.drive, null);
-  assert.ok(after.certNos.length === 1 && /^VV-/.test(after.certNos[0]), 'khối ruộng gắn số sổ đỏ');
+  assert.ok(after.certNos.length === 1 && /^[A-Z]+\.\d{4}\.\d{4}$/.test(after.certNos[0]), 'khối ruộng gắn mã thửa (sổ địa chính)');
 });
 
 test('thuê robot làm vườn: từ cấp 8, rẻ và nhanh hơn thuê người, không làm việc tỉa cành', async () => {

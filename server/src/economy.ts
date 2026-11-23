@@ -17,6 +17,8 @@ import { issueLot, lotsLeft } from './land.ts';
 type XpOut = { xpGained: number; xp: number; level: number; title: string; levelUp: boolean };
 export interface EconomyDeps {
   db: Db;
+  /** Dùng một giấy phép xây dựng đã cấp (server/src/admin.ts); không có thì không đòi giấy phép. */
+  usePermit?: (q: Q, userId: number, province: string, kind: string) => Promise<void>;
   timeScale: number;
   requireUser: (req: FastifyRequest) => Promise<number>;
   bad: (code: string, message: string, status?: number) => Error;
@@ -320,6 +322,10 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
       const free = (await q.query('select id from land_lots where owner_id = $1 and province = $2 and use = $3 and property_id is null and listing_price is null order by id limit $4 for update', [userId, province, use, needTotal])).rows.map((r) => Number(r.id));
       const needLots = needTotal - free.length;
       const cost = propertyCost(kind, province, needLots);
+      if (d.usePermit) {
+        if (needLots > 0) throw bad('thieu_dat', `Cần đứng tên ${needTotal} thửa ${LAND_USES[use].short.toLowerCase()} trống ở ${province} trước khi xin phép xây dựng (đang có ${free.length}).`, 409);
+        await d.usePermit(q, userId, province, kind);
+      }
       if (Number(u.cash) < cost.total) throw bad('khong_du_tien', `Cần ${cost.total.toLocaleString('vi-VN')}đ (${needLots ? `${needLots} thửa đất, trước bạ, ` : ''}xây dựng, giấy phép).`, 409);
       if (needLots > 0) {
         const left = await lotsLeft(q, province, use);

@@ -145,7 +145,7 @@ export function registerSocial(app: FastifyInstance, d: SocialDeps) {
       vehicle: { group: b.role === 'nong_dan' ? (rand01(seed, 5) < 0.5 ? 'ban_tai' : 'tai_nhe') : VEH_GROUPS[hash32(`${seed}:veh`) % VEH_GROUPS.length], color: b.avatar?.truck ?? TRUCK_COLORS[0] },
       ageMs: 0,
     });
-    if (scene === 'village' || scene === 'rest_stop' || scene === 'sight' || scene === 'market') {
+    if (scene === 'village' || scene === 'rest_stop' || scene === 'sight' || scene === 'market' || scene === 'admin') {
       // vài người ghé qua, đổi người mỗi 8 phút; trình duyệt tự cho họ đi theo kịch bản
       const slot = 8 * 60_000, bucket = Math.floor(now / slot), seed0 = hash32(`${scene}:${key}:${bucket}`);
       // khu vui chơi đông hơn điểm tham quan thường

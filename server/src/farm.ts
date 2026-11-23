@@ -10,7 +10,8 @@ import {
   FARM_MACHINES, FARM_MACHINE_KINDS, FIELD_BLOCK_TILES, FIELD_MAX_BLOCKS_PER_FIELD, FIELD_MIN_LEVEL, FIELD_RESALE, HELI_TOUR_FEE, HELI_TOUR_MIN_LEVEL,
   METHOD_NAMES, ROBOT_MIN_LEVEL, WORK_METHODS, WORK_NAMES, driveMachineFor, driveSpeedOk, driveTileCap, fieldPhase, fieldBlockPrice, fieldColor, fieldMaxBlocks, fieldRegionAllowed, fieldSeedCost, fieldStepWaitMs, fieldSteps, fieldYieldKg, methodsFor, workPlan,
 } from '../../shared/farm.ts';
-import { issueLot, lotsLeft } from './land.ts';
+import { issueLot, leaseLot, lotsLeft, renewFieldLease, surrenderFieldLots } from './land.ts';
+import { LEASE_YEAR_MS, fieldLeaseMax, fieldLeaseRent } from '../../shared/farm.ts';
 import type { FarmMachineKind, WorkMethod } from '../../shared/farm.ts';
 
 type Xp = { xpGained: number; xp: number; level: number; title: string; levelUp: boolean };
@@ -78,6 +79,18 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
     return out;
   }
 
+  const leaseYear = () => Math.max(60_000, Math.round(LEASE_YEAR_MS / d.timeScale));
+  /** Ruộng thuê hết hạn mà không gia hạn: ruộng trống thì trả đất về quỹ; đang có cây thì để thu hoạch xong (không gieo vụ mới). */
+  async function expireLeases(q: Q, userId: number): Promise<number> {
+    const { rows } = await q.query(`select id from fields where user_id = $1 and lease_until is not null and lease_until <= now() and specialty_id is null for update`, [userId]);
+    for (const f of rows) {
+      await q.query('delete from field_jobs where field_id = $1', [f.id]);
+      await surrenderFieldLots(q, Number(f.id));
+      await q.query('delete from fields where id = $1', [f.id]);
+    }
+    return rows.length;
+  }
+
   async function fieldsOut(q: Q, userId: number) {
     const now = Date.now();
     const { rows } = await q.query(
@@ -102,7 +115,9 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
         job: f.job_id ? { id: f.job_id, kind: f.job_kind, method: f.job_method, machine: f.job_machine, startedAt: new Date(f.job_start).getTime(), endsAt: new Date(f.job_end).getTime(), step: f.job_step } : null,
         phase: fieldPhase(sp?.id ?? null, f.step_index), certNos: certs.get(Number(f.id)) ?? [],
         drive: f.drive_step !== null && f.drive_step === f.step_index ? { done: (f.drive_done as number[]).length, tiles: f.drive_done as number[] } : null,
-        pricePaid: Number(f.price_paid), resale: Math.round((Number(f.price_paid) * FIELD_RESALE) / 1000) * 1000,
+        pricePaid: Number(f.price_paid), resale: f.lease_until ? 0 : Math.round((Number(f.price_paid) * FIELD_RESALE) / 1000) * 1000,
+        tenure: f.lease_until ? 'thue' : 'so_do', leaseUntil: f.lease_until ? new Date(f.lease_until).getTime() : null, leaseRent: Number(f.lease_rent ?? 0),
+        leaseExpired: !!f.lease_until && new Date(f.lease_until).getTime() <= now,
       };
     });
   }
@@ -111,25 +126,28 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
     const userId = await d.requireUser(req);
     return db.tx(async (q) => {
       const done = await settle(q, userId);
+      await expireLeases(q, userId);
       const u = await userInfo(q, userId);
       const fields = await fieldsOut(q, userId), owned = await machinesOf(q, userId);
       const usedBlocks = fields.reduce((s, f) => s + f.blocks, 0), maxBlocks = fieldMaxBlocks(u.level);
       const regions = Object.values(REGIONS).filter((r) => fieldRegionAllowed(u.level, r.id, u.home))
-        .map((r) => ({ id: r.id, name: r.name, province: r.province, blockPrice: fieldBlockPrice(r.id), home: r.id === u.home }));
+        .map((r) => ({ id: r.id, name: r.name, province: r.province, blockPrice: fieldBlockPrice(r.id), leaseRent: fieldLeaseRent(r.id, 1), home: r.id === u.home }));
       return {
         level: u.level, role: u.role, cash: u.cash, canOwn: u.role === 'nong_dan' && maxBlocks > 0,
         whyNot: u.role !== 'nong_dan' ? 'Cánh đồng lớn dành cho Nhà nông (chủ xưởng mở rộng bằng máy móc, thương lái bằng xe lớn).' : maxBlocks === 0 ? `Mở từ cấp ${FIELD_MIN_LEVEL}.` : null,
-        usedBlocks, maxBlocks, maxPerField: FIELD_MAX_BLOCKS_PER_FIELD, blockTiles: FIELD_BLOCK_TILES, regions, fields, settled: done,
+        usedBlocks, maxBlocks, maxPerField: FIELD_MAX_BLOCKS_PER_FIELD,
+        lease: { max: fieldLeaseMax(u.level), used: fields.filter((f) => f.tenure === 'thue').reduce((s, f) => s + f.blocks, 0), yearMs: leaseYear(), ratePct: 1 }, blockTiles: FIELD_BLOCK_TILES, regions, fields, settled: done,
         machines: owned.map((m) => ({ ...FARM_MACHINES[m.kind], busyUntil: m.busyUntil > Date.now() ? m.busyUntil : null })),
         heli: { own: owned.some((m) => m.kind === 'truc_thang'), fee: HELI_TOUR_FEE, minLevel: HELI_TOUR_MIN_LEVEL },
       };
     });
   });
 
+  /** Mua đứt (tenure = 'so_do', mặc định) hoặc thuê đất của Nhà nước trả tiền hằng năm (tenure = 'thue'). */
   app.post('/api/fields/buy', async (req) => {
     const userId = await d.requireUser(req);
-    const body = (req.body ?? {}) as { regionId?: unknown; blocks?: unknown };
-    const regionId = String(body.regionId ?? ''), blocks = Number(body.blocks);
+    const body = (req.body ?? {}) as { regionId?: unknown; blocks?: unknown; tenure?: unknown };
+    const regionId = String(body.regionId ?? ''), blocks = Number(body.blocks), lease = body.tenure === 'thue';
     if (!Number.isInteger(blocks) || blocks < 1 || blocks > FIELD_MAX_BLOCKS_PER_FIELD) throw bad('du_lieu_sai', `Mỗi cánh đồng từ 1 đến ${FIELD_MAX_BLOCKS_PER_FIELD} khối.`, 400);
     return db.tx(async (q) => {
       const u = await userInfo(q, userId, true);
@@ -137,18 +155,50 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
       const max = fieldMaxBlocks(u.level);
       if (!max) throw bad('chua_du_cap', `Mua cánh đồng từ cấp ${FIELD_MIN_LEVEL}.`, 409);
       if (!fieldRegionAllowed(u.level, regionId, u.home)) throw bad('khac_vung', 'Chỉ mua được ruộng ở vùng nhà; từ cấp 10 mới mua ở vùng khác.', 409);
-      const used = Number((await q.query('select coalesce(sum(blocks),0)::int as n from fields where user_id = $1', [userId])).rows[0].n);
+      await expireLeases(q, userId);
+      const sums = (await q.query('select coalesce(sum(blocks),0)::int as n, coalesce(sum(blocks) filter (where lease_until is not null),0)::int as l from fields where user_id = $1', [userId])).rows[0];
+      const used = Number(sums.n), leased = Number(sums.l);
       if (used + blocks > max) throw bad('vuot_han_muc', `Cấp ${u.level} được giữ tối đa ${max} khối (${max * FIELD_BLOCK_TILES} ô); bạn đang có ${used}.`, 409);
+      const province = REGIONS[regionId].province, left = await lotsLeft(q, province, 'nong_nghiep');
+      if (left < blocks) throw bad('het_dat', `${province} chỉ còn ${left} thửa đất nông nghiệp trong quỹ đất đợt này.`, 409);
+      if (lease) {
+        const lmax = fieldLeaseMax(u.level);
+        if (leased + blocks > lmax) throw bad('vuot_han_muc_thue', `Cấp ${u.level} được thuê tối đa ${lmax} khối đất của Nhà nước; bạn đang thuê ${leased}.`, 409);
+        const rent = fieldLeaseRent(regionId, blocks);
+        if (u.cash < rent) throw bad('khong_du_tien', `Cần ${rent.toLocaleString('vi-VN')}đ tiền thuê năm đầu.`, 409);
+        const until = new Date(Date.now() + leaseYear());
+        await d.addCash(q, userId, -rent, `thue_dat:${regionId}`);
+        const { rows } = await q.query('insert into fields (user_id, region_id, blocks, price_paid, lease_until, lease_rent) values ($1,$2,$3,0,$4,$5) returning id', [userId, regionId, blocks, until, rent]);
+        for (let i = 0; i < blocks; i++) await leaseLot(q, userId, province, rent / blocks, Number(rows[0].id), until);
+        const xp = await d.addXp(q, userId, xpFor('mua_dat'), 'mua_dat');
+        return { ok: true, fieldId: rows[0].id, tenure: 'thue', rent, leaseUntil: until.getTime(), total: rent, cash: u.cash - rent, ...xp };
+      }
       const price = blocks * fieldBlockPrice(regionId), fees = landFees(price), total = price + fees.total;
       if (u.cash < total) throw bad('khong_du_tien', 'Không đủ tiền mua ruộng (tính cả lệ phí trước bạ).', 409);
       // mỗi khối là một thửa đất nông nghiệp trong quỹ đất của tỉnh (sổ địa chính, server/src/land.ts)
-      const province = REGIONS[regionId].province, left = await lotsLeft(q, province, 'nong_nghiep');
-      if (left < blocks) throw bad('het_dat', `${province} chỉ còn ${left} thửa đất nông nghiệp trong quỹ đất đợt này.`, 409);
       await d.addCash(q, userId, -total, `mua ${blocks} khối ruộng`);
       const { rows } = await q.query('insert into fields (user_id, region_id, blocks, price_paid) values ($1,$2,$3,$4) returning id', [userId, regionId, blocks, price]);
       for (let i = 0; i < blocks; i++) await issueLot(q, userId, province, 'nong_nghiep', price / blocks, Number(rows[0].id));
       const xp = await d.addXp(q, userId, xpFor('mua_dat'), 'mua_dat');
-      return { ok: true, fieldId: rows[0].id, price, fees, total, cash: u.cash - total, ...xp };
+      return { ok: true, fieldId: rows[0].id, tenure: 'so_do', price, fees, total, cash: u.cash - total, ...xp };
+    });
+  });
+
+  /** Gia hạn thuê thêm một năm (trả trước). Gia hạn được cả khi vừa hết hạn mà ruộng còn cây. */
+  app.post('/api/fields/:id/renew', async (req) => {
+    const userId = await d.requireUser(req);
+    const id = Number((req.params as { id: string }).id);
+    return db.tx(async (q) => {
+      const f = (await q.query('select * from fields where id = $1 and user_id = $2 for update', [id, userId])).rows[0];
+      if (!f) throw bad('khong_tim_thay', 'Không tìm thấy cánh đồng.', 404);
+      if (!f.lease_until) throw bad('khong_phai_dat_thue', 'Ruộng này đã mua đứt, không cần gia hạn.', 409);
+      const u = await userInfo(q, userId, true), rent = fieldLeaseRent(f.region_id, f.blocks);
+      if (u.cash < rent) throw bad('khong_du_tien', `Cần ${rent.toLocaleString('vi-VN')}đ tiền thuê một năm.`, 409);
+      const until = new Date(Math.max(Date.now(), new Date(f.lease_until).getTime()) + leaseYear());
+      await d.addCash(q, userId, -rent, `thue_dat:${f.region_id}`);
+      await q.query('update fields set lease_until = $2, lease_rent = $3 where id = $1', [id, until, rent]);
+      await renewFieldLease(q, id, until, rent / f.blocks);
+      return { ok: true, rent, leaseUntil: until.getTime(), cash: u.cash - rent };
     });
   });
 
@@ -161,11 +211,11 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
       const f = rows[0];
       if (!f) throw bad('khong_tim_thay', 'Không tìm thấy cánh đồng.', 404);
       if (f.specialty_id) throw bad('dang_trong', 'Cánh đồng đang có cây; thu hoạch xong mới bán được.', 409);
-      const refund = Math.round((Number(f.price_paid) * FIELD_RESALE) / 1000) * 1000;
+      const refund = f.lease_until ? 0 : Math.round((Number(f.price_paid) * FIELD_RESALE) / 1000) * 1000; // đất thuê: trả lại, không hoàn tiền thuê
       await q.query('delete from field_jobs where field_id = $1', [id]);
-      await q.query('delete from land_lots where field_id = $1', [id]); // trả thửa về quỹ đất
+      await surrenderFieldLots(q, id); // trả thửa về quỹ đất: thu hồi sổ, ghi sổ biến động
       await q.query('delete from fields where id = $1', [id]);
-      await d.addCash(q, userId, refund, 'bán ruộng');
+      if (refund) await d.addCash(q, userId, refund, 'bán ruộng');
       return { ok: true, refund };
     });
   });
@@ -182,6 +232,7 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
       const f = rows[0];
       if (!f) throw bad('khong_tim_thay', 'Không tìm thấy cánh đồng.', 404);
       if (f.specialty_id) throw bad('dang_trong', 'Cánh đồng đang có cây.', 409);
+      if (f.lease_until && new Date(f.lease_until).getTime() <= Date.now()) throw bad('het_han_thue', 'Hợp đồng thuê đất đã hết hạn: gia hạn rồi mới gieo vụ mới.', 409);
       if (sp.regionId !== f.region_id) throw bad('khac_vung', `Ruộng ở ${REGIONS[f.region_id]?.name} chỉ trồng đặc sản của vùng đó.`, 409);
       const tiles = f.blocks * FIELD_BLOCK_TILES, cost = fieldSeedCost(sp, tiles);
       const u = await userInfo(q, userId, true);
