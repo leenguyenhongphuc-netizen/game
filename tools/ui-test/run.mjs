@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { audit } from './audit.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -26,45 +27,7 @@ const DEVICES = [
   { id: 'desktop-rong', w: 1920, h: 1080, touch: false },
 ].filter((d) => ONLY.length === 0 || ONLY.includes(d.id));
 
-/** Chạy trong trang: trả về danh sách lỗi bố cục của màn hiện tại. */
-function audit(touch) {
-  const issues = [];
-  const vv = window.visualViewport;
-  // Mọi phép đo quy về phần màn hình đang nhìn thấy: khi trang bị phóng to, phần này nhỏ hơn và lệch so với khung trang.
-  const X0 = vv ? vv.offsetLeft : 0, Y0 = vv ? vv.offsetTop : 0, W = vv ? vv.width : window.innerWidth, H = vv ? vv.height : window.innerHeight;
-  if (document.documentElement.scrollWidth > window.innerWidth + 1) issues.push({ level: 'error', rule: 'tran-ngang', detail: `scrollWidth ${document.documentElement.scrollWidth} > ${window.innerWidth}` });
-  const box = (el) => { const q = el.getBoundingClientRect(); return { left: q.left - X0, top: q.top - Y0, right: q.right - X0, bottom: q.bottom - Y0, width: q.width, height: q.height }; };
-  const visible = (el) => { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.05 && r.width > 0 && r.height > 0; };
-  const scrollParent = (el) => { for (let p = el.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p); if (/(auto|scroll)/.test(o.overflowY + o.overflowX) || p.classList.contains('seed-bar')) return p; } return null; };
-  const label = (el) => `${el.tagName.toLowerCase()}${el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : ''} "${(el.innerText || el.getAttribute('aria-label') || '').trim().replace(/\s+/g, ' ').slice(0, 40)}"`;
-  // 1. Phần tử thao tác được nằm ngoài màn hình hoặc quá nhỏ
-  for (const el of document.querySelectorAll('button, a, input, select, [role="button"]')) {
-    if (!visible(el)) continue;
-    const r = box(el), sp = scrollParent(el);
-    if (!sp && (r.left < -1 || r.top < -1 || r.right > W + 1 || r.bottom > H + 1)) issues.push({ level: 'error', rule: 'nut-ngoai-man-hinh', detail: `${label(el)} tại [${Math.round(r.left)}, ${Math.round(r.top)}, ${Math.round(r.right)}, ${Math.round(r.bottom)}] ngoài ${Math.round(W)}×${Math.round(H)}` });
-    if (touch && !el.closest('svg') && !el.classList.contains('link') && (r.width < 38 || r.height < 38)) issues.push({ level: 'warn', rule: 'nut-qua-nho', detail: `${label(el)} ${Math.round(r.width)}×${Math.round(r.height)}` });
-  }
-  // 2. Khối giao diện nổi tràn khỏi màn hình
-  const blocks = ['.dg-top', '.dg-hud', '.tr-cap', '.tr-hud', '.sw-top', '.sw-card', '.sw-guide', '.context', '.hud-top', '.chips', '.quest', '.plot-switch', '.hud-pop', '.farm-bar', '.toast', '.ctx-bar', '.ctx-detail', '.dock', '.modal', '.card', '.wheel-wrap', '.wheel-head', '.brand'];
-  const rects = {};
-  for (const sel of blocks) for (const el of document.querySelectorAll(sel)) {
-    if (!visible(el)) continue;
-    const r = box(el); rects[sel] = r;
-    if (!scrollParent(el) && (r.left < -1 || r.right > W + 1 || r.top < -1 || r.bottom > H + 1)) issues.push({ level: 'error', rule: 'khoi-tran-man-hinh', detail: `${sel} tại [${Math.round(r.left)}, ${Math.round(r.top)}, ${Math.round(r.right)}, ${Math.round(r.bottom)}] ngoài ${Math.round(W)}×${Math.round(H)}` });
-  }
-  // 3. Các khối nổi đè lên nhau
-  const hit = (a, b) => a && b && a.left < b.right - 2 && b.left < a.right - 2 && a.top < b.bottom - 2 && b.top < a.bottom - 2;
-  for (const [a, b] of [['.hud-top', '.chips'], ['.hud-top', '.quest'], ['.chips', '.quest'], ['.quest', '.plot-switch'], ['.hud-top', '.hud-row'], ['.farm-bar', '.dock'], ['.ctx-bar', '.farm-bar'], ['.ctx-bar', '.dock'], ['.ctx-detail', '.dock'], ['.modal', '.dock'], ['.modal', '.hud-top'], ['.toast', '.hud-top'], ['.toast', '.quest'], ['.toast', '.plot-switch'], ['.context', '.dock'], ['.wheel-wrap', '.wheel-head']]) {
-    if (hit(rects[a], rects[b])) issues.push({ level: 'error', rule: 'khoi-de-nhau', detail: `${a} đè lên ${b}` });
-  }
-  // 4. Chữ bị cắt mà không có dấu ba chấm
-  for (const el of document.querySelectorAll('h1, h2, h3, p, strong, small, span, button, label')) {
-    if (!visible(el) || el.children.length > 0) continue;
-    const cs = getComputedStyle(el);
-    if (el.scrollWidth > el.clientWidth + 2 && cs.overflow !== 'visible' && cs.textOverflow !== 'ellipsis') issues.push({ level: 'warn', rule: 'chu-bi-cat', detail: label(el) });
-  }
-  return issues;
-}
+// Luật soát bố cục: tools/ui-test/audit.mjs (dùng chung với matrix.mjs)
 
 const report = [];
 rmSync(OUT, { recursive: true, force: true });
