@@ -614,5 +614,5 @@ button.en-bar, button.lvl-badge { min-height: 40px; }
   .seed-bar { flex-direction: column; overflow-x: hidden; overflow-y: auto; min-height: 0; }
   .seed-chip .seed { width: 100%; } .seed-chip .seed strong { max-width: 10ch; }
   .game .ctx-bar { bottom: calc(max(4px, env(safe-area-inset-bottom)) + 72px); right: 184px; }
-  .farm-acts { flex-direction: column; } .seed-info { position: absolute; right: calc(100% + 8px); bottom: 0; width: min(320px, 55vw); } .farm-line { position: absolute; right: calc(100% + 8px); bottom: 0; white-space: nowrap; max-width: 46vw; }
+  .farm-acts { flex-direction: column; } .seed-info { position: absolute; right: calc(100% + 8px); bottom: 0; width: min(320px, 55vw); } .seed-info { bottom: 70px; } .farm-line { align-self: stretch; text-align: center; }
 }

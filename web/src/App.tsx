@@ -562,7 +562,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
             <div className="ctx-bar">
               {emptyMine && farming && ctx.lot === 0 && !bulk && (heldSp
                 ? <button className="ctx-btn go" disabled={act.busy || me.user.cash < seedCost(heldSp)} onClick={() => act.run(() => plantOne(ctx.tile, heldSp))}>🌱 Trồng {heldSp.name} · {fmtMoney(seedCost(heldSp))}</button>
-                : <span className="ctx-pill">👇 Chọn giống ở thanh dưới</span>)}
+                : <span className="ctx-pill">🌱 Chọn giống ở thanh giống</span>)}
               {ctx.kind === 'tile' && ctxLot && !ctxPlanting && !ctxLot.plot.mine && <span className="ctx-pill">Ô đất trống</span>}
               {plantInfo && !infoOpen && (
                 <button className="ctx-btn" onClick={() => setInfoOpen(true)}>
