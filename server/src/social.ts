@@ -12,7 +12,7 @@ import { HATS, SHIRT_COLORS, TRUCK_COLORS } from '../../shared/custom.ts';
 import { xpFor } from '../../shared/progress.ts';
 import type { XpSource } from '../../shared/progress.ts';
 import {
-  BOTS_PER_REGION, BOT_BATCH, BOT_BUY_MAX_RATIO, BOT_FARM_KG_PER_HOUR, BOT_LISTING_HOURS, BOT_MAX_LISTINGS, BOT_START_CASH, BOT_STOCK_CAP, BOT_TICK_MS,
+  BOTS_PER_REGION, EMOTES, BOT_BATCH, BOT_BUY_MAX_RATIO, BOT_FARM_KG_PER_HOUR, BOT_LISTING_HOURS, BOT_MAX_LISTINGS, BOT_START_CASH, BOT_STOCK_CAP, BOT_TICK_MS,
   HIGHWAY_WINDOW_KM, PRESENCE_INTERVAL, PRESENCE_MAX, PRESENCE_SCENES, PRESENCE_TTL_MS, botDisplayName, hash32, rand01,
 } from '../../shared/social.ts';
 import type { PresenceOther, PresenceOut, PresenceScene } from '../../shared/social.ts';
@@ -75,6 +75,7 @@ export function registerSocial(app: FastifyInstance, d: SocialDeps) {
     const car = b.car && typeof b.car === 'object' ? b.car as Record<string, unknown> : null;
     const extra = {
       walk: b.walk === true, dir: b.dir === -1 ? -1 : 1,
+      ...(typeof b.emote === 'string' && (EMOTES as readonly string[]).includes(b.emote) ? { emote: b.emote } : {}),
       ...(car ? { car: { x: num(car.x, -2000, 2000) ?? 0, z: num(car.z, -2000, 2000) ?? 0, yaw: num(car.yaw, -10, 10) ?? 0 } } : {}),
     };
     const { rows } = await db.query(
@@ -104,7 +105,7 @@ export function registerSocial(app: FastifyInstance, d: SocialDeps) {
         const canon = theirDir === 1 ? theirKm : theirTotal - theirKm, mine = myDir === 1 ? canon : total - canon;
         o.aheadKm = Math.round((mine - myKm) * 100) / 100; o.sameDir = theirDir === myDir; o.kmps = Number(r.speed) || 0;
       } else {
-        o.x = Number(r.x) || 0; o.z = Number(r.z) || 0; o.yaw = Number(r.yaw) || 0; o.speed = Number(r.speed) || 0; o.walk = !!r.extra?.walk; o.car = r.extra?.car ?? null;
+        o.x = Number(r.x) || 0; o.z = Number(r.z) || 0; o.yaw = Number(r.yaw) || 0; o.speed = Number(r.speed) || 0; o.walk = !!r.extra?.walk; o.car = r.extra?.car ?? null; if (r.extra?.emote) o.emote = r.extra.emote;
       }
       return o;
     });
@@ -147,7 +148,8 @@ export function registerSocial(app: FastifyInstance, d: SocialDeps) {
     if (scene === 'village' || scene === 'rest_stop' || scene === 'sight' || scene === 'market') {
       // vài người ghé qua, đổi người mỗi 8 phút; trình duyệt tự cho họ đi theo kịch bản
       const slot = 8 * 60_000, bucket = Math.floor(now / slot), seed0 = hash32(`${scene}:${key}:${bucket}`);
-      const n = scene === 'village' ? seed0 % 3 : scene === 'rest_stop' ? 1 + (seed0 % 3) : 1 + (seed0 % 2);
+      // khu vui chơi đông hơn điểm tham quan thường
+      const n = scene === 'village' ? seed0 % 3 : scene === 'rest_stop' ? 1 + (seed0 % 3) : scene === 'sight' && key.startsWith('park_') ? 4 + (seed0 % 3) : scene === 'sight' ? 2 + (seed0 % 2) : 1 + (seed0 % 2);
       const used = new Set<number>();
       for (let i = 0; i < n; i++) {
         const seed = hash32(`${seed0}:${i}`), b = pick(seed); if (!b || used.has(b.id)) continue; used.add(b.id);

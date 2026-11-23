@@ -6,6 +6,16 @@ import { SightScene } from './SightScene.ts';
 import type { SightHud, SightShop } from './SightScene.ts';
 import { guide } from './guide.ts';
 import type { SightExtra } from './SightKit.ts';
+import { attachSightOthers } from './SightOthers.ts';
+import type { SightOthers } from './SightOthers.ts';
+import { EMOTES } from '../../../shared/social.ts';
+import { park as findPark } from '../../../shared/parks.ts';
+import type { ParkTicket } from '../../../shared/parks.ts';
+import { api } from '../api.ts';
+import { ParkStopBody } from '../park/ParkStop.tsx';
+import type { ParkView } from '../park/ParkStop.tsx';
+import { RideCut } from '../park/RideCut.tsx';
+import { Arcade } from '../park/Arcade.tsx';
 import './sight.css';
 
 interface TestHook { goto: (i: number) => void; snap: () => void; pos: () => unknown; info: () => unknown; close: () => void }
@@ -47,6 +57,17 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const [ex, setEx] = useState<{ i: number; x: SightExtra; pick: number | null; pan: boolean } | null>(null);
   const [exDone, setExDone] = useState<number[]>([]);
   const [bonus, setBonus] = useState<{ k: number; xp: number } | null>(null);
+  // ---- người chơi khác cùng tham quan, biểu cảm, ảnh chung
+  const others = useRef<SightOthers | null>(null);
+  const [crowd, setCrowd] = useState<{ n: number; near: string[] }>({ n: 0, near: [] });
+  const [myEmote, setMyEmote] = useState<{ k: number; e: string } | null>(null);
+  const [photo, setPhoto] = useState<{ src: string; names: string[] } | null>(null);
+  // ---- khu vui chơi: vé, lượt chơi, khu trò chơi
+  const pk = s?.park ? findPark(s.park) ?? null : null;
+  const [pv, setPv] = useState<ParkView | null>(null);
+  const [pkBusy, setPkBusy] = useState(false); const [pkErr, setPkErr] = useState('');
+  const [riding, setRiding] = useState<string | null>(null); const [arcade, setArcade] = useState(false); const arcadePlayed = useRef(false);
+  const [energyNow, setEnergyNow] = useState<number | null>(null);
 
   const snap = () => {
     const i = nearRef.current; if (i === null || !s) return; const id = s.stops[i].id;
@@ -60,13 +81,28 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
     const sc = new SightScene(host.current, s, seenRef.current, { onNear: (i) => { setNear(i); setAlbum(false); if (i !== null) setEx(null); }, onHud: setHud, onShop: setShop }, props.shops);
     sc.auto = !!w.__sightAuto; sc.speedMul = w.__sightAuto && w.__rideStep ? 6 : 1; scene.current = sc;
     w.__sight = { goto: (i) => sc.goto(i), snap, pos: () => sc.pos(), info: () => sc.info(), close };
+    others.current = attachSightOthers(sc, s.id);
     const t = window.setTimeout(() => setHint(false), 9000);
     // màn chào: giữ ảnh tới khi cảnh dựng xong rồi mới mờ dần vào cảnh 3D
     const hold = w.__sightAuto ? 250 : 1500, t2 = window.setTimeout(() => setSplash('fade'), hold), t3 = window.setTimeout(() => setSplash('off'), hold + 800);
-    return () => { window.clearTimeout(t); window.clearTimeout(t2); window.clearTimeout(t3); sc.dispose(); scene.current = null; delete w.__sight; };
+    return () => { window.clearTimeout(t); window.clearTimeout(t2); window.clearTimeout(t3); others.current?.dispose(); others.current = null; sc.dispose(); scene.current = null; delete w.__sight; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.sightId]);
 
+  // đếm người cùng cảnh và ai đang đứng gần (để hiện nút chụp ảnh chung)
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const o = others.current; if (!o) return; const list = o.names(), near = list.filter((x) => x.d < 9).map((x) => x.name).slice(0, 6);
+      setCrowd((c) => (c.n === list.length && c.near.join('|') === near.join('|') ? c : { n: list.length, near }));
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [props.sightId]);
+  useEffect(() => {
+    if (!pk) return; let live = true;
+    api<ParkView>('GET', `/api/parks/${pk.id}`).then((v) => { if (live) setPv(v); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [pk?.id]);
+  useEffect(() => { if (scene.current) scene.current.paused = !!riding; }, [riding]);
   // cảnh đọc trạng thái này để tô trụ mốc và vẽ dải mũi tên trên nền
   useEffect(() => { guide.next = hud?.next ?? 0; guide.seen = new Set(seen); }, [hud?.next, seen]);
   useEffect(() => { guide.quiet = !!ex?.pan; }, [ex?.pan]);
@@ -124,7 +160,20 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const EX_LABEL = { ngam_canh: ['🔭', 'Ngắm toàn cảnh'], hoi_dap: ['❓', 'Hỏi nhanh có thưởng'], thu_vat: ['✨', 'Lại gần xem'] } as const;
   const finishEx = (i: number, gain: number) => { if (!exDone.includes(i)) { setExDone((d) => [...d, i]); guide.done.add(i); if (gain > 0) setBonus({ k: Date.now(), xp: gain }); } };
   const openEx = () => { if (exNear === null) return; const x = guide.extras[exNear]; setEx({ i: exNear, x, pick: null, pan: x.kind === 'ngam_canh' }); if (x.kind !== 'hoi_dap') finishEx(exNear, x.kind === 'ngam_canh' ? 5 : 3); };
-  const pct = en ? Math.max(0, Math.min(100, en.value / Math.max(1, en.max) * 100)) : 0;
+  const emote = (e: string) => { others.current?.emote(e); setMyEmote({ k: Date.now(), e }); };
+  const groupPhoto = () => {
+    const sc = scene.current; if (!sc) return; emote('📸');
+    window.setTimeout(() => { const src = sc.capture(); setFlash((f) => f + 1); setPhoto({ src, names: crowd.near }); }, 700);
+  };
+  const pkRun = async (f: () => Promise<void>) => { setPkErr(''); setPkBusy(true); try { await f(); } catch (e) { setPkErr((e as Error).message || 'Có lỗi, thử lại sau.'); } finally { setPkBusy(false); } };
+  const buyTicket = (t: ParkTicket) => pkRun(async () => { const r = await api('POST', `/api/parks/${pk!.id}/ticket`, { ticket: t.id }); setPv((v) => ({ ...(v ?? { tokens: 0, tickets: 0, prizes: [], rides: {} }), passes: r.passes })); });
+  const startRide = (id: string) => pkRun(async () => {
+    const r = await api('POST', `/api/parks/${pk!.id}/ride`, { ride: id });
+    if (typeof r.energy === 'number') setEnergyNow(r.energy);
+    setPv((v) => (v ? { ...v, rides: { ...v.rides, [id]: r.times } } : v)); setRiding(id);
+  });
+  const enShown = en ? { value: energyNow ?? en.value, max: en.max } : undefined;
+  const pct = enShown ? Math.max(0, Math.min(100, enShown.value / Math.max(1, enShown.max) * 100)) : 0;
   return (
     <div className="sw" data-stop={stop?.id ?? ''} data-seen={seen.length}>
       <div className="sw-scene" ref={host} onPointerDown={down} onPointerMove={moveP} onPointerUp={up} onPointerCancel={up} />
@@ -134,10 +183,25 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
           <ol className="sw-dots" aria-label={`Đã đóng ${seen.length} trên ${s.stops.length} dấu`}>
             {s.stops.map((x, i) => <li key={x.id} className={(seen.includes(x.id) ? 'done ' : '') + (hud?.next === i && !allSeen ? 'next' : '')} title={x.name}>{seen.includes(x.id) ? '✓' : i + 1}</li>)}
           </ol>
-          {en && <div className={`sw-energy${pct < 25 ? ' low' : ''}`} role="img" aria-label={`Thể lực ${Math.round(en.value)} trên ${en.max}`}><span aria-hidden="true">⚡</span><div><i style={{ width: `${pct}%` }} /></div></div>}
+          {enShown && <div className={`sw-energy${pct < 25 ? ' low' : ''}`} role="img" aria-label={`Thể lực ${Math.round(enShown.value)} trên ${enShown.max}`}><span aria-hidden="true">⚡</span><div><i style={{ width: `${pct}%` }} /></div></div>}
         </div>
         <button className="sw-leave" onClick={() => leave(false)}>Rời đi</button>
       </div>
+      {crowd.n > 0 && !stop && !photo && <div className="sw-crowd" role="status" aria-label={`${crowd.n} người đang tham quan cùng bạn`}>👥 {crowd.n}</div>}
+      {!stop && !ex && !riding && !arcade && (
+        <div className="sw-emotes" role="toolbar" aria-label="Biểu cảm">
+          {EMOTES.filter((e) => e !== '📸').map((e) => <button key={e} aria-label={`Biểu cảm ${e}`} onClick={() => emote(e)}>{e}</button>)}
+          {crowd.near.length > 0 && <button className="sw-group" onClick={groupPhoto} aria-label="Chụp ảnh chung với người đứng gần">📸<span>Ảnh chung</span></button>}
+        </div>
+      )}
+      {myEmote && <div className="sw-my-emote" key={myEmote.k} aria-hidden="true">{myEmote.e}</div>}
+      {photo && (
+        <div className="sw-photo" role="dialog" aria-label="Ảnh chung">
+          <img src={photo.src} alt="Ảnh chụp chung" />
+          <p>{photo.names.length ? `Cùng ${photo.names.join(', ')}` : 'Ảnh lưu niệm'} · {s.name} · {today()}</p>
+          <div className="sw-actions"><a className="sw-next" href={photo.src} download={`vuon-viet-${s.id}.jpg`}>Lưu ảnh</a><button className="sw-later" onClick={() => setPhoto(null)}>Đóng</button></div>
+        </div>
+      )}
       {!stop && !ex && hud && (
         <div className="sw-guide">
           <i style={{ transform: `rotate(${hud.bearing}rad)` }} aria-hidden="true">➤</i>
@@ -197,14 +261,18 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
             </div>
           </div>
           <p className="sw-fact">{stop.fact}</p>
+          {pk && !last && <ParkStopBody park={pk} stopId={stop.id} view={pv} busy={pkBusy} got={got} energy={enShown?.value} onBuy={(t) => void buyTicket(t)} onRide={(id) => void startRide(id)} onArcade={() => setArcade(true)} onStamp={snap} />}
+          {pk && pkErr && <p className="pk-err" role="alert">{pkErr}</p>}
           <div className="sw-actions">
-            {!got && <button className="sw-snap" onClick={snap}><span aria-hidden="true">📸</span> Chụp ảnh, đóng dấu</button>}
+            {!got && !(pk && !last) && <button className="sw-snap" onClick={snap}><span aria-hidden="true">📸</span> Chụp ảnh, đóng dấu</button>}
             {got && !last && <button className="sw-next" onClick={close}>Đi tiếp ›</button>}
             {got && last && <button className="sw-go" onClick={() => leave(true)}>Ra cổng → Siêu thị đặc sản</button>}
             {(!got || last) && <button className="sw-later" onClick={close}>{last ? 'Ở lại ngắm thêm' : 'Để sau'}</button>}
           </div>
         </div>
       )}
+      {pk && riding && (() => { const r = pk.rides.find((x) => x.id === riding)!; return <RideCut park={pk} ride={r} onDone={() => { setRiding(null); snap(); }} />; })()}
+      {pk && arcade && pv && <Arcade park={pk} wallet={{ tokens: pv.tokens, tickets: pv.tickets, prizes: pv.prizes }} onWallet={(w) => setPv((v) => (v ? { ...v, ...w } : v))} onPlayed={() => { arcadePlayed.current = true; }} onClose={() => { setArcade(false); if (arcadePlayed.current) snap(); }} />}
     </div>
   );
 }

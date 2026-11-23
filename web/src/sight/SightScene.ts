@@ -298,6 +298,26 @@ export class SightScene {
     this.step(0.016); if (this.lookAt) { this.yaw = Math.atan2(this.lookAt.x - this.state.pos.x, -(this.lookAt.z - this.state.pos.z)); for (let i = 0; i < 40; i++) this.step(0.05); } this.placeCamera(true); this.renderer.render(this.scene, this.camera);
   }
   pos() { return { x: this.state.pos.x, y: this.state.pos.y, z: this.state.pos.z, s: this.state.s, total: this.total }; }
+  // ---- dùng cho người chơi khác cùng cảnh (SightOthers.ts) và khu vui chơi (park/)
+  /** Cảnh three.js để gắn thêm người chơi khác. */
+  get world(): THREE.Scene { return this.scene; }
+  /** Hàm gọi mỗi khung trước khi vẽ (cập nhật người chơi khác…). */
+  readonly extraTicks: ((t: number, dt: number) => void)[] = [];
+  /** Tư thế nhân vật mình để gửi cho người khác: yaw = atan2(dx, dz) của hướng mặt (cùng quy ước với người làng, makeFarmer). */
+  pose() { return { x: this.state.pos.x, z: this.state.pos.z, yaw: Math.PI - this.heading, walk: this.moving > 0.3 }; }
+  /** Điểm trên lối đi ở quãng s (m) và hướng đi tại đó. */
+  pathAt(s: number) { const a = this.at(Math.max(0, Math.min(this.total, s))); return { x: a.p.x, y: a.p.y, z: a.p.z, dx: a.dir.x, dz: a.dir.z }; }
+  get pathLength() { return this.total; }
+  get halfWidth() { return this.set.half; }
+  /** Quãng s của từng điểm dừng trên lối đi. */
+  stopS(): number[] { return this.markers.map((m) => m.s); }
+  /** Cao độ mặt đường gần (x, z) nhất. */
+  groundY(x: number, z: number): number { return this.project(this.tmp2.set(x, this.state.pos.y, z), this.state.seg).q.y; }
+  private tmp2 = new THREE.Vector3();
+  /** Tạm dừng vẽ (khi đang chơi hoạt cảnh trò chơi ở lớp trên) để đỡ tốn pin. */
+  paused = false;
+  /** Chụp màn hình cảnh hiện tại (ảnh chung với người chơi khác). */
+  capture(): string { this.renderer.render(this.scene, this.camera); return this.renderer.domElement.toDataURL('image/jpeg', 0.82); }
   info() { const i = this.renderer.info.render; return { calls: i.calls, triangles: i.triangles }; }
 
   private step(dt: number) {
@@ -390,6 +410,7 @@ export class SightScene {
   private zoom(fov: number, snap: boolean) { const f = snap ? fov : this.camera.fov + (fov - this.camera.fov) * ease(0.08, this.dtNow); if (Math.abs(f - this.camera.fov) > 0.01) { this.camera.fov = f; this.camera.updateProjectionMatrix(); } }
   private frame = (now: number) => {
     if (this.disposed) return; this.raf = requestAnimationFrame(this.frame);
+    if (this.paused) { this.last = now; return; }
     if (!this.quality.tick(now)) { if (!this.quality.throttled) this.last = now; return; }
     const dt = stepDt((now - this.last) / 1000); this.last = now; this.time += dt; this.dtNow = dt;
     this.step(dt); this.quality.busy = this.vmag > 0.05;
@@ -417,6 +438,7 @@ export class SightScene {
     if (this.shopAt.length) { let near: number | null = null; this.shopAt.forEach((q, i) => { if (Math.hypot(q.x - st.pos.x, q.z - st.pos.z) < 4.2 && Math.abs(q.y - st.pos.y) < 3) near = i; }); if (near !== this.shopIdx) { this.shopIdx = near; this.cb.onShop?.(near); } }
     this.markers.forEach((m, i) => { m.beam.visible = false; m.num.visible = this.nearIdx !== i && !this.seen.has(this.set.stops[i].id) && this.camera.position.distanceToSquared(m.num.position) > 30; const k = 1 + Math.sin(this.time * 3 + i) * 0.08; m.ring.scale.set(k, 1, k); m.beam.rotation.y = this.time * 0.6; });
     for (const t of this.kit.ticks) t(this.time, dt, st);
+    for (const t of this.extraTicks) t(this.time, dt);
     this.placeCamera();
     this.renderer.render(this.scene, this.camera);
     trace({ t: now, dt, x: st.pos.x, z: st.pos.z, cx: this.camera.position.x, cy: this.camera.position.y, cz: this.camera.position.z, yaw: this.yaw, level: this.quality.level, ratio: this.quality.pixelRatio });
