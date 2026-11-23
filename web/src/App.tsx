@@ -27,6 +27,7 @@ import { TravelRide } from './drive/TravelRide.tsx';
 import { SightsPanel, SupermarketPanel } from './sights.tsx';
 import type { SightTrip } from './sights.tsx';
 import { SightWalk } from './sight/SightWalk.tsx';
+import { useDragScroll } from './dragScroll.ts';
 import { BuildMode } from './build.tsx';
 import { LandCertificate, PassportPanel } from './passport.tsx';
 import { ProgressPanel } from './progress.tsx';
@@ -259,6 +260,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [bulk, setBulk] = useState<{ label: string; done: number; total: number } | null>(null);
   const bulkStop = useRef(false);
   const [hudPop, setHudPop] = useState<'wx' | 'plots' | 'quest' | null>(null);
+  const seedScroll = useDragScroll<HTMLDivElement>(typeof matchMedia !== 'undefined' && matchMedia('(max-height: 430px)').matches);
   const gameRef = useRef<HTMLDivElement>(null), hudRef = useRef<HTMLDivElement>(null), stackRef = useRef<HTMLDivElement>(null);
   const [infoOpen, setInfoOpen] = useState(false);
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -567,7 +569,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
             );
           })()}
           {emptyTiles.length > 0 && (
-            <div className="seed-bar" role="group" aria-label="Chọn giống để trồng">
+            <div className="seed-bar" role="group" aria-label="Chọn giống để trồng" ref={seedScroll.ref} onFocus={(e) => seedScroll.reveal((e.target as HTMLElement).closest('.seed-chip, .seed-all'))}><div className="seed-track">
               {seedList.map((sp) => {
                 const crop = CROPS[sp.crop], cost = seedCost(sp);
                 return (
@@ -582,7 +584,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
               {heldSp && emptyTiles.length >= 2 && !bulk && (
                 <button className="seed-all go" disabled={me.user.cash < seedCost(heldSp)} onClick={() => void plantAll()}>🌱 Trồng hết<small>{emptyTiles.length} ô · {fmtMoney(seedCost(heldSp) * emptyTiles.length)}</small></button>
               )}
-            </div>
+            </div></div>
           )}
         </div>
       )}

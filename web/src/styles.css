@@ -590,7 +590,7 @@ button.en-bar, button.lvl-badge { min-height: 40px; }
 .farm-line { align-self: center; margin: 0; max-width: 100%; background: #fffdf4f2; border: 2px solid var(--green-dark); border-radius: 999px; padding: 4px 12px; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .farm-line.err { border-color: var(--danger); color: var(--danger); white-space: normal; border-radius: 14px; }
 .farm-acts { display: flex; gap: 6px; justify-content: center; } .farm-acts button { min-height: 44px; padding: 4px 14px; border-radius: 999px; white-space: nowrap; }
-.seed-bar { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 5px; background: var(--wood); border: 3px solid var(--wood-dark); border-radius: 18px; box-shadow: 0 4px 0 #2e1905; -webkit-overflow-scrolling: touch; }
+.seed-bar { display: block; overflow: hidden; touch-action: pan-y; padding: 5px; background: var(--wood); border: 3px solid var(--wood-dark); border-radius: 18px; box-shadow: 0 4px 0 #2e1905; }
 .seed-bar::-webkit-scrollbar { display: none; }
 .seed-chip { position: relative; flex: 0 0 auto; display: flex; }
 .seed-chip .seed { flex: none; display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 6px; align-items: center; justify-items: start; text-align: left; min-height: 48px; padding: 3px 40px 3px 8px; border-radius: 12px; background: var(--paper-2); line-height: 1.1; }
@@ -611,7 +611,8 @@ button.en-bar, button.lvl-badge { min-height: 40px; }
   .hud-top { flex: 0 1 auto; } .hud-row { flex: 1 1 240px; }
   .hud-pop { flex: 1 0 100%; }
   .farm-bar { left: auto; right: max(8px, env(safe-area-inset-right)); bottom: 8px; top: 56px; width: 168px; transform: none; justify-content: flex-end; }
-  .seed-bar { flex-direction: column; overflow-x: hidden; overflow-y: auto; min-height: 0; }
+  .seed-bar { overflow: hidden; touch-action: pan-x; min-height: 0; }
+  .seed-track { flex-direction: column; width: auto; }
   .seed-chip .seed { width: 100%; } .seed-chip .seed strong { max-width: 10ch; }
   .game .ctx-bar { bottom: calc(max(4px, env(safe-area-inset-bottom)) + 72px); right: 184px; }
   .farm-acts { flex-direction: column; } .seed-info { position: absolute; right: calc(100% + 8px); bottom: 0; width: min(320px, 55vw); } .seed-info { bottom: 70px; } .farm-line { align-self: stretch; text-align: center; }
@@ -634,3 +635,6 @@ button.en-bar, button.lvl-badge { min-height: 40px; }
 .wardrobe-row .pick strong { font-size: 0.78rem; line-height: 1.15; } .wardrobe-row .pick small { font-size: 0.7rem; }
 .wardrobe-def { font-size: 2rem; line-height: 56px; height: 56px; }
 body.vv-peek .game .modal .modal-body > .tabs { display: none; }
+
+.seed-track { display: flex; gap: 6px; width: max-content; will-change: transform; }
+@media (max-height: 430px) { .seed-track { flex-direction: column; width: auto; } }
