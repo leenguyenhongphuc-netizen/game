@@ -235,9 +235,9 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
                 <button className="ghost" onClick={() => setKg(lot, kg - 100)} aria-label="Bớt 100 kg">−100</button>
                 <input type="number" inputMode="numeric" min={1} max={lot.kg} value={kg} onChange={(e) => setKg(lot, Number(e.target.value) || 0)} aria-label={`Số kg ${lotName(lot)}`} />
                 <button className="ghost" onClick={() => setKg(lot, kg + 100)} aria-label="Thêm 100 kg">+100</button>
-                <button className="ghost" onClick={() => setKg(lot, lot.kg / 2)}>½</button>
+                <button className="ghost wide" onClick={() => setKg(lot, lot.kg / 2)} aria-label="Một nửa">½</button>
                 <button className="ghost" onClick={() => setKg(lot, lot.kg)}>Hết</button>
-                <button className="ghost" onClick={() => toggle(lot)} aria-label={`Bỏ ${lotName(lot)}`}>✕</button>
+                <button className="ghost wide" onClick={() => toggle(lot)} aria-label={`Bỏ ${lotName(lot)}`}>✕</button>
               </div>
             </div>
           ))}

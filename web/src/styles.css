@@ -656,3 +656,5 @@ body.vv-peek .game .modal .modal-body > .tabs { display: none; }
 .province-shops { margin-top: 14px; }
 .prop-buy small { display: block; }
 .shop-detail input[type="range"] { width: 8em; vertical-align: middle; }
+
+.ex-cart-line .qty .ghost.wide { min-width: 44px; }
