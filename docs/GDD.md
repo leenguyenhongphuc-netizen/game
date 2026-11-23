@@ -614,3 +614,51 @@ API: `GET /api/companies`, `GET /api/companies/:id/contracts` (kèm `leaderboard
 Tỉnh nào cũng có siêu thị đặc sản (kệ nhà bán + hàng ký gửi). Chủ xưởng (từ cấp 8), thương lái (cấp 8) và nhà vườn (cấp 18) mua đất thương mại để mở **siêu thị riêng** (tối đa 3); chủ xưởng từ cấp 12 mở **xưởng chi nhánh** ở tỉnh khác tỉnh nhà (tối đa 2, mỗi cái +4 chỗ đặt máy). Giá = đất (120 tr × theo độ đông khách của tỉnh) + xây 180 tr + giấy phép 15 tr cho siêu thị; xưởng 90 tr đất + 140 tr + 10 tr. Xây 6 giờ / 4 giờ. Siêu thị riêng bán hàng bày trên kệ theo lượt khách (`30 kg/giờ × độ đông khách × (1 + 4%/cấp chủ)`; tỉnh nhiều địa danh, thành phố lớn đông hơn), hàng rẻ bán trước, giá trên 1,2 lần tham chiếu bán chậm dần; người khác ký gửi thì chủ thu 7%. Chủ nhận doanh thu bằng nút "Nhận tiền".
 
 API: `GET /api/properties?province=`, `POST /api/properties/buy { province, kind: 'sieu_thi'|'xuong' }`, `GET /api/properties/:id`, `POST /api/properties/:id/collect`, `POST /api/properties/:id/stock { specialtyId, grade, kg, processed?, price }`, `POST /api/properties/:id/withdraw { shelfId }`. Giao diện: `web/src/properties.tsx` (`ProvinceShops` gắn sẵn trong SupermarketPanel, `PropertiesPanel` cho Hồ sơ).
+
+_(Đã thay bằng "Sổ địa chính" bên dưới: siêu thị cấp 20, có thêm cửa hàng đặc sản, đất theo quỹ đất tỉnh.)_
+
+## Sổ địa chính: quỹ đất theo tỉnh, sổ đỏ, chuyển nhượng (nhánh B3, 23/11)
+Luật: `shared/land.ts`; máy chủ `server/src/land.ts` (bảng `land_lots`, `land_transfers`); bảng mẫu `node tools/land-table.ts [tỉnh…]`; kiểm thử `server/test/land.test.ts`.
+
+- **Quỹ đất hữu hạn mỗi tỉnh, chia theo loại đất của Luật Đất đai 2024:** đất nông nghiệp (thửa 2.500 m² = một khối cánh đồng), đất thương mại – dịch vụ (thửa 100 m²), đất khu/cụm công nghiệp (thửa 1.000 m²), đất ở (chưa mở). Quỹ đợt 1 = diện tích quy hoạch thật / tỉ lệ (NN 200 ha/thửa, TMD 20 ha, KCN 50 ha), tối thiểu 10 thửa. Máy chủ đếm thửa đã cấp sổ; hết quỹ thì báo `het_dat`. Bán ruộng về nhà nước thì thửa trở lại quỹ.
+- **Nguồn số liệu:** diện tích, dân số theo NQ 202/2025/QH15 (làm tròn); tỉ lệ đất sản xuất nông nghiệp, diện tích KCN, tỉ lệ đất TMD là **ước tính theo nhóm** (ghi rõ trong đầu `shared/land.ts`) — cần rà theo quy hoạch tỉnh 2021–2030. Giá đất là mức **đại diện** theo bảng giá đất tỉnh từ 1/1/2026, 4 nhóm: (1) Hà Nội, TP.HCM; (2) thành phố trực thuộc TW khác và tỉnh công nghiệp/du lịch lớn; (3) đồng bằng, ven biển, Tây Nguyên; (4) miền núi phía Bắc. Mốc đối chiếu: Hà Nội cao nhất 702 triệu/m², TP.HCM khu vực III tối đa ~75 triệu/m². Đây là giá nhà nước, thấp hơn giá thị trường.
+- **Quyền theo vai (cân bằng):** nhà nông → đất nông nghiệp (qua Cánh đồng, cấp 5); chủ xưởng → đất KCN (xưởng chi nhánh, cấp 12); thương lái (và chủ xưởng; nhà nông từ cấp cao) → đất thương mại: **cửa hàng đặc sản** 1 thửa từ cấp 8 (nhà nông cấp 12), **siêu thị** 4 thửa từ cấp 20 (nhà nông cấp 25). Trước đây siêu thị chỉ cần cấp 8 và 315 triệu nên thương lái mở siêu thị quá sớm, rẻ như nhau mọi nơi; nay là công trình lớn, vốn hàng tỉ, hoàn vốn ngang các khoản đầu tư của vai khác.
+- **Sổ đỏ và chuyển nhượng:** mỗi thửa một số sổ `VV-<tỉnh>-<loại>-<số>`. Thửa trống rao bán được trong khoảng 70%–300% giá nhà nước; người mua nộp **lệ phí trước bạ 0,5%** (tối đa 500 triệu) + phí cấp sổ 500.000đ; người bán nộp **thuế TNCN 2%**. Lịch sử sang tên lưu ở `land_transfers`. Người mua phải đúng vai với loại đất. Mở công trình dùng thửa trống bạn đã có ở tỉnh đó trước, thiếu mới mua thêm.
+- **Lượng khách cửa hàng:** theo dân số, nhóm giá đất (đất đắt = phố đông) và số điểm du lịch (`shopTraffic`). Cửa hàng bán bằng 0,3 siêu thị. `SHOP_KG_PER_HOUR` 30 → 300 để hoàn vốn ~23–25 giờ chơi.
+- **Cánh đồng:** giá khối ruộng = giá một thửa đất nông nghiệp của tỉnh; năng suất cánh đồng 0,5 → 0,45.
+
+API: `GET /api/land?province=` (quỹ đất, sổ của tôi, tin rao), `POST /api/land/buy { province, use, count }`, `POST /api/land/:id/list { price }`, `POST /api/land/:id/unlist`, `POST /api/land/:id/purchase`, `GET /api/land/:id` (kèm lịch sử sang tên). `POST /api/properties/buy { province, kind: 'cua_hang'|'sieu_thi'|'xuong' }`.
+
+**Hoàn vốn đầu tư đất theo vai** (`node tools/econ-sim.mjs`, giờ chơi):
+
+| Vai | Khoản đầu tư | Vốn | Thu thêm mỗi giờ chơi | Hoàn vốn |
+|---|---|---|---|---|
+| Nông dân | 1 khối ruộng (Mộc Châu, Sơn La) | 100 tr | 20,3 tr | 4,9 giờ |
+| Chủ xưởng | Xưởng chi nhánh ở Đồng Tháp | 1,72 tỉ | 136 tr | 12,7 giờ |
+| Chủ xưởng | Xưởng chi nhánh ở Bắc Ninh | 2,73 tỉ | 136 tr | 20,1 giờ |
+| Thương lái | Cửa hàng đặc sản ở Đà Nẵng (cấp 10) | 1,14 tỉ | 49 tr | 23,3 giờ |
+| Thương lái | Cửa hàng đặc sản ở Đồng Tháp (cấp 10) | 487 tr | 21 tr | 22,9 giờ |
+| Thương lái | Siêu thị ở Đà Nẵng (cấp 20) | 5,09 tỉ | 211 tr | 24,1 giờ |
+| Thương lái | Siêu thị ở TP.HCM (cấp 20) | 16,7 tỉ | 394 tr | 42,4 giờ |
+
+Khối ruộng hoàn vốn nhanh nhưng nhà nông chỉ được thêm 2 khối mỗi cấp (trần 40 khối), nên tổng vốn đất nhà nông vẫn thấp. Thu nhập mỗi giờ chơi sau thay đổi (nông dân/chủ xưởng/thương lái): c1 10,7/5,7/6,1 tr · c10 58,4/81,1/99,2 tr · c20 290/356/373 tr (×1,28) · c30 663/502/590 tr (×1,32, trước đó ×1,60). Thương lái nay tính thêm thu nhập thụ động từ cửa hàng/siêu thị (chạy trong lúc đi buôn).
+
+## Giá tham chiếu đời thực (nhánh B3, 23/11)
+`shared/realPrices.ts` giữ mọi giá đời thực kèm ngày hiệu lực và nguồn; máy chủ ghi vào bảng `ref_prices` khi khởi động và trả ở `GET /api/ref-prices` (`/api/prices` vẫn là giá đặc sản). Bản ghi có ngày hiệu lực mới hơn trong `ref_prices` thắng bản tĩnh (để sau gắn tác vụ cập nhật). Trạm xăng/sạc gọi `fuelPriceNow(kind)`.
+
+| Khoản | Giá | Hiệu lực | Nguồn |
+|---|---|---|---|
+| Xăng E10 RON95-III | 19.100 đ/lít | 19/11/2026 | Petrolimex vùng 1 |
+| Xăng E5 RON92-II | 18.570 đ/lít | 19/11/2026 | Petrolimex vùng 1 |
+| Dầu DO 0,05S-II | 26.340 đ/lít | 19/11/2026 | Petrolimex vùng 1 |
+| Điện sinh hoạt 5 bậc | 1.901 / 2.289 / 2.894 / 3.456 / 3.844 đ/kWh (chưa VAT) | 1/11/2026 | QĐ 2892/QĐ-BCT |
+| Sạc xe điện V-GREEN | 3.858 đ/kWh | 7/2026 | Tuổi Trẻ |
+| Phí cao tốc nhóm 1 | 900–1.300 đ/km (Nhà nước), BOT bình quân 1.721 đ/km; nhóm 2 ×1,5 … nhóm 5 ×4 | 2/3/2026 | 5 tuyến Bắc – Nam |
+| Lương tối thiểu vùng I–IV | 5,31 / 4,73 / 4,14 / 3,70 triệu/tháng | 1/1/2026 | NĐ 293/2025/NĐ-CP |
+| Lệ phí trước bạ / thuế TNCN chuyển nhượng | 0,5% (tối đa 500 triệu) / 2% | — | NĐ 10/2022, Luật thuế TNCN |
+
+Áp vào game: xe chạy xăng 19.100 đ/lít (trước 21.000), xe dầu 26.340 (trước 19.000), sạc trạm 3.858, sạc ở nhà = bậc 3 + VAT 8% = 3.126 đ/kWh; phí một chặng cao tốc 70 km ≈ 91.000đ (trước 35.000), hệ số nhóm xe theo biểu phí thật (1; 1,5; 2; 3; 4). Cần kiểm lại: VAT điện 8% (mức giảm thuế còn hiệu lực?), giá DO mới nhất.
+
+## Xuất khẩu gọn và Đại lý xuất khẩu trong thế giới (nhánh B3)
+- Mỗi đường đi là một thẻ: tên đường + **lãi** trên cùng; một dòng thời gian/cước/tiền về; "N mặt hàng · kg · hao" **gập lại**, mở ra thì mỗi mặt hàng một dòng tên · kg · tiền (hao, đơn giá, cước ở dòng nhỏ dưới); nút **Gửi đi** rộng hết thẻ ở dưới. Giỏ hàng hiện tổng lô và lãi tốt nhất ở trên cùng; tên mặt hàng một dòng, nút kg xuống dòng.
+- **Quầy Đại lý xuất khẩu** ở đầu xóm (khe bên trái vườn nhà, sát đường làng, gần chỗ xuất hiện): mái che sọc xanh trắng, quầy gỗ, cân, thùng hàng có đai, container 10 feet, cờ các thị trường; nhân viên đứng quầy vẫy tay. Tới vòng vàng trước quầy → ngữ cảnh `export-desk` → hội thoại (`web/src/exportDesk.tsx`): lời chào theo giờ, 3 đơn công ty trả cao nhất, nút "Xem đơn của công ty" / "Tự gửi lô xuất khẩu".

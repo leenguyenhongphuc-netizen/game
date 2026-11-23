@@ -10,6 +10,7 @@ import {
   FARM_MACHINES, FARM_MACHINE_KINDS, FIELD_BLOCK_TILES, FIELD_MAX_BLOCKS_PER_FIELD, FIELD_MIN_LEVEL, FIELD_RESALE, HELI_TOUR_FEE, HELI_TOUR_MIN_LEVEL,
   METHOD_NAMES, WORK_NAMES, fieldBlockPrice, fieldColor, fieldMaxBlocks, fieldRegionAllowed, fieldSeedCost, fieldStepWaitMs, fieldSteps, fieldYieldKg, methodsFor, workPlan,
 } from '../../shared/farm.ts';
+import { issueLot, lotsLeft } from './land.ts';
 import type { FarmMachineKind, WorkMethod } from '../../shared/farm.ts';
 
 type Xp = { xpGained: number; xp: number; level: number; title: string; levelUp: boolean };
@@ -134,8 +135,12 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
       if (used + blocks > max) throw bad('vuot_han_muc', `Cấp ${u.level} được giữ tối đa ${max} khối (${max * FIELD_BLOCK_TILES} ô); bạn đang có ${used}.`, 409);
       const price = blocks * fieldBlockPrice(regionId), fees = landFees(price), total = price + fees.total;
       if (u.cash < total) throw bad('khong_du_tien', 'Không đủ tiền mua ruộng (tính cả lệ phí trước bạ).', 409);
+      // mỗi khối là một thửa đất nông nghiệp trong quỹ đất của tỉnh (sổ địa chính, server/src/land.ts)
+      const province = REGIONS[regionId].province, left = await lotsLeft(q, province, 'nong_nghiep');
+      if (left < blocks) throw bad('het_dat', `${province} chỉ còn ${left} thửa đất nông nghiệp trong quỹ đất đợt này.`, 409);
       await d.addCash(q, userId, -total, `mua ${blocks} khối ruộng`);
       const { rows } = await q.query('insert into fields (user_id, region_id, blocks, price_paid) values ($1,$2,$3,$4) returning id', [userId, regionId, blocks, price]);
+      for (let i = 0; i < blocks; i++) await issueLot(q, userId, province, 'nong_nghiep', price / blocks, Number(rows[0].id));
       const xp = await d.addXp(q, userId, xpFor('mua_dat'), 'mua_dat');
       return { ok: true, fieldId: rows[0].id, price, fees, total, cash: u.cash - total, ...xp };
     });
@@ -152,6 +157,7 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
       if (f.specialty_id) throw bad('dang_trong', 'Cánh đồng đang có cây; thu hoạch xong mới bán được.', 409);
       const refund = Math.round((Number(f.price_paid) * FIELD_RESALE) / 1000) * 1000;
       await q.query('delete from field_jobs where field_id = $1', [id]);
+      await q.query('delete from land_lots where field_id = $1', [id]); // trả thửa về quỹ đất
       await q.query('delete from fields where id = $1', [id]);
       await d.addCash(q, userId, refund, 'bán ruộng');
       return { ok: true, refund };

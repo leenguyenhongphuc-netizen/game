@@ -157,13 +157,13 @@ test('công ty xuất nhập khẩu: hợp đồng, giao từng phần, phí ch�
 });
 
 test('siêu thị mọi tỉnh; mua đất mở siêu thị riêng, bày hàng, khách mua, thu phí ký gửi; xưởng chi nhánh thêm chỗ máy', async () => {
-  const owner = await signup('chu_st', 'xuong'), guest = await signup('khach_ky_gui', 'thuong_lai');
+  const owner = await signup('chu_st', 'xuong', 'dt_caibe', 20_000_000_000), guest = await signup('khach_ky_gui', 'thuong_lai');
   // tỉnh không có điểm tham quan vẫn có siêu thị
   assert.equal((await call('GET', `/api/supermarket?province=${encodeURIComponent('Đồng Tháp')}`, undefined, owner)).status, 200);
   assert.equal((await call('GET', '/api/supermarket', undefined, owner)).status, 200);
   // cấp thấp chưa mở được
   assert.equal((await call('POST', '/api/properties/buy', { province: 'Đồng Tháp', kind: 'sieu_thi' }, owner)).status, 403);
-  await setLevel('chu_st', 15);
+  await setLevel('chu_st', 20);
   const view = (await call('GET', `/api/properties?province=${encodeURIComponent('Đồng Tháp')}`, undefined, owner)).body;
   assert.equal(view.kinds.find((k: any) => k.kind === 'sieu_thi').blocked, null);
   const before = await cashOf('chu_st');

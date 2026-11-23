@@ -1,0 +1,43 @@
+/* Xuất khẩu (web/src/trade.tsx): mỗi đường đi là một thẻ dọc gọn, nút Gửi đi nằm dưới, chi tiết từng mặt hàng gập lại. */
+.route.ex-route { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; gap: 6px; }
+.ex-route-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.ex-route-head strong { flex: 1 1 8em; min-width: 0; }
+.ex-net { font-size: 0.95rem; white-space: nowrap; }
+.ex-route-sum { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.82rem; }
+.ex-detail { font-size: 0.82rem; min-width: 0; }
+.ex-detail summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; color: var(--ink, #4a3220); font-weight: 600; }
+.ex-detail .ex-lines { list-style: none; margin: 4px 0; padding: 0; display: grid; gap: 4px; }
+.ex-detail .ex-lines li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 0 8px; align-items: baseline; padding: 4px 0; border-top: 1px dashed rgba(110, 72, 40, 0.2); }
+.ex-detail .ex-lines li.off { opacity: 0.65; }
+.ex-l-name { overflow-wrap: anywhere; font-weight: 600; }
+.ex-l-kg, .ex-l-money { white-space: nowrap; text-align: right; }
+.ex-l-money { font-weight: 700; }
+.ex-l-more { grid-column: 1 / -1; opacity: 0.8; }
+button.go.ex-go { width: 100%; min-height: 48px; font-size: 1rem; }
+.ex-cart-total { position: sticky; top: 0; z-index: 1; margin: 0 0 6px; padding: 6px 8px; border-radius: 10px; background: #fff4cf; }
+.ex-cart-line .qty .ghost.wide { min-width: 44px; }
+
+/* Hội thoại Đại lý xuất khẩu (web/src/exportDesk.tsx): thẻ nổi đáy màn hình, không che HUD trên. */
+.desk-dialog { position: fixed; inset: auto 0 0 0; z-index: 40; display: flex; justify-content: center; padding: 0 max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-bottom)); pointer-events: none; }
+.desk-card { pointer-events: auto; width: min(100%, 520px); max-height: min(70vh, 560px); overflow-y: auto; overflow-x: hidden; background: #fffaf0; border: 3px solid #7a5232; border-radius: 18px; box-shadow: 0 8px 24px #0004; padding: 12px 14px; display: grid; gap: 8px; }
+.desk-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.desk-who > div { display: grid; flex: 1 1 auto; min-width: 0; }
+.desk-who small { opacity: 0.75; }
+.desk-face { font-size: 2rem; }
+.desk-say { margin: 0; background: #fff; border-radius: 12px; padding: 8px 10px; border: 1px solid rgba(110, 72, 40, 0.18); }
+.desk-orders { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.desk-orders li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.desk-o-name, .desk-o-num { display: grid; min-width: 0; }
+.desk-o-name b { overflow-wrap: anywhere; }
+.desk-o-num { text-align: right; white-space: nowrap; }
+.desk-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 8px; }
+.desk-actions button { min-height: 48px; }
+
+/* Giỏ xuất khẩu: tên mặt hàng một dòng, hàng nút số kg xuống dòng dưới (không bóp tên thành cột chữ dọc). */
+.ex-cart-line { flex-wrap: wrap; row-gap: 4px; }
+.ex-cart-line > .grow { flex: 1 1 100%; min-width: 0; }
+.ex-cart-line .qty { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+.ex-cart-line .qty input { flex: 1 1 5em; min-width: 4.5em; }
+.ex-cart .ex-cart-total { text-align: left; }
+.ex-detail summary::before { content: '▸'; margin-right: 6px; }
+.ex-detail[open] summary::before { content: '▾'; }

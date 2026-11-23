@@ -1,5 +1,6 @@
 // Luật chơi thuần tuý, dùng chung cho máy chủ và giao diện.
 import { CROPS, REGIONS, SPECIALTIES, processOf, recipeOf } from './catalog.ts';
+import { fuelPriceNow, tollPerKmGroup1 } from './realPrices.ts';
 import type { Region, Specialty } from './catalog.ts';
 
 export const PLOT_COLS = 6;
@@ -236,7 +237,7 @@ export const DUMP_RATIO = 0.6;
 export const FUEL_PER_KM = 300;
 
 /** Xe tải của thương lái: bình xăng, mức tiêu hao, giá xăng, trạm thu phí, trạm xăng, cứu hộ. */
-export const TRUCK = { tankL: 60, lPer100km: 12, fuelPrice: 21000, tollEveryKm: 70, tollFee: 35000, stationEveryKm: 60, rescueMult: 1.5, etcCashSurcharge: 0.2, startFuelL: 30, cargoKg: 990 };
+export const TRUCK = { tankL: 60, lPer100km: 12, fuelPrice: fuelPriceNow('ron95'), tollEveryKm: 70, tollFee: Math.round((70 * tollPerKmGroup1()) / 1000) * 1000, stationEveryKm: 60, rescueMult: 1.5, etcCashSurcharge: 0.2, startFuelL: 30, cargoKg: 990 };
 export interface TripPlan {
   km: number; needsBoat: boolean; seconds: number; tolls: number; tollFee: number; fuelNeededL: number;
   junctions: { atKm: number; dir: 'L' | 'R'; name: string }[]; stationsAtKm: number[];

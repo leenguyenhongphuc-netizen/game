@@ -22,6 +22,8 @@ import { BASIC_FACTORY, LAMP_MATS, MACHINE_SPOTS, STEAM_MAT, buildBeltCrates, bu
 import type { FactoryData, FactoryMachine, MachineState } from './factory.ts';
 import { blobTex, boardCanvas, edgeFade, grassTex, roadTex, softDot } from './tex.ts';
 import { FieldsLayer } from './fields.ts';
+import { buildExportDesk } from './exportDesk.ts';
+import type { ExportDesk } from './exportDesk.ts';
 import type { FieldLite } from './fields.ts';
 
 // ---------------------------------------------------------------- bố cục xóm
@@ -163,7 +165,9 @@ export type Context =
   | { kind: 'truck' }
   /** Đứng cạnh một trạm máy trong xưởng; machineId = null là chỗ còn trống để đặt máy mới. */
   | { kind: 'machine'; lot: number; index: number; machineId: number | string | null }
-  | { kind: 'empty-lot'; lot: number };
+  | { kind: 'empty-lot'; lot: number }
+  /** Đứng trước quầy Đại lý xuất khẩu ở đầu xóm (web/src/scene/exportDesk.ts). */
+  | { kind: 'export-desk'; lot: 0 };  // lot = 0 để App (ctxLot = lots[ctx.lot]) không phải đổi kiểu
 export interface WorldOptions {
   hour?: number; demo?: boolean;
   onContext?: (ctx: Context) => void;
@@ -445,6 +449,7 @@ export class World {
   private lots: Lot[] = [];
   private colliders: [number, number, number, number][] = [];
   private envColliders: [number, number, number, number][] = [];
+  private desk: ExportDesk | null = null;
   private state: WorldState | null = null;
   private regionId = '';
   private player: Body;
@@ -558,6 +563,8 @@ export class World {
     this.truck = packRide(makeTruckKind(kind, hex(color, 0xf08a6c))); this.scene.add(this.truck.root); // đúng loại xe đang dùng, gộp lưới để ít lần vẽ
     this.truck.root.position.copy(this.driving ? this.pos : this.truckPos); this.truck.root.rotation.y = this.truckYaw;
   }
+  /** Toạ độ chỗ đứng trước quầy Đại lý xuất khẩu (để giao diện dẫn đường hoặc cho nhân vật đi tới). */
+  exportDeskSpot(): { x: number; z: number } | null { return this.desk ? { ...this.desk.spot } : null; }
   enterTruck() { if (!this.truck || this.driving) return; this.driving = true; this.pos.copy(this.truckPos); this.walkTo = null; this.vel.set(0, 0, 0); this.player.root.visible = false; }
   exitTruck() {
     if (!this.driving) return; this.driving = false; this.truckPos.copy(this.pos); this.truckYaw = this.truck?.root.rotation.y ?? this.truckYaw;
@@ -744,6 +751,9 @@ export class World {
       if (reg) { const lb = makeLabel(`Chào mừng tới ${reg.name}`, 'region', 0.78); lb.position.set(ax, 5.0, ROAD_Z); this.env.add(lb); }
     }
     this.env.add(bake(st));
+    // quầy Đại lý xuất khẩu: người chơi tới nói chuyện để xem đơn công ty hoặc tạo lô xuất
+    this.desk = buildExportDesk(() => makeFarmer(0x1f4e8c, 'mu_bao_hiem'), (t) => makeLabel(t, 'gold', 0.7), bake, this.sky.night);
+    this.env.add(this.desk.group); this.envColliders.push(this.desk.collider);
     // Cỏ và hoa dại
     const tuft = new THREE.InstancedMesh(TUFT_GEO, mat(this.urban ? 0x8fd67c : new THREE.Color(th.grass2).multiplyScalar(0.88).getHex()), 700), flower = new THREE.InstancedMesh(FLOWER_GEO, new THREE.MeshStandardMaterial({ roughness: 0.6 }), 260);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color(), palette = [0xffffff, 0xffe27a, 0xf7a8c4, 0xf6b384, 0xcdb4f2];
@@ -867,6 +877,7 @@ export class World {
     const dt = stepDt(this.clock.getDelta()), t = this.clock.elapsedTime, now = Date.now() + (this.state?.clockOffset ?? 0);
     this.movePlayer(dt, t); this.quality.busy = this.vel.lengthSq() > 0.05;
     this.updateContext(now, t);
+    this.desk?.update(t);
     for (const lot of this.lots) lot.animate(t, now, this);
     // Máy quay bám theo nhân vật
     // Máy quay gắn cứng theo nhân vật, chỉ trễ một khoảng tỉ lệ với vận tốc (đã làm mượt). Trước đây máy quay 'đuổi theo' vị trí bằng lerp:
@@ -983,6 +994,7 @@ export class World {
       } else if (Math.hypot(l.x - STALL.x, l.z - (STALL.z + 1.6)) < 2.4) ctx = { kind: 'stall', lot: i };
     }
     if (ctx.kind === 'none' && this.truck && !this.driving && this.pos.distanceTo(this.truckPos) < 3) ctx = { kind: 'truck' };
+    if (ctx.kind === 'none' && this.desk && !this.driving && Math.hypot(this.pos.x - this.desk.spot.x, this.pos.z - this.desk.spot.z) < 1.9) ctx = { kind: 'export-desk', lot: 0 };
     if (ctx.kind === 'tile') { const p = this.worldOfTile(ctx.lot, ctx.tile); this.ring.visible = true; this.ring.position.set(p.x, 0.17, p.z); this.ring.scale.setScalar(1 + Math.sin(t * 6) * 0.04); } else this.ring.visible = false;
     const key = JSON.stringify(ctx);
     if (key !== this.ctxKey) { this.ctxKey = key; this.opts.onContext?.(ctx); }

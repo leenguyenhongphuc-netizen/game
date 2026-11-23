@@ -1,6 +1,7 @@
 // Xe chở hàng, giấy phép lái xe, xe điện và trạm sạc, trạm dừng nghỉ trên cao tốc. Dùng chung cho máy chủ và giao diện.
 // Số liệu bám thực tế Việt Nam nhưng đã đơn giản hoá; chỗ nào đơn giản hoá ghi trong docs/GDD.md.
 import { REGIONS } from './catalog.ts';
+import { TOLL_GROUP_RATIO, fuelPriceNow } from './realPrices.ts';
 import { TRUCK, roadKm, tripPlan } from './rules.ts';
 import type { TripPlan } from './rules.ts';
 import { ITEMS, regionalItems } from './items.ts';
@@ -46,11 +47,12 @@ export function licenseCovers(have: readonly string[], need: LicenseClass): bool
 export type Power = 'xang' | 'dau' | 'dien';
 export const POWER_NAMES: Record<Power, string> = { xang: 'Xăng', dau: 'Dầu diesel', dien: 'Điện' };
 /** Giá nhiên liệu trong game (đồng/lít, đồng/kWh). Sạc nhanh DC ở trạm đắt hơn sạc chậm ở nhà. */
-export const ENERGY_PRICE = { xang: TRUCK.fuelPrice, dau: 19_000, dienDC: 3_900, dienNha: 2_700 };
+/** Lấy từ shared/realPrices.ts: xăng E10 RON95-III, dầu DO 0,05S, sạc V-GREEN, điện sinh hoạt bậc 3 + VAT. */
+export const ENERGY_PRICE = { xang: fuelPriceNow('ron95'), dau: fuelPriceNow('do'), dienDC: fuelPriceNow('dien_dc'), dienNha: fuelPriceNow('dien_nha') };
 /** Sạc nhanh DC từ 10% lên 80% pin mất chừng này phút ngoài đời; sạc chậm ở nhà qua đêm. */
 export const CHARGE = { dcMinutes: 35, homeHours: 8, everyKm: 120, dcSecondsInGame: 6, pumpSecondsInGame: 2 };
 /** Phí đường theo 5 nhóm xe của trạm thu phí BOT/ETC, so với nhóm 1. */
-export const TOLL_GROUP_MULT: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 1, 2: 1.4, 3: 2.1, 4: 3.4, 5: 5.1 };
+export const TOLL_GROUP_MULT: Record<1 | 2 | 3 | 4 | 5, number> = TOLL_GROUP_RATIO;
 export const TOLL_GROUP_NAMES: Record<1 | 2 | 3 | 4 | 5, string> = {
   1: 'Nhóm 1: xe dưới 12 chỗ, xe tải dưới 2 tấn', 2: 'Nhóm 2: xe tải từ 2 đến dưới 4 tấn', 3: 'Nhóm 3: xe tải từ 4 đến dưới 10 tấn',
   4: 'Nhóm 4: xe tải từ 10 đến dưới 18 tấn, container 20 feet', 5: 'Nhóm 5: xe tải từ 18 tấn, container 40 feet',

@@ -3,6 +3,7 @@
 import { CROPS, REGIONS, SPECIALTIES, processOf } from './catalog.ts';
 import type { Specialty } from './catalog.ts';
 import { landPrice, seedCost, stepWaitMs } from './rules.ts';
+import { lotPrice } from './land.ts';
 
 /** Một khối cánh đồng = 100 ô × 25 m² = 2.500 m² (0,25 ha). */
 export const FIELD_BLOCK_TILES = 100;
@@ -16,7 +17,7 @@ export const FIELD_ANY_REGION_LEVEL = 10;
 /** Đất ruộng trống rẻ hơn đất vườn có nhà: giá một khối = giá một thửa vườn × hệ số này. */
 export const FIELD_PRICE_RATIO = 1.2;
 /** Canh tác quảng canh: năng suất mỗi ô thấp hơn vườn nhà chăm kỹ từng ô. */
-export const FIELD_YIELD_MULT = 0.5;
+export const FIELD_YIELD_MULT = 0.45;
 /** Cánh đồng là việc của người chơi đã quen: nhịp sinh trưởng cố định bằng nhịp của người đã thu hoạch nhiều. */
 export const FIELD_PACE = 1;
 /** Bán lại cánh đồng được bấy nhiêu phần giá mua. */
@@ -25,8 +26,11 @@ export const FIELD_RESALE = 0.7;
 export function fieldMaxBlocks(level: number): number {
   return level < FIELD_MIN_LEVEL ? 0 : Math.min(FIELD_MAX_BLOCKS, (level - FIELD_MIN_LEVEL + 1) * FIELD_BLOCKS_PER_LEVEL);
 }
+/** Giá một khối = giá một thửa đất nông nghiệp 2.500 m² của tỉnh theo sổ địa chính (shared/land.ts, bảng giá đất tỉnh). */
 export function fieldBlockPrice(regionId: string): number {
-  return Math.round((landPrice(regionId) * FIELD_PRICE_RATIO) / 1_000_000) * 1_000_000;
+  const province = REGIONS[regionId]?.province;
+  const lp = province ? lotPrice(province, 'nong_nghiep') : 0;
+  return lp || Math.round((landPrice(regionId) * FIELD_PRICE_RATIO) / 1_000_000) * 1_000_000;
 }
 export function fieldRegionAllowed(level: number, regionId: string, homeRegionId: string | null): boolean {
   return Object.hasOwn(REGIONS, regionId) && (regionId === homeRegionId || level >= FIELD_ANY_REGION_LEVEL);

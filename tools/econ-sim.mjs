@@ -11,6 +11,9 @@ import {
   CONTRACT_PRICE_FRESH, CONTRACT_PRICE_PROCESSED, ORDER_PREMIUM_V2, exportBundleQuote, machineBatchKg, orderBonus, orderScale,
   shopKgPerHour, SHOP_CONSIGN_FEE, provinceTraffic,
 } from '../shared/economy.ts';
+import { TRUCK } from '../shared/rules.ts';
+import { ENERGY_PRICE } from '../shared/vehicles.ts';
+import { BUILDINGS, buildingCost } from '../shared/land.ts';
 let farm = null;
 try { farm = await import('../shared/farm.ts'); } catch { /* chưa có cánh đồng */ }
 
@@ -81,7 +84,8 @@ function trader(level) {
     const buy = wholesaleQuote(sp.refPrice, 1, WHOLESALE_BASE_KG, 0, kg).unit;
     const arrive = kg * (1 - spoilRate(400, cap >= 8000));
     const sell = sp.refPrice * FAR_MARKET_RATIO * bulkSellFactor(0, arrive);
-    const fuel = 400 * (cap >= 8000 ? 30 : 12) / 100 * 20000 + 6 * 35000 * (cap >= 8000 ? 3 : 1);
+    // giá thật (shared/realPrices.ts): xe nhỏ chạy xăng, xe lớn chạy dầu; 400 km ~ 6 chặng thu phí, xe lớn nhóm 3–5
+    const fuel = 400 * (load >= 8000 ? 30 : 12) / 100 * (load >= 3000 ? ENERGY_PRICE.dau : TRUCK.fuelPrice) + 6 * TRUCK.tollFee * (load >= 28000 ? 4 : load >= 15000 ? 3 : load >= 8000 ? 2 : load >= 3000 ? 1.5 : 1);
     best = Math.max(best, (arrive * sell - kg * buy - fuel) / (35 / 60));
   }
   return { income: best, note: `xe ${cap / 1000} t` };
@@ -133,12 +137,20 @@ function contracts(level) {
   const buy = wholesaleQuote(ref, 1, WHOLESALE_BASE_KG, 0, kg / 2).unit;
   return { income: (kg * (ref * ratio - buy) - kg * 400 * 1.2) / PLAY_H_PER_DAY, note: `${Math.round(kg / 1000)} t/ngày` };
 }
-/** Siêu thị riêng (cấp 20+): bán hàng tự bày ở 1–2 tỉnh đông khách, lãi ~ 40% giá tham chiếu so với giá vốn sỉ. */
+/** Cửa hàng/siêu thị riêng: mua được bao nhiêu theo vốn (một nửa vốn), bán hàng tự bày, lãi ~ 45% giá tham chiếu so với giá vốn sỉ. */
 function shop(level) {
-  if (level < 10) return { income: 0, note: '—' };
-  const n = level >= 30 ? 3 : level >= 20 ? 2 : 1, prov = 'Đà Nẵng';
-  const kgH = shopKgPerHour(prov, level) * n, ref = SAMPLE[1].refPrice;
-  return { income: kgH * 8 * ref * (1.4 - 0.95) * (1 - SHOP_CONSIGN_FEE * 0) / 1, note: `${n} siêu thị, ${kgH} kg/giờ (×${provinceTraffic(prov)})` };
+  if (level < 8) return { income: 0, note: '—' };
+  let budget = CAPITAL[level] * 0.5, inc = 0;
+  const ref = SAMPLE[1].refPrice, got = [];
+  const opts = [['sieu_thi', 'Đà Nẵng'], ['cua_hang', 'Đà Nẵng'], ['cua_hang', 'Đồng Tháp']];
+  for (const [kind, prov] of opts) {
+    if (level < BUILDINGS[kind].minLevel) continue;
+    const cost = buildingCost(kind, prov).total;
+    let n = 0;
+    while (budget >= cost && n < BUILDINGS[kind].max) { budget -= cost; n++; inc += shopKgPerHour(prov, level, kind) * 8 * ref * (1.4 - 0.95); }
+    if (n) got.push(`${n} ${BUILDINGS[kind].name.toLowerCase()} ${prov}`);
+  }
+  return { income: inc, note: got.join(', ') || 'chưa đủ vốn' };
 }
 
 // ---------------------------------------------------------------- bảng
@@ -154,7 +166,7 @@ function table(after) {
       'Chủ xưởng': workshop(level, after).income + o('xuong') + Math.max(0, Math.max(ex('xuong'), ct, sh) * 0.3),
       // thương lái có vườn nhỏ 8 ô
       // lô xuất khẩu đi ngầm trong lúc xe vẫn chạy buôn: thương lái tận dụng được một nửa
-      'Thương lái': trader(level).income + Math.max(0, Math.max(ex('thuong_lai'), ct) * 0.5) + o('thuong_lai') + farmer(level, after, false, 8).income,
+      'Thương lái': trader(level).income + Math.max(0, Math.max(ex('thuong_lai'), ct) * 0.5) + sh * 0.8 + o('thuong_lai') + farmer(level, after, false, 8).income,
     };
     rows.push({ level, ...roles, detail: { farm: farmer(level, after), xuong: workshop(level, after), trader: trader(level), export: exporter(level, after, 'thuong_lai'), orders: orders(level, after, 'nong_dan'), contracts: after ? contracts(level) : null, shop: after ? shop(level) : null } });
   }
@@ -173,3 +185,34 @@ const before = table(false), after = table(true);
 print('Trước (luật cũ)', before);
 print('Sau (luật hiện hành)', after);
 if (process.argv.includes('--chi-tiet')) for (const r of after) console.log(r.level, JSON.stringify(r.detail));
+
+// ---------------------------------------------------------------- hoàn vốn đầu tư đất theo vai (giờ chơi)
+// Mỗi vai một khoản đầu tư đất: nhà nông mua khối ruộng, chủ xưởng dựng xưởng chi nhánh, thương lái mở cửa hàng/siêu thị.
+// Thu thêm mỗi giờ chơi do khoản đầu tư đó mang lại; hoàn vốn = vốn / thu thêm.
+function payback() {
+  const rows = [];
+  const ref = SAMPLE[1].refPrice;
+  // cánh đồng: một khối 100 ô ở vùng của xoài mẫu
+  const sp = SAMPLE[1], c = CROPS[sp.crop];
+  if (farm) {
+    const price = farm.fieldBlockPrice(sp.regionId);
+    const kgH = (100 * c.yieldKg * farm.FIELD_YIELD_MULT * farm.FIELD_PACE) / c.growHours;
+    const unit = sp.refPrice * FARM_GATE_RATIO * QUALITY_MULT.A - sp.refPrice * SEED_COST_RATIO;
+    rows.push(['Nông dân', `1 khối ruộng (${REG(sp.regionId)})`, price, unit * kgH * 8]);
+  }
+  // xưởng chi nhánh: 4 chỗ máy thêm; thu mỗi chỗ = thu xưởng cấp 20 / số chỗ
+  for (const prov of ['Đồng Tháp', 'Bắc Ninh']) {
+    const w = workshop(20, true).income, perSlot = w / (8 * machineStats('may_say', 3).slots);
+    rows.push(['Chủ xưởng', `Xưởng chi nhánh ở ${prov}`, buildingCost('xuong', prov).total, perSlot * 4 * machineStats('may_say', 3).slots]);
+  }
+  for (const [kind, prov, lvl] of [['cua_hang', 'Đà Nẵng', 10], ['cua_hang', 'Đồng Tháp', 10], ['sieu_thi', 'Đà Nẵng', 20], ['sieu_thi', 'TP. Hồ Chí Minh', 20]]) {
+    const kgH = shopKgPerHour(prov, lvl, kind);
+    rows.push(['Thương lái', `${BUILDINGS[kind].name} ở ${prov} (c${lvl})`, buildingCost(kind, prov).total, kgH * 8 * ref * (1.4 - 0.95)]);
+  }
+  console.log('\n### Hoàn vốn đầu tư đất theo vai');
+  console.log('| Vai | Khoản đầu tư | Vốn | Thu thêm mỗi giờ chơi | Hoàn vốn (giờ chơi) |');
+  console.log('|---|---|---|---|---|');
+  for (const [role, what, cost, inc] of rows) console.log(`| ${role} | ${what} | ${fmt(cost)} | ${fmt(inc)} | ${(cost / inc).toFixed(1)} |`);
+}
+function REG(id) { return id; }
+if (!process.argv.includes('--khong-hoan-von')) payback();

@@ -2,6 +2,8 @@
 // công ty xuất nhập khẩu (NPC) và tài sản thương mại (siêu thị, xưởng chi nhánh) ở tỉnh khác.
 // Các con số được cân bằng bằng tools/econ-sim.mjs — sửa ở đây thì chạy lại mô phỏng.
 import { CROPS, PROVINCES, REGIONS, SPECIALTIES, recipeOf, specialtiesOfRegion } from './catalog.ts';
+import { BUILDINGS, buildingCost, shopTraffic } from './land.ts';
+import type { BuildingKind } from './land.ts';
 import { EXPORT_GATEWAYS, EXPORT_INLAND_PER_KG_KM, EXPORT_LCL_BASE_RATIO, EXPORT_LCL_PER_KG_MULT, EXPORT_MARKETS, EXPORT_MODES, EXPORT_PROCESSED_SPOIL, QUALITY_MULT, haversineKm } from './rules.ts';
 import type { ExportMarket, ExportMode, Quality, Role } from './rules.ts';
 import { SIGHTS } from './sights.ts';
@@ -195,29 +197,30 @@ export function contractsOfDay(day: number, refOf: (specialtyId: string, process
 /** Hợp đồng có còn nhận hàng hôm nay không (ngày tạo trong hạn). */
 export const contractDaysOpen = (today: number) => Array.from({ length: CONTRACT_DAYS }, (_, i) => today - i);
 
-// ---------------------------------------------------------------- tài sản thương mại: siêu thị riêng, xưởng chi nhánh
-export type PropertyKind = 'sieu_thi' | 'xuong';
-export interface PropertyInfo { name: string; emoji: string; minLevel: number; land: number; build: number; permit: number; buildHours: number; roles: Role[]; note: string }
-export const PROPERTY_KINDS: Record<PropertyKind, PropertyInfo> = {
-  sieu_thi: { name: 'Siêu thị đặc sản', emoji: '🏬', minLevel: 8, land: 120_000_000, build: 180_000_000, permit: 15_000_000, buildHours: 6, roles: ['xuong', 'thuong_lai', 'nong_dan'], note: 'Bán hàng bạn bày lên kệ cho khách du lịch và người chơi; thu phí ký gửi của người khác.' },
-  xuong: { name: 'Xưởng chi nhánh', emoji: '🏭', minLevel: 12, land: 90_000_000, build: 140_000_000, permit: 10_000_000, buildHours: 4, roles: ['xuong'], note: 'Thêm chỗ đặt máy ở tỉnh khác, gần vùng nguyên liệu và cảng.' },
-};
+// ---------------------------------------------------------------- tài sản thương mại: cửa hàng, siêu thị, xưởng chi nhánh
+// Công trình dựng trên thửa đất của sổ địa chính (shared/land.ts): đất, giá, quyền theo vai đều lấy ở đó.
+export type PropertyKind = BuildingKind;
+export interface PropertyInfo { name: string; emoji: string; minLevel: number; land: number; build: number; permit: number; buildHours: number; roles: Role[]; note: string; use: string; lots: number; max: number; shelves: number }
+export const PROPERTY_KINDS: Record<PropertyKind, PropertyInfo> = Object.fromEntries((Object.keys(BUILDINGS) as BuildingKind[]).map((k) => {
+  const b = BUILDINGS[k];
+  return [k, { name: b.name, emoji: b.emoji, minLevel: b.minLevel, land: 0, build: b.build, permit: b.permit, buildHours: b.buildHours, roles: b.roles, note: b.note, use: b.use, lots: b.lots, max: b.max, shelves: b.shelves }];
+})) as Record<PropertyKind, PropertyInfo>;
 /** Nông dân phải lên cấp cao hơn mới mở siêu thị (để vai chính của siêu thị là chủ xưởng và thương lái). */
-export const PROPERTY_FARMER_LEVEL = 18;
-/** Giá đất thương mại theo tỉnh: tỉnh đông khách du lịch và thành phố lớn đắt hơn. */
+export const PROPERTY_FARMER_LEVEL = BUILDINGS.sieu_thi.farmerLevel ?? 25;
+/** Lượng khách theo tỉnh: dân số, nhóm giá đất và số điểm du lịch. */
 export function provinceTraffic(province: string): number {
-  const sights = SIGHTS.filter((s) => s.province === province).length;
-  const big = ['Hà Nội', 'TP. Hồ Chí Minh', 'Đà Nẵng', 'Hải Phòng', 'Cần Thơ'].includes(province) ? 1 : 0;
-  return Math.round((1 + 0.12 * sights + 0.5 * big) * 100) / 100;
+  return shopTraffic(province, SIGHTS.filter((s) => s.province === province).length);
 }
-export function propertyCost(kind: PropertyKind, province: string): { land: number; build: number; permit: number; total: number } {
-  const p = PROPERTY_KINDS[kind], t = provinceTraffic(province);
-  const land = Math.round((p.land * (0.7 + 0.3 * t)) / 1_000_000) * 1_000_000;
-  return { land, build: p.build, permit: p.permit, total: land + p.build + p.permit };
+/** Chi phí mở công trình khi phải mua `needLots` thửa (mặc định mua đủ). land = tiền đất + trước bạ + phí sổ. */
+export function propertyCost(kind: PropertyKind, province: string, needLots?: number): { land: number; build: number; permit: number; total: number; lots: number; lotPrice: number; registration: number } {
+  const c = buildingCost(kind, province, needLots);
+  return { land: c.land + c.registration + c.certFee, build: c.build, permit: c.permit, total: c.total, lots: c.needLots, lotPrice: c.lotPrice, registration: c.registration };
 }
-/** Khách mỗi giờ (thời gian thật khi TIME_SCALE = 1) của siêu thị người chơi, quy ra kg hàng bán được mỗi giờ. */
-export const SHOP_KG_PER_HOUR = 30;
-export function shopKgPerHour(province: string, level: number): number { return Math.round(SHOP_KG_PER_HOUR * provinceTraffic(province) * (1 + 0.04 * Math.max(0, level - 1))); }
+/** Khách mỗi giờ (thời gian thật khi TIME_SCALE = 1) của siêu thị người chơi, quy ra kg hàng bán được mỗi giờ. Cửa hàng bán ít hơn. */
+export const SHOP_KG_PER_HOUR = 300;
+export function shopKgPerHour(province: string, level: number, kind: PropertyKind = 'sieu_thi'): number {
+  return Math.max(1, Math.round(SHOP_KG_PER_HOUR * BUILDINGS[kind].sales * provinceTraffic(province) * (1 + 0.04 * Math.max(0, level - 1))));
+}
 /** Siêu thị người chơi thu phí ký gửi này trên hàng của người khác (siêu thị NPC thu SUPER_FEE). */
 export const SHOP_CONSIGN_FEE = 0.07;
 /** Xưởng chi nhánh thêm bấy nhiêu chỗ đặt máy. */

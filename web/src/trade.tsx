@@ -7,6 +7,7 @@ import type { BundleQuote } from '../../shared/economy.ts';
 import { api } from './api.ts';
 import type { Me } from './api.ts';
 import { fmtDuration, useAction } from './ui.ts';
+import './trade.css';
 
 /** "Vì sao có giới hạn này?" — mở ra đọc lý do, để giới hạn không còn là con số vô cớ. */
 export function WhyLimit({ k }: { k: keyof typeof LIMIT_REASONS | string }) {
@@ -192,6 +193,7 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
   const going = ships.filter((s) => s.status === 'dang_di'), done = ships.filter((s) => s.status === 'da_toi').slice(0, 5);
   const full = opt.active >= opt.maxActive, discount = opt.discount ?? 0;
   const totalKg = inCart.reduce((s, x) => s + x.kg, 0);
+  const cash = me.user.cash;
   const bestOf = (m: ExportMarket) => quotes?.filter((q) => q.market === m && q.ok && q.allowed).sort((a, b) => b.net - a.net)[0] ?? null;
   const overall = quotes ? MARKET_IDS.map(bestOf).filter((q): q is CartQuote => !!q).sort((a, b) => b.net - a.net)[0] ?? null : null;
   const here = quotes ? quotes.filter((q) => q.market === market).sort((a, b) => Number(b.ok) - Number(a.ok) || b.net - a.net) : [];
@@ -228,6 +230,7 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
       {products.length > 0 && <><h4>Hàng chế biến <small>hao hụt thấp, không xét loại, miễn kiểm dịch</small></h4><div className="pick-row wrap">{products.map(lotButton)}</div></>}
       {inCart.length > 0 && (
         <div className="ex-cart">
+          <p className="ex-cart-total">Lô gộp: <b>{totalKg.toLocaleString('vi-VN')} kg</b> · {inCart.length} mặt hàng{overall ? <> · lãi tới <b>{fmtMoney(overall.net)}</b></> : null}</p>
           {inCart.map(({ lot, kg }) => (
             <div className="row-line ex-cart-line" key={lotId(lot)}>
               <div className="grow"><strong>{lotName(lot)}</strong> <small>{lot.processed ? 'chế biến' : QUALITY_NAMES[lot.quality]} · có {lot.kg} kg</small></div>
@@ -241,7 +244,6 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
               </div>
             </div>
           ))}
-          <p className="ex-cart-total">Tổng lô: <b>{totalKg.toLocaleString('vi-VN')} kg</b> · {inCart.length} mặt hàng</p>
         </div>
       )}
 
@@ -268,39 +270,41 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
 
           <h3>3 · Đi đường nào</h3>
           {here.map((q) => {
-            const m = EXPORT_MODES[q.mode], out = q.lines.filter((x) => !x.ok);
+            const m = EXPORT_MODES[q.mode], out = q.lines.filter((x) => !x.ok), short = cash < q.freight;
             return (
-              <div className={q.ok ? 'route' : 'route off'} key={q.mode}>
-                <span className="emoji" aria-hidden="true">{m.icon}</span>
-                <div className="grow">
+              <div className={q.ok ? 'route ex-route' : 'route ex-route off'} key={q.mode}>
+                <div className="ex-route-head">
+                  <span className="emoji" aria-hidden="true">{m.icon}</span>
                   <strong>{m.name}{q === top && here.filter((x) => x.ok).length > 1 ? <span className="tag"> lãi nhất</span> : null}</strong>
-                  <small>{m.note} Nhận lô {m.minKg.toLocaleString('vi-VN')}–{m.maxKg.toLocaleString('vi-VN')} kg.</small>
-                  {q.ok ? (
-                    <>
-                      <div className="route-facts">
-                        <span>📦 {q.kg} kg</span>
-                        {q.lcl && <span className="tag lcl">Gom hàng lẻ (LCL)</span>}
-                        <span>🧾 cước {fmtMoney(q.freight)}</span>
-                        <span>⏱️ {fmtDuration((q.minutes * 60_000) / scale)}</span>
-                        <span>{q.spoilKg > 0 ? `🥀 hao ${q.spoilKg} kg` : '✨ không hao'}</span>
-                        <span>💵 tiền về {fmtMoney(q.payout)}</span>
-                        <span>🏁 qua {q.gatewayName}{q.inlandKm > 0 ? ` (${q.inlandKm} km)` : ''}</span>
-                      </div>
+                  {q.ok && <b className={q.net >= 0 ? 'ex-net up' : 'ex-net down'}>lãi {fmtMoney(q.net)}</b>}
+                </div>
+                {q.ok ? (
+                  <>
+                    <div className="ex-route-sum">
+                      <span>⏱️ {fmtDuration((q.minutes * 60_000) / scale)}</span>
+                      <span>🧾 cước {fmtMoney(q.freight)}</span>
+                      <span>💵 về {fmtMoney(q.payout)}</span>
+                      {q.lcl && <span className="tag lcl">hàng lẻ</span>}
+                    </div>
+                    <details className="ex-detail">
+                      <summary>{q.lines.length} mặt hàng · {q.kg.toLocaleString('vi-VN')} kg{q.spoilKg > 0 ? ` · hao ${q.spoilKg.toLocaleString('vi-VN')} kg` : ''}{out.length ? ` · ${out.length} không đi` : ''}</summary>
                       <ul className="ex-lines">
                         {q.lines.map((x) => (
                           <li key={x.specialtyId + x.grade + (x.processed ? 'P' : '')} className={x.ok ? '' : 'off'}>
-                            {x.name} {x.processed ? '' : `(${QUALITY_NAMES[x.grade]})`}: {x.ok ? <>{x.kg} kg, hao {x.spoilKg} kg, {fmtMoney(x.unitPrice)}/kg{x.demand < 1 ? <small className="down"> · thị trường đã nhiều hàng, giá ×{x.demand}</small> : null}, cước {fmtMoney(x.freight)}</> : <small className="error">không đi — {x.reason}</small>}
+                            <span className="ex-l-name">{x.name}{x.processed ? '' : ` · ${QUALITY_NAMES[x.grade]}`}</span>
+                            {x.ok ? <><span className="ex-l-kg">{x.kg.toLocaleString('vi-VN')} kg</span><span className="ex-l-money">{fmtMoney(x.payout)}</span>
+                              <small className="ex-l-more">hao {x.spoilKg} kg · {fmtMoney(x.unitPrice)}/kg · cước {fmtMoney(x.freight)}{x.demand < 1 ? ` · thị trường đã nhiều hàng, giá ×${x.demand}` : ''}</small></>
+                              : <small className="error ex-l-more">không đi: {x.reason}</small>}
                           </li>
                         ))}
                       </ul>
-                    </>
-                  ) : <small className="error">{q.reason}</small>}
-                </div>
-                {q.ok && (
-                  <button className="go" disabled={act.busy || me.user.cash < q.freight || full || !q.allowed} onClick={() => send(q)}>
-                    Gửi đi<small>{me.user.cash < q.freight ? 'thiếu tiền cước' : out.length ? `lãi ${fmtMoney(q.net)} · bỏ ${out.length} mặt hàng` : `lãi ${fmtMoney(q.net)}`}</small>
-                  </button>
-                )}
+                      <small className="muted">Qua {q.gatewayName}{q.inlandKm > 0 ? ` (${q.inlandKm} km đường bộ)` : ''}. {m.note} Nhận lô {m.minKg.toLocaleString('vi-VN')}–{m.maxKg.toLocaleString('vi-VN')} kg.</small>
+                    </details>
+                    <button className="go ex-go" disabled={act.busy || short || full || !q.allowed} onClick={() => send(q)}>
+                      Gửi đi{short ? ' · thiếu tiền cước' : out.length ? ` · bỏ ${out.length} mặt hàng` : ''}
+                    </button>
+                  </>
+                ) : <small className="error">{q.reason}</small>}
               </div>
             );
           })}

@@ -468,4 +468,42 @@ create table if not exists property_shelves (
   created_at timestamptz not null default now()
 );
 create index if not exists property_shelves_prop_idx on property_shelves (property_id);
+-- sổ địa chính, chuyển nhượng đất, giá tham chiếu đời thực (server/src/land.ts)
+create table if not exists land_lots (
+  id bigserial primary key,
+  province text not null,
+  use text not null,
+  owner_id bigint references users(id) on delete set null,
+  area_m2 int not null,
+  price_paid bigint not null,
+  cert_no text,
+  property_id bigint references properties(id) on delete set null,
+  field_id bigint,
+  listing_price bigint,
+  listed_at timestamptz,
+  acquired_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create index if not exists land_lots_prov_idx on land_lots (province, use);
+create index if not exists land_lots_owner_idx on land_lots (owner_id);
+create index if not exists land_lots_listing_idx on land_lots (province) where listing_price is not null;
+create table if not exists land_transfers (
+  id bigserial primary key,
+  lot_id bigint not null references land_lots(id) on delete cascade,
+  seller_id bigint references users(id) on delete set null,
+  buyer_id bigint references users(id) on delete set null,
+  price bigint not null,
+  registration bigint not null,
+  tax bigint not null,
+  created_at timestamptz not null default now()
+);
+create table if not exists ref_prices (
+  key text not null,
+  value numeric not null,
+  unit text not null,
+  since date not null,
+  source text not null,
+  updated_at timestamptz not null default now(),
+  primary key (key, since)
+);
 `;

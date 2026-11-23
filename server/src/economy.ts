@@ -10,6 +10,9 @@ import {
   company as findCompany, isProvince, contractDaysOpen, contractsOfDay, econDay, exportBundleQuote, propertyCost, provinceTraffic, shopKgPerHour,
 } from '../../shared/economy.ts';
 import type { BundleLineIn, Contract, PropertyKind } from '../../shared/economy.ts';
+import { LAND_USES, canBuild } from '../../shared/land.ts';
+import type { LandUse } from '../../shared/land.ts';
+import { issueLot, lotsLeft } from './land.ts';
 
 type XpOut = { xpGained: number; xp: number; level: number; title: string; levelUp: boolean };
 export interface EconomyDeps {
@@ -214,13 +217,14 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
   });
 
   // ---------------------------------------------------------------- tài sản thương mại
-  const MAX_PROPS: Record<PropertyKind, number> = { sieu_thi: 3, xuong: 2 };
+  const MAX_PROPS = Object.fromEntries(Object.entries(PROPERTY_KINDS).map(([k, v]) => [k, v.max])) as Record<PropertyKind, number>;
+  const isShop = (kind: string) => kind === 'sieu_thi' || kind === 'cua_hang';
   const propOut = (r: any, now = Date.now()) => {
     const kind = r.kind as PropertyKind, info = PROPERTY_KINDS[kind];
     return {
       id: Number(r.id), kind, name: info.name, emoji: info.emoji, province: r.province, ownerId: Number(r.user_id), ownerName: r.display_name ?? null,
       cost: Number(r.cost), readyAt: new Date(r.ready_at).getTime(), ready: new Date(r.ready_at).getTime() <= now,
-      pending: Number(r.pending ?? 0), earnedTotal: Number(r.earned_total ?? 0), traffic: provinceTraffic(r.province),
+      pending: Number(r.pending ?? 0), earnedTotal: Number(r.earned_total ?? 0), traffic: provinceTraffic(r.province), shelves: info.shelves, use: info.use, lots: info.lots,
       ...(kind === 'xuong' ? { machineSlots: BRANCH_MACHINE_SLOTS } : {}),
     };
   };
@@ -230,21 +234,17 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
     return rows[0].n * BRANCH_MACHINE_SLOTS;
   }
   function eligible(kind: PropertyKind, role: Role | null, level: number): string | null {
-    const info = PROPERTY_KINDS[kind];
-    if (!role || !info.roles.includes(role)) return kind === 'xuong' ? 'Chỉ chủ xưởng mới mở xưởng chi nhánh.' : 'Hãy nhận vai trò trước.';
-    const need = role === 'nong_dan' && kind === 'sieu_thi' ? PROPERTY_FARMER_LEVEL : info.minLevel;
-    if (level < need) return `Cần đạt cấp ${need} mới mở ${info.name.toLowerCase()}.`;
-    return null;
+    return canBuild(kind, role, level);
   }
   /** Bán hàng trên kệ siêu thị người chơi theo lượng khách đã tới kể từ lần tính trước. Hàng rẻ bán trước; giá càng sát trần càng chậm. */
   async function settleShop(q: Q, propId: number) {
     const p = (await q.query('select * from properties where id = $1 for update', [propId])).rows[0];
-    if (!p || p.kind !== 'sieu_thi') return p;
+    if (!p || !isShop(p.kind)) return p;
     const now = Date.now(), last = Math.max(new Date(p.ready_at).getTime(), new Date(p.sold_at ?? p.ready_at).getTime());
     if (now <= last) return p;
     const hours = ((now - last) * d.timeScale) / 3_600_000;
     const ownerLevel = await levelOfUser(q, Number(p.user_id));
-    let capacity = Math.floor(shopKgPerHour(p.province, ownerLevel) * hours);
+    let capacity = Math.floor(shopKgPerHour(p.province, ownerLevel, p.kind) * hours);
     if (capacity < 1) return p;
     await q.query('update properties set sold_at = $2 where id = $1', [propId, new Date(now)]);
     const shelves = (await q.query('select * from property_shelves where property_id = $1 and kg > 0 for update', [propId])).rows;
@@ -297,7 +297,7 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
       max: MAX_PROPS[kind],
     }));
     const inProvince = province ? (await db.query(
-      `select p.*, u.display_name from properties p join users u on u.id = p.user_id where p.province = $1 and p.kind = 'sieu_thi' and p.ready_at <= now() order by p.id`, [province])).rows.map((r) => propOut(r)) : [];
+      `select p.*, u.display_name from properties p join users u on u.id = p.user_id where p.province = $1 and p.kind in ('sieu_thi', 'cua_hang') and p.ready_at <= now() order by p.id`, [province])).rows.map((r) => propOut(r)) : [];
     return { mine, kinds, province, inProvince, level, role, consignFee: SHOP_CONSIGN_FEE, branchSlots: await branchSlots(db, userId) };
   });
   app.post('/api/properties/buy', async (req) => {
@@ -314,13 +314,23 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
       const have = (await q.query('select province from properties where user_id = $1 and kind = $2', [userId, kind])).rows;
       if (have.some((r) => r.province === province)) throw bad('da_co', `Bạn đã có ${PROPERTY_KINDS[kind].name.toLowerCase()} ở ${province}.`, 409);
       if (have.length >= MAX_PROPS[kind]) throw bad('qua_nhieu', `Tối đa ${MAX_PROPS[kind]} ${PROPERTY_KINDS[kind].name.toLowerCase()}.`, 409);
-      const cost = propertyCost(kind, province);
-      if (Number(u.cash) < cost.total) throw bad('khong_du_tien', `Cần ${cost.total.toLocaleString('vi-VN')}đ (đất, xây dựng, giấy phép).`, 409);
-      await d.addCash(q, userId, -cost.land, `dat_thuong_mai:${kind}:${province}`);
+      // Công trình dựng trên thửa đất: dùng thửa trống bạn đã có ở tỉnh này trước, thiếu thì mua thêm từ quỹ đất.
+      const use = PROPERTY_KINDS[kind].use as LandUse, needTotal = PROPERTY_KINDS[kind].lots;
+      const free = (await q.query('select id from land_lots where owner_id = $1 and province = $2 and use = $3 and property_id is null and listing_price is null order by id limit $4 for update', [userId, province, use, needTotal])).rows.map((r) => Number(r.id));
+      const needLots = needTotal - free.length;
+      const cost = propertyCost(kind, province, needLots);
+      if (Number(u.cash) < cost.total) throw bad('khong_du_tien', `Cần ${cost.total.toLocaleString('vi-VN')}đ (${needLots ? `${needLots} thửa đất, trước bạ, ` : ''}xây dựng, giấy phép).`, 409);
+      if (needLots > 0) {
+        const left = await lotsLeft(q, province, use);
+        if (left < needLots) throw bad('het_dat', `${province} chỉ còn ${left} thửa ${LAND_USES[use].short.toLowerCase()} trong quỹ đất đợt này.`, 409);
+        await d.addCash(q, userId, -(cost.land), `dat:${use}:${province}`);
+        for (let i = 0; i < needLots; i++) free.push(await issueLot(q, userId, province, use, cost.lotPrice));
+      }
       await d.addCash(q, userId, -cost.build, `xay_dung:${kind}:${province}`);
       await d.addCash(q, userId, -cost.permit, `giay_phep:${kind}:${province}`);
       const readyAt = new Date(Date.now() + Math.max(1000, Math.round((PROPERTY_KINDS[kind].buildHours * 3_600_000) / d.timeScale)));
       const ins = await q.query('insert into properties (user_id, kind, province, cost, ready_at) values ($1,$2,$3,$4,$5) returning *', [userId, kind, province, cost.total, readyAt]);
+      await q.query('update land_lots set property_id = $1 where id = any($2::bigint[])', [ins.rows[0].id, free]);
       const xp = await d.addXp(q, userId, 100, 'mua_dat');
       return { property: propOut(ins.rows[0]), cost, cash: Number(u.cash) - cost.total, ...xp };
     });
@@ -337,7 +347,7 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
     const out: Record<string, unknown> = { property: mine ? p : { ...p, pending: 0, earnedTotal: 0 }, mine, consignFee: mine ? 0 : SHOP_CONSIGN_FEE };
     if (r.kind === 'sieu_thi') {
       out.shelves = await shelvesOf(db, id, userId);
-      out.kgPerHour = shopKgPerHour(r.province, await levelOfUser(db, Number(r.user_id)));
+      out.kgPerHour = shopKgPerHour(r.province, await levelOfUser(db, Number(r.user_id)), r.kind);
       out.priceRange = { minRatio: SUPER_MIN_RATIO, maxRatio: SUPER_MAX_RATIO };
       const inv = await db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]);
       const prod = await db.query('select specialty_id, kg from products where user_id = $1 and kg > 0 order by specialty_id', [userId]);
@@ -374,7 +384,7 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
     const kg = intIn(b.kg, 1, 5_000, 'kg'), price = intIn(b.price, 1, 1_000_000_000, 'price');
     return db.tx(async (q) => {
       const p = await settleShop(q, id);
-      if (!p || p.kind !== 'sieu_thi') throw bad('khong_tim_thay', 'Không tìm thấy siêu thị.', 404);
+      if (!p || !isShop(p.kind)) throw bad('khong_tim_thay', 'Không tìm thấy cửa hàng.', 404);
       if (new Date(p.ready_at).getTime() > Date.now()) throw bad('dang_xay', 'Siêu thị đang xây, chưa bày hàng được.', 409);
       const provinces = await d.provincesOf(q, userId);
       if (!provinces.includes(p.province)) throw bad('khac_tinh', `Bạn phải chở hàng tới ${p.province} mới bày lên kệ được.`, 409);
@@ -382,7 +392,7 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
       const minPrice = Math.round((ref * SUPER_MIN_RATIO) / 100) * 100, maxPrice = Math.round((ref * SUPER_MAX_RATIO) / 100) * 100;
       if (price < minPrice || price > maxPrice) throw bad('gia_sai', `Giá bán phải từ ${minPrice.toLocaleString('vi-VN')}đ đến ${maxPrice.toLocaleString('vi-VN')}đ mỗi kg.`, 409);
       const lots = (await q.query('select count(*)::int as n from property_shelves where property_id = $1 and kg > 0', [id])).rows[0].n as number;
-      if (lots >= 24) throw bad('het_ke', 'Siêu thị đã kín kệ.', 409);
+      if (lots >= PROPERTY_KINDS[p.kind as PropertyKind].shelves * 2) throw bad('het_ke', 'Kệ đã kín hàng.', 409);
       if (processed) await d.takeProduct(q, userId, sp.id, kg); else await d.takeInventory(q, userId, sp.id, grade, kg);
       const ins = await q.query('insert into property_shelves (property_id, seller_id, specialty_id, quality, processed, kg, price) values ($1,$2,$3,$4,$5,$6,$7) returning id', [id, userId, sp.id, grade, processed, kg, price]);
       const xp = await d.addXp(q, userId, 3, 'ky_gui');

@@ -39,6 +39,7 @@ import { registerShopping } from './shopping.ts';
 import { registerEconomy } from './economy.ts';
 import { ORDER_KIND_NAMES, ORDER_PREMIUM_V2, SUPER_PROVINCES, machineBatchKg, orderBonus, orderScale } from '../../shared/economy.ts';
 import { registerFarm } from './farm.ts';
+import { registerLand } from './land.ts';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 const SESSION_DAYS = 30;
@@ -1582,6 +1583,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   // lô xuất khẩu nhiều mặt hàng, công ty xuất nhập khẩu, siêu thị riêng và xưởng chi nhánh nằm ở economy.ts
   const econ = registerEconomy(app, { db, timeScale, requireUser, bad, addCash, addXp, addInventory, takeInventory, addProduct, takeProduct, currentPrice,
     productRef: (q, id) => productRef(q, id), exportContext: (q, u) => exportContext(q, u), shipmentOut: (r) => shipmentOut(r), provincesOf: async (q, u) => (await whereabouts(q, u)).provinces });
+
+  // sổ địa chính (quỹ đất theo tỉnh, sổ đỏ, chuyển nhượng) và giá tham chiếu đời thực
+  registerLand(app, { db, requireUser, bad, addCash, addXp });
 
   // ---------------------------------------------------------------- chuyến xe của thương lái
   const round1 = (v: number) => Math.round(v * 10) / 10;
