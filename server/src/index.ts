@@ -18,6 +18,7 @@ const app = await buildApp({
   timeScale,
   licenseTimeScale: Number(process.env.LICENSE_TIME_SCALE ?? 1) || 1,
   adminToken: process.env.ADMIN_TOKEN,
+  bots: process.env.BOTS !== 'off',
   secureCookies: process.env.NODE_ENV === 'production',
   trustProxy: process.env.TRUST_PROXY === '1',
   testerUsernames: (process.env.TESTER_USERNAMES ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),

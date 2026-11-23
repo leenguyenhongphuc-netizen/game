@@ -11,7 +11,7 @@ async function boot(): Promise<FastifyInstance> {
   if (!url) throw new Error('Thiếu biến môi trường DATABASE_URL.');
   const db = await openDb(url, { max: 2, ssl: process.env.DATABASE_SSL === 'no-verify' ? 'no-verify' : undefined });
   const app = await buildApp({
-    db, timeScale: Number(process.env.TIME_SCALE ?? 1) || 1, adminToken: process.env.ADMIN_TOKEN,
+    db, timeScale: Number(process.env.TIME_SCALE ?? 1) || 1, adminToken: process.env.ADMIN_TOKEN, bots: process.env.BOTS !== 'off',
     secureCookies: true, trustProxy: true, staticDir: '/khong-co',
     testerUsernames: (process.env.TESTER_USERNAMES ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   });

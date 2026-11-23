@@ -40,6 +40,7 @@ import { registerEconomy } from './economy.ts';
 import { ORDER_KIND_NAMES, ORDER_PREMIUM_V2, SUPER_PROVINCES, machineBatchKg, orderBonus, orderScale } from '../../shared/economy.ts';
 import { registerFarm } from './farm.ts';
 import { registerLand } from './land.ts';
+import { registerSocial } from './social.ts';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 const SESSION_DAYS = 30;
@@ -77,6 +78,8 @@ export interface AppOptions {
   testerUsernames?: string[];
   /** Tua nhanh thời hạn bằng lái (mặc định 1: một "năm bằng lái" dài LICENSE_YEAR_DAYS ngày thật). Tách khỏi timeScale để máy chủ thử không làm bằng hết hạn giữa chừng. */
   licenseTimeScale?: number;
+  /** Bật cư dân ảo (bot) giữ cho chợ, cao tốc, trạm dừng có người. Mặc định tắt; máy chủ thật bật qua BOTS khác 'off'. */
+  bots?: boolean;
   /** Kiểm thử: chia thời gian làm bài thi tối thiểu. */
   examHurry?: number;
 }
@@ -116,6 +119,8 @@ function idParam(v: unknown): number {
 export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const { db } = opts;
   const timeScale = opts.timeScale ?? 1;
+  /** Cư dân ảo chạy một lượt khi có người mở chợ (đặt sau khi đăng ký module social). */
+  let marketHook: () => Promise<unknown> = async () => null;
   const lateGraceMs = opts.lateGraceMs ?? LATE_GRACE_MS / timeScale;
   const weatherOf = opts.weatherAt ?? weatherAt;
   const marketDayOf = opts.marketDayAt ?? marketDayAt;
@@ -841,18 +846,19 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   app.get('/api/market', async (req) => {
     const userId = await requireUser(req);
+    await marketHook();
     const query = req.query as Record<string, unknown>;
     const params: unknown[] = [userId];
     // mine=1: tin của chính mình; mặc định: tin của người khác.
     let where = `l.status = 'open' and l.kg > 0 and l.seller_id ${query.mine === '1' ? '=' : '<>'} $1`;
     if (typeof query.specialtyId === 'string' && findSpecialty(query.specialtyId)) { params.push(query.specialtyId); where += ' and l.specialty_id = $2'; }
     const { rows } = await db.query(
-      `select l.id, l.seller_id, l.specialty_id, l.quality, l.kg, l.price, u.display_name, u.home_region_id
-       from listings l join users u on u.id = l.seller_id where ${where} order by l.id desc limit 100`, params);
+      `select l.id, l.seller_id, l.specialty_id, l.quality, l.kg, l.price, u.display_name, u.home_region_id, u.is_bot
+       from listings l join users u on u.id = l.seller_id where ${where} order by u.is_bot, l.id desc limit 100`, params);
     return {
       listings: rows.map((l) => ({
         id: l.id, sellerId: l.seller_id, sellerName: l.display_name, sellerRegionId: l.home_region_id,
-        specialtyId: l.specialty_id, quality: l.quality, kg: l.kg, price: l.price,
+        specialtyId: l.specialty_id, quality: l.quality, kg: l.kg, price: l.price, ...(l.is_bot ? { sellerBot: true } : {}),
       })),
     };
   });
@@ -2457,6 +2463,12 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   registerProgress(app, { db, timeScale, bad, requireUser, addCash, addXp, addInventory, takeInventory, addProduct, takeProduct, currentPrice, ensureStarter, requireTester: (r) => requireTester(r) });
+  const social = registerSocial(app, { db, timeScale, bots: !!opts.bots, requireUser, requireTester: (r) => requireTester(r), bad, addCash, addXp, addInventory, takeInventory, currentPrice,
+    requireAdmin: (req) => {
+      const given = String(req.headers.authorization ?? '').replace(/^Bearer /, ''), want = opts.adminToken ?? '';
+      if (!(want.length >= 16 && given.length === want.length && timingSafeEqual(Buffer.from(given), Buffer.from(want)))) throw bad('khong_co_quyen', 'Không có quyền.', 401);
+    } });
+  marketHook = () => social.maybeTick();
   registerFarm(app, { db, timeScale, lateGraceMs, requireUser, requireTester: (r) => requireTester(r), bad, addCash, addXp, addInventory, spendEnergy, weatherGrowth: (r, t) => weatherOf(r, t).growth, inSeason: inSeasonOf });
 
   app.get('/api/health', async () => ({ ok: true }));

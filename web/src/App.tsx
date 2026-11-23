@@ -900,7 +900,7 @@ function StallList({ listings, canBuy, canCancel, onChanged }: { listings: Listi
           <div className="row row-line" key={l.id}>
             <span className="emoji">{CROPS[sp.crop].emoji}</span>
             <div className="grow"><strong>{sp.name}</strong> <span className="tag">{QUALITY_NAMES[l.quality]}</span><br />
-              <small>{l.kg} kg · {fmtMoney(l.price)}/kg{l.sellerName ? ` · ${l.sellerName}` : ''}{l.sellerRegionId ? ` (${REGIONS[l.sellerRegionId].name})` : ''}</small></div>
+              <small>{l.kg} kg · {fmtMoney(l.price)}/kg{l.sellerName ? ` · ${l.sellerName}` : ''}{l.sellerRegionId ? ` (${REGIONS[l.sellerRegionId].name})` : ''}{(l as { sellerBot?: boolean }).sellerBot ? ' · cư dân' : ''}</small></div>
             {canBuy && <button disabled={act.busy} onClick={() => act.run(() => api('POST', `/api/market/listings/${l.id}/buy`, { kg: l.kg }))}>Mua hết {fmtMoney(l.price * l.kg)}</button>}
             {canCancel && <button disabled={act.busy} onClick={() => act.run(() => api('DELETE', `/api/market/listings/${l.id}`))}>Gỡ xuống</button>}
           </div>
