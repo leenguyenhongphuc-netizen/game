@@ -3,12 +3,13 @@
 // xuống xe đi bộ vào cửa hàng, nhà vệ sinh; cầm vòi bơm (hoặc súng sạc) cắm vào xe, đồng hồ trụ nhảy số, treo vòi trả tiền rồi đi tiếp.
 import * as THREE from 'three';
 import { bakeColored } from '../scene/batch.ts';
-import { Quality, ease, rendererParams, stepDt } from '../perf.ts';
+import { IS_MOBILE, Quality, ease, rendererParams, stepDt } from '../perf.ts';
 import { GEO, mat, mesh } from '../scene/plants.ts';
 import { makeFarmer } from '../scene/World.ts';
 import { playerVehicle } from './DriveExtras.ts';
 import type { VehGroup } from './DriveExtras.ts';
-import { makeSign } from './DriveScene.ts';
+import { BUILDING, CHARGER_X, DOORS, ENTRY, EXIT, ISLANDS, LOT, buildScenery } from './StopScenery.ts';
+import type { Fade, PumpScreen } from './StopScenery.ts';
 
 export type StopKind = 'rest' | 'fuel' | 'charger';
 export interface StopAreaInfo {
@@ -28,16 +29,8 @@ export interface StopHud {
 export interface StopResult { added: number; cost: number; wc: boolean; minutes: number }
 
 interface Bay { kind: BayKind; x: number; z: number; yaw: number; path: [number, number][]; pump?: number; taken?: boolean }
-interface Box2 { x0: number; z0: number; x1: number; z1: number }
 
 const Y_S = Math.PI; // xe hướng nam (+z): ô trụ bơm, trụ sạc chạy thẳng vào, chạy thẳng ra; ô bãi đỗ thì lùi ra
-const LOT: Box2 = { x0: -30, z0: -26, x1: 34, z1: 12.4 };
-const BUILDING: Box2 = { x0: -27, z0: 14, x1: 23, z1: 25 };
-const ISLANDS: Box2[] = [{ x0: -16.8, z0: -15.5, x1: -15.2, z1: -8.5 }, { x0: -6.8, z0: -15.5, x1: -5.2, z1: -8.5 }];
-const CHARGER_X = [8, 14, 20];
-const DOORS: Record<'shop' | 'food' | 'wc', [number, number]> = { shop: [-14, 13.4], food: [-1, 13.4], wc: [13, 13.4] };
-const ENTRY: [number, number] = [-37, -24];
-const EXIT: [number, number] = [41, -24];
 
 function makeBays(): Bay[] {
   const out: Bay[] = [];
@@ -49,9 +42,7 @@ function makeBays(): Bay[] {
 const pumpPos = (b: Bay): [number, number] => [b.x < -11 ? -16 : -6, b.pump && b.pump % 2 === 1 ? -14 : -10];
 const chargerPos = (b: Bay): [number, number] => [b.x + 2.6, -11];
 
-function label(text: string, bg: string, w: number, fg = '#ffffff'): THREE.Sprite { const s = makeSign(text, bg, fg); s.scale.set(w, w / 4, 1); return s; }
 function boxM(color: number, x: number, y: number, z: number, sx: number, sy: number, sz: number, o: { emissive?: number; rough?: number } = {}) { return mesh(GEO.box, mat(color, o), x, y, z, sx, sy, sz); }
-function stripe(g: THREE.Group, x: number, z: number, w: number, l: number, color = 0xffffff) { g.add(boxM(color, x, 0.035, z, w, 0.02, l, { rough: 1 })); }
 const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 export class StopArea {
@@ -60,7 +51,7 @@ export class StopArea {
   private car: THREE.Group; private carLen = 5; private carHalfW = 1;
   private person: ReturnType<typeof makeFarmer>;
   private hose: THREE.Group; private hoseSegs: THREE.Mesh[] = []; private nozzle: THREE.Mesh;
-  private screens: { tex: THREE.CanvasTexture; ctx: CanvasRenderingContext2D; x: number; z: number }[] = [];
+  private screens: PumpScreen[] = [];
   private bays = makeBays();
   // xe
   private phase: StopPhase = 'drive'; private cx = ENTRY[0]; private cz = ENTRY[1]; private yaw = -2.0; private v = 0;
@@ -73,8 +64,8 @@ export class StopArea {
   private added = 0; private cost = 0; private energy: number; private wc = false; private wcT = 0; private minutes = 0;
   private msg: string | null = null; private msgT = 0; private camX = ENTRY[0]; private camZ = ENTRY[1]; private hudT = 0;
   private auto = false; private autoStep = 0; private autoT = 0;
-  /** Mái che cây xăng: mờ đi khi xe/người ở dưới để máy quay nhìn thấy trụ bơm. */
-  private roof: THREE.Group | null = null; private roofMats: THREE.Material[] = []; private roofSign: THREE.Sprite | null = null; private roofA = 1;
+  /** Mái che cây xăng, mái trạm sạc: mờ đi khi xe/người ở dưới để máy quay nhìn thấy trụ bơm. */
+  private fades: Fade[] = []; private sun: THREE.DirectionalLight | null = null; private overview = false;
 
   constructor(private host: HTMLElement, private info: StopAreaInfo, private cb: { onHud(h: StopHud): void; onDone(r: StopResult): void; onSpot?(s: 'shop' | 'food'): void }) {
     this.energy = info.energy;
@@ -97,70 +88,24 @@ export class StopArea {
     this.path = [[-28, -20]]; // xe tự lăn hết nhánh rẽ vào tới đầu bãi
     const w = window as unknown as { __stop?: unknown; __stopAuto?: boolean };
     this.auto = !!w.__stopAuto;
-    w.__stop = { state: () => this.hudNow(), park: (k: BayKind) => this.parkAt(k), getOut: () => this.getOut(), walkTo: (s: Spot) => this.walkTo(s), act: (s?: Spot) => this.act(s), pump: (on: boolean) => this.setPump(on), leave: () => this.leave(), auto: () => { this.auto = true; this.autoStep = 0; }, pos: () => ({ car: [this.cx, this.cz], person: [this.px, this.pz] }) };
+    w.__stop = { state: () => this.hudNow(), park: (k: BayKind) => this.parkAt(k), getOut: () => this.getOut(), walkTo: (s: Spot) => this.walkTo(s), act: (s?: Spot) => this.act(s), pump: (on: boolean) => this.setPump(on), leave: () => this.leave(), auto: () => { this.auto = true; this.autoStep = 0; }, pos: () => ({ car: [this.cx, this.cz], person: [this.px, this.pz] }), info: () => ({ calls: this.renderer.info.render.calls, tri: this.renderer.info.render.triangles }), cam: (on: boolean) => { this.overview = on; } };
     this.raf = requestAnimationFrame(this.frame);
   }
 
   // ---------------------------------------------------------------- dựng cảnh
   private build() {
-    const sc = this.scene, info = this.info, pumps = !(info.electric && info.kind === 'charger');
-    sc.background = new THREE.Color(0xbfe4f5); sc.fog = new THREE.Fog(0xbfe4f5, 90, 220);
-    sc.add(new THREE.HemisphereLight(0xffffff, 0x88a27a, 1.25)); const sun = new THREE.DirectionalLight(0xfff2d6, 1.4); sun.position.set(30, 60, 20); sc.add(sun);
-    const g = new THREE.Group();
-    // nền cỏ, cao tốc phía bắc, nhánh rẽ vào và lối nhập lại
-    g.add(boxM(0x8fc46a, 0, -0.06, 0, 260, 0.1, 200, { rough: 1 }));
-    g.add(boxM(0x4b525c, 0, 0, -50, 260, 0.04, 16, { rough: 1 }));
-    for (let x = -120; x < 130; x += 9) stripe(g, x, -50, 4, 0.22);
-    stripe(g, 0, -57.6, 260, 0.25); stripe(g, 0, -42.4, 260, 0.25); g.add(boxM(0xd8dde3, 0, 0.45, -41.6, 120, 0.9, 0.35));
-    const ramp = (x0: number, z0: number, x1: number, z1: number) => { const l = Math.hypot(x1 - x0, z1 - z0), m = boxM(0x555c66, (x0 + x1) / 2, 0.012, (z0 + z1) / 2, 7, 0.04, l, { rough: 1 }); m.rotation.y = Math.atan2(x1 - x0, z1 - z0); g.add(m); };
-    ramp(-82, -46, -32, -24); ramp(36, -24, 84, -46);
-    // bãi đỗ, vỉa hè trước nhà, ô kẻ vạch
-    g.add(boxM(0x5b626c, (LOT.x0 + LOT.x1) / 2, 0.006, (LOT.z0 + LOT.z1) / 2, LOT.x1 - LOT.x0 + 4, 0.03, LOT.z1 - LOT.z0, { rough: 1 }));
-    g.add(boxM(0xc9ccd1, (LOT.x0 + LOT.x1) / 2, 0.12, 13.2, LOT.x1 - LOT.x0, 0.24, 1.6, { rough: 1 }));
-    for (const b of this.bays.filter((b) => b.kind === 'lot')) { stripe(g, b.x - 2.1, b.z, 0.14, 5.6); stripe(g, b.x + 2.1, b.z, 0.14, 5.6); }
-    stripe(g, -24 + 4.5 * 4.2, 5.6, 46, 0.14);
-    for (const b of this.bays.filter((b) => b.kind === 'charger')) { g.add(boxM(0x2f9e5a, b.x, 0.03, b.z, 3.4, 0.02, 6, { rough: 1 })); stripe(g, b.x - 2, b.z, 0.14, 6.4); stripe(g, b.x + 2, b.z, 0.14, 6.4); }
-    for (const [x, z, r] of [[-27, -21, 1.9], [26, -10, Math.PI], [0, -1.5, Math.PI / 2], [30, -16, 0]] as [number, number, number][]) { const a = boxM(0xffffff, x, 0.04, z, 0.4, 0.02, 2.6, { rough: 1 }); a.rotation.y = r; g.add(a); }
-    // cây xăng: mái che, hai đảo bơm, trụ bơm
-    if (pumps) {
-      const roof = new THREE.Group(); roof.add(boxM(0xf08a24, -11, 6.1, -12, 22, 0.5, 13), boxM(0xffffff, -11, 5.8, -12, 22.4, 0.2, 13.4));
-      this.roof = bakeColored(roof, false); this.roof.traverse((o) => { const me = o as THREE.Mesh; if (!me.isMesh) return; const m = (me.material as THREE.Material).clone(); m.transparent = true; me.material = m; this.roofMats.push(m); this.own.push(m); }); sc.add(this.roof);
-      for (const [x, z] of [[-22, -17.8], [-22, -6.2], [0, -17.8], [0, -6.2]]) g.add(mesh(GEO.cyl, mat(0xeef0f3), x, 3, z, 0.28, 6, 0.28));
-      for (const isl of ISLANDS) {
-        const x = (isl.x0 + isl.x1) / 2; g.add(boxM(0xd7dbe0, x, 0.15, -12, 1.6, 0.3, 7));
-        for (const z of [-14, -10]) g.add(boxM(0xe0342b, x, 1.15, z, 0.9, 1.9, 0.9), boxM(0x2b2f36, x, 1.8, z, 0.95, 0.5, 0.6), boxM(0x9aa1ab, x - 0.5, 1.1, z, 0.1, 0.5, 0.3), boxM(0x9aa1ab, x + 0.5, 1.1, z, 0.1, 0.5, 0.3));
-      }
-    }
-    // trụ sạc nằm bên phải mỗi ô sạc
-    for (const b of this.bays.filter((b) => b.kind === 'charger')) { const [x, z] = chargerPos(b); g.add(boxM(0x1f9d5a, x, 1.0, z, 0.6, 2.0, 0.9), boxM(0xffffff, x - 0.31, 1.55, z, 0.04, 0.5, 0.6), boxM(0x2b2f36, x - 0.3, 1.0, z + 0.3, 0.2, 0.5, 0.12)); }
-    g.add(boxM(0x1f9d5a, 17, 3.6, -11, 0.3, 0.3, 7), mesh(GEO.cyl, mat(0xeef0f3), 24, 1.8, -11, 0.15, 3.6, 0.15));
-    // toà nhà: cửa hàng tiện lợi, quán ăn, nhà vệ sinh
-    const bw = BUILDING.x1 - BUILDING.x0, bx = (BUILDING.x0 + BUILDING.x1) / 2, bz = (BUILDING.z0 + BUILDING.z1) / 2;
-    g.add(boxM(0xfff6e2, bx, 2.2, bz, bw, 4.4, BUILDING.z1 - BUILDING.z0), boxM(0x2f6fd0, bx, 4.6, bz, bw + 1, 0.5, BUILDING.z1 - BUILDING.z0 + 1));
-    g.add(boxM(0x8ec9dc, bx, 2.0, BUILDING.z0 - 0.02, bw - 2, 2.4, 0.05));
-    for (const [k, [x]] of Object.entries(DOORS)) g.add(boxM(k === 'wc' ? 0x3c6e9e : 0x6a4a2f, x, 1.3, BUILDING.z0 - 0.06, 2.2, 2.6, 0.08));
-    g.add(boxM(0xf3f4f6, bx, 3.4, BUILDING.z0 - 1.4, bw, 0.12, 2.8));
-    for (const [x, z] of [[-31, 18], [27, 18], [-33, -4], [37, 4], [31, 30], [-31, 32]]) g.add(mesh(GEO.cyl, mat(0x7a5232), x, 1, z, 0.25, 2, 0.25), mesh(GEO.ball, mat(0x4f9f45), x, 2.8, z, 1.8));
-    for (const x of [-20, 6, 19]) g.add(boxM(0x8a8f96, x, 0.45, 11.9, 1.8, 0.16, 0.6), boxM(0x2f8f4e, x + 1.4, 0.45, 11.9, 0.5, 0.9, 0.5));
-    sc.add(bakeColored(g, false));
-    // biển hiệu
-    const nm = label(`☕ ${info.name}`, '#2f6fd0', 15); nm.position.set(bx, 6.6, BUILDING.z0); sc.add(nm);
-    for (const [txt, bg, x] of [['🛒 Cửa hàng tiện lợi', '#e0342b', DOORS.shop[0]], ['🍜 Quán ăn', '#f08a24', DOORS.food[0]], ['🚻 Nhà vệ sinh', '#2f6fd0', DOORS.wc[0]]] as [string, string, number][]) { const s = label(txt, bg, 6); s.position.set(x, 3.0, BUILDING.z0 - 0.3); sc.add(s); }
-    if (pumps) { const s = label(`⛽ ${Math.round(info.electric ? 25_000 : info.price).toLocaleString('vi-VN')}đ/lít`, '#f08a24', 9); s.position.set(-11, 7.3, -12); sc.add(s); this.roofSign = s; }
-    { const s = label(`⚡ Sạc nhanh${info.electric ? ` ${Math.round(info.price).toLocaleString('vi-VN')}đ/kWh` : ''}`, '#1f9d5a', 7); s.position.set(14, 4.6, -11); sc.add(s); }
-    { const s = label('LỐI VÀO →', '#2f6fd0', 6); s.position.set(-42, 3.2, -30); sc.add(s); const t = label('RA CAO TỐC →', '#1f9d5a', 7); t.position.set(42, 3.2, -31); sc.add(t); }
-    if (pumps) {
-      for (const b of this.bays.filter((b) => b.kind === 'pump')) { const n = label(`Trụ ${b.pump}`, '#2b2f36', 2.6); const p = pumpPos(b); n.position.set(p[0] + (b.x < p[0] ? -0.9 : 0.9), 3.0, p[1]); sc.add(n); }
-      for (const isl of ISLANDS) for (const z of [-14, -10]) {
-        const c = document.createElement('canvas'); c.width = 128; c.height = 64; const ctx = c.getContext('2d')!; const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-        const x = (isl.x0 + isl.x1) / 2, m = new THREE.MeshBasicMaterial({ map: tex });
-        for (const side of [-1, 1]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.4), m); p.position.set(x + side * 0.48, 1.62, z); p.rotation.y = side * Math.PI / 2; sc.add(p); this.own.push(p.geometry); }
-        this.own.push(tex, m); const s = { tex, ctx, x, z }; this.screens.push(s); this.drawScreen(s, 0, 0);
-      }
-    }
-    // vài xe đỗ sẵn cho có không khí
+    const info = this.info, pumps = !(info.electric && info.kind === 'charger');
     const lots = this.bays.filter((b) => b.kind === 'lot');
-    for (const i of [1, 7]) { const b = lots[i]; const o = bakeColored(playerVehicle('ban_tai', i === 1 ? 0xc9302c : 0x9aa6b2).root); o.position.set(b.x, 0, b.z); o.rotation.y = b.yaw; sc.add(o); b.taken = true; }
+    for (const i of [1, 7]) lots[i].taken = true;
+    const sc = buildScenery(this.scene, { kind: info.kind, name: info.name, pumps, electric: info.electric, lots });
+    this.fades = sc.fades; this.screens = sc.screens; this.own.push(...sc.own); this.sun = sc.sun;
+    for (const s of this.screens) this.drawScreen(s, 0, 0);
+    // bóng đổ thật trên máy tính; điện thoại dùng bóng mờ vẽ sẵn
+    // cảnh tĩnh nên bản đồ bóng chỉ vẽ một lần (xe, người có bóng mờ riêng): không tốn lần vẽ mỗi khung
+    const shadows = !IS_MOBILE; this.renderer.shadowMap.enabled = shadows; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; this.renderer.shadowMap.autoUpdate = false; this.renderer.shadowMap.needsUpdate = true; sc.sun.castShadow = shadows;
+    for (const o of [this.car, this.person.root, this.hose, this.nozzle]) o.traverse((m) => { m.castShadow = false; });
+    // vài xe đỗ sẵn cho có không khí
+    for (const i of [1, 7]) { const b = lots[i]; const o = bakeColored(playerVehicle('ban_tai', i === 1 ? 0xc9302c : 0x9aa6b2).root, true); o.position.set(b.x, 0, b.z); o.rotation.y = b.yaw; this.scene.add(o); }
   }
   private drawScreen(s: { tex: THREE.CanvasTexture; ctx: CanvasRenderingContext2D }, l: number, money: number) {
     const g = s.ctx; g.fillStyle = '#0f1a12'; g.fillRect(0, 0, 128, 64); g.fillStyle = '#7dff8a'; g.font = 'bold 22px monospace'; g.textAlign = 'right';
@@ -310,25 +255,30 @@ export class StopArea {
     // máy quay theo người hoặc xe, mượt theo thời gian
     const walk = this.phase === 'walk', tx = walk ? this.px : this.cx, tz = walk ? this.pz : this.cz, a = ease(0.1, real);
     this.camX += (tx - this.camX) * a; this.camZ += (tz - this.camZ) * a;
+    // máy quay đứng phía bắc (phía cao tốc) nhìn xuống phía nam: thấy mặt tiền nhà, mái che, trụ bơm
     const portrait = this.camera.aspect < 0.9, h = walk ? (portrait ? 17 : 12) : portrait ? 30 : 21, back = walk ? (portrait ? 12 : 10) : portrait ? 20 : 15;
-    this.camera.position.set(this.camX, h, this.camZ + back); this.camera.lookAt(this.camX, 0, this.camZ - 1);
+    if (this.overview) { this.camera.position.set(2, portrait ? 95 : 62, -62); this.camera.lookAt(2, 0, -2); }
+    else { this.camera.position.set(this.camX, h, this.camZ - back); this.camera.lookAt(this.camX, 0, this.camZ + 1); }
     this.quality.busy = Math.abs(this.v) > 0.1 || walk;
-    if (this.roof) {
-      const under = (x: number, z: number) => x > -25 && x < 3 && z > -22 && z < 2;
-      const want = under(tx, tz) || under(this.camX, this.camZ - 4) ? 0.15 : 1; this.roofA += (want - this.roofA) * ease(0.15, real);
-      for (const m of this.roofMats) { m.opacity = this.roofA; m.depthWrite = this.roofA > 0.9; }
-      if (this.roofSign) this.roofSign.visible = this.roofA > 0.6;
+    // mái che mờ đi khi xe/người ở dưới hoặc ngay sau mái (tia nhìn từ máy quay xuyên qua mái)
+    for (const f of this.fades) {
+      const b = f.box, k = this.overview ? 0 : back / h, m = 1.2, hide = (x: number, z: number) => x > b.x0 - m && x < b.x1 + m && z > b.z0 - m && z < b.z1 + f.h * k + m;
+      const want = hide(tx, tz) ? 0 : 1; f.a += (want - f.a) * ease(0.15, real);
+      for (const mt of f.mats) { mt.opacity = f.a; mt.depthWrite = f.a > 0.9; }
+      f.group.visible = f.a > 0.03;
     }
     this.renderer.render(this.scene, this.camera);
     this.hudT -= real; if (this.hudT <= 0) { this.hudT = 0.1; this.cb.onHud(this.hudNow()); }
   };
   private step(dt: number) {
     if (this.auto) this.autoplay(dt);
-    let jx = this.joy.x, jy = this.joy.y;
-    if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) jx -= 1;
-    if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) jx += 1;
-    if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) jy -= 1;
-    if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) jy += 1;
+    // cần điều khiển theo màn hình; máy quay nhìn về phía nam nên phải màn hình là −x, lên màn hình là +z
+    let sx = this.joy.x, sy = this.joy.y;
+    if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) sx -= 1;
+    if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) sx += 1;
+    if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) sy -= 1;
+    if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) sy += 1;
+    const jx = -sx, jy = -sy;
     if (this.phase === 'drive' || this.phase === 'leave') this.driveStep(dt, jx, jy);
     if (this.phase === 'walk') this.walkStep(dt, jx, jy);
     if (this.wcT > 0) { this.wcT -= dt; if (this.wcT <= 0) { this.wc = true; this.person.root.visible = true; this.say('🚻 Đi vệ sinh, rửa mặt xong — tỉnh táo hơn'); } }
@@ -350,7 +300,8 @@ export class StopArea {
     } else if (this.path.length) {
       const [x, z] = this.path[0], dx = x - this.cx, dz = z - this.cz, d = Math.hypot(dx, dz), last = this.path.length === 1 && !!this.target;
       want = Math.atan2(-dx, -dz); speed = last ? Math.min(4.5, 0.8 + d) : 7;
-      if (d < (last ? 0.3 : 1.8)) { this.path.shift(); if (last && this.target) { this.park(this.target); return; } }
+      const fw = this.fwd(this.yaw), passed = last && d < 1.3 && dx * fw[0] + dz * fw[1] <= 0; // đã chạy lướt qua điểm đỗ: coi như tới
+      if (passed || d < (last ? Math.max(0.3, Math.abs(this.v) * dt * 2) : Math.max(1.8, Math.abs(this.v) * dt * 2))) { this.path.shift(); if (last && this.target) { this.park(this.target); return; } } // khung hình thưa (máy yếu): ngưỡng theo quãng đi được mỗi bước để không vòng quanh điểm
     } else if (Math.hypot(jx, jy) > 0.15) {
       want = Math.atan2(-jx, -jy); speed = 6 * Math.min(1, Math.hypot(jx, jy));
       if (Math.abs(wrap(want - this.yaw)) > 2.4) { speed = -2.5; want = null; } // kéo ngược hướng xe: lùi
