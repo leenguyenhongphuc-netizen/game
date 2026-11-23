@@ -32,7 +32,7 @@ import { LandCertificate, PassportPanel } from './passport.tsx';
 import { ProgressPanel } from './progress.tsx';
 import { FusionPanel } from './fusion.tsx';
 import { GaragePanel } from './vehicles.tsx';
-import { ShoppingPanel } from './shopping.tsx';
+import { ShoppingPanel, useOwnedGoods } from './shopping.tsx';
 import { LandUpgrades } from './upgrades.tsx';
 import { ImportRide } from './drive/ImportRide.tsx';
 import type { ImportOrder } from './workshop.tsx';
@@ -312,13 +312,18 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const act = useAction(reload);
 
   const lots = useMemo(() => (tour ? [modelLot(tour)] : village ? [village.center, ...village.neighbors] : []), [village, tour]);
+  // Đồ mua ở trung tâm mua sắm: bộ đang dùng và các món nội thất, sân vườn đã có — hiện lên thửa nhà của mình
+  const equipped = (me.user as { equipped?: { ao?: string | null; non?: string | null; phu_kien?: string | null; nha?: string | null; xe?: string | null } | null }).equipped ?? null;
+  const equippedKey = JSON.stringify(equipped);
+  const ownedGoods = useOwnedGoods(me.user.id);
   const worldState = useMemo(() => ({
     regionId: tour ?? village?.center.plot.regionId ?? me.user.homeRegionId!, clockOffset: offset, weather: tour ? weatherAt(tour, Date.now()).kind : village?.weather?.kind,
     lots: Array.from({ length: SLOT_COUNT }, (_, i) => {
       const l = lots[i];
-      return l ? { plotId: l.plot.id, ownerName: l.plot.ownerName, mine: l.plot.mine, friend: l.plot.friend, kind: l.plot.kind, ownerRole: l.plot.ownerRole ?? null, style: l.plot.style, decor: l.plot.decor, avatar: l.plot.ownerAvatar, factory: l.plot.mine && l.plot.isHome && !tour ? factory : undefined, plantings: l.plantings, stall: l.stall } : null;
+      return l ? { plotId: l.plot.id, ownerName: l.plot.ownerName, mine: l.plot.mine, friend: l.plot.friend, kind: l.plot.kind, ownerRole: l.plot.ownerRole ?? null, style: l.plot.style, decor: l.plot.decor, avatar: l.plot.ownerAvatar, equipped: l.plot.mine && l.plot.isHome && !tour ? equipped : undefined, goods: l.plot.mine && l.plot.isHome && !tour ? ownedGoods : undefined, factory: l.plot.mine && l.plot.isHome && !tour ? factory : undefined, plantings: l.plantings, stall: l.stall } : null;
     }),
-  }), [village, lots, offset, me.user.homeRegionId, tour, factory]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [village, lots, offset, me.user.homeRegionId, tour, factory, equippedKey, ownedGoods]);
 
   const now = Date.now() + offset;
   const center = tour ? lots[0] : village?.center;
@@ -329,8 +334,10 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const isTrader = me.user.role === 'thuong_lai';
   const fuelL = me.user.fuelL ?? TRUCK.startFuelL;
   // Trang phục của mình và xe tải của thương lái (chỉ hiện ở xóm nhà)
-  useEffect(() => { worldRef.current?.setAvatar(me.user.avatar); }, [me.user.avatar, village]);
-  useEffect(() => { worldRef.current?.setTruck(isTrader && atHome ? me.user.avatar?.truck ?? '#f08a6c' : null); if (!(isTrader && atHome)) setDriving(false); }, [isTrader, atHome, me.user.avatar?.truck, village]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { worldRef.current?.setAvatar(me.user.avatar, equipped); }, [me.user.avatar, village, equippedKey]);
+  const hasTruck = (isTrader || !!me.user.vehicle) && atHome; // ai có xe tải cũng thấy xe đỗ trước cổng, đúng loại đang dùng
+  useEffect(() => { worldRef.current?.setTruck(hasTruck ? me.user.avatar?.truck ?? '#f08a6c' : null, me.user.vehicle?.kind ?? null); if (!hasTruck) setDriving(false); }, [hasTruck, me.user.avatar?.truck, me.user.vehicle?.kind, village]);
   const startTrip = async (toRegionId: string) => { const t = await api<Trip>('POST', '/api/trips/start', { toRegionId }); setTab('vuon'); setTrip(t); await refresh(); };
   const finishTrip = async (res: DriveResult) => {
     if (!trip) return;

@@ -144,12 +144,13 @@ export function buildHomeHouse(type: string, wall: number, roof: number, night: 
 
 /** Vị trí bày đồ đã mua quanh nhà (toạ độ của thửa): nội thất ở dải hiên trước nhà, đồ sân vườn dọc hai bên và góc sân. */
 export const GOODS_SPOTS: Record<string, [number, number, number]> = {
-  // nội thất: bày dưới hiên và sân trước nhà (z ≈ -7,3 .. -6,6), chừa lối cửa giữa
-  bo_truong_ky: [-2.6, -7.0, 0], ban_tho: [-4.6, -7.4, 0], tu_che: [4.4, -7.4, 0], phan_go: [2.6, -6.9, 0],
-  vong: [-6.6, -7.9, Math.PI / 2], bep_cui: [6.4, -11.6, 0], tu_lanh: [5.6, -7.5, 0], ti_vi: [-5.9, -7.4, 0.3],
-  // sân vườn: dọc hàng rào và các góc
-  gieng_nuoc: [8.3, -5.2, 0], cay_rom: [-8.4, -5.6, 0], chuong_ga: [8.2, 4.6, -Math.PI / 2], gian_bau: [-8.3, -1.6, Math.PI / 2],
-  hon_non_bo: [-4.4, 7.0, 0], cay_si_bonsai: [2.6, 7.3, 0], lu_nuoc_mam: [8.3, -1.0, Math.PI / 2], cot_neu: [-2.6, 7.4, 0],
+  // nội thất: bày ở sân trước hiên nhà (z ≈ -6,5), chừa lối cửa giữa; bếp củi sau nhà, võng bên hông
+  bo_truong_ky: [-2.4, -6.3, 0], phan_go: [2.4, -6.5, 0], ban_tho: [-4.8, -6.6, 0], tu_che: [4.8, -6.6, 0],
+  ti_vi: [-6.9, -6.6, 0.25], tu_lanh: [6.6, -6.6, -0.2], vong: [-8.2, -8.6, Math.PI / 2], bep_cui: [5.4, -12.0, 0],
+  // sân vườn: dọc hai bên hàng rào và dải sân trước cổng
+  gieng_nuoc: [8.3, -4.4, 0], lu_nuoc_mam: [8.5, -0.2, Math.PI / 2], chuong_ga: [8.3, 4.6, -Math.PI / 2],
+  cay_rom: [-8.5, 3.0, 0], gian_bau: [-8.3, -1.0, Math.PI / 2],
+  hon_non_bo: [-5.3, 7.2, 0], cay_si_bonsai: [2.1, 7.3, 0], cot_neu: [5.6, 7.4, 0],
 };
 export const GOODS_PROPS = Object.keys(GOODS_SPOTS);
 

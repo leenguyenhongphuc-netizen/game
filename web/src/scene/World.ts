@@ -317,7 +317,7 @@ class Lot {
     for (const d of data?.decor ?? []) { const o = buildDecor(d.item); o.position.set(d.x, 0, d.z); o.rotation.y = d.rot; st.add(o); }
     // Nội thất, đồ sân vườn đã mua bày ở chỗ cố định quanh nhà; xe riêng đang dùng đỗ trong sân cạnh cổng
     if (!isFactory(data)) for (const id of data?.goods ?? []) { const sp = GOODS_SPOTS[id], o = sp && buildGoodProp(id, this.night); if (o) { o.position.set(sp[0], 0, sp[1]); o.rotation.y = sp[2]; st.add(o); } }
-    { const ride = data?.equipped?.xe ? buildPersonalRide(data.equipped.xe) : null; if (ride) { ride.root.position.set(4.4, 0.04, 6.6); ride.root.rotation.y = Math.PI / 2 + 0.25; st.add(ride.root); } }
+    { const ride = data?.equipped?.xe ? buildPersonalRide(data.equipped.xe) : null; if (ride) { ride.root.position.set(-6.2, 0.02, 10.3); ride.root.rotation.y = Math.PI / 2; // đỗ ở lề cỏ trước rào, cạnh chỗ xe tải st.add(ride.root); } }
     {
     // Sạp bán hàng sát đường
     const s = new THREE.Group(); s.position.set(STALL.x, 0, STALL.z);
@@ -543,6 +543,7 @@ export class World {
 
   /** Đổi áo, nón của nhân vật mình điều khiển. */
   setAvatar(avatar: Avatar | null | undefined, outfit: Outfit | null = null) {
+    if (!this.tryOn) this.lastAvatar = avatar ?? null;
     const key = JSON.stringify([avatar ?? null, outfit ?? null]); if (key === this.avatarKey) return; this.avatarKey = key;
     this.scene.remove(this.player.root);
     this.player = makeFarmer(hex(avatar?.shirt, 0x5aa9e6), avatar?.hat ?? 'non_la', outfit); this.player.root.visible = !this.driving; this.scene.add(this.player.root);
@@ -1043,6 +1044,15 @@ export class World {
     const hit = new THREE.Vector3(); return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit) ? { x: hit.x, z: hit.z } : null;
   }
   /** Vào/ra chế độ xây dựng: đưa nhân vật vào sân trước nhà và lùi máy ảnh để thấy trọn sân; ra thì trả mức phóng cũ. */
+  /** "Mặc thử": tạm hiện bộ đồ, kiểu nhà, xe chưa mua (hoặc chưa dùng) trên thửa nhà mình; truyền null để trả về đồ đang dùng. */
+  previewEquip(eq: Equipped | null, avatar?: Avatar | null) {
+    const st = this.state, mine = st?.lots[0]; if (!st || !mine || !mine.mine) return;
+    this.tryOn = eq;
+    const data = eq ? { ...mine, equipped: eq } : mine;
+    this.lots[0].setData(data, this.clock.elapsedTime); this.colliders = [...this.lots.flatMap((l) => l.colliders()), ...this.envColliders];
+    this.setAvatar(avatar ?? this.lastAvatar, eq ?? mine.equipped ?? null);
+  }
+  private tryOn: Equipped | null = null; private lastAvatar: Avatar | null = null;
   buildFocus(on: boolean) {
     if (on) { this.buildZoom = this.zoom; this.zoom = this.camera.aspect < 0.9 ? 1.6 : 1.15; if (this.driving) this.exitTruck(); this.pos.set(0, 0, 6.9); this.walkTo = null; this.vel.set(0, 0, 0); this.camPos.copy(this.pos); }
     else if (this.buildZoom !== null) { this.zoom = this.buildZoom; this.buildZoom = null; }
