@@ -398,7 +398,7 @@ export class StopArea {
     const n = this.hoseSegs.length + 1, len = Math.hypot(e[0] - a[0], e[2] - a[2]), pts: THREE.Vector3[] = [];
     for (let i = 0; i < n; i++) { const t = i / (n - 1); pts.push(new THREE.Vector3(a[0] + (e[0] - a[0]) * t, a[1] + (e[1] - a[1]) * t - Math.sin(t * Math.PI) * Math.min(0.9, 0.2 + len * 0.15), a[2] + (e[2] - a[2]) * t)); }
     const up = new THREE.Vector3(0, 1, 0), d = new THREE.Vector3();
-    this.hoseSegs.forEach((m, i) => { d.subVectors(pts[i + 1], pts[i]); const l = d.length(); m.position.copy(pts[i]).addScaledVector(d, 0.5); m.scale.set(0.06, l + 0.02, 0.06); if (l > 1e-4) m.quaternion.setFromUnitVectors(up, d.multiplyScalar(1 / l)); }); this.nozzle.position.set(e[0], e[1], e[2]); this.nozzle.rotation.y = this.plugged ? this.yaw + Math.PI / 2 : this.pyaw;
+    this.hoseSegs.forEach((m, i) => { d.subVectors(pts[i + 1], pts[i]); const l = d.length(); m.position.copy(pts[i]).addScaledVector(d, 0.5); m.scale.set(0.1, l + 0.02, 0.1); if (l > 1e-4) m.quaternion.setFromUnitVectors(up, d.multiplyScalar(1 / l)); }); this.nozzle.position.set(e[0], e[1], e[2]); this.nozzle.rotation.y = this.plugged ? this.yaw + Math.PI / 2 : this.pyaw;
   }
   /** Tự chạy hết một lượt (cho bộ kiểm): đỗ, xuống xe, (đổ xăng/sạc), vệ sinh, lên xe, đi. */
   private autoplay(dt: number) {
