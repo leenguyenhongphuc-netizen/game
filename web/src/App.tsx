@@ -540,7 +540,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       {tab === 'vuon' && !driving && !building && farming && (emptyTiles.length > 0 || ready.length >= 2 || acted || bulk || act.error) && (
         <div className="farm-bar" ref={stackRef}>
           {act.error && <p className="farm-line err" role="alert">{act.error}</p>}
-          {bulk && <p className="farm-line bulk" role="status"><span>{bulk.label} {Math.min(bulk.total, bulk.done + 1)}/{bulk.total}{fasterPct > 0 ? <small> · Cấp {lvl}: làm nhanh hơn {fasterPct}%</small> : null}</span><button type="button" onClick={stopBulk}>Dừng</button></p>}
+          {bulk && <p className="farm-line bulk" role="status"><span>{bulk.label} {Math.min(bulk.total, bulk.done + 1)}/{bulk.total}{fasterPct > 0 ? <small>Cấp {lvl}: làm nhanh hơn {fasterPct}%{proTool ? ' · công cụ tốt hơn' : ''}</small> : null}</span><button type="button" onClick={stopBulk}>Dừng</button></p>}
           {!bulk && acted && (() => {
             const steps = processOf(CROPS[acted.sp.crop]), st = steps[acted.stepIndex], nxt = steps[acted.stepIndex + 1];
             return <p className="farm-line" role="status" key={acted.at}>✓ <b>{st.name}</b> · {nxt ? `tiếp theo ${nxt.name} sau ${fmtDuration(stepWaitMs(acted.sp, pace))}` : `vào kho ${acted.kg ?? ''} kg, ô đã trống`}</p>;
