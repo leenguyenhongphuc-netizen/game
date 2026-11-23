@@ -8,6 +8,7 @@ import {
 import type { Avatar, DecorPlacement, PlotStyle } from '../../shared/custom.ts';
 import { fmtMoney } from '../../shared/rules.ts';
 import { api } from './api.ts';
+import { Wardrobe } from './shopping.tsx';
 import type { LotView, Me } from './api.ts';
 import type { World } from './scene/World.ts';
 import { useAction } from './ui.ts';
@@ -43,7 +44,7 @@ export function CustomizePanel({ me, home, worldRef, atHome, onChanged, onBuild 
       <div className="tabs">
         <button aria-selected={tab === 'nha'} onClick={() => setTab('nha')}>Nhà & cổng</button>
         <button aria-selected={tab === 'sap'} onClick={() => setTab('sap')}>Gian hàng</button>
-        <button aria-selected={tab === 'nguoi'} onClick={() => setTab('nguoi')}>Nhân vật</button>
+        <button aria-selected={tab === 'nguoi'} onClick={() => setTab('nguoi')}>Tủ đồ</button>
         <button aria-selected={tab === 'san'} onClick={() => setTab('san')}>Sân vườn</button>
       </div>
       {act.error && <p className="error" role="alert">{act.error}</p>}
@@ -61,6 +62,8 @@ export function CustomizePanel({ me, home, worldRef, atHome, onChanged, onBuild 
               </button>
             ))}
           </div>
+          <p className="hint">Ba kiểu trên đổi được màu tường, màu mái. Kiểu nhà mua ở thẻ Mua sắm (nhà ống, nhà rường, nhà rông…) có màu riêng; đang dùng kiểu nào thì nhà trong vườn hiện kiểu đó.</p>
+          <Wardrobe slots={['nha']} refresh={onChanged} defaults={{ nha: HOUSE_TYPES.find((h) => h.id === style.house)?.name ?? 'Nhà mái ngói' }} />
           <Swatches label="Màu tường" colors={WALL_COLORS} value={style.wall} onPick={(c) => saveStyle({ ...style, wall: c })} />
           <Swatches label="Màu mái" colors={ROOF_COLORS} value={style.roof} onPick={(c) => saveStyle({ ...style, roof: c })} />
           <div className="pick-row">
@@ -81,11 +84,14 @@ export function CustomizePanel({ me, home, worldRef, atHome, onChanged, onBuild 
 
       {tab === 'nguoi' && (
         <div className="custom">
+          <p className="hint">Một chỗ để đổi mọi thứ trên người: bộ đồ, nón, phụ kiện mua ở thẻ Mua sắm, hoặc áo và nón mặc định bên dưới. Đang mặc bộ đã mua thì màu áo mặc định tạm không hiện.</p>
+          <Wardrobe slots={['ao', 'non', 'phu_kien']} refresh={onChanged} defaults={{ ao: 'Áo mặc định', non: HATS.find((h) => h.id === avatar.hat)?.name ?? 'Nón lá', phu_kien: 'Không mang' }} />
+          <h3>Đồ mặc định</h3>
           <Swatches label="Màu áo" colors={SHIRT_COLORS} value={avatar.shirt} onPick={(c) => saveAvatar({ ...avatar, shirt: c })} />
           <div className="pick-row">
             {HATS.map((h) => <button key={h.id} type="button" className="pick" aria-pressed={avatar.hat === h.id} disabled={act.busy} onClick={() => saveAvatar({ ...avatar, hat: h.id })}><strong>{h.name}</strong></button>)}
           </div>
-          {me.user.role === 'thuong_lai' && <Swatches label="Màu xe tải" colors={TRUCK_COLORS} value={avatar.truck} onPick={(c) => saveAvatar({ ...avatar, truck: c })} />}
+          {(me.user.role === 'thuong_lai' || !!me.user.vehicle) && <Swatches label="Màu ca-bin xe tải" colors={TRUCK_COLORS} value={avatar.truck} onPick={(c) => saveAvatar({ ...avatar, truck: c })} />}
         </div>
       )}
 

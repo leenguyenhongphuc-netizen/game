@@ -168,7 +168,7 @@ export function addHeadwear(core: THREE.Group, id: string | null | undefined, fa
       for (const sx of [-1, 1]) { core.add(mesh(GEO.ball, mat(0xc0533e), sx * 0.42, 1.48, 0, 0.1, 0.2, 0.16)); core.add(mesh(GEO.box, mat(0xf3e9d8), sx * 0.44, 1.2, 0, 0.03, 0.26, 0.03), mesh(GEO.ball, mat(0xf3e9d8), sx * 0.44, 1.05, 0, 0.05)); }
       for (let i = 0; i < 6; i++) core.add(mesh(GEO.box, mat(0x8e3a2a), Math.sin(i * 1.05) * 0.46, 1.86, Math.cos(i * 1.05) * 0.46, 0.06, 0.12, 0.06));
       break;
-    default: addHat(core, id && id !== 'none' ? id : fallback);
+    default: { const h = id && id !== 'none' ? id : fallback; if (h !== 'none') addHat(core, h); } // 'none' = để đầu trần (ảnh xem trước bộ quần áo)
   }
 }
 

@@ -13,8 +13,11 @@ function gable(m: THREE.Material, x: number, y: number, z: number, w: number, h:
   return o;
 }
 /** Mái bốn dốc (chóp cụt bốn cạnh) phủ nền w × d. */
+const HIPS = new Map<number, THREE.BufferGeometry>();
 function hip(m: THREE.Material, x: number, y: number, z: number, w: number, h: number, d: number, top = 0.3): THREE.Mesh {
-  const o = mesh(new THREE.CylinderGeometry(top * Math.SQRT1_2, Math.SQRT1_2, 1, 4, 1), m, x, y + h / 2, z, w, h, d); o.rotation.y = Math.PI / 4; return o;
+  let g = HIPS.get(top);
+  if (!g) { g = new THREE.CylinderGeometry(top * Math.SQRT1_2, Math.SQRT1_2, 1, 4, 1); g.rotateY(Math.PI / 4); HIPS.set(top, g); } // xoay sẵn trong hình để phóng theo w × d ra đúng chữ nhật
+  return mesh(g, m, x, y + h / 2, z, w, h, d);
 }
 const shade = (c: number, k: number) => new THREE.Color(c).multiplyScalar(k).getHex();
 
