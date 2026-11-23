@@ -40,6 +40,7 @@ import { registerEconomy } from './economy.ts';
 import { ORDER_KIND_NAMES, ORDER_PREMIUM_V2, SUPER_PROVINCES, machineBatchKg, orderBonus, orderScale } from '../../shared/economy.ts';
 import { registerFarm } from './farm.ts';
 import { registerLand } from './land.ts';
+import { registerAdmin } from './admin.ts';
 import { registerSocial } from './social.ts';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
@@ -52,6 +53,8 @@ const WARDS = wardData as Record<string, string[]>;
 const DAY_MS = 86400_000, VN_TZ_MS = 7 * 3600_000;
 
 export interface AppOptions {
+  /** Đòi giấy phép xây dựng trước khi dựng cửa hàng, siêu thị, xưởng (mặc định có). Kiểm thử kinh tế cũ tắt đi. */
+  buildPermits?: boolean;
   db: Db;
   timeScale?: number;
   /** Ngưỡng tính chăm sóc trễ; mặc định LATE_GRACE_MS chia cho timeScale. */
@@ -1587,11 +1590,14 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const veh = registerVehicles(app, { db, requireUser, requireTester: (r) => requireTester(r), bad, addCash, energyState, setEnergy, bagOf: (q, u) => bagOf(q, u), licenseTimeScale: opts.licenseTimeScale ?? 1, examHurry: opts.examHurry });
   const shopping = registerShopping(app, { db, requireUser, bad, addCash, provincesOf: async (q, u) => (await whereabouts(q, u)).provinces, licensesOf: veh.licensesOf });
   // lô xuất khẩu nhiều mặt hàng, công ty xuất nhập khẩu, siêu thị riêng và xưởng chi nhánh nằm ở economy.ts
+  // trung tâm hành chính công: bốc số, thuế hộ kinh doanh, giấy phép xây dựng (công trình phải có phép trước khi khởi công)
+  const adminCenter = registerAdmin(app, { db, timeScale, requireUser, bad, addCash });
   const econ = registerEconomy(app, { db, timeScale, requireUser, bad, addCash, addXp, addInventory, takeInventory, addProduct, takeProduct, currentPrice,
+    usePermit: opts.buildPermits === false ? undefined : adminCenter.usePermit,
     productRef: (q, id) => productRef(q, id), exportContext: (q, u) => exportContext(q, u), shipmentOut: (r) => shipmentOut(r), provincesOf: async (q, u) => (await whereabouts(q, u)).provinces });
 
   // sổ địa chính (quỹ đất theo tỉnh, sổ đỏ, chuyển nhượng) và giá tham chiếu đời thực
-  registerLand(app, { db, requireUser, bad, addCash, addXp });
+  registerLand(app, { db, timeScale, requireUser, bad, addCash, addXp });
 
   // ---------------------------------------------------------------- chuyến xe của thương lái
   const round1 = (v: number) => Math.round(v * 10) / 10;

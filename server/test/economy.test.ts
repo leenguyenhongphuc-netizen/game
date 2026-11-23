@@ -22,7 +22,7 @@ before(async () => {
   await c.query('drop schema public cascade; create schema public;');
   await c.end();
   db = await openDb(url);
-  app = await buildApp({ db, timeScale: 1e9, lateGraceMs: 60_000, adminToken: 'test-admin-token-0123456789', rateLimit: false, staticDir: '/nonexistent', marketEventsAt: () => [], inSeason: () => false,
+  app = await buildApp({ db, buildPermits: false, timeScale: 1e9, lateGraceMs: 60_000, adminToken: 'test-admin-token-0123456789', rateLimit: false, staticDir: '/nonexistent', marketEventsAt: () => [], inSeason: () => false,
     paceFactor: () => 1, tripMinFactor: 0, marketDayAt: () => ({ active: false, startsAt: 0, endsAt: 0 }) } as any);
 });
 after(async () => { await app.close(); await db.close(); });

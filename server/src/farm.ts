@@ -10,7 +10,7 @@ import {
   FARM_MACHINES, FARM_MACHINE_KINDS, FIELD_BLOCK_TILES, FIELD_MAX_BLOCKS_PER_FIELD, FIELD_MIN_LEVEL, FIELD_RESALE, HELI_TOUR_FEE, HELI_TOUR_MIN_LEVEL,
   METHOD_NAMES, WORK_NAMES, fieldBlockPrice, fieldColor, fieldMaxBlocks, fieldRegionAllowed, fieldSeedCost, fieldStepWaitMs, fieldSteps, fieldYieldKg, methodsFor, workPlan,
 } from '../../shared/farm.ts';
-import { issueLot, lotsLeft } from './land.ts';
+import { issueLot, lotsLeft, surrenderFieldLots } from './land.ts';
 import type { FarmMachineKind, WorkMethod } from '../../shared/farm.ts';
 
 type Xp = { xpGained: number; xp: number; level: number; title: string; levelUp: boolean };
@@ -157,7 +157,7 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
       if (f.specialty_id) throw bad('dang_trong', 'Cánh đồng đang có cây; thu hoạch xong mới bán được.', 409);
       const refund = Math.round((Number(f.price_paid) * FIELD_RESALE) / 1000) * 1000;
       await q.query('delete from field_jobs where field_id = $1', [id]);
-      await q.query('delete from land_lots where field_id = $1', [id]); // trả thửa về quỹ đất
+      await surrenderFieldLots(q, id); // trả thửa về quỹ đất: thu hồi sổ, ghi sổ biến động
       await q.query('delete from fields where id = $1', [id]);
       await d.addCash(q, userId, refund, 'bán ruộng');
       return { ok: true, refund };

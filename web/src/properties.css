@@ -24,3 +24,7 @@
 .land-act input { width: 9.5em; min-height: 44px; }
 .land-act button, .land-lot > button { min-height: 44px; min-width: 44px; }
 .prop-buy small { overflow-wrap: anywhere; }
+.cert-serial { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; background: #fde7e4; color: #9b241c; font-size: 0.82em; font-weight: 800; letter-spacing: 0.03em; }
+.land-use { flex: 1 1 100%; color: rgba(60, 40, 20, 0.7); }
+.land-lot > .lookup { flex: 1 1 100%; }
+.land-law ol { margin: 4px 0; padding-left: 1.3em; }
