@@ -46,7 +46,8 @@ export class RideCutScene {
   private resize = () => { const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1; this.renderer.setSize(w, h, false); this.camera.aspect = w / h; this.camera.fov = w < h ? 78 : 64; this.camera.updateProjectionMatrix(); };
   private frame = (now: number) => {
     if (this.dead) return; this.raf = requestAnimationFrame(this.frame);
-    const t = (now - this.t0) / 1000, dt = Math.min(0.1, (now - this.last) / 1000); this.last = now;
+    // mốc thời gian của khung đầu có thể sớm hơn lúc dựng cảnh (âm): kẹp về 0 để đường cong không nhận số âm
+    const t = Math.max(0, (now - this.t0) / 1000), dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000)); this.last = now;
     this.progress = Math.min(1, t / this.o.seconds);
     this.tick(t, dt); this.renderer.render(this.scene, this.camera);
     if (t >= this.o.seconds) { this.dispose(); this.onEnd(); }
