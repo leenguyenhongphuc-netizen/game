@@ -77,7 +77,7 @@ export function Arcade({ park, wallet, cash, onWallet, onClose, onPlayed }: { pa
   return (
     <div className="pk-arcade" role="dialog" aria-label="Khu trò chơi kỹ năng">
       <div className="pk-arcade-head">
-        <b>🕹️ Khu trò chơi kỹ năng</b>
+        <b>🕹️ Trò chơi kỹ năng</b>
         <span className="pk-chip">🪙 {wallet.tokens} xu</span><span className="pk-chip">🎟️ {wallet.tickets} vé</span>
         <button className="pk-x" aria-label="Đóng" onClick={onClose}>✕</button>
       </div>

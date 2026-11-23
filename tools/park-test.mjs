@@ -23,6 +23,8 @@ async function player(user, w = 430, h = 932) {
   await db.query(`update users set role = 'thuong_lai', role_assigned_at = now() where username = $1`, [user]);
   await p.evaluate(async () => { await fetch('/api/onboard', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ regionId: 'dn_tienphuoc' }) }); });
   await db.query(`update users set cash = 20000000, energy = 150, energy_at = now() where username = $1`, [user]);
+  // chạy lại nhiều lần: xoá vé, lượt chơi, ví khu trò chơi của lần trước
+  for (const t of ['park_passes', 'park_rides', 'park_wallet', 'park_prizes', 'arcade_plays']) await db.query(`delete from ${t} where user_id = (select id from users where username = $1)`, [user]).catch(() => {});
   return { p, ctx, errs, reg };
 }
 const open = async (pl, id) => { await pl.p.goto(`${BASE}/sight-test.html?id=${id}&energy=150`); await pl.p.waitForSelector('.sw-scene canvas', { timeout: 30000 }); await wait(4500); };

@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { park as findPark } from '../../../shared/parks.ts';
 import { RideCut } from './RideCut.tsx';
 import { Arcade } from './Arcade.tsx';
+import '../sight/sight.css';
 
 function Test() {
   const q = new URLSearchParams(location.search), p = findPark(q.get('park') ?? 'park_mw_da_nang')!;
