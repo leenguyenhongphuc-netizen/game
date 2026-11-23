@@ -34,6 +34,8 @@ import { ProgressPanel } from './progress.tsx';
 import { FusionPanel } from './fusion.tsx';
 import { GaragePanel } from './vehicles.tsx';
 import { FieldsPanel } from './fields.tsx';
+import { ContractsPanel } from './contracts.tsx';
+import { PropertiesPanel } from './properties.tsx';
 import type { FieldsData, HeliTourData } from './fields.tsx';
 import { HeliTour } from './drive/HeliTour.tsx';
 import { ShoppingPanel, useOwnedGoods } from './shopping.tsx';
@@ -286,7 +288,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [sightWalk, setSightWalk] = useState<SightTrip | null>(null);
   const [marketTab, setMarketTab] = useState<'cho' | 'gia'>('cho');
   const [xomTab, setXomTab] = useState<'ban' | 'htx' | 'qua'>('ban');
-  const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua' | 'tui' | 'dunghop' | 'ruong'>('kho');
+  const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua' | 'tui' | 'dunghop' | 'ruong' | 'hopdong'>('kho');
   const [heli, setHeli] = useState<HeliTourData | null>(null);
   type FactoryView = { machines: { id: number | string; kind: string; name: string; level?: number; slots?: number; jobs?: { recipeId?: string; doneAt?: number; done?: boolean }[] }[] };
   const [factory, setFactory] = useState<FactoryView | null>(null);
@@ -694,6 +696,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                 <div className="tabs">
                   <button aria-selected={khoTab === 'kho'} onClick={() => setKhoTab('kho')}>Kho & Sạp</button>
                   <button aria-selected={khoTab === 'don'} onClick={() => setKhoTab('don')}>Đơn hàng</button>
+                  <button aria-selected={khoTab === 'hopdong'} onClick={() => setKhoTab('hopdong')}>Hợp đồng</button>
                   <button aria-selected={khoTab === 'xuong'} onClick={() => setKhoTab('xuong')}>Xưởng</button>
                   <button aria-selected={khoTab === 'xuat'} onClick={() => setKhoTab('xuat')}>Xuất khẩu</button>
                   <button aria-selected={khoTab === 'tui'} onClick={() => setKhoTab('tui')}>Túi đồ</button>
@@ -704,6 +707,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
                 {khoTab === 'kho' && <Stock me={me} prices={prices} marketDay={!!village?.events?.some((e) => e.id === 'cho_phien' && e.active)} floating={!!village?.events?.some((e) => e.id === 'cho_noi' && e.active) && atHome} friends={friendList} refresh={reload} />}
                 {khoTab === 'tui' && <BagPanel me={me} refresh={reload} />}
                 {khoTab === 'dunghop' && <FusionPanel me={me} refresh={reload} />}
+                {khoTab === 'hopdong' && <ContractsPanel me={me} refresh={reload} />}
                 {khoTab === 'ruong' && <FieldsPanel me={me} refresh={reload} onTour={(t) => { setTab('vuon'); setHeli(t); }} onFields={(d: FieldsData) => (worldRef.current as unknown as { setFields?: (f: FieldsData['fields']) => void } | null)?.setFields?.(d.fields)} />}
                 {khoTab === 'don' && <OrdersPanel me={me} onChanged={reload} />}
                 {khoTab === 'xuat' && <ExportPanel me={me} refresh={reload} onSent={(x) => { setTab('vuon'); setExportRide(x); }} />}
@@ -713,6 +717,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
             )}
             {tab === 'toi' && <div className="cert-list"><h3>Giấy chứng nhận quyền sử dụng đất</h3>{me.plots.map((p) => <button key={p.id} onClick={() => setCert(p.id)}>📜 {p.isHome ? 'Thửa nhà' : 'Thửa'} ở {REGIONS[p.regionId].name}{p.wardName ? ` · ${p.wardName}` : ''}</button>)}</div>}
             {tab === 'toi' && mine && center && !(isWorkshop && center.plot.isHome) && <div className="cert-list"><h3>Nâng cấp thửa đang xem</h3><LandUpgrades plotId={center.plot.id} me={me} onChanged={reload} /></div>}
+            {tab === 'toi' && <div className="cert-list"><h3>Tài sản: siêu thị, xưởng chi nhánh</h3><PropertiesPanel refresh={reload} /></div>}
             {tab === 'toi' && <ProfilePanel onRespin={() => { setTab('vuon'); setRespin(true); }} me={me} homePlotId={homePlotId} wardProvince={(atHome ? center?.plot.wardProvince : null) ?? null} wardName={me.plots.find((p) => p.isHome)?.wardName ?? null} onChanged={reload} />}
             {tab === 'toi' && <p><button onClick={async () => { if (confirm('Đăng xuất khỏi Vườn Việt?')) { await api('POST', '/api/auth/logout', {}); await refresh(); } }}>⏻ Đăng xuất</button></p>}
             {tab === 'cho' && (

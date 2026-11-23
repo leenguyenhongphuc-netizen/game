@@ -233,7 +233,7 @@ export function WorkshopPanel({ me, priceOf, onChanged, onOpen, onImport }: { me
   const fits = openMachine ? stock.filter((s) => openMachine.recipes.includes(s.recipeId)) : [];
   const item = fits.find((s) => s.specialtyId + s.quality === pick) ?? null;
   const recipe = item ? recipeOfId(item.recipeId) : null;
-  const n = item ? Math.min(Math.max(1, kg), item.kg) : 0, step = item && item.kg > 100 ? 10 : item && item.kg > 20 ? 5 : 1;
+  const cap = (openMachine as { batchKg?: number } | null)?.batchKg ?? Infinity, n = item ? Math.min(Math.max(1, kg), item.kg, cap) : 0, step = item && item.kg > 100 ? 10 : item && item.kg > 20 ? 5 : 1;
   const gradeMult = item ? 1 - (1 - QUALITY_MULT[item.quality]) * (1 - bonus.grade) : 1;
   const kgOut = recipe ? Math.floor(n * recipe.ratio * gradeMult * (1 + bonus.yield) + 1e-9) : 0;
   const startOn = (m: Machine) => { setOpen(open === m.id ? null : m.id); setPick(null); };
@@ -300,7 +300,7 @@ export function WorkshopPanel({ me, priceOf, onChanged, onOpen, onImport }: { me
                   </div>
                   {item && recipe && (
                     <>
-                      <div className="stepper"><button type="button" aria-label="Bớt" disabled={n <= 1} onClick={() => setKg(Math.max(1, n - step))}>−</button><b>{n} kg tươi</b><button type="button" aria-label="Thêm" disabled={n >= item.kg} onClick={() => setKg(Math.min(item.kg, n + step))}>+</button><button type="button" className="wk-all" disabled={n >= item.kg} onClick={() => setKg(item.kg)}>Hết kho</button></div>
+                      <div className="stepper"><button type="button" aria-label="Bớt" disabled={n <= 1} onClick={() => setKg(Math.max(1, n - step))}>−</button><b>{n} kg tươi</b><button type="button" aria-label="Thêm" disabled={n >= Math.min(item.kg, cap)} onClick={() => setKg(Math.min(item.kg, cap, n + step))}>+</button><button type="button" className="wk-all" disabled={n >= item.kg} onClick={() => setKg(item.kg)}>Hết kho</button></div>
                       <dl className="consign-sum">
                         <div><dt>{recipe.emoji} Ra thành phẩm</dt><dd>{kgOut} kg {recipe.name.toLowerCase()}</dd></div>
                         <div><dt>⏱️ Thời gian</dt><dd>{fmtDuration((recipe.hours * 3_600_000 * m.time) / scale)}</dd></div>

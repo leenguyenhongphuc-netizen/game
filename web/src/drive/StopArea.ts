@@ -59,7 +59,7 @@ export class StopArea {
   private quality: Quality; private raf = 0; private last = 0; private disposed = false; private own: { dispose(): void }[] = [];
   private car: THREE.Group; private carLen = 5; private carHalfW = 1;
   private person: ReturnType<typeof makeFarmer>;
-  private hose: THREE.Line; private hoseGeo: THREE.BufferGeometry; private nozzle: THREE.Mesh;
+  private hose: THREE.Group; private hoseSegs: THREE.Mesh[] = []; private nozzle: THREE.Mesh;
   private screens: { tex: THREE.CanvasTexture; ctx: CanvasRenderingContext2D; x: number; z: number }[] = [];
   private bays = makeBays();
   // xe
@@ -86,10 +86,10 @@ export class StopArea {
     const sh = new THREE.Mesh(new THREE.PlaneGeometry(veh.halfW * 2 + 0.8, this.carLen + 1.2), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false }));
     sh.rotation.x = -Math.PI / 2; sh.position.y = 0.05; this.car.add(sh); this.own.push(sh.geometry, sh.material as THREE.Material);
     this.person = makeFarmer(info.shirt ?? 0x3b7dd8, info.hat ?? 'non_la'); this.person.root.scale.setScalar(1.35); this.person.root.visible = false;
-    this.hoseGeo = new THREE.BufferGeometry(); this.hoseGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(16 * 3), 3));
-    this.hose = new THREE.Line(this.hoseGeo, new THREE.LineBasicMaterial({ color: info.electric ? 0x14532d : 0x1b1d22 })); this.hose.visible = false; this.hose.frustumCulled = false;
+    this.hose = new THREE.Group(); this.hose.visible = false;
+    const hm = new THREE.MeshStandardMaterial({ color: info.electric ? 0x14532d : 0x1b1d22, roughness: 0.6 }); this.own.push(hm);
+    for (let i = 0; i < 12; i++) { const m = new THREE.Mesh(GEO.cyl, hm); m.frustumCulled = false; this.hoseSegs.push(m); this.hose.add(m); }
     this.nozzle = boxM(info.electric ? 0x22a35a : 0x2b2f36, 0, 0, 0, 0.2, 0.2, 0.5); this.nozzle.visible = false;
-    this.own.push(this.hoseGeo, this.hose.material as THREE.Material);
     this.build();
     this.scene.add(this.car, this.person.root, this.hose, this.nozzle);
     this.car.position.set(this.cx, 0, this.cz); this.car.rotation.y = this.yaw;
@@ -150,7 +150,7 @@ export class StopArea {
     { const s = label(`⚡ Sạc nhanh${info.electric ? ` ${Math.round(info.price).toLocaleString('vi-VN')}đ/kWh` : ''}`, '#1f9d5a', 7); s.position.set(14, 4.6, -11); sc.add(s); }
     { const s = label('LỐI VÀO →', '#2f6fd0', 6); s.position.set(-42, 3.2, -30); sc.add(s); const t = label('RA CAO TỐC →', '#1f9d5a', 7); t.position.set(42, 3.2, -31); sc.add(t); }
     if (pumps) {
-      for (const b of this.bays.filter((b) => b.kind === 'pump')) { const n = label(String(b.pump), '#2b2f36', 1.4); const p = pumpPos(b); n.position.set(p[0] + (b.x < p[0] ? -0.9 : 0.9), 2.6, p[1]); sc.add(n); }
+      for (const b of this.bays.filter((b) => b.kind === 'pump')) { const n = label(`Trụ ${b.pump}`, '#2b2f36', 2.6); const p = pumpPos(b); n.position.set(p[0] + (b.x < p[0] ? -0.9 : 0.9), 3.0, p[1]); sc.add(n); }
       for (const isl of ISLANDS) for (const z of [-14, -10]) {
         const c = document.createElement('canvas'); c.width = 128; c.height = 64; const ctx = c.getContext('2d')!; const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
         const x = (isl.x0 + isl.x1) / 2, m = new THREE.MeshBasicMaterial({ map: tex });
@@ -395,9 +395,10 @@ export class StopArea {
     let e: number[];
     if (this.plugged) { const c = this.capPos(); e = [c[0], 1.0, c[1]]; }
     else { const s = 1.35, y = this.pyaw; e = [this.px + Math.sin(y) * 0.32 * s - Math.cos(y) * 0.28 * s, 0.85 * s, this.pz + Math.cos(y) * 0.32 * s + Math.sin(y) * 0.28 * s]; }
-    const pos = this.hoseGeo.getAttribute('position') as THREE.BufferAttribute, n = pos.count, len = Math.hypot(e[0] - a[0], e[2] - a[2]);
-    for (let i = 0; i < n; i++) { const t = i / (n - 1); pos.setXYZ(i, a[0] + (e[0] - a[0]) * t, a[1] + (e[1] - a[1]) * t - Math.sin(t * Math.PI) * Math.min(0.9, 0.2 + len * 0.15), a[2] + (e[2] - a[2]) * t); }
-    pos.needsUpdate = true; this.nozzle.position.set(e[0], e[1], e[2]); this.nozzle.rotation.y = this.plugged ? this.yaw + Math.PI / 2 : this.pyaw;
+    const n = this.hoseSegs.length + 1, len = Math.hypot(e[0] - a[0], e[2] - a[2]), pts: THREE.Vector3[] = [];
+    for (let i = 0; i < n; i++) { const t = i / (n - 1); pts.push(new THREE.Vector3(a[0] + (e[0] - a[0]) * t, a[1] + (e[1] - a[1]) * t - Math.sin(t * Math.PI) * Math.min(0.9, 0.2 + len * 0.15), a[2] + (e[2] - a[2]) * t)); }
+    const up = new THREE.Vector3(0, 1, 0), d = new THREE.Vector3();
+    this.hoseSegs.forEach((m, i) => { d.subVectors(pts[i + 1], pts[i]); const l = d.length(); m.position.copy(pts[i]).addScaledVector(d, 0.5); m.scale.set(0.06, l + 0.02, 0.06); if (l > 1e-4) m.quaternion.setFromUnitVectors(up, d.multiplyScalar(1 / l)); }); this.nozzle.position.set(e[0], e[1], e[2]); this.nozzle.rotation.y = this.plugged ? this.yaw + Math.PI / 2 : this.pyaw;
   }
   /** Tự chạy hết một lượt (cho bộ kiểm): đỗ, xuống xe, (đổ xăng/sạc), vệ sinh, lên xe, đi. */
   private autoplay(dt: number) {

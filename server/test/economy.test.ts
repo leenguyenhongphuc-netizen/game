@@ -57,15 +57,15 @@ test('hàm thuần: sức mua thị trường, giá dao động, lô gộp tính
   const [a, b] = specialtiesOfRegion('dt_caibe');
   const opts = { refOf: (id: string) => SPECIALTIES[id].refPrice, day: 20000 };
   // một mặt hàng 150 kg không đủ tối thiểu container (200 kg), gộp hai mặt hàng thì đủ
-  const one = exportBundleQuote([{ specialtyId: a.id, grade: 'A', kg: 150 }], 'container', 'trung_quoc', 'dt_caibe', opts);
+  const one = exportBundleQuote([{ specialtyId: a.id, grade: 'A' as const, kg: 150 }], 'container', 'trung_quoc', 'dt_caibe', opts);
   assert.equal(one.ok, false); assert.match(one.reason!, /từ 200 kg/);
-  const two = exportBundleQuote([{ specialtyId: a.id, grade: 'A', kg: 150 }, { specialtyId: b.id, grade: 'B', kg: 100 }], 'container', 'trung_quoc', 'dt_caibe', opts);
-  assert.equal(two.ok, true, two.reason); assert.equal(two.kg, 250);
+  const two = exportBundleQuote([{ specialtyId: a.id, grade: 'A' as const, kg: 150 }, { specialtyId: b.id, grade: 'B' as const, kg: 100 }], 'container', 'trung_quoc', 'dt_caibe', opts);
+  assert.equal(two.ok, true, two.reason ?? ''); assert.equal(two.kg, 250);
   assert.equal(two.freight, two.lines.reduce((s, l) => s + l.freight, 0));
   assert.equal(two.net, two.payout - two.freight);
   assert.ok(two.lines[0].freight > two.lines[1].freight, 'cước chia theo kg');
   // thị trường chỉ nhận Loại 1: dòng loại 2 bị loại kèm lý do, dòng còn lại vẫn đi
-  const picky = exportBundleQuote([{ specialtyId: a.id, grade: 'A', kg: 300 }, { specialtyId: b.id, grade: 'B', kg: 100 }], 'hang_khong', 'nhat_han', 'dt_caibe', opts);
+  const picky = exportBundleQuote([{ specialtyId: a.id, grade: 'A' as const, kg: 300 }, { specialtyId: b.id, grade: 'B' as const, kg: 100 }], 'hang_khong', 'nhat_han', 'dt_caibe', opts);
   assert.equal(picky.ok, true); assert.equal(picky.kg, 300);
   assert.equal(picky.lines[1].ok, false); assert.match(picky.lines[1].reason!, /Loại 1/);
   // hợp đồng trong ngày tất định, mỗi công ty hai hợp đồng, giá trên giá tham chiếu

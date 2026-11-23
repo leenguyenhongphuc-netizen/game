@@ -5,6 +5,7 @@ import { QUALITY_NAMES, fmtMoney } from '../../shared/rules.ts';
 import type { Quality, SightLeg } from '../../shared/rules.ts';
 import type { Sight } from '../../shared/sights.ts';
 import { api } from './api.ts';
+import { ProvinceShops } from './properties.tsx';
 import type { Me } from './api.ts';
 import { ProvinceMap, hasProvinceMap } from './map/ProvinceMap.tsx';
 import { WhyLimit } from './trade.tsx';
@@ -186,7 +187,7 @@ export function SupermarketPanel({ me, province, refresh }: { me: Me; province: 
   const gross = item ? kg * price : 0;
   return (
     <div className="super">
-      <p className="muted">Siêu thị đặc sản {data.province}: hàng trên kệ là do thương lái, nhà vườn và chủ xưởng chở tới ký gửi, cả nông sản tươi lẫn hàng chế biến. Bán hết thì kệ trống cho tới khi có người chở hàng mới.</p>
+      <p className="muted">Siêu thị đặc sản {data.province} (tỉnh nào cũng có): ngoài kệ của nhà bán, hàng trên kệ là do thương lái, nhà vườn và chủ xưởng chở tới ký gửi, cả nông sản tươi lẫn hàng chế biến. Bán hết thì kệ trống cho tới khi có người chở hàng mới.</p>
       {!data.here && <p className="error">Bạn không ở {data.province} nên chỉ xem được kệ, chưa mua hay ký gửi được.</p>}
       {data.earned > 0 && <p className="super-earned" role="status">💰 Hàng ký gửi của bạn vừa bán được, bạn nhận {fmtMoney(data.earned)}.</p>}
       <div className="tabs" role="tablist">
@@ -250,6 +251,7 @@ export function SupermarketPanel({ me, province, refresh }: { me: Me; province: 
           })}
         </>
       )}
+      <ProvinceShops province={data.province} refresh={refresh} />
     </div>
   );
 }

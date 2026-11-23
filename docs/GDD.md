@@ -575,3 +575,42 @@ Chỉ dành cho **nhà nông** (vai `nong_dan`): chủ xưởng mở rộng bằ
 Nhận xét: nông trại cấp 10 nằm trong ±50% của chủ xưởng; lãi/giờ **bão hoà ~20 tr** khi chỉ trồng một loại vì chợ chỉ hút có hạn, nên mua thêm ruộng không làm nông dân lấn át. Thương lái hiện **thấp hẳn** (4 tr/giờ, đầu kéo xả một chợ thì lỗ) và chủ xưởng hoàn vốn quá nhanh (bán thành phẩm chưa bị ép giá khi xả) — hai chỗ này thuộc đợt cân bằng buôn bán/xuất khẩu, không chỉnh trong nhánh nông trại.
 
 Đơn giản hoá: máy cày không đòi bằng lái; chưa có thuê/cho thuê máy giữa người chơi; chưa có xe tải nông trại (dùng xe tải thường); ruộng không có thời tiết riêng ngoài hệ số sinh trưởng của vùng.
+
+## Cân bằng kinh tế (23/11, làm lại theo phản hồi)
+
+Mô phỏng bằng `node tools/econ-sim.mjs` (thêm `--khong-dong` bỏ cánh đồng, `--dong-de-xuat` thử cánh đồng nhịp 1, năng suất 0,6; `--chi-tiet` in từng kênh). Đơn vị: đồng mỗi giờ chơi, giả định chơi 3 giờ/ngày, cây và máy vẫn chạy khi offline, vốn lưu động 5 tr / 150 tr / 1,5 tỉ / 6 tỉ ở cấp 1/10/20/30, ba đặc sản mẫu (sầu riêng, xoài, cà phê). Mỗi vai gồm kênh chính + đơn hàng + một phần xuất khẩu/hợp đồng chạy nền.
+
+| Cấp | Trước: nông dân / xưởng / thương lái (lệch) | Sau: nông dân / xưởng / thương lái (lệch) | Sau, cánh đồng theo đề xuất |
+|---|---|---|---|
+| 1 | 10,8 tr / 5,1 tr / 4,9 tr (×2,18) | 10,7 tr / 5,7 tr / 6,1 tr (×1,88) | như cột bên |
+| 10 | 95,8 tr / 167 tr / 115 tr (×1,75) | 81,8 tr / 81,1 tr / 97,5 tr (×1,20) | 64,9 / 81,1 / 97,5 (×1,50) |
+| 20 | 552 tr / 1,33 tỉ / 418 tr (×3,18) | 506 tr / 356 tr / 354 tr (×1,43) | 367 / 356 / 354 (×1,04) |
+| 30 | 1,29 tỉ / 3,83 tỉ / 699 tr (×5,48) | 1,12 tỉ / 502 tr / 441 tr (×2,55) | 787 / 502 / 441 (×1,79) |
+
+Xuất khẩu tốt nhất mỗi giờ: trước 132 tr / 403 tr / 974 tr (cấp 10/20/30, đều sang Châu Âu – Mỹ); sau 76 tr / 233 tr / 396 tr. Lô 10 tấn sầu riêng đi Mỹ: lãi sau vốn từ 592 tr còn khoảng 360 tr và lô thứ hai liền sau bị ép giá. Đơn nội địa mỗi giờ: trước 0,3 tr ở mọi cấp; sau 0,6 / 3,0 / 5,7 / 8,4 tr.
+
+Đã sửa:
+- **Giá thị trường xuất khẩu** hạ: Trung Quốc 1,12, Lào–Cam 1,05, Thái–Sing 1,18, Ấn Độ 1,2, Trung Đông 1,28, Nhật–Hàn 1,38, Nga 1,25, Úc 1,45, Âu–Mỹ 1,5 (trước tới 1,9).
+- **Sức mua có hạn** (`exportDemandFactor`): mỗi thị trường mua dễ 4 tấn một đặc sản mỗi 24 giờ (tính mọi người chơi), xả tới 40 tấn thì giá rớt tối đa 35%. **Giá thế giới dao động ±8%/ngày** theo thị trường và đặc sản (`exportTrend`).
+- **Sức chứa mỗi mẻ máy**: 30/50/80 kg nguyên liệu theo cấp máy, máy nhập khẩu +50% (trước không giới hạn nên xưởng lời vô hạn theo vốn). Bán thành phẩm cho doanh nghiệp cũng bị ép giá khi bán nhiều một loại trong 24 giờ (như chợ nông sản).
+- **Đơn hàng**: trả 135% giá tham chiếu + thưởng `200k + 100k × cấp`; khối lượng nhân `1 + 0,5 × (cấp − 1)`; thêm đơn thứ tư theo vai (xưởng: thành phẩm; thương lái: đơn sỉ 150–300 kg × hệ số; nhà vườn: đơn thu mua lớn), EXP hiện trên đơn.
+- **Đề xuất cho nhánh cánh đồng** (shared/farm.ts, chưa đổi ở đây): `FIELD_PACE` 2 → 1 và `FIELD_YIELD_MULT` 0,8 → 0,6 để nông dân cấp 20–30 không gấp đôi vai khác; cấp 30 vẫn ×1,8 nên cân nhắc thêm hạ `FIELD_MAX_BLOCKS`.
+- Cấp 1 còn lệch ×1,9 vì nhà vườn có sẵn 30 ô; cấp 1 chỉ kéo dài khoảng một giờ chơi, thương lái và chủ xưởng bù bằng đơn hàng riêng theo vai.
+
+## Xuất khẩu gộp lô
+
+Một lô gồm tối đa 12 mặt hàng (tươi, khô, chế biến). Mức tối thiểu/tối đa của đường đi tính trên **tổng lô**; cước cố định trả một lần, cước theo kg và cước nội địa chia theo kg cho từng dòng; phí kiểm dịch chỉ tính cho dòng hàng tươi. Mặt hàng thị trường không nhận (chỉ Loại 1, chỉ hàng chế biến/khô) hiện lý do và bị bỏ khỏi lô khi gửi. Giao diện: bước 1 là "Giỏ hàng xuất khẩu" (chọn nhiều, nút −100/+100/½/Hết), báo giá cả lô cho mọi thị trường, mỗi đường hiện cước, thời gian, hao từng dòng, tiền về, lãi.
+
+API: `POST /api/export/quote { items:[{specialtyId, grade, kg, processed?}], market? }` → `{ quotes: BundleQuote[] }` (mỗi đường một báo giá, `lines[]` có `ok/reason/freight/spoilKg/unitPrice/demand/trend`); `POST /api/export/ship { items, mode, market }` (kiểu cũ `{specialtyId, grade, kg, mode, market, processed?}` vẫn nhận). Một lô nhiều dòng tính là một lô đang đi.
+
+## Công ty xuất nhập khẩu (NPC)
+
+Tám công ty hư cấu (Phương Nam Xanh – TP.HCM, Kinh Bắc Lộc – Bắc Ninh, Cảng Biển Đông – Hải Phòng, Cao Nguyên Vàng – Đắk Lắk, Nông sản Sông Hàn – Đà Nẵng, HTX Cửu Long – Cần Thơ, Biên Mậu Xứ Lạng – Lạng Sơn, Hoa Trái Đà Lạt – Lâm Đồng). Mỗi ngày mỗi công ty đặt 2 hợp đồng (tất định theo ngày, hạn 2 ngày): đặc sản gần kho, hàng tươi 2–20 tấn giá 112–122% giá tham chiếu hoặc thành phẩm 0,5–3 tấn giá 108–116%, loại tối thiểu. Nhiều người cùng giao từng phần, có bảng xếp hạng; giao vượt chỉ nhận phần còn thiếu. Có mặt ở tỉnh có kho (xe đỗ, vùng nhà, đang tham quan) thì không mất phí, không thì thuê chành xe 2,5 đ/kg/km. Công ty cũng niêm yết máy nhập khẩu (giá tham khảo).
+
+API: `GET /api/companies`, `GET /api/companies/:id/contracts` (kèm `leaderboard`), `POST /api/contracts/:id/deliver { specialtyId?, grade, kg }`. Giao diện: `web/src/contracts.tsx` (`ContractsPanel`), thẻ "Hợp đồng" trong Kho.
+
+## Siêu thị khắp nơi, siêu thị riêng và xưởng chi nhánh
+
+Tỉnh nào cũng có siêu thị đặc sản (kệ nhà bán + hàng ký gửi). Chủ xưởng (từ cấp 8), thương lái (cấp 8) và nhà vườn (cấp 18) mua đất thương mại để mở **siêu thị riêng** (tối đa 3); chủ xưởng từ cấp 12 mở **xưởng chi nhánh** ở tỉnh khác tỉnh nhà (tối đa 2, mỗi cái +4 chỗ đặt máy). Giá = đất (120 tr × theo độ đông khách của tỉnh) + xây 180 tr + giấy phép 15 tr cho siêu thị; xưởng 90 tr đất + 140 tr + 10 tr. Xây 6 giờ / 4 giờ. Siêu thị riêng bán hàng bày trên kệ theo lượt khách (`30 kg/giờ × độ đông khách × (1 + 4%/cấp chủ)`; tỉnh nhiều địa danh, thành phố lớn đông hơn), hàng rẻ bán trước, giá trên 1,2 lần tham chiếu bán chậm dần; người khác ký gửi thì chủ thu 7%. Chủ nhận doanh thu bằng nút "Nhận tiền".
+
+API: `GET /api/properties?province=`, `POST /api/properties/buy { province, kind: 'sieu_thi'|'xuong' }`, `GET /api/properties/:id`, `POST /api/properties/:id/collect`, `POST /api/properties/:id/stock { specialtyId, grade, kg, processed?, price }`, `POST /api/properties/:id/withdraw { shelfId }`. Giao diện: `web/src/properties.tsx` (`ProvinceShops` gắn sẵn trong SupermarketPanel, `PropertiesPanel` cho Hồ sơ).

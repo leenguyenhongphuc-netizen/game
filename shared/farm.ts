@@ -18,7 +18,7 @@ export const FIELD_PRICE_RATIO = 1.2;
 /** Canh tác quảng canh: năng suất mỗi ô thấp hơn vườn nhà chăm kỹ từng ô. */
 export const FIELD_YIELD_MULT = 0.5;
 /** Cánh đồng là việc của người chơi đã quen: nhịp sinh trưởng cố định bằng nhịp của người đã thu hoạch nhiều. */
-export const FIELD_PACE = 2;
+export const FIELD_PACE = 1;
 /** Bán lại cánh đồng được bấy nhiêu phần giá mua. */
 export const FIELD_RESALE = 0.7;
 
