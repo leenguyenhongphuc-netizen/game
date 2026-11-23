@@ -320,7 +320,19 @@ export function supplyKg(kg24h: number, plantedTiles: number, yieldKg: number): 
 }
 
 // ---------------------------------------------------------------- được mùa mất giá, hợp tác xã, du lịch, quà
-export const COOP_MAX_MEMBERS = 20, COOP_CREATE_COST = 200_000;
+/** Hợp tác xã theo Luật Hợp tác xã 2023 (17/2023/QH15, hiệu lực 01/7/2024):
+ * - ít nhất 5 thành viên chính thức (khoản 7 Điều 4; luật 2012 là 7) → COOP_MIN_MEMBERS;
+ * - luật không giới hạn số thành viên tối đa; game giữ trần 200 chỉ để danh sách và đơn lớn không phình quá;
+ * - không có vốn điều lệ tối thiểu: mức góp do điều lệ HTX quyết định → game đặt mỗi thành viên góp COOP_CAPITAL, ra khỏi HTX được trả lại vốn góp;
+ * - lệ phí cấp mới Giấy chứng nhận đăng ký HTX do HĐND tỉnh quy định (Thông tư 85/2019/TT-BTC), phổ biến 100.000 đ/lần (ví dụ HĐND Tuyên Quang) → COOP_REG_FEE;
+ * - nộp hồ sơ tại bộ phận một cửa, Cơ quan đăng ký kinh doanh cấp xã (từ 01/7/2025, NĐ 125/2025/NĐ-CP thay cho cấp huyện của NĐ 92/2024/NĐ-CP);
+ *   hồ sơ: đề nghị đăng ký, điều lệ, phương án sản xuất kinh doanh, danh sách thành viên, nghị quyết hội nghị thành lập (Điều 42 Luật HTX 2023);
+ * - cơ quan đăng ký giải quyết trong 3 ngày làm việc; game rút gọn còn COOP_REG_MINUTES phút. */
+export const COOP_MIN_MEMBERS = 5, COOP_MAX_MEMBERS = 200, COOP_CAPITAL = 500_000, COOP_REG_FEE = 100_000, COOP_REG_MINUTES = 30;
+/** Giữ tên cũ cho mã cũ: chi phí lập = vốn góp của người sáng lập (lệ phí nộp sau, khi nộp hồ sơ). */
+export const COOP_CREATE_COST = COOP_CAPITAL;
+export type CoopStatus = 'dang_lap' | 'cho_cap' | 'hoat_dong';
+export const COOP_STATUS_NAMES: Record<CoopStatus, string> = { dang_lap: 'Đang vận động thành viên', cho_cap: 'Đã nộp hồ sơ, chờ cấp giấy', hoat_dong: 'Đang hoạt động' };
 export const GLUT_KG = 3000, GLUT_MAX_DROP = 0.3;
 /** Hệ số giá khi cả máy chủ bán nhiều một loại trong 24 giờ: càng nhiều càng rớt, tối đa GLUT_MAX_DROP. */
 export function glutFactor(kg24h: number): number {

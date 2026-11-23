@@ -42,9 +42,13 @@ export interface LotView {
 export interface Village { center: LotView; neighbors: LotView[]; now: number; weather?: Weather; marketDay?: MarketDay; events?: MarketEvent[] }
 export interface Person { userId: number; username: string; displayName: string; homeRegionId?: string | null; plotId?: number | null }
 export interface Friends { friends: Person[]; incoming: Person[]; outgoing: Person[] }
-export interface CoopSummary { id: number; name: string; regionId: string; ownerName: string; members: number }
+export interface CoopSummary { id: number; name: string; regionId: string; ownerName: string; members: number; status?: 'dang_lap' | 'cho_cap' | 'hoat_dong' }
 export interface CoopOrder { id: number; specialtyId: string; npcId: string; kgTarget: number; kgFilled: number; expiresAt: number; mine: number }
-export interface Coop { id: number; name: string; regionId: string; ownerId: number; kgWeek: number; members: { userId: number; displayName: string; kgWeek: number }[]; order?: CoopOrder | null }
+export interface Coop {
+  id: number; name: string; regionId: string; ownerId: number; kgWeek: number; members: { userId: number; displayName: string; kgWeek: number }[]; order?: CoopOrder | null;
+  status?: 'dang_lap' | 'cho_cap' | 'hoat_dong'; regNo?: string | null; dueAt?: number | null; capital?: number; invited?: { userId: number; displayName: string }[];
+}
+export interface CoopRules { minMembers: number; maxMembers: number; capital: number; regFee: number; regMinutes: number }
 export interface GiftInbox { inbox: { id: number; fromName: string; specialtyId: string; quality: Quality; kg: number; message: string | null; createdAt: number; seen: boolean }[]; unseen: number }
 export interface Collection { specialties: string[]; regionsRewarded: string[] }
 export interface Order { slot: number; npcId: string; title: string; items: { specialtyId: string; kg: number }[]; reward: number; done: boolean }

@@ -52,13 +52,18 @@ export function workKindOf(stepName: string): WorkKind {
   return 'khac';
 }
 
-/** Cách làm một bước: tự làm, thuê nhân công, dùng máy của mình, dùng drone. */
-export type WorkMethod = 'tay' | 'thue' | 'may' | 'drone';
-export const METHOD_NAMES: Record<WorkMethod, string> = { tay: 'Tự làm', thue: 'Thuê nhân công', may: 'Dùng máy', drone: 'Drone' };
+/** Cách làm một bước: tự làm, thuê nhân công, thuê robot làm vườn, dùng máy của mình, dùng drone. */
+export type WorkMethod = 'tay' | 'thue' | 'robot' | 'may' | 'drone';
+export const WORK_METHODS: WorkMethod[] = ['tay', 'thue', 'robot', 'may', 'drone'];
+export const METHOD_NAMES: Record<WorkMethod, string> = { tay: 'Tự làm', thue: 'Thuê nhân công', robot: 'Thuê robot làm vườn', may: 'Dùng máy', drone: 'Drone' };
 /** Tự làm: ô mỗi giờ (giờ trong game), thể lực mỗi khối. Chỉ hợp cánh đồng nhỏ. */
 export const HAND_TILES_PER_HOUR = 60, HAND_ENERGY_PER_BLOCK = 12;
 /** Thuê nhân công: đồng mỗi ô cho mỗi bước, ô mỗi giờ (một tổ thợ). */
 export const HIRE_COST_PER_TILE = 4_000, HIRE_TILES_PER_HOUR = 250;
+/** Thuê robot làm vườn (dịch vụ cho thuê theo ô): rẻ hơn và nhanh hơn người, làm được mọi việc trừ tỉa cành (việc 'khac'); mở từ cấp 8. */
+export const ROBOT_COST_PER_TILE = 2_500, ROBOT_TILES_PER_HOUR = 450, ROBOT_MIN_LEVEL = 8;
+/** Số người (hoặc robot) một tổ thuê: một tổ mỗi khối, tối đa 12 — mỗi tổ nhận một vùng ruộng và làm song song. */
+export function crewSize(tiles: number): number { return Math.max(1, Math.min(12, Math.ceil(tiles / FIELD_BLOCK_TILES))); }
 
 export type FarmMachineKind = 'may_cay' | 'may_gieo' | 'he_tuoi' | 'drone' | 'may_thu' | 'truc_thang';
 export interface FarmMachine {
@@ -97,6 +102,10 @@ export function workPlan(kind: WorkKind, method: WorkMethod, tiles: number, owne
   const blocks = tiles / FIELD_BLOCK_TILES;
   if (method === 'tay') return { ok: true, method, cost: 0, hours: tiles / HAND_TILES_PER_HOUR, energy: Math.ceil(blocks * HAND_ENERGY_PER_BLOCK) };
   if (method === 'thue') return { ok: true, method, cost: Math.round((tiles * HIRE_COST_PER_TILE) / 1000) * 1000, hours: tiles / HIRE_TILES_PER_HOUR, energy: 0 };
+  if (method === 'robot') {
+    if (kind === 'khac') return { ok: false, why: 'Robot chưa tỉa cành, tạo tán được; việc này cần người.', method, cost: 0, hours: 0, energy: 0 };
+    return { ok: true, method, cost: Math.round((tiles * ROBOT_COST_PER_TILE) / 1000) * 1000, hours: tiles / ROBOT_TILES_PER_HOUR, energy: 0 };
+  }
   const want = method === 'drone' ? (['drone'] as FarmMachineKind[]) : FARM_MACHINE_KINDS.filter((k) => k !== 'drone' && FARM_MACHINES[k].works.includes(kind));
   const have = want.filter((k) => owned.includes(k)).sort((a, b) => FARM_MACHINES[b].tilesPerHour - FARM_MACHINES[a].tilesPerHour)[0];
   if (!want.length || (method === 'drone' && !FARM_MACHINES.drone.works.includes(kind))) return { ok: false, why: `Việc "${WORK_NAMES[kind]}" không làm bằng ${METHOD_NAMES[method].toLowerCase()} được.`, method, cost: 0, hours: 0, energy: 0 };
@@ -107,6 +116,7 @@ export function workPlan(kind: WorkKind, method: WorkMethod, tiles: number, owne
 /** Các cách làm có thể dùng cho một việc (để giao diện hiện nút). */
 export function methodsFor(kind: WorkKind): WorkMethod[] {
   const out: WorkMethod[] = ['tay', 'thue'];
+  if (kind !== 'khac') out.push('robot');
   if (FARM_MACHINE_KINDS.some((k) => k !== 'drone' && FARM_MACHINES[k].works.includes(kind))) out.push('may');
   if (FARM_MACHINES.drone.works.includes(kind)) out.push('drone');
   return out;
@@ -136,4 +146,63 @@ export function fieldColor(cropId: string | null, progress: number): string {
   if (!cropId) return '#8a5a34';
   if (progress >= 0.999) return CROPS[cropId].kind === 'lua' ? '#e0b83a' : '#d8a23a';
   return KIND_COLORS[CROPS[cropId].kind] ?? '#5aa845';
+}
+
+/** Giai đoạn hiển thị của cánh đồng (cảnh 3D): đất trống → đã cày → cây đang lớn → chín chờ gặt. */
+export type FieldPhase = 'trong' | 'cay' | 'lon' | 'chin';
+export function fieldPhase(specialtyId: string | null, stepIndex: number): FieldPhase {
+  if (!specialtyId || !SPECIALTIES[specialtyId]) return 'trong';
+  const steps = fieldSteps(specialtyId), last = steps.length - 1;
+  const dat = steps.findIndex((s) => s.kind === 'dat'), gieo = steps.findIndex((s) => s.kind === 'gieo');
+  const sown = gieo >= 0 ? gieo : Math.max(0, dat);   // không có bước gieo riêng: xong bước đầu là có cây
+  if (stepIndex >= last && last > 0) return 'chin';
+  if (stepIndex > sown) return 'lon';
+  if (dat >= 0 && stepIndex > dat) return 'cay';
+  return 'trong';
+}
+
+// ---------------------------------------------------------------- tự lái máy trên cánh đồng
+/** Máy lái được trên ruộng (người chơi ngồi lái): máy cày làm đất, máy gieo gieo trồng, máy gặt thu hoạch. */
+export const DRIVE_MACHINES: FarmMachineKind[] = ['may_cay', 'may_gieo', 'may_thu'];
+/** Tốc độ tối đa khi làm (m/s, ~22 km/h, nhanh hơn đời thật để không chán), bề rộng giàn (số ô mỗi lượt), cạnh một ô (m). */
+export const DRIVE_MAX_SPEED = 6, DRIVE_WIDTH_TILES = 2, DRIVE_TILE_M = 2;
+/** Máy của bạn lái được cho việc này (hoặc null). */
+export function driveMachineFor(kind: WorkKind, owned: FarmMachineKind[]): FarmMachineKind | null {
+  return DRIVE_MACHINES.find((k) => owned.includes(k) && FARM_MACHINES[k].works.includes(kind)) ?? null;
+}
+/** Số ô tối đa hợp lý cho một đoạn lái: quãng đường / cạnh ô × bề rộng giàn, cộng dư một chút cho lúc quay đầu. */
+export function driveTileCap(meters: number): number {
+  return Math.ceil((meters / DRIVE_TILE_M + 2) * (DRIVE_WIDTH_TILES + 1)) + 4;
+}
+/** Quãng đường khai báo có hợp lý với thời gian không (dư 25% cho lệch đồng hồ, khung hình). */
+export function driveSpeedOk(meters: number, seconds: number): boolean {
+  return meters >= 0 && seconds > 0 && meters <= seconds * DRIVE_MAX_SPEED * 1.25 + 4;
+}
+
+// ---------------------------------------------------------------- hoạt cảnh làm hàng loạt trên cánh đồng lớn
+/** Thời lượng hoạt cảnh (giây thật): nén theo quy mô — 100 ô ≈ 12 s, 1.000 ô trở lên tối đa 25 s; luôn có nút bỏ qua. */
+export function bulkSceneSeconds(tiles: number): number { return Math.min(25, Math.round(6 + Math.sqrt(Math.max(0, tiles)) * 0.6)); }
+/**
+ * Đường máy chạy qua các ô của một cánh đồng nhiều khối: hết khối này sang khối kia; trong khối chạy theo luống kiểu cày ruộng
+ * (dải `laneTiles` hàng, dải chẵn trái→phải, dải lẻ phải→trái). Ô đánh số trong cánh đồng: khối × 100 + hàng × 10 + cột.
+ */
+export function workSeq(blocks: number, laneTiles = 1): number[] {
+  const N = 10, seq: number[] = [], w = Math.max(1, Math.round(laneTiles));
+  for (let b = 0; b < blocks; b++) for (let r0 = 0; r0 < N; r0 += w) {
+    const fwd = (r0 / w) % 2 === 0;
+    for (let i = 0; i < N; i++) { const q = fwd ? i : N - 1 - i; for (let dr = 0; dr < w && r0 + dr < N; dr++) seq.push(b * 100 + (r0 + dr) * N + q); }
+  }
+  return seq;
+}
+/** Chia đường chạy cho `crews` tổ (người/robot) làm song song: tổ i nhận đoạn [start, end) của workSeq. Máy riêng thì crews = 1. */
+export function crewSpans(total: number, crews: number): [number, number][] {
+  const c = Math.max(1, Math.min(crews, total)), per = Math.ceil(total / c), out: [number, number][] = [];
+  for (let i = 0; i < c; i++) out.push([i * per, Math.min(total, (i + 1) * per)]);
+  return out;
+}
+/** Tiến độ (0..1) mà mỗi ô được làm tới: ô có giá trị nhỏ hơn tiến độ của lượt làm là đã xong. */
+export function workOrder(blocks: number, crews = 1, laneTiles = 1): Float32Array {
+  const seq = workSeq(blocks, laneTiles), out = new Float32Array(blocks * FIELD_BLOCK_TILES);
+  for (const [a, b] of crewSpans(seq.length, crews)) for (let i = a; i < b; i++) out[seq[i]] = (i - a + 0.5) / Math.max(1, b - a);
+  return out;
 }

@@ -197,7 +197,8 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
     const co = findCompany(c.companyId)!;
     return db.tx(async (q) => {
       await q.query('select pg_advisory_xact_lock(hashtext($1))', [`hd:${c.id}`]);
-      const u = (await q.query('select home_region_id, truck_region from users where id = $1 for update', [userId])).rows[0];
+      const u = (await q.query('select home_region_id, truck_region, role from users where id = $1 for update', [userId])).rows[0];
+      if (c.processed && u.role === 'nong_dan') throw bad('khong_dung_vai', 'Nhà vườn chỉ nhận hợp đồng hàng tươi do mình trồng; hàng chế biến là việc của chủ xưởng và thương lái.', 403);
       if (!u.home_region_id) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
       const done = (await q.query('select coalesce(sum(kg),0)::int as kg from contract_deliveries where contract_id = $1', [c.id])).rows[0].kg as number;
       const kg = Math.min(kgWant, c.kg - done);

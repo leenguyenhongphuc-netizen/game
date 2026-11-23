@@ -3,7 +3,7 @@ import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, npcOf, processOf, specialtiesO
 import type { Specialty } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
-  CITY_BONUS, GIFT_MAX_KG, HELP_REWARD, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, ROOFTOP_TILES, TILE_M2, DUMP_RATIO, QUALITY_MULT, ROLE_INFO, TRAVEL_MODES, TRUCK, allowedTiles, fmtMoney, inSeason, npcPrice, seedCost, stepWaitMs, weatherAt,
+  CITY_BONUS, COOP_BONUS, FARM_GATE_RATIO, GIFT_MAX_KG, HELP_REWARD, MAX_FRIENDS, PLOT_COLS, PLOT_ROWS, QUALITY_NAMES, ROOFTOP_TILES, TILE_M2, DUMP_RATIO, QUALITY_MULT, ROLE_INFO, TRAVEL_MODES, TRUCK, allowedTiles, fmtMoney, inSeason, npcPrice, seedCost, stepWaitMs, weatherAt,
 } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import { AlbumPanel, CoopPanel, GiftsPanel, ShowcasePanel, TravelPanel } from './panels.tsx';
@@ -37,6 +37,10 @@ import { FieldsPanel } from './fields.tsx';
 import { ContractsPanel } from './contracts.tsx';
 import { PropertiesPanel } from './properties.tsx';
 import { ExportDeskDialog } from './exportDesk.tsx';
+import { FieldHud } from './fieldHud.tsx';
+import { canUse, khoTabs } from '../../shared/roles.ts';
+import { SeedPicker, quickSeeds, useSeedPrefs } from './seeds.tsx';
+import type { KhoTab } from '../../shared/roles.ts';
 import type { FieldsData, HeliTourData } from './fields.tsx';
 import { HeliTour } from './drive/HeliTour.tsx';
 import { ShoppingPanel, useOwnedGoods } from './shopping.tsx';
@@ -223,6 +227,11 @@ const TABS: [Tab, IconName, string][] = [['kho', 'kho', 'Kho'], ['cho', 'cho', '
 const TAB_TITLES: Record<Tab, string> = { vuon: '', kho: 'Kho, đơn hàng, xưởng', cho: 'Chợ đặc sản', ban: 'Xóm làng', bando: 'Du lịch và sổ tem', so: '', sap: 'Sạp hàng xóm', toi: 'Hồ sơ của tôi', trungbay: 'Quầy trưng bày đặc sản', trangtri: 'Trang trí, mua sắm, bãi xe' };
 
 /** Vườn mẫu của một vùng: trồng đủ mọi đặc sản của vùng, cây đang ra trái, để khách tham quan. */
+const KHO_TAB_BASE: Record<KhoTab, string> = { kho: 'Kho & Sạp', don: 'Đơn hàng', hopdong: 'Hợp đồng', xuong: 'Xưởng', xuat: 'Xuất khẩu', tui: 'Túi đồ', dunghop: 'Dung hợp', ruong: 'Cánh đồng', mua: 'Thu mua' };
+function khoTabName(k: KhoTab, role: string | null | undefined): string {
+  if (k === 'dunghop') return role === 'nong_dan' ? 'Lai giống' : role === 'thuong_lai' ? 'Phối hộp quà' : 'Dung hợp';
+  return KHO_TAB_BASE[k];
+}
 function modelLot(regionId: string): LotView {
   const sps = specialtiesOfRegion(regionId), name = REGIONS[regionId].name;
   return {
@@ -263,6 +272,8 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [held, setHeld] = useState<string | null>(() => { try { return localStorage.getItem('vv-giong'); } catch { return null; } });
   const holdSeed = (id: string | null) => { setHeld(id); try { if (id) localStorage.setItem('vv-giong', id); else localStorage.removeItem('vv-giong'); } catch { /* bỏ qua */ } };
   const [seedInfo, setSeedInfo] = useState<string | null>(null);
+  const [seedPicker, setSeedPicker] = useState(false);
+  const seedPrefs = useSeedPrefs();
   const [bulk, setBulk] = useState<{ label: string; done: number; total: number } | null>(null);
   const bulkStop = useRef(false);
   const [hudPop, setHudPop] = useState<'wx' | 'plots' | 'quest' | null>(null);
@@ -292,9 +303,12 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua' | 'tui' | 'dunghop' | 'ruong' | 'hopdong'>('kho');
   const [heli, setHeli] = useState<HeliTourData | null>(null);
   const [desk, setDesk] = useState(false);
+  useEffect(() => { worldRef.current?.setExportDeskVisible?.(!!me && canUse(me.user.role, 'xuat_khau')); });
   type FactoryView = { machines: { id: number | string; kind: string; name: string; level?: number; slots?: number; jobs?: { recipeId?: string; doneAt?: number; done?: boolean }[] }[] };
   const [factory, setFactory] = useState<FactoryView | null>(null);
   const isWorkshop = me?.user.role === 'xuong';
+  const khoTabList = khoTabs(me?.user.role);
+  const kt = khoTabList.includes(khoTab) && !(khoTab === 'mua' && tour) ? khoTab : 'kho';
   useEffect(() => {
     if (!isWorkshop) { setFactory(null); return; }
     if (tab !== 'vuon') return;
@@ -430,6 +444,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const farming = !!center && mine && !tour && !(isWorkshop && center.plot.isHome);
   const emptyTiles = farming ? allowedTiles(center!.plot.kind ?? 'ground', me.user.role ?? null).filter((t) => !center!.plantings.some((p) => p.tile === t)) : [];
   const seedList = farming ? specialtiesOfRegion(center!.plot.regionId) : [];
+  const seedProfit = (sp: (typeof seedList)[number]) => priceOf(sp.id) * CROPS[sp.crop].yieldKg - seedCost(sp);
   const heldSp = seedList.find((sp) => sp.id === held) ?? null;
   const isLastStep = (p: Planting) => p.stepIndex === processOf(CROPS[SPECIALTIES[p.specialtyId].crop]).length - 1;
   const readyCare = ready.filter((p) => !isLastStep(p)), readyHarvest = ready.filter(isLastStep);
@@ -585,13 +600,21 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
               </div>
             );
           })()}
+          {seedPicker && emptyTiles.length > 0 && (
+            <SeedPicker list={seedList} held={held} cash={me.user.cash} costOf={seedCost} profitOf={seedProfit} hoursOf={(sp) => (stepWaitMs(sp, pace) * (processOf(CROPS[sp.crop]).length - 1)) / 3_600_000}
+              inSeason={(sp) => inSeason(sp.crop, now)} pinned={seedPrefs.pinned} onTogglePin={seedPrefs.togglePin} onInfo={(id) => setSeedInfo(id)}
+              onPick={(id) => { holdSeed(id); seedPrefs.touch(id); setSeedPicker(false); }} onClose={() => setSeedPicker(false)} />
+          )}
           {emptyTiles.length > 0 && (
             <div className="seed-bar" role="group" aria-label="Chọn giống để trồng" ref={seedScroll.ref} onFocus={(e) => seedScroll.reveal((e.target as HTMLElement).closest('.seed-chip, .seed-all'))}><div className="seed-track">
-              {seedList.map((sp) => {
+              {seedList.length > quickSeeds(seedList, [], [], seedProfit, null).length && (
+                <button className="seed-more" aria-expanded={seedPicker} onClick={() => setSeedPicker(!seedPicker)}>🗂️ Tất cả<small>{seedList.length} giống</small></button>
+              )}
+              {quickSeeds(seedList, seedPrefs.pinned, seedPrefs.recent, seedProfit, held).map((sp) => {
                 const crop = CROPS[sp.crop], cost = seedCost(sp);
                 return (
                   <div key={sp.id} className={`seed-chip${held === sp.id ? ' on' : ''}`}>
-                    <button className="seed" aria-pressed={held === sp.id} disabled={me.user.cash < cost} onClick={() => holdSeed(held === sp.id ? null : sp.id)}>
+                    <button className="seed" aria-pressed={held === sp.id} disabled={me.user.cash < cost} onClick={() => { if (held !== sp.id) seedPrefs.touch(sp.id); holdSeed(held === sp.id ? null : sp.id); }}>
                       <span className="emoji" aria-hidden="true">{crop.emoji}</span><strong>{sp.name}</strong><small>{fmtMoney(cost)}</small>
                     </button>
                     <button className="seed-i" aria-label={`Thông tin ${sp.name}`} onClick={() => setSeedInfo(seedInfo === sp.id ? null : sp.id)}>i</button>
@@ -634,7 +657,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
               )}
               {ctx.kind === 'machine' && ctxLot?.plot.mine && <button className="ctx-btn go" onClick={() => { setKhoTab('xuong'); setTab('kho'); }}>{ctx.machineId === null ? '🛒 Mua thêm máy' : '⚙️ Mở xưởng'}</button>}
               {ctx.kind === 'truck' && <button className="ctx-btn go" onClick={() => { worldRef.current?.enterTruck(); setDriving(true); }}>🚚 Lên xe tải</button>}
-              {ctx.kind === 'export-desk' && <button className="ctx-btn go" onClick={() => setDesk(true)}>🚢 Nói chuyện với đại lý xuất khẩu</button>}
+              {ctx.kind === 'export-desk' && canUse(me.user.role, 'xuat_khau') && <button className="ctx-btn go" onClick={() => setDesk(true)}>🚢 Nói chuyện với đại lý xuất khẩu</button>}
               {ctx.kind === 'empty-lot' && <button className="ctx-btn go" onClick={() => setTab('ban')}>🧑‍🤝‍🧑 Mời bạn về làm hàng xóm</button>}
             </div>
           </>
@@ -685,6 +708,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       }} />}
       {sightWalk && shopOpen && <ShopSheet sightId={sightWalk.sight.id} shopId={shopOpen} onClose={() => setShopOpen(null)} onChanged={() => { void refresh(); }} />}
       {desk && <ExportDeskDialog onClose={() => setDesk(false)} onContracts={() => { setDesk(false); setKhoTab('hopdong'); setTab('kho'); }} onExport={() => { setDesk(false); setKhoTab('xuat'); setTab('kho'); }} />}
+      {me?.user.role === 'nong_dan' && !tour && <FieldHud getWorld={() => worldRef.current} />}
       {heli && <HeliTour tour={heli} onDone={() => setHeli(null)} />}
       {importRide && <ImportRide order={importRide} onDone={() => { setImportRide(null); setKhoTab('xuong'); setTab('kho'); }} />}
       {cert !== null && <LandCertificate plotId={cert} onClose={() => setCert(null)} />}
@@ -699,25 +723,17 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
             {tab === 'kho' && (
               <>
                 <div className="tabs">
-                  <button aria-selected={khoTab === 'kho'} onClick={() => setKhoTab('kho')}>Kho & Sạp</button>
-                  <button aria-selected={khoTab === 'don'} onClick={() => setKhoTab('don')}>Đơn hàng</button>
-                  <button aria-selected={khoTab === 'hopdong'} onClick={() => setKhoTab('hopdong')}>Hợp đồng</button>
-                  <button aria-selected={khoTab === 'xuong'} onClick={() => setKhoTab('xuong')}>Xưởng</button>
-                  <button aria-selected={khoTab === 'xuat'} onClick={() => setKhoTab('xuat')}>Xuất khẩu</button>
-                  <button aria-selected={khoTab === 'tui'} onClick={() => setKhoTab('tui')}>Túi đồ</button>
-                  <button aria-selected={khoTab === 'dunghop'} onClick={() => setKhoTab('dunghop')}>Dung hợp</button>
-                  {me.user.role === 'nong_dan' && <button aria-selected={khoTab === 'ruong'} onClick={() => setKhoTab('ruong')}>Cánh đồng</button>}
-                  {isTrader && atHome && <button aria-selected={khoTab === 'mua'} onClick={() => setKhoTab('mua')}>Thu mua</button>}
+                  {khoTabList.map((k) => (k === 'mua' && !atHome ? null : <button key={k} aria-selected={kt === k} onClick={() => setKhoTab(k)}>{khoTabName(k, me.user.role)}</button>))}
                 </div>
-                {khoTab === 'kho' && <Stock me={me} prices={prices} marketDay={!!village?.events?.some((e) => e.id === 'cho_phien' && e.active)} floating={!!village?.events?.some((e) => e.id === 'cho_noi' && e.active) && atHome} friends={friendList} refresh={reload} />}
-                {khoTab === 'tui' && <BagPanel me={me} refresh={reload} />}
-                {khoTab === 'dunghop' && <FusionPanel me={me} refresh={reload} />}
-                {khoTab === 'hopdong' && <ContractsPanel me={me} refresh={reload} />}
-                {khoTab === 'ruong' && <FieldsPanel me={me} refresh={reload} onTour={(t) => { setTab('vuon'); setHeli(t); }} onFields={(d: FieldsData) => (worldRef.current as unknown as { setFields?: (f: FieldsData['fields']) => void } | null)?.setFields?.(d.fields)} />}
-                {khoTab === 'don' && <OrdersPanel me={me} onChanged={reload} />}
-                {khoTab === 'xuat' && <ExportPanel me={me} refresh={reload} onSent={(x) => { setTab('vuon'); setExportRide(x); }} />}
-                {khoTab === 'mua' && <TradePanel me={me} regionId={me.user.homeRegionId!} refresh={reload} openStock={() => setKhoTab('kho')} />}
-                {khoTab === 'xuong' && (me.user.role === 'xuong' ? <WorkshopPanel me={me} priceOf={priceOf} onChanged={reload} onImport={(o) => { setTab('vuon'); setImportRide(o); }} onOpen={(w) => { if (w === 'cho') setTab('cho'); else if (w === 'xuatkhau') setKhoTab('xuat'); else if (w === 'dunghop') setKhoTab('dunghop'); else { setTravelTab('sieuthi'); setTab('bando'); } }} /> : <p className="hint">Chỉ Chủ xưởng mới chế biến được. Bạn là {ROLE_INFO[me.user.role!].name}: hãy bán nông sản tươi cho chủ xưởng qua sạp, hoặc chờ mùa sau quay lại vai trò.</p>)}
+                {kt === 'kho' && <Stock me={me} prices={prices} marketDay={!!village?.events?.some((e) => e.id === 'cho_phien' && e.active)} floating={!!village?.events?.some((e) => e.id === 'cho_noi' && e.active) && atHome} friends={friendList} refresh={reload} />}
+                {kt === 'tui' && <BagPanel me={me} refresh={reload} />}
+                {kt === 'dunghop' && <FusionPanel me={me} refresh={reload} />}
+                {kt === 'hopdong' && <ContractsPanel me={me} refresh={reload} />}
+                {kt === 'ruong' && <FieldsPanel me={me} refresh={reload} onShow={() => setTab('vuon')} onTour={(t) => { setTab('vuon'); setHeli(t); }} onFields={(d: FieldsData) => (worldRef.current as unknown as { setFields?: (f: FieldsData['fields']) => void } | null)?.setFields?.(d.fields)} />}
+                {kt === 'don' && <OrdersPanel me={me} onChanged={reload} />}
+                {kt === 'xuat' && <ExportPanel me={me} refresh={reload} onSent={(x) => { setTab('vuon'); setExportRide(x); }} />}
+                {kt === 'mua' && <TradePanel me={me} regionId={me.user.homeRegionId!} refresh={reload} openStock={() => setKhoTab('kho')} />}
+                {kt === 'xuong' && (canUse(me.user.role, 'xuong') ? <WorkshopPanel me={me} priceOf={priceOf} onChanged={reload} onImport={(o) => { setTab('vuon'); setImportRide(o); }} onOpen={(w) => { if (w === 'cho') setTab('cho'); else if (w === 'xuatkhau') setKhoTab('xuat'); else if (w === 'dunghop') setKhoTab('dunghop'); else { setTravelTab('sieuthi'); setTab('bando'); } }} /> : <p className="hint">Chỉ Chủ xưởng mới chế biến được. Bạn là {ROLE_INFO[me.user.role!].name}: hãy bán nông sản tươi cho chủ xưởng qua sạp, hoặc chờ mùa sau quay lại vai trò.</p>)}
               </>
             )}
             {tab === 'toi' && <div className="cert-list"><h3>Giấy chứng nhận quyền sử dụng đất</h3>{me.plots.map((p) => <button key={p.id} onClick={() => setCert(p.id)}>📜 {p.isHome ? 'Thửa nhà' : 'Thửa'} ở {REGIONS[p.regionId].name}{p.wardName ? ` · ${p.wardName}` : ''}</button>)}</div>}
@@ -735,11 +751,11 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
               <>
                 <div className="tabs">
                   <button aria-selected={xomTab === 'ban'} onClick={() => setXomTab('ban')}>Bạn bè</button>
-                  <button aria-selected={xomTab === 'htx'} onClick={() => setXomTab('htx')}>Hợp tác xã</button>
+                  {canUse(me.user.role, 'hop_tac_xa') && <button aria-selected={xomTab === 'htx'} onClick={() => setXomTab('htx')}>Hợp tác xã</button>}
                   <button aria-selected={xomTab === 'qua'} onClick={() => { setXomTab('qua'); setUnseen(0); }}>Quà tặng{unseen > 0 ? ` (${unseen})` : ''}</button>
                 </div>
                 {xomTab === 'ban' && <FriendsPanel onChanged={() => { reload(); void loadSocial(); }} visit={visit} />}
-                {xomTab === 'htx' && <CoopPanel me={me} onChanged={reload} />}
+                {xomTab === 'htx' && canUse(me.user.role, 'hop_tac_xa') && <CoopPanel me={me} onChanged={reload} />}
                 {xomTab === 'qua' && <GiftsPanel />}
               </>
             )}
@@ -852,10 +868,11 @@ function StockRow({ item, me, prices, marketDay, floating, friends, onDone }: { 
   useEffect(() => { setKg(item.kg); }, [item.kg]);
   const act = useAction(onDone);
   const local = sp.regionId === ((me.user.role === 'thuong_lai' && me.user.truckRegionId) || me.user.homeRegionId);
-  const trader = me.user.role === 'thuong_lai', coop = !!me.user.coopId;
+  const trader = me.user.role === 'thuong_lai', coop = !!me.user.coopId, viaCoop = !trader && coop && me.user.role === 'nong_dan';
   const marketRegion = (trader && me.user.truckRegionId) || me.user.homeRegionId!;
   const city = trader && me.user.homeKind === 'rooftop' && marketRegion === me.user.homeRegionId;
   const npc = trader ? npcPrice(refPrice, item.quality, sp.regionId, marketRegion, { glut, marketDay, coop, city, floating })
+    : coop && me.user.role === 'nong_dan' ? Math.round((refPrice * FARM_GATE_RATIO * (1 + COOP_BONUS) * QUALITY_MULT[item.quality]) / 100) * 100
     : Math.round((refPrice * DUMP_RATIO * QUALITY_MULT[item.quality]) / 100) * 100;
   const amount = Math.min(Math.max(1, Math.floor(kg) || 1), item.kg);
   const notes = [local ? 'giá tại vườn' : 'hàng phương xa', glut < 1 ? `được mùa −${Math.round((1 - glut) * 100)}%` : '', marketDay ? 'chợ phiên +10%' : '', floating ? 'chợ nổi +15%' : '', coop ? 'hợp tác xã +5%' : '', city && !local ? 'thương lái phố +10%' : ''].filter(Boolean).join(' · ');
@@ -868,7 +885,7 @@ function StockRow({ item, me, prices, marketDay, floating, friends, onDone }: { 
       <div className="row-actions">
         <label>Số kg<input type="number" min={1} max={item.kg} value={kg} onChange={(e) => setKg(Number(e.target.value))} /></label>
         <button disabled={act.busy} onClick={() => act.run(() => api('POST', '/api/sell/npc', { specialtyId: sp.id, quality: item.quality, kg: amount }))}>
-          {trader ? `Bán ${fmtMoney(npc)}/kg` : `Bán tháo ${fmtMoney(npc)}/kg`}
+          {trader ? `Bán ${fmtMoney(npc)}/kg` : viaCoop ? `Bán qua HTX ${fmtMoney(npc)}/kg` : `Bán tháo ${fmtMoney(npc)}/kg`}
         </button>
         <label>Giá rao (đ/kg)<input type="number" min={1} step={500} value={price} onChange={(e) => setPrice(Number(e.target.value))} /></label>
         <button disabled={act.busy} onClick={() => act.run(() => api('POST', '/api/market/listings', { specialtyId: sp.id, quality: item.quality, kg: amount, price: Math.round(price) }))}>
@@ -884,6 +901,7 @@ function StockRow({ item, me, prices, marketDay, floating, friends, onDone }: { 
         )}
       </div>
       {trader ? <small className="muted">Bán tại {REGIONS[marketRegion].name} cho <NpcBadge id={npcOf('thuong_lai').id} /> · {notes}.</small>
+        : viaCoop ? <small className="muted">Thành viên hợp tác xã bán qua HTX: giá tại vườn {Math.round(FARM_GATE_RATIO * 100)}% giá tham chiếu, cộng thêm {Math.round(COOP_BONUS * 100)}%.</small>
         : <small className="muted">Chỉ Thương lái bán được cho doanh nghiệp với giá đầy đủ. Bán tháo chỉ được {Math.round(DUMP_RATIO * 100)}% giá tham chiếu; bày lên sạp cho thương lái và chủ xưởng mua sẽ được giá hơn.</small>}
       {act.error && <p className="error" role="alert">{act.error}</p>}
     </div>

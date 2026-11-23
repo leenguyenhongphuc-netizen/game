@@ -1,11 +1,14 @@
 // Nông trại quy mô lớn: cánh đồng theo khối 100 ô, máy nông nghiệp, drone, trực thăng tham quan (chỉ nhà nông).
-// App nối: <FieldsPanel me={me} refresh={refresh} onTour={(t) => mở <HeliTour tour={t} />} onFields={(f) => world.setFields?.(f)} />
+// App nối: <FieldsPanel me={me} refresh={refresh} onTour={(t) => mở <HeliTour tour={t} />} onFields={(f) => world.setFields?.(f)} onShow={() => đóng bảng} />
+// Cánh đồng là đất thật sau lưng xóm (scene/fields.ts): nút "Ra đồng" dẫn nhân vật đi theo đường đất ra tới khối ruộng; bắt đầu một lượt làm
+// thì đóng bảng và xem tua nhanh lượt đó trên ruộng (fieldZone.request 'scene').
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { JSX } from 'react';
 import { specialtiesOfRegion } from '../../shared/catalog.ts';
 import { fmtMoney } from '../../shared/rules.ts';
-import { METHOD_NAMES, WORK_NAMES, workPlan } from '../../shared/farm.ts';
-import type { FarmMachineKind, WorkKind, WorkMethod } from '../../shared/farm.ts';
+import { FARM_MACHINES, METHOD_NAMES, WORK_NAMES, driveMachineFor, workPlan } from '../../shared/farm.ts';
+import type { FarmMachineKind, FieldPhase, WorkKind, WorkMethod } from '../../shared/farm.ts';
+import { fieldZone } from './fieldZone.ts';
 import { api } from './api.ts';
 import type { Me } from './api.ts';
 import { useAction } from './ui.ts';
@@ -19,6 +22,7 @@ export interface FieldRow {
   step: { name: string; kind: WorkKind; work: string; methods: WorkMethod[]; harvest: boolean } | null;
   readyAt: number | null; ready: boolean; lateCount: number; expectKg: number; progress: number; color: string;
   job: FieldJob | null; pricePaid: number; resale: number;
+  phase?: FieldPhase; certNos?: string[]; drive?: { done: number; tiles: number[] } | null;
 }
 export interface FarmMachineRow { kind: FarmMachineKind; name: string; emoji: string; price: number; minLevel: number; works: WorkKind[]; tilesPerHour: number; costPerTile: number; note: string; owned: boolean; busyUntil: number | null; canBuy: boolean; why: string | null }
 export interface FieldsData {
@@ -38,7 +42,7 @@ function until(t: number | null): string {
   const m = Math.round(s / 60);
   return m < 90 ? `${m} phút` : `${(m / 60).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giờ`;
 }
-const METHOD_ICON: Record<WorkMethod, string> = { tay: '🧑‍🌾', thue: '👥', may: '🚜', drone: '🛸' };
+export const METHOD_ICON: Record<WorkMethod, string> = { tay: '🧑‍🌾', thue: '👥', robot: '🤖', may: '🚜', drone: '🛸' };
 
 /** Bản đồ tổng quan: mỗi ô vuông nhỏ là một khối 100 ô, tô màu theo cây và độ chín; khối đang có máy chạy có viền nhấp nháy. */
 export function FieldMap({ fields, selected, onPick }: { fields: FieldRow[]; selected?: number | null; onPick?: (id: number) => void }): JSX.Element {
@@ -61,7 +65,7 @@ export function FieldMap({ fields, selected, onPick }: { fields: FieldRow[]; sel
   );
 }
 
-export function FieldsPanel({ me: _me, refresh, onTour, onFields }: { me: Me; refresh: () => void; onTour?: (t: HeliTourData) => void; onFields?: (d: FieldsData) => void }): JSX.Element {
+export function FieldsPanel({ me: _me, refresh, onTour, onFields, onShow }: { me: Me; refresh: () => void; onTour?: (t: HeliTourData) => void; onFields?: (d: FieldsData) => void; onShow?: () => void }): JSX.Element {
   const [data, setData] = useState<FieldsData | null>(null);
   const [machines, setMachines] = useState<FarmMachineRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -74,6 +78,7 @@ export function FieldsPanel({ me: _me, refresh, onTour, onFields }: { me: Me; re
     try {
       const [d, m] = await Promise.all([api<FieldsData>('GET', '/api/fields'), api<{ catalog: FarmMachineRow[] }>('GET', '/api/farm/machines')]);
       setData(d); setMachines(m.catalog); setLoadError(null); onFields?.(d);
+      fieldZone.setMachines(m.catalog.filter((x) => x.owned).map((x) => x.kind));
       const h = d.settled.find((s) => s.harvested);
       if (h?.harvested) setNote(`Đã thu hoạch ${kg(h.harvested.kg)} (loại ${h.harvested.quality}) vào kho.`);
     } catch (e) { setLoadError(e instanceof Error ? e.message : 'Không tải được nông trại.'); }
@@ -110,6 +115,7 @@ export function FieldsPanel({ me: _me, refresh, onTour, onFields }: { me: Me; re
       {tab === 'ruong' && (
         <section>
           {data.fields.length ? <FieldMap fields={data.fields} selected={field?.id} onPick={setSel} /> : <p className="veh-tip">Chưa có cánh đồng nào. Mua khối đầu tiên ở thẻ "Mua ruộng".</p>}
+          {data.fields.length ? <p className="veh-tip field-where">Ruộng nằm sau lưng xóm, ngoài vườn nhà: đi đường đất ở đầu xóm phía đông ra đồng. Máy cày, máy gieo, máy gặt của bạn đậu bên đường bờ ruộng — tới gần máy rồi bấm "Lên máy" để tự lái.</p> : null}
           <div className="field-list">
             {data.fields.map((f) => (
               <button key={f.id} className={`field-chip ${field?.id === f.id ? 'on' : ''}`} onClick={() => setSel(f.id)}>
@@ -117,7 +123,7 @@ export function FieldsPanel({ me: _me, refresh, onTour, onFields }: { me: Me; re
               </button>
             ))}
           </div>
-          {field ? <FieldCard f={field} owned={owned} busy={act.busy} run={act.run} /> : null}
+          {field ? <FieldCard f={field} owned={owned} busy={act.busy} run={act.run} onShow={onShow} /> : null}
         </section>
       )}
 
@@ -161,13 +167,20 @@ export function FieldsPanel({ me: _me, refresh, onTour, onFields }: { me: Me; re
   );
 }
 
-function FieldCard({ f, owned, busy, run }: { f: FieldRow; owned: FarmMachineKind[]; busy: boolean; run: (fn: () => Promise<unknown>) => Promise<void> }): JSX.Element {
+function FieldCard({ f, owned, busy, run, onShow }: { f: FieldRow; owned: FarmMachineKind[]; busy: boolean; run: (fn: () => Promise<unknown>) => Promise<void>; onShow?: () => void }): JSX.Element {
   const [pick, setPick] = useState('');
   const options = specialtiesOfRegion(f.regionId);
+  const goField = () => { fieldZone.request({ kind: 'goto', fieldId: f.id }); onShow?.(); };
+  const certs = f.certNos?.length ? (
+    <details className="field-certs"><summary>📜 {f.certNos.length} thửa · sổ {f.certNos[0]}{f.certNos.length > 1 ? '…' : ''}</summary>
+      <ul>{f.certNos.map((c, i) => <li key={c || i}>Khối {i + 1}: <b>{c}</b></li>)}</ul></details>
+  ) : null;
+  const goBtn = <button className="field-go" onClick={goField}>🚶 Ra đồng</button>;
   if (!f.specialtyId) {
     return (
       <div className="veh-card">
-        <strong>Cánh đồng trống · {num(f.tiles)} ô · {f.regionName}</strong>
+        <div className="field-top"><strong>Cánh đồng trống · {num(f.tiles)} ô · {f.regionName}</strong>{goBtn}</div>
+        {certs}
         <select value={pick || options[0]?.id} onChange={(e) => setPick(e.target.value)}>
           {options.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
@@ -184,7 +197,8 @@ function FieldCard({ f, owned, busy, run }: { f: FieldRow; owned: FarmMachineKin
       <div className="veh-head"><span className="big">{f.emoji}</span><div>
         <strong>{f.name} · {num(f.tiles)} ô</strong>
         <small>Bước {f.stepIndex + 1}/{f.stepCount}: <b>{st.name}</b> ({st.work}) · dự kiến {kg(f.expectKg)}{f.lateCount ? ` · trễ ${f.lateCount} lần` : ''}</small>
-      </div></div>
+      </div>{goBtn}</div>
+      {certs}
       <div className="field-bar"><i style={{ width: `${Math.round(f.progress * 100)}%`, background: f.color }} /></div>
       {f.job ? (
         <p className="veh-cmp">{METHOD_ICON[f.job.method]} Đang {METHOD_NAMES[f.job.method].toLowerCase()}: xong sau {until(f.job.endsAt)}.</p>
@@ -192,11 +206,22 @@ function FieldCard({ f, owned, busy, run }: { f: FieldRow; owned: FarmMachineKin
         <p className="veh-tip">Cây đang lớn, tới bước sau còn {until(f.readyAt)}.</p>
       ) : (
         <div className="field-methods">
+          {(() => { const dm = driveMachineFor(st.kind, owned); return dm ? (
+            <button className="go" onClick={goField}>
+              <span>🕹️ Tự lái {FARM_MACHINES[dm].name.toLowerCase()}</span>
+              <small>{f.drive?.done ? `đã làm ${num(f.drive.done)}/${num(f.tiles)} ô · ` : ''}{num(FARM_MACHINES[dm].costPerTile)} đ/ô tiền dầu, ra đồng lên máy</small>
+            </button>) : null; })()}
           {st.methods.map((m) => {
-            const p = workPlan(st.kind, m, f.tiles, owned);
+            const left = Math.max(1, f.tiles - (f.drive?.done ?? 0));
+            const p = workPlan(st.kind, m, left, owned);
             return (
               <button key={m} className={p.ok ? 'go' : ''} disabled={busy || !p.ok} title={p.why ?? ''}
-                onClick={() => run(() => api('POST', st.harvest ? `/api/fields/${f.id}/harvest` : `/api/fields/${f.id}/work`, { step: f.stepIndex, method: m }))}>
+                onClick={() => run(async () => {
+                  const r = await api<{ machine: FarmMachineKind | null; endsAt: number; startsAt: number }>('POST', st.harvest ? `/api/fields/${f.id}/harvest` : `/api/fields/${f.id}/work`, { step: f.stepIndex, method: m });
+                  // xem tua nhanh lượt vừa giao trên ruộng thật (đóng bảng để thấy)
+                  fieldZone.request({ kind: 'scene', fieldId: f.id, work: st.kind, method: m, machine: r.machine, label: `Lượt thật xong sau ${until(r.endsAt)} — máy chủ tính giờ, bạn cứ đi làm việc khác.` });
+                  onShow?.();
+                })}>
                 <span>{METHOD_ICON[m]} {METHOD_NAMES[m]}</span>
                 <small>{p.ok ? `${p.cost ? fmtMoney(p.cost) : 'miễn phí'} · ${p.hours < 1 ? `${Math.round(p.hours * 60)} phút` : `${p.hours.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giờ`}${p.energy ? ` · ${p.energy} sức` : ''}` : p.why}</small>
               </button>

@@ -576,6 +576,23 @@ Nhận xét: nông trại cấp 10 nằm trong ±50% của chủ xưởng; lãi/
 
 Đơn giản hoá: máy cày không đòi bằng lái; chưa có thuê/cho thuê máy giữa người chơi; chưa có xe tải nông trại (dùng xe tải thường); ruộng không có thời tiết riêng ngoài hệ số sinh trưởng của vùng.
 
+### Cánh đồng trong thế giới 3D, làm hàng loạt, tự lái máy (nhánh F4)
+
+**Đất thật ngoài lô vườn.** Cánh đồng không còn chỉ là lưới ô vuông trong bảng: các khối ruộng nằm **sau lưng xóm**, ngoài dãy lô vườn đã cấp. Đường đi: từ đường làng đi về đầu xóm phía đông, rẽ vào **đường đất** (vùng có kênh sau xóm như miền Tây thì qua **cầu ván**), ra **đường bờ ruộng** chạy dọc mặt trước cánh đồng. Khối xếp 8 khối một hàng; giữa hai khối cạnh nhau là **bờ** (1,2 m), giữa hai hàng khối là **mương nước** (3 m). Mỗi khối có **cột mốc** ghi **số sổ đỏ** của thửa (`VV-<tỉnh>-NN-<số>`, từ sổ địa chính) và tên cây đang trồng. Nút **"Ra đồng"** trong bảng Cánh đồng dẫn nhân vật tự đi (nhanh gấp 1,7 lần đi bộ) theo đường đất ra tới khối ruộng; chạm cần điều khiển là thôi tự đi. Chỉ dựng cánh đồng thuộc vùng đang xem; khi có ruộng, đất sau xóm được làm phẳng, cây rừng và núi lùi ra xa.
+
+**Làm hàng loạt — quy tắc sắp xếp (không bung từng ô):**
+- Một lượt làm trên N ô đi theo **đường chạy kiểu cày ruộng**: hết khối này sang khối kia; trong khối chạy theo dải luống, dải chẵn trái→phải, dải lẻ phải→trái (`workSeq`).
+- **Máy** (một chiếc của mình): giàn rộng **2 ô** (máy cày, máy gieo, máy gặt), **drone 3 ô**; một máy chạy hết đường.
+- **Thuê nhân công / thuê robot**: số tổ = số khối (tối đa 12); đường chạy chia đều cho các tổ (`crewSpans`), các tổ **làm song song**, mỗi tổ đi luống trong vùng của mình.
+- Ô đổi trạng thái đúng lúc máy/tổ đi qua: làm đất → đất cày sẫm theo luống; gieo → cây con mọc; tưới → đất sẫm ướt; bón/phun → vệt sương; thu hoạch → cây biến mất, còn gốc rạ vàng.
+- **Xem tua nhanh** khi vừa giao việc: thời lượng nén theo quy mô `min(25, 6 + 0,6·√N)` giây (100 ô ≈ 12 s, 800 ô ≈ 23 s, tối đa 25 s), có nút **Bỏ qua**. Máy quay bám **khối** đang làm của máy/tổ dẫn đầu (không bám từng vòng quay đầu), lùi xa theo cỡ ruộng. Tua xong cảnh trở về **tiến độ thật** của lượt (máy chủ tính giờ; máy/tổ đứng đúng chỗ theo % thời gian đã qua).
+
+**Thuê robot làm vườn** (cách làm mới, từ cấp 8): 2.500 đ/ô, 450 ô/giờ — rẻ và nhanh hơn thuê người (4.000 đ/ô, 250 ô/giờ), làm mọi việc trừ tỉa cành/tạo tán (việc "chăm sóc bằng tay" vẫn cần người).
+
+**Tự lái máy:** máy cày, máy gieo, máy gặt đã mua **đậu ở bãi cuối đường bờ ruộng** (phía đông lối ra đồng). Đứng cạnh máy → nút **"Lên máy …"**; lái bằng cần điều khiển như xe tải (tối đa 6 m/s ≈ 22 km/h, quay đầu chậm, không xuyên qua máy khác). **Hạ giàn** thì mọi ô giàn đi qua được làm thật cho bước hiện tại của ruộng đó (đúng việc của máy, đã tới giờ, không có lượt khác đang chạy). Giao diện gửi lô ô mỗi ~2 giây lên `POST /api/fields/:id/drive` kèm quãng đường và thời gian; máy chủ chặn **chạy quá 7,5 m/s** và **số ô vượt bề rộng giàn trên quãng đường** (`driveTileCap`), trả **tiền dầu theo ô** (bằng chi phí/ô của máy), đủ ô thì bước xong ngay và sang bước kế. Đã tự lái một phần thì nếu giao phần còn lại cho người/robot/máy tự chạy, **chỉ tính tiền và giờ cho số ô còn lại**.
+
+**Hiệu năng:** đất mọi khối là một lưới tô màu từng ô; bờ/mương/đường/cột mốc gộp vài lưới; chữ cột mốc là một ảnh ghép; cây là InstancedMesh thưa theo khoảng cách; người làm thuê và robot là InstancedMesh dùng chung. Đo trên Chromium giả lập (không GPU): đứng giữa cánh đồng 800 ô **16–36 lần vẽ** cả cảnh; xem tua máy cày 21, tổ thợ 36 (lúc khung hình có cả xóm).
+
 ## Cân bằng kinh tế (23/11, làm lại theo phản hồi)
 
 Mô phỏng bằng `node tools/econ-sim.mjs` (thêm `--khong-dong` bỏ cánh đồng, `--dong-de-xuat` thử cánh đồng nhịp 1, năng suất 0,6; `--chi-tiet` in từng kênh). Đơn vị: đồng mỗi giờ chơi, giả định chơi 3 giờ/ngày, cây và máy vẫn chạy khi offline, vốn lưu động 5 tr / 150 tr / 1,5 tỉ / 6 tỉ ở cấp 1/10/20/30, ba đặc sản mẫu (sầu riêng, xoài, cà phê). Mỗi vai gồm kênh chính + đơn hàng + một phần xuất khẩu/hợp đồng chạy nền.
@@ -662,3 +679,35 @@ Khối ruộng hoàn vốn nhanh nhưng nhà nông chỉ được thêm 2 khối
 ## Xuất khẩu gọn và Đại lý xuất khẩu trong thế giới (nhánh B3)
 - Mỗi đường đi là một thẻ: tên đường + **lãi** trên cùng; một dòng thời gian/cước/tiền về; "N mặt hàng · kg · hao" **gập lại**, mở ra thì mỗi mặt hàng một dòng tên · kg · tiền (hao, đơn giá, cước ở dòng nhỏ dưới); nút **Gửi đi** rộng hết thẻ ở dưới. Giỏ hàng hiện tổng lô và lãi tốt nhất ở trên cùng; tên mặt hàng một dòng, nút kg xuống dòng.
 - **Quầy Đại lý xuất khẩu** ở đầu xóm (khe bên trái vườn nhà, sát đường làng, gần chỗ xuất hiện): mái che sọc xanh trắng, quầy gỗ, cân, thùng hàng có đai, container 10 feet, cờ các thị trường; nhân viên đứng quầy vẫy tay. Tới vòng vàng trước quầy → ngữ cảnh `export-desk` → hội thoại (`web/src/exportDesk.tsx`): lời chào theo giờ, 3 đơn công ty trả cao nhất, nút "Xem đơn của công ty" / "Tự gửi lô xuất khẩu".
+
+## Chức năng theo vai (nhánh E4, 24/11)
+Bảng duy nhất: `shared/roles.ts` (`canUse(role, feature)`). Giao diện ẩn hẳn thẻ/nút/ngữ cảnh không thuộc vai; máy chủ chặn bằng cùng bảng (`ROUTE_FEATURES`, móc `preHandler` trong `server/src/app.ts`, lỗi 403 `khong_dung_vai`).
+
+| Chức năng | Nhà vườn | Chủ xưởng | Thương lái | Lý do |
+|---|---|---|---|---|
+| Trồng ở vườn nhà | ✓ 30 ô | — (lô là nhà xưởng) | ✓ vườn bếp 8 ô | như cũ |
+| Cánh đồng, máy nông nghiệp, drone, trực thăng | ✓ | — | — | đất trồng lúa chỉ chuyển cho người trực tiếp sản xuất (Luật Đất đai 2024) |
+| Hợp tác xã nông nghiệp | ✓ | — | — | HTX trong game là HTX nông nghiệp |
+| Lai giống (Lò lai tạo) | ✓ | — | — | việc của người trồng |
+| Nhà xưởng, máy chế biến, máy nhập khẩu, ghép máy | — | ✓ | — | vai chế biến |
+| Phối hộp quà | — | ✓ | ✓ | đóng gói thương mại |
+| Thu mua sỉ bằng xe tải | — | — | ✓ | nghề thương lái |
+| Xuất khẩu | — | ✓ chỉ thành phẩm | ✓ tươi + thành phẩm | nông dân bán qua thương lái/HTX/chợ; người xuất là doanh nghiệp thương mại và chế biến |
+| Hợp đồng công ty XNK | ✓ chỉ hàng tươi | ✓ | ✓ | liên kết sản xuất – tiêu thụ (NĐ 98/2018/NĐ-CP) |
+| Ký gửi kệ siêu thị | — | ✓ | ✓ | siêu thị nhận hàng của nhà cung cấp có hoá đơn |
+| Chợ, đơn hàng, du lịch, mua sắm, trang trí, bạn bè, bằng lái, lái xe riêng | ✓ | ✓ | ✓ | chung |
+
+Không chặn (để người vừa đổi vai thu dọn): xem xưởng, nhận mẻ đang chạy, bán thành phẩm còn trong kho, rút hàng khỏi kệ siêu thị.
+Thay cho xuất khẩu, nhà vườn trong HTX đang hoạt động **bán qua HTX** ở giá tại vườn (85%) + 5% thay vì bán tháo 60%.
+Thu nhập/giờ sau đổi (`node tools/econ-sim.mjs`, nhà vườn / chủ xưởng / thương lái): c1 12,4/5,7/6,1 tr · c10 42,8/81,1/99,2 tr · c20 265/356/373 tr · c30 686/502/590 tr. Nhà vườn cấp 10 tụt (mất phần xuất khẩu) — cần tăng nhịp mở cánh đồng ở cấp 5–15 (`shared/farm.ts`, nhánh cánh đồng).
+
+## Hợp tác xã theo Luật Hợp tác xã 2023 (nhánh E4)
+- Ít nhất **5 thành viên chính thức** (Luật 17/2023/QH15, khoản 7 Điều 4; luật 2012 là 7). Luật không giới hạn số tối đa → game để 200 (chỉ vì giao diện).
+- Không có vốn điều lệ tối thiểu; điều lệ HTX quyết định mức góp → game: mỗi thành viên góp **500.000đ**, ra khỏi HTX được trả lại vốn góp.
+- Lệ phí cấp mới Giấy chứng nhận đăng ký HTX do HĐND tỉnh quy định (Thông tư 85/2019/TT-BTC); phổ biến **100.000đ/lần** (ví dụ HĐND Tuyên Quang). Game dùng một mức chung.
+- Nộp hồ sơ ở bộ phận một cửa, **Cơ quan đăng ký kinh doanh cấp xã** (từ 01/7/2025, NĐ 125/2025/NĐ-CP thay cấp huyện của NĐ 92/2024/NĐ-CP). Hồ sơ theo Điều 42 Luật HTX 2023: giấy đề nghị, điều lệ, phương án sản xuất kinh doanh, danh sách thành viên, nghị quyết hội nghị thành lập. Xử lý 3 ngày làm việc → game rút còn 30 phút.
+- Luồng: vận động (người sáng lập góp vốn) → mời/xin vào (góp vốn) → đủ 5 → nộp hồ sơ + lệ phí (`POST /api/coops/:id/register`, sau này đặt ở khu hành chính) → được cấp số `HTX-…` → mới hưởng quyền lợi (bán qua HTX, đơn lớn). Cư dân (tài khoản máy) được mời thì đồng ý ngay nếu đủ tiền, góp bằng tiền của chính họ.
+- Nguồn: [Luật HTX 2023](https://thuvienphapluat.vn/van-ban/doanh-nghiep/Luat-Hop-tac-xa-2023-17-2023-QH15-499239.aspx), [số thành viên tối thiểu](https://accgroup.vn/so-luong-thanh-vien-toi-thieu-cua-hop-tac-xa), [Thông tư 85/2019/TT-BTC](https://luatvietnam.vn/thue/thong-tu-85-2019-tt-btc-phi-va-le-phi-thuoc-tham-quyen-hoi-dong-nhan-dan-cap-tinh-179392-d1.html), [đăng ký HTX ở cấp xã](https://pbgdpl.cantho.gov.vn/dang-ky-ho-kinh-doanh-hop-tac-xa-tai-co-quan-dang-ky-kinh-doanh-cap-xa), [NĐ 92/2024](https://luatvietnam.vn/doanh-nghiep/nghi-dinh-92-2024-nd-cp-dang-ky-to-hop-tac-hop-tac-xa-lien-hiep-hop-tac-xa-360753-d1.html). Chưa kiểm chứng: trần vốn góp của một thành viên (luật cũ 20%) — game chưa áp vì mọi người góp bằng nhau.
+
+## Bộ chọn giống (nhánh E4)
+Vùng ≤ 6 giống: thanh nhanh như cũ. Vùng nhiều giống (Đà Lạt 13): thanh nhanh chỉ giữ 5 giống (đang cầm → ghim → gần đây → lời nhất), nút **🗂️ Tất cả** đứng đầu thanh mở bảng lưới theo nhóm cây, tìm kiếm không dấu ("ca phe" → Cà phê), lọc chính vụ, sắp lời nhất/rẻ nhất/nhanh nhất, ghim 📍. Ghim và gần đây lưu trên máy (`web/src/seeds.tsx`).

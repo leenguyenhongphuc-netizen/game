@@ -154,3 +154,59 @@ test('chỉ nhà nông mua ruộng; drone không bay vùng khác; máy bận th�
   }
   assert.ok(SPECIALTIES[sp.id]);
 });
+
+test('tự lái máy cày trên ruộng: ô đi qua được tính, chạy quá nhanh hoặc quá nhiều ô bị chặn, đủ ô thì sang bước', async () => {
+  const ck = await signup('ruong_lai', 'nong_dan', 12);
+  const sp = specialtiesOfRegion('dt_caibe').find((s) => fieldSteps(s.id).some((st) => st.kind === 'dat'))!;
+  assert.ok(sp, 'có đặc sản bắt đầu bằng làm đất');
+  let r = await call('POST', '/api/fields/buy', { regionId: 'dt_caibe', blocks: 1 }, ck);
+  const id = r.body.fieldId;
+  await call('POST', `/api/fields/${id}/plant`, { specialtyId: sp.id }, ck);
+  const datIdx = fieldSteps(sp.id).findIndex((s) => s.kind === 'dat');
+  await db.query("update fields set step_index = $2, step_ready_at = now() - interval '1 second' where id = $1", [id, datIdx]);
+  // chưa có máy cày: không lái được
+  r = await call('POST', `/api/fields/${id}/drive`, { tiles: [0, 1], meters: 4, seconds: 2 }, ck);
+  assert.equal(r.body.error, 'khong_lai_duoc');
+  await call('POST', '/api/farm/machines/buy', { kind: 'may_cay' }, ck);
+  // chạy quá nhanh
+  r = await call('POST', `/api/fields/${id}/drive`, { tiles: [0], meters: 500, seconds: 2 }, ck);
+  assert.equal(r.body.error, 'qua_nhanh');
+  // quá nhiều ô so với quãng đường
+  r = await call('POST', `/api/fields/${id}/drive`, { tiles: Array.from({ length: 80 }, (_, i) => i), meters: 4, seconds: 2 }, ck);
+  assert.equal(r.body.error, 'qua_nhieu_o');
+  const cash0 = await cashOf('ruong_lai');
+  r = await call('POST', `/api/fields/${id}/drive`, { step: datIdx, tiles: Array.from({ length: 40 }, (_, i) => i), meters: 40, seconds: 8 }, ck);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.done, 40);
+  assert.equal(await cashOf('ruong_lai'), cash0 - 40 * FARM_MACHINES.may_cay.costPerTile, 'trả tiền dầu theo ô');
+  // gửi lại ô cũ không tính thêm
+  r = await call('POST', `/api/fields/${id}/drive`, { tiles: [0, 1, 2], meters: 6, seconds: 2 }, ck);
+  assert.equal(r.body.added, 0);
+  const g = await call('GET', '/api/fields', undefined, ck);
+  assert.equal(g.body.fields.find((f: { id: number }) => f.id === id).drive.done, 40);
+  // lái nốt
+  r = await call('POST', `/api/fields/${id}/drive`, { tiles: Array.from({ length: 60 }, (_, i) => 40 + i), meters: 60, seconds: 12 }, ck);
+  assert.equal(r.body.finished, true);
+  const after = (await call('GET', '/api/fields', undefined, ck)).body.fields.find((f: { id: number }) => f.id === id);
+  assert.equal(after.stepIndex, datIdx + 1, 'đủ ô thì sang bước kế');
+  assert.equal(after.drive, null);
+  assert.ok(after.certNos.length === 1 && /^VV-/.test(after.certNos[0]), 'khối ruộng gắn số sổ đỏ');
+});
+
+test('thuê robot làm vườn: từ cấp 8, rẻ và nhanh hơn thuê người, không làm việc tỉa cành', async () => {
+  const hire = workPlan('bon', 'thue', 1000, []), bot = workPlan('bon', 'robot', 1000, []);
+  assert.ok(bot.ok && bot.cost < hire.cost && bot.hours < hire.hours);
+  assert.equal(workPlan('khac', 'robot', 100, []).ok, false);
+  const ck = await signup('ruong_robot', 'nong_dan', 7);
+  const sp = specialtiesOfRegion('dt_caibe')[0];
+  const r0 = await call('POST', '/api/fields/buy', { regionId: 'dt_caibe', blocks: 1 }, ck);
+  const id = r0.body.fieldId;
+  await call('POST', `/api/fields/${id}/plant`, { specialtyId: sp.id }, ck);
+  const first = fieldSteps(sp.id)[0].kind;
+  let r = await call('POST', `/api/fields/${id}/work`, { method: 'robot' }, ck);
+  if (first === 'khac') assert.equal(r.status, 409);
+  else assert.equal(r.body.error, 'chua_du_cap');
+  await db.query('update users set xp = $2 where username = $1', ['ruong_robot', LEVELS[8].xp]);
+  r = await call('POST', `/api/fields/${id}/work`, { method: 'robot' }, ck);
+  if (first !== 'khac') { assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.method, 'robot'); }
+});

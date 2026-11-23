@@ -1,5 +1,6 @@
 // Tiến trình nhân vật: sổ EXP có trần ngày, nhiệm vụ ngày, thành tựu, thưởng lên cấp,
 // nâng cấp đất, máy nhập khẩu và dung hợp. Đăng ký vào app bằng registerProgress().
+import { canUse, denyMessage, FUSION_FEATURE } from '../../shared/roles.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { randomInt } from 'node:crypto';
 import { CROPS, REGIONS, SPECIALTIES, recipeOf } from '../../shared/catalog.ts';
@@ -327,7 +328,7 @@ export function registerProgress(app: FastifyInstance, d: ProgressDeps) {
       })(),
     ];
     return {
-      level: u.level, role: u.role, cash: u.cash, recipes,
+      level: u.level, role: u.role, cash: u.cash, recipes: recipes.filter((r) => canUse(u.role as Role | null, FUSION_FEATURE[r.kind])),
       seeds: seeds.rows.filter((r) => SPECIALTIES[r.specialty_id] && isSeedTrait(r.trait)).map((r) => ({ specialtyId: r.specialty_id as string, trait: r.trait as SeedTrait, qty: r.qty as number, name: `${SPECIALTIES[r.specialty_id].name} · ${SEED_TRAITS[r.trait as SeedTrait].name.toLowerCase()}`, effect: SEED_TRAITS[r.trait as SeedTrait].effect })),
       boxes: boxes.rows.filter((r) => giftBox(r.box_id)).map((r) => { const b = giftBox(r.box_id)!; return { boxId: b.id, name: b.name, emoji: b.emoji, qty: r.qty as number, value: Number(r.value), exportValue: Math.round((Number(r.value) * (1 + BOX_EXPORT_BONUS)) / 100) * 100 }; }),
       boxExport: { bonus: BOX_EXPORT_BONUS, minBoxes: BOX_EXPORT_MIN, minLevel: BOX_EXPORT_LEVEL },
@@ -344,6 +345,8 @@ export function registerProgress(app: FastifyInstance, d: ProgressDeps) {
       const u = await userOf(q, userId);
       const needLevel = (min: number) => { if (u.level < min) throw bad('chua_du_cap', `Cần đạt cấp ${min} mới dùng được công thức này.`, 409); };
       const seedF = SEED_FUSIONS.find((f) => f.id === recipeId), box = giftBox(recipeId);
+      const kindOf = seedF ? 'giong' : box ? 'san_pham' : recipeId === MACHINE_MERGE.id ? 'may' : null;
+      if (kindOf && !canUse(u.role as Role | null, FUSION_FEATURE[kindOf])) throw bad('khong_dung_vai', denyMessage(u.role as Role | null, FUSION_FEATURE[kindOf]), 403);
       if (seedF) {
         needLevel(seedF.minLevel);
         if (u.role === 'xuong') throw bad('xuong_khong_trong', 'Chủ xưởng không trồng trọt nên không lai giống.', 409);
