@@ -13,7 +13,7 @@ export type XpSource =
   | 'ky_gui' | 'ky_gui_ban' | 'mua_sieu_thi' | 'xuat_gui' | 'xuat_toi' | 'giao_don'
   | 'che_bien' | 'lay_me' | 'ban_thanh_pham' | 'mua_may' | 'nang_may' | 'nhap_may'
   | 'qua' | 'ket_ban' | 'htx_lap' | 'htx_vao' | 'htx_gop' | 'trang_tri' | 'quay_vai'
-  | 'tem' | 'bo_tem' | 'diem_dung' | 'dia_danh'
+  | 'tem' | 'bo_tem' | 'diem_dung' | 'dia_danh' | 'vui_choi'
   | 'dung_hop' | 'dung_hop_hong' | 'ban_hop_qua' | 'nhiem_vu' | 'thanh_tuu' | 'khac';
 export interface XpRule {
   label: string; xp: number;
@@ -41,6 +41,7 @@ export const XP_RULES: Record<XpSource, XpRule> = {
   ky_gui: { label: 'Ký gửi siêu thị', xp: 3, dailyCap: 18 },
   ky_gui_ban: { label: 'Hàng ký gửi bán được', xp: 5, dailyCap: 100 },
   mua_sieu_thi: { label: 'Mua ở siêu thị', xp: 1, dailyCap: 10 },
+  vui_choi: { label: 'Chơi một trò ở khu vui chơi', xp: 20, dailyCap: 240 },
   xuat_gui: { label: 'Gửi lô xuất khẩu', xp: 10, dailyCap: 100 },
   xuat_toi: { label: 'Lô xuất khẩu tới nơi', xp: 40 },
   giao_don: { label: 'Giao đơn hàng', xp: 15 },

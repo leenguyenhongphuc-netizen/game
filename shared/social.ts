@@ -41,6 +41,8 @@ export interface PresenceOther {
   /** Cao tốc: cách mình bao nhiêu km theo hướng mình đi (âm = phía sau), cùng chiều hay ngược chiều, tốc độ km mỗi giây thật. */
   aheadKm?: number; sameDir?: boolean; kmps?: number;
   script?: BotScript;
+  /** Biểu cảm đang hiện trên đầu (vẫy tay, thả tim, chụp ảnh chung…), chỉ giữ vài giây. */
+  emote?: string;
   /** Tuổi của số liệu khi máy chủ trả (ms) để trình duyệt ngoại suy. */
   ageMs: number;
 }
@@ -51,8 +53,13 @@ export interface PresenceIn {
   /** Cao tốc: km đã đi trên chuyến, tổng km chuyến, chiều (1: từ vùng mã nhỏ sang vùng mã lớn), km mỗi giây thật. */
   km?: number; totalKm?: number; dir?: 1 | -1; kmps?: number;
   count?: boolean;
+  /** Biểu cảm vừa bấm (một trong EMOTES); trình duyệt gửi lặp lại trong vài giây cho người khác kịp thấy. */
+  emote?: string;
 }
 export interface PresenceOut { at: number; interval: number; others: PresenceOther[]; online?: number; bots?: boolean }
+
+/** Biểu cảm cho phép (máy chủ bỏ mọi giá trị khác). */
+export const EMOTES = ['👋', '❤️', '😄', '📸', '🎉', '👍'] as const;
 
 /** Khoá cảnh cao tốc: cặp vùng sắp theo mã, kèm chiều đi của mình. */
 export function highwayKey(fromRegionId: string, toRegionId: string): { key: string; dir: 1 | -1 } {

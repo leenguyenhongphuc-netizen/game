@@ -1,7 +1,8 @@
 // Điểm tham quan thật ở từng tỉnh, thành: toạ độ thật, các điểm dừng theo đúng thứ tự đi bộ ngoài đời.
+import { PARKS, PASS_HOURS as PARK_PASS_HOURS } from './parks.ts';
 // Người chơi phải đang ở trong tỉnh đó (vùng nhà hoặc vùng đang tham quan) mới đi tới được: taxi trên đất liền, ra đảo thì taxi tới cảng rồi đi tàu.
 
-export type SightKind = 'pho_co' | 'den_thap' | 'nui' | 'cau' | 'chua' | 'dao' | 'bien' | 'lang_nghe' | 'deo';
+export type SightKind = 'pho_co' | 'den_thap' | 'nui' | 'cau' | 'chua' | 'dao' | 'bien' | 'lang_nghe' | 'deo' | 'khu_vui_choi';
 export interface SightStop { id: string; name: string; /** Điều có thật về điểm dừng, hiện khi người chơi đi tới. */ fact: string }
 export interface Sight {
   id: string; name: string; province: string; formerProvince?: string;
@@ -15,6 +16,8 @@ export interface Sight {
   /** Địa danh nằm trên đảo: phải đi tàu từ cảng đất liền `port`. */
   island?: boolean;
   port?: SightPort;
+  /** Khu vui chơi (shared/parks.ts): điểm dừng là các trò chơi, vé mua ở cổng trong cảnh nên entryFee = 0. */
+  park?: string;
 }
 /** Cảng đất liền có tàu ra đảo và tên bến trên đảo. */
 export interface SightPort { name: string; lat: number; lng: number; islandPort: string; /** Tên loại tàu chạy tuyến này. */ boat: string; note?: string }
@@ -176,6 +179,27 @@ export const SIGHTS: Sight[] = [
     ],
   },
 ];
+
+// Khu vui chơi: điểm dừng sinh từ danh sách trò chơi trong shared/parks.ts.
+for (const p of PARKS) {
+  const geo: Record<string, { lat: number; lng: number; blurb: string; island?: boolean; port?: SightPort }> = {
+    park_mw_da_nang: { lat: 16.042, lng: 108.128, blurb: 'Khu vui chơi trên đồi phía tây thành phố: cáp treo, vòng quay, tàu lượn, công viên nước.' },
+    park_bw_nha_trang: { lat: 12.216, lng: 109.243, island: true, blurb: 'Khu vui chơi trên đảo giữa vịnh Nha Trang: tàu lượn, hồ sóng, sông lười, đu quay ven biển.',
+      port: { name: 'Cảng du lịch Nha Trang', lat: 12.207, lng: 109.214, islandPort: 'Bến đảo Hòn Tre', boat: 'tàu cao tốc', note: 'Tàu chạy khoảng 15 phút qua vịnh.' } },
+    park_mw_ha_long: { lat: 20.955, lng: 107.036, blurb: 'Khu vui chơi trên đồi ven vịnh: cáp treo vượt vịnh, vòng quay ngắm vịnh, công viên nước.' },
+  };
+  const g = geo[p.id]; if (!g) continue;
+  SIGHTS.push({
+    id: p.sightId, name: p.name, province: p.province, lat: g.lat, lng: g.lng, kind: 'khu_vui_choi', emoji: '🎡', blurb: g.blurb, entryFee: 0, park: p.id,
+    ...(g.island ? { island: true, port: g.port } : {}),
+    stops: [
+      { id: 'cong_ve', name: 'Cổng soát vé', fact: `Mua vé ở quầy: ${p.tickets.map((t) => `${t.name} ${t.price.toLocaleString('vi-VN')}đ`).join('; ')}. Vé dùng trong ${PARK_PASS_HOURS} giờ.` },
+      ...p.rides.map((r) => ({ id: r.id, name: r.name, fact: r.blurb })),
+      ...(p.arcade ? [{ id: 'khu_tro_choi', name: 'Khu trò chơi kỹ năng', fact: 'Ném vòng, ném bóng rổ, gắp thú: chơi bằng xu mua giá cố định, đạt điểm nhận vé thưởng đổi quà trang trí. Không có cờ bạc, quà không quy đổi ra tiền.' }] : []),
+      { id: 'loi_ra', name: 'Cổng ra', fact: 'Lối ra dẫn sang siêu thị đặc sản của tỉnh.' },
+    ],
+  });
+}
 
 export function sight(id: string): Sight | undefined { return SIGHTS.find((s) => s.id === id); }
 export function sightsOfProvince(province: string): Sight[] { return SIGHTS.filter((s) => s.province === province); }

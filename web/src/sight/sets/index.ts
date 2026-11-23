@@ -14,6 +14,7 @@ import { thanhHa } from './dn_thanh_ha.ts';
 import { bayMau } from './dn_bay_mau.ts';
 import { tamThanh } from './dn_tam_thanh.ts';
 import { lySon } from './qng_ly_son.ts';
+import { parkSet } from '../../park/parkSet.ts';
 
 import { decorate } from '../guide.ts';
 export type SetBuilder = (kit: Kit, sight: Sight) => SightSet;
@@ -37,6 +38,11 @@ const RAW: Record<string, SetBuilder> = {
   'kind:nui': nguHanhSon,
   'kind:cau': cauRong,
   'kind:den_thap': mySon,
+  // khu vui chơi: một bộ dựng chung, đọc danh sách trò từ shared/parks.ts
+  park_mw_da_nang: parkSet,
+  park_bw_nha_trang: parkSet,
+  park_mw_ha_long: parkSet,
+  'kind:khu_vui_choi': parkSet,
 };
 /** Mọi set đều được bọc thêm lớp dẫn đường và điểm tương tác phụ dùng chung. */
 export const SETS: Record<string, SetBuilder> = Object.fromEntries(Object.entries(RAW).map(([k, f]) => [k, (kit: Kit, sight: Sight) => decorate(kit, sight, f(kit, sight))]));

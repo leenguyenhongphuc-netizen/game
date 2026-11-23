@@ -40,6 +40,7 @@ import { registerEconomy } from './economy.ts';
 import { ORDER_KIND_NAMES, ORDER_PREMIUM_V2, SUPER_PROVINCES, machineBatchKg, orderBonus, orderScale } from '../../shared/economy.ts';
 import { registerFarm } from './farm.ts';
 import { registerLand } from './land.ts';
+import { registerParks } from './parks.ts';
 import { registerSocial } from './social.ts';
 import { canUse, denyMessage, ROUTE_FEATURES } from '../../shared/roles.ts';
 
@@ -1729,6 +1730,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
 
   // sổ địa chính (quỹ đất theo tỉnh, sổ đỏ, chuyển nhượng) và giá tham chiếu đời thực
   registerLand(app, { db, requireUser, bad, addCash, addXp });
+  registerParks(app, { db, requireUser, bad, addCash, addXp, energyState, setEnergy, provincesOf: async (q, u) => (await whereabouts(q, u)).provinces });
 
   // ---------------------------------------------------------------- chuyến xe của thương lái
   const round1 = (v: number) => Math.round(v * 10) / 10;
