@@ -23,6 +23,9 @@ import type { FactoryData, FactoryMachine, MachineState } from './factory.ts';
 import { blobTex, boardCanvas, edgeFade, grassTex, roadTex, softDot } from './tex.ts';
 import { FieldsLayer } from './fields.ts';
 import type { FieldLite } from './fields.ts';
+import { OthersLayer } from './others.ts';
+import { PresenceLink } from '../presence.ts';
+import type { PresenceIn } from '../../../shared/social.ts';
 
 // ---------------------------------------------------------------- bố cục xóm
 const TILE = 2;
@@ -519,6 +522,8 @@ export class World {
     this.arrow.add(head, shaft); this.arrow.visible = false; this.scene.add(this.arrow);
     for (let i = 0; i < 30; i++) { const m = mesh(GEO.ball, mat(0xffffff), 0, -10, 0, 0.1); m.castShadow = false; m.visible = false; this.scene.add(m); this.sparks.push({ m, v: new THREE.Vector3(), life: 0 }); }
     this.buildLife();
+    // người chơi khác, cư dân ảo cùng làng (nhịp gửi vị trí; xem web/src/presence.ts)
+    if (!opts.demo) { const others = new OthersLayer(makeFarmer, { z: ROAD_Z, halfX: WORLD.x }); this.others = others; this.scene.add(others.group); this.link = new PresenceLink(() => this.presenceState(), (list, at) => others.set(list, at)); }
 
     // Cần điều khiển ảo
     this.stickEl = document.createElement('div'); this.knobEl = document.createElement('div');
@@ -893,6 +898,7 @@ export class World {
     this.updateGuide(now, t);
     this.animateLife(dt, t);
     this.fields?.update(t, now, this.camera.position);
+    this.others?.update(dt, t);
     this.renderer.render(this.scene, this.camera);
     trace({ t: performance.now(), dt, x: this.pos.x, z: this.pos.z, cx: this.camera.position.x, cy: this.camera.position.y, cz: this.camera.position.z, yaw: 0, level: this.quality.level, ratio: this.quality.pixelRatio });
   }
@@ -1143,7 +1149,17 @@ export class World {
     this.fields.group.visible = true; this.fields.set(data);
   }
 
+  private others: OthersLayer | null = null; private link: PresenceLink | null = null;
+  /** Vị trí gửi cho người cùng làng: khoá theo thửa ở giữa (vườn đang xem). */
+  private presenceState(): PresenceIn | null {
+    const d = this.lots[0]?.data; if (!d?.plotId || this.disposed) return null;
+    return { scene: 'village', key: `plot:${d.plotId}`, x: Math.round(this.pos.x * 100) / 100, z: Math.round(this.pos.z * 100) / 100, yaw: Math.round(this.player.root.rotation.y * 100) / 100, speed: Math.round(this.vel.length() * 10) / 10, walk: !this.driving };
+  }
+  /** Số người khác đang thấy trong làng (kiểm thử). */
+  othersCount() { return this.others?.count() ?? 0; }
+  othersList() { return this.others?.list() ?? []; }
   dispose() {
+    this.link?.stop(); this.others?.dispose();
     this.disposed = true; this.renderer.setAnimationLoop(null); this.quality.dispose();
     for (const fn of this.cleanup) fn();
     this.ro.disconnect(); this.renderer.dispose(); this.renderer.forceContextLoss(); this.renderer.domElement.remove(); this.stickEl.remove();

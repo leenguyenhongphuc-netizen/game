@@ -11,6 +11,8 @@ import { GEO, mat, mesh, rng } from '../scene/plants.ts';
 import { MORE, bird, cabin, cargoShip, chargerPosts, chargerStation, ferry, lighthouse, limitSprite, minSprite, playerVehicle, policeUnit, restStop, seaMaterial, skyDecor, wake } from './DriveExtras.ts';
 import type { VehGroup } from './DriveExtras.ts';
 import { VEHICLES } from '../../../shared/vehicles.ts';
+import { OtherCars } from './OtherCars.ts';
+import { highwayKey } from '../../../shared/social.ts';
 
 export type Mode = 'truck' | 'boat';
 export interface ScenePlan { km: number; needsBoat: boolean; seconds: number; tolls: number; tollFee: number; fuelNeededL: number; junctions: { atKm: number; dir: 'L' | 'R'; name: string }[]; stationsAtKm: number[];
@@ -390,8 +392,23 @@ export class DriveScene {
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(container); this.resize();
     this.applyLeg(true);
     this.quality = new Quality(this.renderer, { name: 'lái xe', onLevel: (l) => { this.sun.castShadow = l < (IS_MOBILE ? 1 : 2); } }); debugScene(this.scene); this.resize();
+    // xe người chơi khác, cư dân ảo cùng tuyến (nhịp gửi vị trí; xem web/src/presence.ts)
+    { const hk = highwayKey(opts.fromRegionId, opts.toRegionId); this.others = new OtherCars(this.world, () => this.mode === 'boat' || this.disposed ? null : { key: hk.key, dir: hk.dir, km: this.kmNow(), totalKm: this.opts.plan.km }); }
     this.renderer.setAnimationLoop(() => this.frame());
   }
+  private others: OtherCars | null = null;
+  private kmNow() { return this.kmDoneBefore + (this.mode === 'boat' ? this.s / this.seaL * this.seaKm : this.kmBetween(0, this.s)); }
+  /** Đặt xe người khác cách mình ds đơn vị cảnh: cùng chiều trên làn của mình, ngược chiều trên phần đường đối diện. */
+  private placeOther = (o: THREE.Object3D, ds: number, same: boolean, lane: number): boolean => {
+    if (this.mode === 'boat' || ds < -14 || ds > AHEAD) return false;
+    const s = this.s + ds;
+    if (same) { this.put(o, s, this.center(s) + lane * LW); o.rotation.y = -Math.atan(this.slope(s)); return true; }
+    if (this.oppF(s) < 0.97) return false;
+    this.put(o, s, this.center(s) + this.edges(s)[0] - 2.9 - HW + lane * LW); o.rotation.y = Math.PI - Math.atan(this.slope(s));
+    return true;
+  };
+  /** Người chơi khác đang thấy trên tuyến (kiểm thử, bảng thông tin). */
+  othersNearby() { return this.others?.nearby() ?? []; }
 
   // ---------------------------------------------------------------- dựng lộ trình
   private layout(roadSec: number) {
@@ -1032,6 +1049,7 @@ export class DriveScene {
       this.camera.lookAt(this.px * 0.92, boat ? (portrait ? -4 : -2) : lerp(portrait ? -2.4 : -1.6, 2.2, tK), boat ? -22 : portrait ? -15 - vb * 0.6 : -15 - vb * 0.6);
     }
     this.decor.rotation.y = this.phi * 0.6;
+    this.others?.frame(dt, this.mode === 'boat' ? null : this.kmNow(), this.kmU, clamp(Math.round(this.px / LW), -1, 1), this.placeOther);
     this.renderer.render(this.scene, this.camera);
     this.tickAcc += dt;
     if (this.tickAcc > 0.12) { this.tickAcc = 0; this.opts.onTick?.(this.hud()); }
@@ -1125,6 +1143,7 @@ export class DriveScene {
   }
 
   dispose() {
+    this.others?.dispose();
     this.disposed = true; this.renderer.setAnimationLoop(null); this.quality?.dispose();
     for (const fn of this.cleanup) fn();
     this.ro.disconnect();

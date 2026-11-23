@@ -9,6 +9,7 @@ import { makeFarmer } from '../scene/World.ts';
 import { playerVehicle } from './DriveExtras.ts';
 import type { VehGroup } from './DriveExtras.ts';
 import { makeSign } from './DriveScene.ts';
+import { attachStopOthers } from './OtherStop.ts';
 
 export type StopKind = 'rest' | 'fuel' | 'charger';
 export interface StopAreaInfo {
@@ -98,8 +99,11 @@ export class StopArea {
     const w = window as unknown as { __stop?: unknown; __stopAuto?: boolean };
     this.auto = !!w.__stopAuto;
     w.__stop = { state: () => this.hudNow(), park: (k: BayKind) => this.parkAt(k), getOut: () => this.getOut(), walkTo: (s: Spot) => this.walkTo(s), act: (s?: Spot) => this.act(s), pump: (on: boolean) => this.setPump(on), leave: () => this.leave(), auto: () => { this.auto = true; this.autoStep = 0; }, pos: () => ({ car: [this.cx, this.cz], person: [this.px, this.pz] }) };
+    // [nhánh D3] người chơi khác, cư dân ảo cùng trạm (móc duy nhất; dựng ở OtherStop.ts)
+    this.others = attachStopOthers(this.scene, info.name, () => (this.disposed ? null : { x: this.phase === 'walk' ? this.px : this.cx, z: this.phase === 'walk' ? this.pz : this.cz, walk: this.phase === 'walk', car: { x: this.cx, z: this.cz, yaw: this.yaw } }));
     this.raf = requestAnimationFrame(this.frame);
   }
+  private others: { dispose(): void; count(): number } | null = null;
 
   // ---------------------------------------------------------------- dựng cảnh
   private build() {
@@ -421,7 +425,7 @@ export class StopArea {
   }
   private resize = () => { const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1; this.quality.resize(w, h); this.camera.aspect = w / h; this.camera.fov = w < h ? 58 : 46; this.camera.updateProjectionMatrix(); };
   dispose() {
-    this.disposed = true; cancelAnimationFrame(this.raf); this.quality.dispose();
+    this.disposed = true; cancelAnimationFrame(this.raf); this.quality.dispose(); this.others?.dispose();
     window.removeEventListener('resize', this.resize); window.removeEventListener('keydown', this.onKey); window.removeEventListener('keyup', this.onKey);
     delete (window as unknown as { __stop?: unknown }).__stop;
     const shared = new Set<unknown>(Object.values(GEO));
