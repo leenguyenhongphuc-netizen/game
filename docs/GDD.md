@@ -662,3 +662,35 @@ Khối ruộng hoàn vốn nhanh nhưng nhà nông chỉ được thêm 2 khối
 ## Xuất khẩu gọn và Đại lý xuất khẩu trong thế giới (nhánh B3)
 - Mỗi đường đi là một thẻ: tên đường + **lãi** trên cùng; một dòng thời gian/cước/tiền về; "N mặt hàng · kg · hao" **gập lại**, mở ra thì mỗi mặt hàng một dòng tên · kg · tiền (hao, đơn giá, cước ở dòng nhỏ dưới); nút **Gửi đi** rộng hết thẻ ở dưới. Giỏ hàng hiện tổng lô và lãi tốt nhất ở trên cùng; tên mặt hàng một dòng, nút kg xuống dòng.
 - **Quầy Đại lý xuất khẩu** ở đầu xóm (khe bên trái vườn nhà, sát đường làng, gần chỗ xuất hiện): mái che sọc xanh trắng, quầy gỗ, cân, thùng hàng có đai, container 10 feet, cờ các thị trường; nhân viên đứng quầy vẫy tay. Tới vòng vàng trước quầy → ngữ cảnh `export-desk` → hội thoại (`web/src/exportDesk.tsx`): lời chào theo giờ, 3 đơn công ty trả cao nhất, nút "Xem đơn của công ty" / "Tự gửi lô xuất khẩu".
+
+## Chức năng theo vai (nhánh E4, 24/11)
+Bảng duy nhất: `shared/roles.ts` (`canUse(role, feature)`). Giao diện ẩn hẳn thẻ/nút/ngữ cảnh không thuộc vai; máy chủ chặn bằng cùng bảng (`ROUTE_FEATURES`, móc `preHandler` trong `server/src/app.ts`, lỗi 403 `khong_dung_vai`).
+
+| Chức năng | Nhà vườn | Chủ xưởng | Thương lái | Lý do |
+|---|---|---|---|---|
+| Trồng ở vườn nhà | ✓ 30 ô | — (lô là nhà xưởng) | ✓ vườn bếp 8 ô | như cũ |
+| Cánh đồng, máy nông nghiệp, drone, trực thăng | ✓ | — | — | đất trồng lúa chỉ chuyển cho người trực tiếp sản xuất (Luật Đất đai 2024) |
+| Hợp tác xã nông nghiệp | ✓ | — | — | HTX trong game là HTX nông nghiệp |
+| Lai giống (Lò lai tạo) | ✓ | — | — | việc của người trồng |
+| Nhà xưởng, máy chế biến, máy nhập khẩu, ghép máy | — | ✓ | — | vai chế biến |
+| Phối hộp quà | — | ✓ | ✓ | đóng gói thương mại |
+| Thu mua sỉ bằng xe tải | — | — | ✓ | nghề thương lái |
+| Xuất khẩu | — | ✓ chỉ thành phẩm | ✓ tươi + thành phẩm | nông dân bán qua thương lái/HTX/chợ; người xuất là doanh nghiệp thương mại và chế biến |
+| Hợp đồng công ty XNK | ✓ chỉ hàng tươi | ✓ | ✓ | liên kết sản xuất – tiêu thụ (NĐ 98/2018/NĐ-CP) |
+| Ký gửi kệ siêu thị | — | ✓ | ✓ | siêu thị nhận hàng của nhà cung cấp có hoá đơn |
+| Chợ, đơn hàng, du lịch, mua sắm, trang trí, bạn bè, bằng lái, lái xe riêng | ✓ | ✓ | ✓ | chung |
+
+Không chặn (để người vừa đổi vai thu dọn): xem xưởng, nhận mẻ đang chạy, bán thành phẩm còn trong kho, rút hàng khỏi kệ siêu thị.
+Thay cho xuất khẩu, nhà vườn trong HTX đang hoạt động **bán qua HTX** ở giá tại vườn (85%) + 5% thay vì bán tháo 60%.
+Thu nhập/giờ sau đổi (`node tools/econ-sim.mjs`, nhà vườn / chủ xưởng / thương lái): c1 12,4/5,7/6,1 tr · c10 42,8/81,1/99,2 tr · c20 265/356/373 tr · c30 686/502/590 tr. Nhà vườn cấp 10 tụt (mất phần xuất khẩu) — cần tăng nhịp mở cánh đồng ở cấp 5–15 (`shared/farm.ts`, nhánh cánh đồng).
+
+## Hợp tác xã theo Luật Hợp tác xã 2023 (nhánh E4)
+- Ít nhất **5 thành viên chính thức** (Luật 17/2023/QH15, khoản 7 Điều 4; luật 2012 là 7). Luật không giới hạn số tối đa → game để 200 (chỉ vì giao diện).
+- Không có vốn điều lệ tối thiểu; điều lệ HTX quyết định mức góp → game: mỗi thành viên góp **500.000đ**, ra khỏi HTX được trả lại vốn góp.
+- Lệ phí cấp mới Giấy chứng nhận đăng ký HTX do HĐND tỉnh quy định (Thông tư 85/2019/TT-BTC); phổ biến **100.000đ/lần** (ví dụ HĐND Tuyên Quang). Game dùng một mức chung.
+- Nộp hồ sơ ở bộ phận một cửa, **Cơ quan đăng ký kinh doanh cấp xã** (từ 01/7/2025, NĐ 125/2025/NĐ-CP thay cấp huyện của NĐ 92/2024/NĐ-CP). Hồ sơ theo Điều 42 Luật HTX 2023: giấy đề nghị, điều lệ, phương án sản xuất kinh doanh, danh sách thành viên, nghị quyết hội nghị thành lập. Xử lý 3 ngày làm việc → game rút còn 30 phút.
+- Luồng: vận động (người sáng lập góp vốn) → mời/xin vào (góp vốn) → đủ 5 → nộp hồ sơ + lệ phí (`POST /api/coops/:id/register`, sau này đặt ở khu hành chính) → được cấp số `HTX-…` → mới hưởng quyền lợi (bán qua HTX, đơn lớn). Cư dân (tài khoản máy) được mời thì đồng ý ngay nếu đủ tiền, góp bằng tiền của chính họ.
+- Nguồn: [Luật HTX 2023](https://thuvienphapluat.vn/van-ban/doanh-nghiep/Luat-Hop-tac-xa-2023-17-2023-QH15-499239.aspx), [số thành viên tối thiểu](https://accgroup.vn/so-luong-thanh-vien-toi-thieu-cua-hop-tac-xa), [Thông tư 85/2019/TT-BTC](https://luatvietnam.vn/thue/thong-tu-85-2019-tt-btc-phi-va-le-phi-thuoc-tham-quyen-hoi-dong-nhan-dan-cap-tinh-179392-d1.html), [đăng ký HTX ở cấp xã](https://pbgdpl.cantho.gov.vn/dang-ky-ho-kinh-doanh-hop-tac-xa-tai-co-quan-dang-ky-kinh-doanh-cap-xa), [NĐ 92/2024](https://luatvietnam.vn/doanh-nghiep/nghi-dinh-92-2024-nd-cp-dang-ky-to-hop-tac-hop-tac-xa-lien-hiep-hop-tac-xa-360753-d1.html). Chưa kiểm chứng: trần vốn góp của một thành viên (luật cũ 20%) — game chưa áp vì mọi người góp bằng nhau.
+
+## Bộ chọn giống (nhánh E4)
+Vùng ≤ 6 giống: thanh nhanh như cũ. Vùng nhiều giống (Đà Lạt 13): thanh nhanh chỉ giữ 5 giống (đang cầm → ghim → gần đây → lời nhất), nút **🗂️ Tất cả** đứng đầu thanh mở bảng lưới theo nhóm cây, tìm kiếm không dấu ("ca phe" → Cà phê), lọc chính vụ, sắp lời nhất/rẻ nhất/nhanh nhất, ghim 📍. Ghim và gần đây lưu trên máy (`web/src/seeds.tsx`).

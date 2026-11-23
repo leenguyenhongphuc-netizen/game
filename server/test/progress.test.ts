@@ -301,5 +301,5 @@ test('chủ xưởng: ghép máy, nhập máy ngoại theo từng chặng rồi 
   // nhà vườn không phối hộp quà được
   const farmer = await login('tp_vuon');
   await ok('POST', '/api/test/xp', { value: LEVELS[box.minLevel - 1].xp }, farmer.cookie);
-  assert.equal((await call('POST', '/api/fusion', { recipeId: box.id, inputs: ids }, farmer.cookie)).body.error, 'chi_chu_xuong');
+  assert.equal((await call('POST', '/api/fusion', { recipeId: box.id, inputs: ids }, farmer.cookie)).body.error, 'khong_dung_vai');
 });

@@ -12,8 +12,8 @@ import wardData from '../../shared/wards.json' with { type: 'json' };
 import {
   COOP_ORDER_BONUS, COOP_ORDER_DAYS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, HARVEST_HELP_SHARE, IN_SEASON_YIELD, MARKET_DAY_BONUS,
   ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS_XUONG, QUALITY_MULT, ROLES, ROLE_TARGETS, SEASON_DAYS, STALL_WALKIN_KG_PER_HOUR,
-  STALL_WALKIN_MAX_RATIO, DUMP_RATIO, allowedTiles, inSeason, marketEventsAt, spinWeights, supplyKg, tripInfo, TRUCK, landPrice, roadKm, tripPlan,
-  COOP_CREATE_COST, COOP_MAX_MEMBERS, GIFT_DAILY_LIMIT, GIFT_MAX_KG, HELP_DAILY_LIMIT, HELP_REWARD, LAND_PRICE, LATE_GRACE_MS, MAX_FRIENDS,
+  STALL_WALKIN_MAX_RATIO, DUMP_RATIO, FARM_GATE_RATIO, COOP_BONUS, allowedTiles, inSeason, marketEventsAt, spinWeights, supplyKg, tripInfo, TRUCK, landPrice, roadKm, tripPlan,
+  COOP_CAPITAL, COOP_MAX_MEMBERS, COOP_MIN_MEMBERS, COOP_REG_FEE, COOP_REG_MINUTES, fmtMoney, GIFT_DAILY_LIMIT, GIFT_MAX_KG, HELP_DAILY_LIMIT, HELP_REWARD, LAND_PRICE, LATE_GRACE_MS, MAX_FRIENDS,
   QUALITIES, REGION_SET_REWARD, SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, START_CASH, TILE_COUNT, glutFactor, inVietnam, paceFactor, travelOptions,
   marketDayAt, nearestRegion, npcPrice, qualityFromLate, region as findRegion, seedCost, snapCell, specialty as findSpecialty, stepCount,
   stepWaitMs, urbanCoreAt, weatherAt, speedFine, wholesalePrice, wholesaleSupplyKg, wholesaleQuote, bulkSellFactor, spoilRate, BULK_EASY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_GATEWAYS, EXPORT_MAX_ACTIVE,
@@ -41,6 +41,7 @@ import { ORDER_KIND_NAMES, ORDER_PREMIUM_V2, SUPER_PROVINCES, machineBatchKg, or
 import { registerFarm } from './farm.ts';
 import { registerLand } from './land.ts';
 import { registerSocial } from './social.ts';
+import { canUse, denyMessage, ROUTE_FEATURES } from '../../shared/roles.ts';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 const SESSION_DAYS = 30;
@@ -265,7 +266,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   async function priceMods(q: Q, userId: number, specialtyId: string, now: number, marketRegionId: string, homeRegionId: string | null): Promise<PriceMods> {
     const [glut, coop, home] = await Promise.all([
       glutOf(q, specialtyId),
-      q.query('select 1 from coop_members where user_id = $1', [userId]),
+      q.query("select 1 from coop_members m join coops c on c.id = m.coop_id where m.user_id = $1 and c.status = 'hoat_dong'", [userId]),
       q.query(`select 1 from plots where user_id = $1 and is_home and kind = 'rooftop'`, [userId]),
     ]);
     return {
@@ -297,6 +298,18 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   }
 
   // ---------------------------------------------------------------- tài khoản
+  // Chức năng theo vai (shared/roles.ts): chặn đường API không thuộc vai của người gọi.
+  app.addHook('preHandler', async (req) => {
+    const f = ROUTE_FEATURES[`${req.method} ${req.routeOptions.url}`];
+    if (!f) return;
+    const userId = await requireUser(req);
+    const role = (await db.query('select role from users where id = $1', [userId])).rows[0]?.role ?? null;
+    if (!canUse(role, f)) throw bad('khong_dung_vai', denyMessage(role, f), 403);
+    const bodyX = (req.body ?? {}) as { processed?: unknown; items?: { processed?: unknown }[] };
+    const fresh = Array.isArray(bodyX.items) ? bodyX.items.some((i) => i?.processed !== true) : bodyX.processed !== true;
+    if (f === 'xuat_khau' && fresh && !canUse(role, 'xuat_khau_tuoi'))
+      throw bad('khong_dung_vai', denyMessage(role, 'xuat_khau_tuoi'), 403);
+  });
   app.post('/api/auth/register', authLimit, async (req, reply) => {
     const b = (req.body ?? {}) as Record<string, unknown>;
     const username = typeof b.username === 'string' ? b.username.trim().toLowerCase() : '';
@@ -345,7 +358,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       db.query('select id, username, display_name, cash, home_region_id, role, role_assigned_at, truck_region, tour_region, avatar, harvests, is_tester, fuel_l, etc, xp, (select count(*)::int from sight_visits sv where sv.user_id = users.id and sv.done_at is not null) as sights_done from users where id = $1', [userId]),
       db.query('select id, region_id, is_home, kind, ward_name from plots where user_id = $1 order by is_home desc, id', [userId]),
       db.query('select specialty_id, quality, kg from inventory where user_id = $1 and kg > 0 order by specialty_id, quality', [userId]),
-      db.query('select coop_id from coop_members where user_id = $1', [userId]),
+      db.query("select m.coop_id from coop_members m join coops c on c.id = m.coop_id where m.user_id = $1 and c.status = 'hoat_dong'", [userId]),
       db.query('select item_id, qty from user_items where user_id = $1 and qty > 0 order by item_id', [userId]),
       energyState(db, userId),
     ]);
@@ -822,6 +835,15 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       // Vai khác tự lái xe chở hàng tới vùng khác thì cũng bán được giá tại nơi xe đỗ như thương lái.
       const drove = !!u.rows[0].truck_region && u.rows[0].truck_region !== u.rows[0].home_region_id;
       if (u.rows[0].role !== 'thuong_lai' && !drove) {
+        // Nhà vườn trong HTX đang hoạt động bán qua HTX: giá tại vườn cộng thưởng HTX (HTX gom hàng, bỏ bớt khâu trung gian).
+        const inCoop = u.rows[0].role === 'nong_dan' && !!(await q.query("select 1 from coop_members m join coops c on c.id = m.coop_id where m.user_id = $1 and c.status = 'hoat_dong'", [userId])).rows[0];
+        if (inCoop) {
+          const unit = Math.round((ref * FARM_GATE_RATIO * (1 + COOP_BONUS) * QUALITY_MULT[ql]) / 100) * 100;
+          await q.query('insert into npc_sales (user_id, specialty_id, kg) values ($1,$2,$3)', [userId, sp.id, kg]);
+          await addCash(q, userId, unit * kg, `ban_qua_htx:${sp.id}`);
+          const xp = await addXp(q, userId, xpFor('ban_dn', unit * kg), 'ban_dn');
+          return { unitPrice: unit, total: unit * kg, mods: { coop: true }, npcId: npcOf('thuong_lai').id, viaCoop: true, ...xp };
+        }
         // Không phải thương lái: chỉ bán tháo được, giá thấp và không có thưởng nào.
         const unit = Math.round((ref * DUMP_RATIO * QUALITY_MULT[ql]) / 100) * 100;
         await q.query('insert into npc_sales (user_id, specialty_id, kg) values ($1,$2,$3)', [userId, sp.id, kg]);
@@ -984,24 +1006,129 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   const orderRoute = (o: any): { exportMode: ExportMode; market: ExportMarket } =>
     o.export_mode && o.market && EXPORT_MODES[o.export_mode as ExportMode] && EXPORT_MARKETS[o.market as ExportMarket]
       ? { exportMode: o.export_mode, market: o.market } : coopOrderRoute(Number(o.id), o.kg_target);
+  /** Hết hạn xử lý hồ sơ thì cấp giấy chứng nhận đăng ký HTX (cơ quan đăng ký cấp xã). */
+  async function settleCoopRegistrations(q: Q) {
+    const due = await q.query(`select id, region_id from coops where status = 'cho_cap' and reg_due_at <= now()`);
+    for (const c of due.rows) {
+      const regNo = `HTX-${String(c.region_id).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)}-${String(c.id).padStart(6, '0')}`;
+      await q.query(`update coops set status = 'hoat_dong', reg_no = $2, registered_at = now() where id = $1 and status = 'cho_cap'`, [c.id, regNo]);
+    }
+  }
+  async function coopMemberCount(q: Q, coopId: number): Promise<number> {
+    return (await q.query('select count(*)::int as n from coop_members where coop_id = $1', [coopId])).rows[0].n;
+  }
+  /** Vào HTX: góp vốn theo điều lệ (trừ tiền mặt), ghi vốn góp để trả lại khi ra. */
+  async function addCoopMember(q: Q, coopId: number, userId: number) {
+    const u = await q.query('select cash, home_region_id, role from users where id = $1 for update', [userId]);
+    if (u.rows[0].role !== 'nong_dan') throw bad('khong_dung_vai', 'Hợp tác xã nông nghiệp chỉ nhận nhà vườn.', 403);
+    const member = await q.query('select 1 from coop_members where user_id = $1', [userId]);
+    if (member.rows[0]) throw bad('da_co_htx', 'Bạn đang ở trong một hợp tác xã rồi.', 409);
+    const coop = await q.query('select region_id, status from coops where id = $1 for update', [coopId]);
+    if (!coop.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy hợp tác xã.', 404);
+    if (u.rows[0].home_region_id !== coop.rows[0].region_id) throw bad('khac_vung', 'Hợp tác xã chỉ nhận người có vườn nhà cùng vùng trồng.', 409);
+    if ((await coopMemberCount(q, coopId)) >= COOP_MAX_MEMBERS) throw bad('htx_day', `Hợp tác xã đã đủ ${COOP_MAX_MEMBERS} thành viên.`, 409);
+    if (Number(u.rows[0].cash) < COOP_CAPITAL) throw bad('khong_du_tien', `Cần ${fmtMoney(COOP_CAPITAL)} để góp vốn vào hợp tác xã.`, 409);
+    await q.query('insert into coop_members (coop_id, user_id, capital) values ($1,$2,$3)', [coopId, userId, COOP_CAPITAL]);
+    await addCash(q, userId, -COOP_CAPITAL, `gop_von_htx:${coopId}`);
+    await q.query('delete from coop_invites where user_id = $1 and coop_id = $2', [userId, coopId]);
+  }
+
+  // Bước 1: vận động thành lập — người sáng lập đặt tên, góp vốn; HTX ở trạng thái "đang vận động" tới khi đủ 5 thành viên.
   app.post('/api/coops', async (req) => {
     const userId = await requireUser(req);
     const raw = (req.body as any)?.name;
     const name = typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : '';
-    if (name.length < 3 || name.length > 30) throw bad('ten_sai', 'Tên hợp tác xã cần từ 3 đến 30 ký tự.');
+    if (name.length < 3 || name.length > 40) throw bad('ten_sai', 'Tên hợp tác xã cần từ 3 đến 40 ký tự.');
     return db.tx(async (q) => {
-      const u = await q.query('select cash, home_region_id from users where id = $1 for update', [userId]);
+      const u = await q.query('select home_region_id from users where id = $1 for update', [userId]);
       if (!u.rows[0].home_region_id) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
-      const member = await q.query('select 1 from coop_members where user_id = $1', [userId]);
-      if (member.rows[0]) throw bad('da_co_htx', 'Bạn đang ở trong một hợp tác xã rồi.', 409);
-      if (u.rows[0].cash < COOP_CREATE_COST) throw bad('khong_du_tien', 'Bạn chưa đủ tiền lập hợp tác xã.', 409);
+      const fullName = /^hợp tác xã/i.test(name) ? name : `Hợp tác xã ${name}`;
       const ins = await q.query(
-        'insert into coops (name, region_id, owner_id) values ($1,$2,$3) on conflict (name) do nothing returning id', [name, u.rows[0].home_region_id, userId]);
+        `insert into coops (name, region_id, owner_id, status) values ($1,$2,$3,'dang_lap') on conflict (name) do nothing returning id`, [fullName, u.rows[0].home_region_id, userId]);
       if (!ins.rows[0]) throw bad('ten_da_dung', 'Tên hợp tác xã này đã có người dùng.', 409);
-      await q.query('insert into coop_members (coop_id, user_id) values ($1,$2)', [ins.rows[0].id, userId]);
-      await addCash(q, userId, -COOP_CREATE_COST, `lap_htx:${ins.rows[0].id}`);
+      await addCoopMember(q, ins.rows[0].id, userId);
       const xp = await addXp(q, userId, xpFor('htx_lap'), 'htx_lap');
-      return { coopId: ins.rows[0].id, ...xp };
+      return { coopId: ins.rows[0].id, status: 'dang_lap', need: COOP_MIN_MEMBERS - 1, ...xp };
+    });
+  });
+
+  // Mời nhà vườn cùng vùng vào HTX (người được mời xác nhận và góp vốn).
+  app.post('/api/coops/:id/invite', async (req) => {
+    const userId = await requireUser(req), coopId = idParam((req.params as any).id);
+    const target = Number((req.body as any)?.userId);
+    if (!Number.isInteger(target) || target <= 0 || target === userId) throw bad('du_lieu_sai', 'Hãy chọn một người để mời.');
+    return db.tx(async (q) => {
+      const mine = await q.query('select 1 from coop_members where coop_id = $1 and user_id = $2', [coopId, userId]);
+      if (!mine.rows[0]) throw bad('khong_phai_thanh_vien', 'Chỉ thành viên mới mời được người khác.', 403);
+      const t = await q.query('select role, home_region_id from users where id = $1', [target]);
+      const c = await q.query('select region_id from coops where id = $1', [coopId]);
+      if (!t.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy người chơi này.', 404);
+      if (t.rows[0].role !== 'nong_dan') throw bad('khong_dung_vai', 'Hợp tác xã nông nghiệp chỉ nhận nhà vườn.', 409);
+      if (t.rows[0].home_region_id !== c.rows[0].region_id) throw bad('khac_vung', 'Người này không có vườn nhà cùng vùng trồng.', 409);
+      if ((await q.query('select 1 from coop_members where user_id = $1', [target])).rows[0]) throw bad('da_co_htx', 'Người này đã ở trong một hợp tác xã.', 409);
+      await q.query('insert into coop_invites (coop_id, user_id, invited_by) values ($1,$2,$3) on conflict do nothing', [coopId, target, userId]);
+      // Cư dân (tài khoản máy) đủ tiền thì đồng ý ngay và góp vốn bằng tiền của chính họ (không in thêm tiền).
+      const bot = (await q.query('select is_bot, cash from users where id = $1', [target])).rows[0];
+      if (bot?.is_bot && Number(bot.cash) >= COOP_CAPITAL) { await addCoopMember(q, coopId, target); return { ok: true, joined: true }; }
+      return { ok: true, joined: false };
+    });
+  });
+
+  // Nhà vườn cùng vùng chưa vào HTX nào: bạn bè trước, rồi cư dân, rồi người khác (chỉ tên hiển thị).
+  app.get('/api/coops/candidates', async (req) => {
+    const userId = await requireUser(req);
+    const me = (await db.query('select home_region_id from users where id = $1', [userId])).rows[0];
+    if (!me?.home_region_id) return { people: [] };
+    const { rows } = await db.query(
+      `select u.id, u.display_name, coalesce(u.is_bot, false) as is_bot,
+              exists (select 1 from friendships f where f.status = 'accepted' and ((f.user_a = $1 and f.user_b = u.id) or (f.user_b = $1 and f.user_a = u.id))) as friend
+       from users u where u.home_region_id = $2 and u.role = 'nong_dan' and u.id <> $1
+         and not exists (select 1 from coop_members m where m.user_id = u.id)
+       order by friend desc, is_bot, u.last_seen_at desc nulls last limit 30`, [userId, me.home_region_id]);
+    return { people: rows.map((r) => ({ userId: Number(r.id), displayName: r.display_name, friend: r.friend, resident: r.is_bot })) };
+  });
+
+  app.get('/api/coops/invites', async (req) => {
+    const userId = await requireUser(req);
+    const { rows } = await db.query(
+      `select c.id, c.name, c.status, u.display_name as by_name, (select count(*)::int from coop_members m where m.coop_id = c.id) as members
+       from coop_invites i join coops c on c.id = i.coop_id join users u on u.id = i.invited_by where i.user_id = $1 order by i.created_at desc`, [userId]);
+    return { invites: rows.map((r) => ({ coopId: Number(r.id), name: r.name, status: r.status, byName: r.by_name, members: r.members })), capital: COOP_CAPITAL };
+  });
+
+  // Đồng ý lời mời: góp vốn, thành thành viên chính thức.
+  app.post('/api/coops/:id/accept', async (req) => {
+    const userId = await requireUser(req), coopId = idParam((req.params as any).id);
+    return db.tx(async (q) => {
+      const inv = await q.query('select 1 from coop_invites where coop_id = $1 and user_id = $2', [coopId, userId]);
+      if (!inv.rows[0]) throw bad('khong_co_loi_moi', 'Bạn không có lời mời vào hợp tác xã này.', 404);
+      await addCoopMember(q, coopId, userId);
+      const xp = await addXp(q, userId, xpFor('htx_vao'), 'htx_vao');
+      return { ok: true, members: await coopMemberCount(q, coopId), ...xp };
+    });
+  });
+  app.post('/api/coops/:id/decline', async (req) => {
+    const userId = await requireUser(req), coopId = idParam((req.params as any).id);
+    await db.query('delete from coop_invites where coop_id = $1 and user_id = $2', [coopId, userId]);
+    return { ok: true };
+  });
+
+  // Bước 2: nộp hồ sơ đăng ký tại bộ phận một cửa cấp xã (sau này đặt ở khu hành chính). Đủ 5 thành viên, nộp lệ phí.
+  app.post('/api/coops/:id/register', async (req) => {
+    const userId = await requireUser(req), coopId = idParam((req.params as any).id);
+    return db.tx(async (q) => {
+      const c = await q.query('select owner_id, status from coops where id = $1 for update', [coopId]);
+      if (!c.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy hợp tác xã.', 404);
+      if (Number(c.rows[0].owner_id) !== userId) throw bad('khong_phai_chu', 'Chỉ người đại diện theo pháp luật (người sáng lập) nộp hồ sơ.', 403);
+      if (c.rows[0].status !== 'dang_lap') throw bad('da_nop', 'Hồ sơ của hợp tác xã này đã nộp rồi.', 409);
+      const n = await coopMemberCount(q, coopId);
+      if (n < COOP_MIN_MEMBERS) throw bad('thieu_thanh_vien', `Luật Hợp tác xã 2023 cần ít nhất ${COOP_MIN_MEMBERS} thành viên chính thức; hiện có ${n}.`, 409);
+      const cash = (await q.query('select cash from users where id = $1 for update', [userId])).rows[0].cash;
+      if (Number(cash) < COOP_REG_FEE) throw bad('khong_du_tien', `Cần ${fmtMoney(COOP_REG_FEE)} lệ phí đăng ký.`, 409);
+      await addCash(q, userId, -COOP_REG_FEE, `le_phi_dk_htx:${coopId}`);
+      const due = new Date(Date.now() + COOP_REG_MINUTES * 60_000);
+      await q.query(`update coops set status = 'cho_cap', reg_due_at = $2 where id = $1`, [coopId, due]);
+      return { ok: true, status: 'cho_cap', dueAt: due.getTime(), fee: COOP_REG_FEE };
     });
   });
 
@@ -1018,19 +1145,33 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       regionId = u.rows[0].home_region_id;
     }
     if (!regionId) return { coops: [] };
+    await db.tx(settleCoopRegistrations);
     const { rows } = await db.query(
-      `select c.id, c.name, c.region_id, u.display_name,
+      `select c.id, c.name, c.region_id, c.status, u.display_name,
               (select count(*)::int from coop_members m where m.coop_id = c.id) as members
        from coops c join users u on u.id = c.owner_id where c.region_id = $1 order by members desc, c.id limit 50`, [regionId]);
-    return { coops: rows.map((c) => ({ id: c.id, name: c.name, regionId: c.region_id, ownerName: c.display_name, members: c.members })) };
+    return { coops: rows.map((c) => ({ id: c.id, name: c.name, regionId: c.region_id, status: c.status, ownerName: c.display_name, members: c.members })) };
   });
 
   app.get('/api/coops/mine', async (req) => {
     const userId = await requireUser(req);
     const { rows } = await db.query(
       `select c.id, c.name, c.region_id, c.owner_id from coop_members m join coops c on c.id = m.coop_id where m.user_id = $1`, [userId]);
-    const c = rows[0];
-    if (!c) return { coop: null };
+    const c0 = rows[0];
+    if (!c0) return { coop: null };
+    await db.tx(settleCoopRegistrations);
+    const c = { ...c0, ...(await db.query('select status, reg_no, reg_due_at, registered_at from coops where id = $1', [c0.id])).rows[0] };
+    const rules = { minMembers: COOP_MIN_MEMBERS, maxMembers: COOP_MAX_MEMBERS, capital: COOP_CAPITAL, regFee: COOP_REG_FEE, regMinutes: COOP_REG_MINUTES };
+    if (c.status !== 'hoat_dong') {
+      const mem = await db.query(`select u.id, u.display_name, m.capital from coop_members m join users u on u.id = m.user_id where m.coop_id = $1 order by m.joined_at`, [c.id]);
+      const inv = await db.query(`select u.id, u.display_name from coop_invites i join users u on u.id = i.user_id where i.coop_id = $1`, [c.id]);
+      return { coop: {
+        id: c.id, name: c.name, regionId: c.region_id, ownerId: c.owner_id, status: c.status, regNo: null, dueAt: c.reg_due_at ? new Date(c.reg_due_at).getTime() : null,
+        capital: mem.rows.reduce((a, m) => a + Number(m.capital), 0), kgWeek: 0,
+        members: mem.rows.map((m) => ({ userId: m.id, displayName: m.display_name, kgWeek: 0 })),
+        invited: inv.rows.map((m) => ({ userId: m.id, displayName: m.display_name })), order: null,
+      }, rules };
+    }
     const members = await db.query(
       `select u.id, u.display_name,
               (select coalesce(sum(s.kg),0)::int from npc_sales s where s.user_id = u.id and s.created_at > now() - interval '7 days') as kg_week
@@ -1058,8 +1199,10 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
       };
     });
     return {
+      rules: { minMembers: COOP_MIN_MEMBERS, maxMembers: COOP_MAX_MEMBERS, capital: COOP_CAPITAL, regFee: COOP_REG_FEE, regMinutes: COOP_REG_MINUTES },
       coop: {
-        id: c.id, name: c.name, regionId: c.region_id, ownerId: c.owner_id,
+        id: c.id, name: c.name, regionId: c.region_id, ownerId: c.owner_id, status: c.status, regNo: c.reg_no ?? null,
+        capital: Number((await db.query('select coalesce(sum(capital),0)::bigint as v from coop_members where coop_id = $1', [c.id])).rows[0].v),
         kgWeek: members.rows.reduce((sum, m) => sum + m.kg_week, 0),
         members: members.rows.map((m) => ({ userId: m.id, displayName: m.display_name, kgWeek: m.kg_week })),
         order,
@@ -1073,8 +1216,8 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const ql = quality(b.quality);
     const kg = int(b.kg, 1, 1_000_000, 'kg');
     return db.tx(async (q) => {
-      const m = await q.query('select coop_id from coop_members where user_id = $1', [userId]);
-      if (!m.rows[0]) throw bad('chua_co_htx', 'Bạn chưa ở trong hợp tác xã nào.', 409);
+      const m = await q.query("select m.coop_id from coop_members m join coops c on c.id = m.coop_id where m.user_id = $1 and c.status = 'hoat_dong'", [userId]);
+      if (!m.rows[0]) throw bad('chua_co_htx', 'Bạn chưa ở trong hợp tác xã nào đang hoạt động.', 409);
       const o = (await q.query(
         `select * from coop_orders where coop_id = $1 and status = 'open' and expires_at > now() order by id desc limit 1 for update`, [m.rows[0].coop_id])).rows[0];
       if (!o || !SPECIALTIES[o.specialty_id]) throw bad('khong_co_don', 'Hợp tác xã chưa có đơn hàng nào đang mở.', 409);
@@ -1102,7 +1245,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     if (!rows[0]) return null;
     const coopId = rows[0].coop_id;
     const coop = await q.query('select owner_id, region_id from coops where id = $1 for update', [coopId]);
-    await q.query('delete from coop_members where user_id = $1', [userId]);
+    // Luật HTX 2023: thành viên ra khỏi HTX được trả lại vốn góp.
+    const cap = await q.query('delete from coop_members where user_id = $1 returning capital', [userId]);
+    if (Number(cap.rows[0]?.capital ?? 0) > 0) await addCash(q, userId, Number(cap.rows[0].capital), `tra_von_htx:${coopId}`);
     if (coop.rows[0].owner_id === userId) {
       const next = await q.query('select user_id from coop_members where coop_id = $1 order by joined_at, user_id limit 1', [coopId]);
       if (next.rows[0]) await q.query('update coops set owner_id = $2 where id = $1', [coopId, next.rows[0].user_id]);
@@ -1123,17 +1268,9 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
     const userId = await requireUser(req);
     const coopId = idParam((req.params as any).id);
     return db.tx(async (q) => {
-      const coop = await q.query('select region_id from coops where id = $1 for update', [coopId]);
-      if (!coop.rows[0]) throw bad('khong_tim_thay', 'Không tìm thấy hợp tác xã.', 404);
-      const u = await q.query('select home_region_id from users where id = $1 for update', [userId]);
-      const member = await q.query('select 1 from coop_members where user_id = $1', [userId]);
-      if (member.rows[0]) throw bad('da_co_htx', 'Bạn đang ở trong một hợp tác xã rồi.', 409);
-      if (u.rows[0].home_region_id !== coop.rows[0].region_id) throw bad('khac_vung', 'Hợp tác xã chỉ nhận người có vườn nhà cùng vùng trồng.', 409);
-      const count = await q.query('select count(*)::int as n from coop_members where coop_id = $1', [coopId]);
-      if (count.rows[0].n >= COOP_MAX_MEMBERS) throw bad('htx_day', `Hợp tác xã đã đủ ${COOP_MAX_MEMBERS} thành viên.`, 409);
-      await q.query('insert into coop_members (coop_id, user_id) values ($1,$2)', [coopId, userId]);
+      await addCoopMember(q, coopId, userId);
       const xp = await addXp(q, userId, xpFor('htx_vao'), 'htx_vao');
-      return { ok: true, ...xp };
+      return { ok: true, members: await coopMemberCount(q, coopId), ...xp };
     });
   });
 
@@ -1851,7 +1988,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   async function exportContext(q: Q, userId: number) {
     const [u, coop, active, mach] = await Promise.all([
       q.query('select cash, role, home_region_id, truck_region, xp from users where id = $1', [userId]),
-      q.query('select 1 from coop_members where user_id = $1', [userId]),
+      q.query("select 1 from coop_members m join coops c on c.id = m.coop_id where m.user_id = $1 and c.status = 'hoat_dong'", [userId]),
       q.query('select count(distinct coalesce(bundle_id, id::text))::int as n from export_shipments where user_id = $1 and paid_at is null', [userId]),
       valueBonusOf(q, userId),
     ]);

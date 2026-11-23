@@ -184,6 +184,19 @@ alter table users alter column role drop not null;
 alter table users alter column role drop default;
 alter table users add column if not exists role_assigned_at timestamptz;
 alter table users add column if not exists last_seen_at timestamptz;
+-- hợp tác xã theo Luật HTX 2023: vận động đủ 5 thành viên, góp vốn, nộp hồ sơ, được cấp giấy (HTX cũ coi như đã hoạt động)
+alter table coops add column if not exists status text not null default 'hoat_dong';
+alter table coops add column if not exists reg_no text;
+alter table coops add column if not exists reg_due_at timestamptz;
+alter table coops add column if not exists registered_at timestamptz;
+alter table coop_members add column if not exists capital bigint not null default 0;
+create table if not exists coop_invites (
+  coop_id bigint not null references coops(id) on delete cascade,
+  user_id bigint not null references users(id) on delete cascade,
+  invited_by bigint not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (coop_id, user_id)
+);
 alter table users add column if not exists truck_region text;
 alter table users add column if not exists avatar jsonb;
 alter table plots add column if not exists style jsonb;

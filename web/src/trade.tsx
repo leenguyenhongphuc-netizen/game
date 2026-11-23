@@ -1,4 +1,5 @@
 // Buôn bán đường dài: thu mua sỉ khi xe tải tới một vùng, so sánh đi vé với tự lái, xuất khẩu.
+import { canUse } from '../../shared/roles.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES } from '../../shared/catalog.ts';
 import { BULK_EASY_KG, EXPORT_MARKETS, EXPORT_MODES, LIMIT_REASONS, QUALITY_NAMES, TRAVEL_VS_TRUCK, bulkSellFactor, fmtMoney, wholesaleQuote } from '../../shared/rules.ts';
@@ -170,7 +171,7 @@ export function ExportPanel({ me, refresh, onSent }: { me: Me; refresh: () => vo
   }, []);
   useEffect(() => { void load(); const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [load]);
   const act = useAction(() => { void load(); refresh(); });
-  const products = opt?.products ?? [], lots = opt ? [...opt.stock, ...products] : [];
+  const products = opt?.products ?? [], lots = opt ? [...(canUse(me.user.role, 'xuat_khau_tuoi') ? opt.stock : []), ...products] : [];
   const inCart = lots.filter((l) => (cart[lotId(l)] ?? 0) > 0).map((l) => ({ lot: l, kg: Math.min(l.kg, cart[lotId(l)]) }));
   const items = inCart.map(({ lot, kg }) => ({ specialtyId: lot.specialtyId, grade: lot.quality, kg, ...(lot.processed ? { processed: true } : {}) }));
   const cartKey = JSON.stringify(items);

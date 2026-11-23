@@ -1,14 +1,15 @@
 // Các màn hình phụ: hợp tác xã, quà tặng, du lịch, sổ sưu tập.
+import './roles.css';
 import { useCallback, useEffect, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES, ZONE_NAMES, specialtiesOfRegion } from '../../shared/catalog.ts';
 import type { Zone } from '../../shared/catalog.ts';
 import {
-  COOP_BONUS, COOP_CREATE_COST, COOP_MAX_MEMBERS, COOP_ORDER_BONUS, GIFT_DAILY_LIMIT, QUALITY_NAMES, TRUCK, landPrice, tripPlan, REGION_SET_REWARD,
+  COOP_BONUS, COOP_CAPITAL, COOP_MAX_MEMBERS, COOP_MIN_MEMBERS, COOP_REG_FEE, COOP_REG_MINUTES, COOP_STATUS_NAMES, COOP_ORDER_BONUS, GIFT_DAILY_LIMIT, QUALITY_NAMES, TRUCK, landPrice, tripPlan, REGION_SET_REWARD,
   SOUVENIR_DAILY_BUYS, SOUVENIR_MAX_KG, SOUVENIR_RATIO, TRAVEL_MODES, fmtMoney, travelOptions,
 } from '../../shared/rules.ts';
 import type { TravelMode } from '../../shared/rules.ts';
 import { api } from './api.ts';
-import type { Collection, Coop, CoopOrder, CoopSummary, GiftInbox, Me } from './api.ts';
+import type { Collection, Coop, CoopOrder, CoopRules, CoopSummary, GiftInbox, Me } from './api.ts';
 import { fmtDuration, regionLabel, useAction } from './ui.ts';
 import { NpcBadge } from './work.tsx';
 import { CompareCard, WhyLimit } from './trade.tsx';
@@ -19,51 +20,100 @@ import { VEHICLES, tripPlanFor } from '../../shared/vehicles.ts';
 const ZONES = Object.keys(ZONE_NAMES) as Zone[];
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
-// ------------------------------------------------------------------ hợp tác xã
+// ------------------------------------------------------------------ hợp tác xã (Luật HTX 2023: đủ 5 thành viên, góp vốn, nộp hồ sơ ở cấp xã)
+interface CoopInvite { coopId: number; name: string; status: string; byName: string; members: number }
+interface CoopCandidate { userId: number; displayName: string; friend: boolean; resident: boolean }
 export function CoopPanel({ me, onChanged }: { me: Me; onChanged: () => void }) {
   const [mine, setMine] = useState<Coop | null | undefined>(undefined);
+  const [rules, setRules] = useState<CoopRules>({ minMembers: COOP_MIN_MEMBERS, maxMembers: COOP_MAX_MEMBERS, capital: COOP_CAPITAL, regFee: COOP_REG_FEE, regMinutes: COOP_REG_MINUTES });
   const [list, setList] = useState<CoopSummary[]>([]);
+  const [invites, setInvites] = useState<CoopInvite[]>([]);
+  const [people, setPeople] = useState<CoopCandidate[]>([]);
   const [name, setName] = useState('');
   const load = useCallback(async () => {
-    const [m, l] = await Promise.all([api('GET', '/api/coops/mine'), api('GET', '/api/coops')]);
-    setMine(m.coop); setList(l.coops);
+    const [m, l, i] = await Promise.all([api('GET', '/api/coops/mine'), api('GET', '/api/coops'), api('GET', '/api/coops/invites')]);
+    setMine(m.coop); if (m.rules) setRules(m.rules); setList(l.coops); setInvites(i.invites ?? []);
+    if (m.coop && m.coop.status === 'dang_lap') setPeople((await api('GET', '/api/coops/candidates')).people ?? []);
   }, []);
   useEffect(() => { void load(); }, [load]);
   const act = useAction(() => { void load(); onChanged(); });
   if (mine === undefined) return <p className="hint">Đang tải…</p>;
+  const law = <p className="muted">Theo Luật Hợp tác xã 2023: cần ít nhất <b>{rules.minMembers} thành viên</b> tự nguyện góp vốn (game: {fmtMoney(rules.capital)}/người, ra khỏi HTX được trả lại), nộp hồ sơ ở bộ phận một cửa cấp xã, lệ phí <b>{fmtMoney(rules.regFee)}</b>. Khi được cấp giấy, thành viên bán nông sản qua HTX với giá tại vườn cộng {pct(COOP_BONUS)} (thay vì bán tháo) và cùng làm đơn lớn của HTX.</p>;
   return (
-    <div>
-      <p className="muted">Hợp tác xã gom người trồng cùng vùng. Thành viên bán cho thương lái được cộng {pct(COOP_BONUS)} giá. Mỗi hợp tác xã tối đa {COOP_MAX_MEMBERS} người.</p>
+    <div className="coop">
       {act.error && <p className="error" role="alert">{act.error}</p>}
+      {invites.length > 0 && !mine && (
+        <div className="coop-invites">
+          <h3>Lời mời vào hợp tác xã</h3>
+          {invites.map((v) => (
+            <div className="row row-line" key={v.coopId}>
+              <div className="grow"><strong>{v.name}</strong><br /><small>{v.byName} mời · {v.members} thành viên · góp vốn {fmtMoney(rules.capital)}</small></div>
+              <button className="go" disabled={act.busy || me.user.cash < rules.capital} onClick={() => act.run(() => api('POST', `/api/coops/${v.coopId}/accept`, {}))}>Đồng ý</button>
+              <button disabled={act.busy} onClick={() => act.run(() => api('POST', `/api/coops/${v.coopId}/decline`, {}))}>Từ chối</button>
+            </div>
+          ))}
+        </div>
+      )}
       {mine ? (
         <>
           <h3>{mine.name}</h3>
-          <p className="muted">{regionLabel(mine.regionId)} · 7 ngày qua cả hợp tác xã bán {mine.kgWeek.toLocaleString('vi-VN')} kg</p>
+          <p className="coop-status"><span className={`tag ${mine.status ?? 'hoat_dong'}`}>{COOP_STATUS_NAMES[mine.status ?? 'hoat_dong']}</span>{mine.regNo && <small> · Giấy chứng nhận số {mine.regNo}</small>}{mine.capital ? <small> · vốn góp {fmtMoney(mine.capital)}</small> : null}</p>
+          {mine.status === 'dang_lap' && (
+            <div className="coop-steps">
+              <ol>
+                <li className={mine.members.length >= 1 ? 'done' : ''}>Người sáng lập góp vốn, soạn điều lệ</li>
+                <li className={mine.members.length >= rules.minMembers ? 'done' : ''}>Vận động đủ {rules.minMembers} thành viên (đang có {mine.members.length})</li>
+                <li>Nộp hồ sơ ở bộ phận một cửa cấp xã, lệ phí {fmtMoney(rules.regFee)}</li>
+                <li>Nhận giấy chứng nhận đăng ký HTX (game rút còn {rules.regMinutes} phút; thật là 3 ngày làm việc)</li>
+              </ol>
+              {mine.ownerId === me.user.id && (
+                <button className="go wide" disabled={act.busy || mine.members.length < rules.minMembers || me.user.cash < rules.regFee}
+                  onClick={() => act.run(() => api('POST', `/api/coops/${mine.id}/register`, {}))}>
+                  📝 Nộp hồ sơ đăng ký<small>{mine.members.length < rules.minMembers ? `còn thiếu ${rules.minMembers - mine.members.length} thành viên` : `lệ phí ${fmtMoney(rules.regFee)}`}</small>
+                </button>
+              )}
+              <h4>Mời nhà vườn cùng vùng</h4>
+              {people.length === 0 && <p className="hint">Chưa có nhà vườn nào cùng vùng đang rảnh. Kết bạn với hàng xóm ở thẻ Bạn bè rồi quay lại mời.</p>}
+              {people.map((p) => {
+                const sent = mine.invited?.some((v) => v.userId === p.userId);
+                return (
+                  <div className="row row-line" key={p.userId}>
+                    <div className="grow"><strong>{p.displayName}</strong> {p.friend && <span className="tag">Bạn bè</span>}{p.resident && <span className="tag">Cư dân</span>}</div>
+                    <button disabled={act.busy || sent} onClick={() => act.run(() => api('POST', `/api/coops/${mine.id}/invite`, { userId: p.userId }))}>{sent ? 'Đã mời' : 'Mời'}</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {mine.status === 'cho_cap' && <p className="hint">Hồ sơ đã nộp. Cơ quan đăng ký cấp xã trả giấy chứng nhận sau khoảng {fmtDuration(Math.max(0, (mine.dueAt ?? Date.now()) - Date.now()))}.</p>}
+          {(mine.status ?? 'hoat_dong') === 'hoat_dong' && <p className="muted">{regionLabel(mine.regionId)} · 7 ngày qua cả hợp tác xã bán {mine.kgWeek.toLocaleString('vi-VN')} kg</p>}
           {mine.order && <CoopOrderCard order={mine.order} me={me} act={act} />}
-          <h3>Thành viên</h3>
+          <h3>Thành viên ({mine.members.length})</h3>
           {mine.members.map((m, i) => (
             <div className="row row-line" key={m.userId}>
               <span className="rank">{i + 1}</span>
-              <div className="grow"><strong>{m.displayName}</strong>{m.userId === mine.ownerId && <span className="tag">Chủ nhiệm</span>}</div>
-              <span className="num">{m.kgWeek.toLocaleString('vi-VN')} kg</span>
+              <div className="grow"><strong>{m.displayName}</strong>{m.userId === mine.ownerId && <span className="tag">Chủ tịch HĐQT</span>}</div>
+              {(mine.status ?? 'hoat_dong') === 'hoat_dong' && <span className="num">{m.kgWeek.toLocaleString('vi-VN')} kg</span>}
             </div>
           ))}
-          <button disabled={act.busy} onClick={() => { if (confirm(`Rời hợp tác xã ${mine.name}?`)) void act.run(() => api('POST', '/api/coops/leave', {})); }}>Rời hợp tác xã</button>
+          <button disabled={act.busy} onClick={() => { if (confirm(`Rời ${mine.name}? Bạn được trả lại vốn góp.`)) void act.run(() => api('POST', '/api/coops/leave', {})); }}>Rời hợp tác xã</button>
+          {law}
         </>
       ) : (
         <>
+          {law}
           <h3>Hợp tác xã ở {REGIONS[me.user.homeRegionId!].name}</h3>
-          {list.length === 0 && <p className="hint">Vùng này chưa có hợp tác xã nào. Hãy lập cái đầu tiên.</p>}
+          {list.length === 0 && <p className="hint">Vùng này chưa có hợp tác xã nào. Hãy đứng ra vận động thành lập.</p>}
           {list.map((c) => (
             <div className="row row-line" key={c.id}>
-              <div className="grow"><strong>{c.name}</strong><br /><small>Chủ nhiệm {c.ownerName} · {c.members}/{COOP_MAX_MEMBERS} người</small></div>
-              <button disabled={act.busy || c.members >= COOP_MAX_MEMBERS} onClick={() => act.run(() => api('POST', `/api/coops/${c.id}/join`, {}))}>Xin vào</button>
+              <div className="grow"><strong>{c.name}</strong><br /><small>{COOP_STATUS_NAMES[c.status ?? 'hoat_dong']} · {c.ownerName} · {c.members} thành viên</small></div>
+              <button disabled={act.busy || c.members >= rules.maxMembers || me.user.cash < rules.capital} onClick={() => act.run(() => api('POST', `/api/coops/${c.id}/join`, {}))}>Xin vào · góp {fmtMoney(rules.capital)}</button>
             </div>
           ))}
-          <h3>Lập hợp tác xã mới</h3>
-          <form className="row-line" onSubmit={(e) => { e.preventDefault(); void act.run(async () => { await api('POST', '/api/coops', { name: name.trim() }); setName(''); }); }}>
-            <input className="grow" placeholder="Tên hợp tác xã" value={name} onChange={(e) => setName(e.target.value)} minLength={3} maxLength={30} required aria-label="Tên hợp tác xã" />
-            <button disabled={act.busy || me.user.cash < COOP_CREATE_COST}>Lập · {fmtMoney(COOP_CREATE_COST)}</button>
+          <h3>Vận động thành lập hợp tác xã</h3>
+          <form className="coop-new" onSubmit={(e) => { e.preventDefault(); void act.run(async () => { await api('POST', '/api/coops', { name: name.trim() }); setName(''); }); }}>
+            <input placeholder="Tên, ví dụ: Dâu tây Đà Lạt xanh" value={name} onChange={(e) => setName(e.target.value)} minLength={3} maxLength={40} required aria-label="Tên hợp tác xã" />
+            <button className="go" disabled={act.busy || me.user.cash < rules.capital}>Góp vốn {fmtMoney(rules.capital)} và lập</button>
           </form>
         </>
       )}
