@@ -173,6 +173,8 @@ export function buildScenery(scene: THREE.Scene, o: SceneryOpts): Scenery {
   // ---- cây xăng: nền bê tông, đảo bơm, trụ bơm, mái che
   if (o.pumps) {
     box(st, C.concrete, -11, 0.016, -12, 26, 0.03, 15, 0.95);
+    for (let x = -23; x <= 1; x += 4) box(st, 0xaeb2b8, x, 0.035, -12, 0.06, 0.01, 15, 1); for (let z = -19; z <= -5; z += 3.5) box(st, 0xaeb2b8, -11, 0.035, z, 26, 0.01, 0.06, 1); // khe co giãn bê tông
+    for (const isl of ISLANDS) { const x = (isl.x0 + isl.x1) / 2; for (const sx of [-1, 1]) box(st, C.yellow, x + sx * 1.15, 0.04, -12, 0.12, 0.01, 9.6, 1); } // vạch vàng dẫn vào làn bơm
     for (const isl of ISLANDS) {
       const x = (isl.x0 + isl.x1) / 2;
       box(st, 0xe7e8ea, x, 0.12, -12, 1.7, 0.24, 8.8, 0.95); box(st, 0xd0d3d7, x, 0.25, -12, 1.5, 0.04, 8.6, 0.95);
@@ -180,7 +182,7 @@ export function buildScenery(scene: THREE.Scene, o: SceneryOpts): Scenery {
       for (const z of [-14, -10]) { // trụ bơm: chân, thân trắng, sườn xanh, đầu hộp xanh, cò bơm 3 loại nhiên liệu mỗi bên
         box(st, 0x3a3f47, x, 0.32, z, 1.0, 0.16, 1.3, 0.8);
         box(st, C.white, x, 1.05, z, 0.88, 1.3, 1.12, 0.5); box(st, C.brand, x, 0.62, z, 0.9, 0.4, 1.14, 0.6);
-        box(st, C.brand, x, 1.97, z, 0.96, 0.52, 1.22, 0.6); box(st, C.orange, x, 1.75, z, 0.97, 0.07, 1.23, 0.6); box(st, 0xfafafa, x, 2.26, z, 0.98, 0.06, 1.24, 0.5);
+        box(st, C.brand, x, 1.97, z, 0.96, 0.52, 1.22, 0.6); box(st, C.orange, x, 1.75, z, 0.97, 0.07, 1.23, 0.6); box(st, C.brandD, x, 2.26, z, 0.98, 0.06, 1.24, 0.5); box(st, 0xffffff, x, 2.3, z, 0.5, 0.02, 0.9, 0.5);
         for (const s of [-1, 1]) {
           box(st, 0x1d2329, x + s * 0.455, 1.6, z, 0.03, 0.5, 0.9, 0.4); // khung màn hình
           [0xd8402c, 0x2f9e5a, 0x2b2f36].forEach((col, k) => { const zz = z - 0.34 + k * 0.34; box(st, col, x + s * 0.5, 1.12, zz, 0.12, 0.26, 0.16, 0.6); bar(st, 0x1b1d22, x + s * 0.52, zz, x + s * 0.62, zz, 0.06, 0.7, 0.72); });
@@ -205,10 +207,9 @@ export function buildScenery(scene: THREE.Scene, o: SceneryOpts): Scenery {
     // mái che: tấm phẳng, mặt dưới sáng có đèn âm trần, viền trắng có dải màu
     const roof = new THREE.Group(), cx = (CANOPY.x0 + CANOPY.x1) / 2, cz = (CANOPY.z0 + CANOPY.z1) / 2, W = CANOPY.x1 - CANOPY.x0, D = CANOPY.z1 - CANOPY.z0;
     for (const isl of ISLANDS) for (const z of [-15.9, -8.1]) { const x = (isl.x0 + isl.x1) / 2; box(roof, C.white, x, 3.0, z, 0.55, 5.6, 0.55, 0.45); box(roof, C.brand, x, 0.75, z, 0.6, 1.1, 0.6, 0.6); }
-    box(roof, C.canopyUnder, cx, 5.62, cz, W, 0.08, D, 0.8); box(roof, 0xf1f3f5, cx, 6.0, cz, W - 0.4, 0.7, D - 0.4, 0.9);
-    for (let x = CANOPY.x0 + 2; x < CANOPY.x1 - 1; x += 2) box(roof, 0xdfe3e7, x, 6.36, cz, 0.06, 0.02, D - 0.6, 0.9); // đường ghép tôn trên nóc
+    box(roof, 0xf1f3f5, cx, 6.6, cz, W - 0.2, 0.06, D - 0.2, 0.9); // tấm mái (một lớp mỏng: khi mờ đi không phủ màu xám lên cả khu)
+    for (let x = CANOPY.x0 + 2; x < CANOPY.x1 - 1; x += 2) box(roof, 0xdfe3e7, x, 6.64, cz, 0.06, 0.02, D - 0.6, 0.9); // đường ghép tôn trên nóc
     for (const [x, z, w, d] of [[cx, CANOPY.z0, W + 0.1, 0.16], [cx, CANOPY.z1, W + 0.1, 0.16], [CANOPY.x0, cz, 0.16, D + 0.1], [CANOPY.x1, cz, 0.16, D + 0.1]]) { box(roof, C.white, x, 6.15, z, w, 1.1, d, 0.9); box(roof, C.brand, x, 5.82, z, w + 0.02, 0.4, d + 0.02, 0.6); box(roof, C.orange, x, 6.1, z, w + 0.02, 0.08, d + 0.02, 0.6); }
-    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) box(roof, 0xffffff, CANOPY.x0 + 3 + i * 6, 5.57, CANOPY.z0 + 2.8 + j * 4.2, 1.6, 0.04, 0.7, 0.3);
     const baked = bakeColored(roof, true, false);
     // chữ trên viền mái (mờ cùng mái)
     const fc = document.createElement('canvas'); fc.width = 1024; fc.height = 64; const fg = fc.getContext('2d')!;

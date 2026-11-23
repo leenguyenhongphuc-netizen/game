@@ -263,7 +263,7 @@ export class StopArea {
     // mái che mờ đi khi xe/người ở dưới hoặc ngay sau mái (tia nhìn từ máy quay xuyên qua mái)
     for (const f of this.fades) {
       const b = f.box, k = this.overview ? 0 : back / h, m = 1.2, hide = (x: number, z: number) => x > b.x0 - m && x < b.x1 + m && z > b.z0 - m && z < b.z1 + f.h * k + m;
-      const want = hide(tx, tz) ? 0 : 1; f.a += (want - f.a) * ease(0.15, real);
+      const want = hide(tx, tz) && !this.overview ? 0.22 : 1; f.a += (want - f.a) * ease(0.15, real);
       for (const mt of f.mats) { mt.opacity = f.a; mt.depthWrite = f.a > 0.9; }
       f.group.visible = f.a > 0.03;
     }
