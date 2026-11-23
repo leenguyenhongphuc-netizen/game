@@ -576,6 +576,23 @@ Nhận xét: nông trại cấp 10 nằm trong ±50% của chủ xưởng; lãi/
 
 Đơn giản hoá: máy cày không đòi bằng lái; chưa có thuê/cho thuê máy giữa người chơi; chưa có xe tải nông trại (dùng xe tải thường); ruộng không có thời tiết riêng ngoài hệ số sinh trưởng của vùng.
 
+### Cánh đồng trong thế giới 3D, làm hàng loạt, tự lái máy (nhánh F4)
+
+**Đất thật ngoài lô vườn.** Cánh đồng không còn chỉ là lưới ô vuông trong bảng: các khối ruộng nằm **sau lưng xóm**, ngoài dãy lô vườn đã cấp. Đường đi: từ đường làng đi về đầu xóm phía đông, rẽ vào **đường đất** (vùng có kênh sau xóm như miền Tây thì qua **cầu ván**), ra **đường bờ ruộng** chạy dọc mặt trước cánh đồng. Khối xếp 8 khối một hàng; giữa hai khối cạnh nhau là **bờ** (1,2 m), giữa hai hàng khối là **mương nước** (3 m). Mỗi khối có **cột mốc** ghi **số sổ đỏ** của thửa (`VV-<tỉnh>-NN-<số>`, từ sổ địa chính) và tên cây đang trồng. Nút **"Ra đồng"** trong bảng Cánh đồng dẫn nhân vật tự đi (nhanh gấp 1,7 lần đi bộ) theo đường đất ra tới khối ruộng; chạm cần điều khiển là thôi tự đi. Chỉ dựng cánh đồng thuộc vùng đang xem; khi có ruộng, đất sau xóm được làm phẳng, cây rừng và núi lùi ra xa.
+
+**Làm hàng loạt — quy tắc sắp xếp (không bung từng ô):**
+- Một lượt làm trên N ô đi theo **đường chạy kiểu cày ruộng**: hết khối này sang khối kia; trong khối chạy theo dải luống, dải chẵn trái→phải, dải lẻ phải→trái (`workSeq`).
+- **Máy** (một chiếc của mình): giàn rộng **2 ô** (máy cày, máy gieo, máy gặt), **drone 3 ô**; một máy chạy hết đường.
+- **Thuê nhân công / thuê robot**: số tổ = số khối (tối đa 12); đường chạy chia đều cho các tổ (`crewSpans`), các tổ **làm song song**, mỗi tổ đi luống trong vùng của mình.
+- Ô đổi trạng thái đúng lúc máy/tổ đi qua: làm đất → đất cày sẫm theo luống; gieo → cây con mọc; tưới → đất sẫm ướt; bón/phun → vệt sương; thu hoạch → cây biến mất, còn gốc rạ vàng.
+- **Xem tua nhanh** khi vừa giao việc: thời lượng nén theo quy mô `min(25, 6 + 0,6·√N)` giây (100 ô ≈ 12 s, 800 ô ≈ 23 s, tối đa 25 s), có nút **Bỏ qua**. Máy quay bám **khối** đang làm của máy/tổ dẫn đầu (không bám từng vòng quay đầu), lùi xa theo cỡ ruộng. Tua xong cảnh trở về **tiến độ thật** của lượt (máy chủ tính giờ; máy/tổ đứng đúng chỗ theo % thời gian đã qua).
+
+**Thuê robot làm vườn** (cách làm mới, từ cấp 8): 2.500 đ/ô, 450 ô/giờ — rẻ và nhanh hơn thuê người (4.000 đ/ô, 250 ô/giờ), làm mọi việc trừ tỉa cành/tạo tán (việc "chăm sóc bằng tay" vẫn cần người).
+
+**Tự lái máy:** máy cày, máy gieo, máy gặt đã mua **đậu ở bãi cuối đường bờ ruộng** (phía đông lối ra đồng). Đứng cạnh máy → nút **"Lên máy …"**; lái bằng cần điều khiển như xe tải (tối đa 6 m/s ≈ 22 km/h, quay đầu chậm, không xuyên qua máy khác). **Hạ giàn** thì mọi ô giàn đi qua được làm thật cho bước hiện tại của ruộng đó (đúng việc của máy, đã tới giờ, không có lượt khác đang chạy). Giao diện gửi lô ô mỗi ~2 giây lên `POST /api/fields/:id/drive` kèm quãng đường và thời gian; máy chủ chặn **chạy quá 7,5 m/s** và **số ô vượt bề rộng giàn trên quãng đường** (`driveTileCap`), trả **tiền dầu theo ô** (bằng chi phí/ô của máy), đủ ô thì bước xong ngay và sang bước kế. Đã tự lái một phần thì nếu giao phần còn lại cho người/robot/máy tự chạy, **chỉ tính tiền và giờ cho số ô còn lại**.
+
+**Hiệu năng:** đất mọi khối là một lưới tô màu từng ô; bờ/mương/đường/cột mốc gộp vài lưới; chữ cột mốc là một ảnh ghép; cây là InstancedMesh thưa theo khoảng cách; người làm thuê và robot là InstancedMesh dùng chung. Đo trên Chromium giả lập (không GPU): đứng giữa cánh đồng 800 ô **16–36 lần vẽ** cả cảnh; xem tua máy cày 21, tổ thợ 36 (lúc khung hình có cả xóm).
+
 ## Cân bằng kinh tế (23/11, làm lại theo phản hồi)
 
 Mô phỏng bằng `node tools/econ-sim.mjs` (thêm `--khong-dong` bỏ cánh đồng, `--dong-de-xuat` thử cánh đồng nhịp 1, năng suất 0,6; `--chi-tiet` in từng kênh). Đơn vị: đồng mỗi giờ chơi, giả định chơi 3 giờ/ngày, cây và máy vẫn chạy khi offline, vốn lưu động 5 tr / 150 tr / 1,5 tỉ / 6 tỉ ở cấp 1/10/20/30, ba đặc sản mẫu (sầu riêng, xoài, cà phê). Mỗi vai gồm kênh chính + đơn hàng + một phần xuất khẩu/hợp đồng chạy nền.

@@ -21,7 +21,7 @@ import { roadsideProp, zoneHouse, zoneScene } from './zones.ts';
 import { BASIC_FACTORY, LAMP_MATS, MACHINE_SPOTS, STEAM_MAT, buildBeltCrates, buildDoneCrate, buildFactoryYard, buildMachine, factoryColliders, machineState } from './factory.ts';
 import type { FactoryData, FactoryMachine, MachineState } from './factory.ts';
 import { blobTex, boardCanvas, edgeFade, grassTex, roadTex, softDot } from './tex.ts';
-import { FieldsLayer } from './fields.ts';
+import { FieldsLayer, clampToRects, fieldZoneBox, fieldZoneRects } from './fields.ts';
 import { buildExportDesk } from './exportDesk.ts';
 import type { ExportDesk } from './exportDesk.ts';
 import type { FieldLite } from './fields.ts';
@@ -547,9 +547,10 @@ export class World {
     if (this.rain) this.rain.count = [900, 600, 380, 240][l];
     this.applyFog();
   }
+  private fogMul = 1; // xem tua trên cánh đồng: máy quay lùi xa thì đẩy sương ra theo
   private applyFog() {
     const fog = this.scene.fog as THREE.Fog | null; if (!fog) return;
-    const wet = this.weather === 'mua' || this.weather === 'bao', k = [1, 1, 0.8, 0.65][this.qLevel];
+    const wet = this.weather === 'mua' || this.weather === 'bao', k = [1, 1, 0.8, 0.65][this.qLevel] * this.fogMul;
     fog.near = (wet ? 45 : 90) * k; fog.far = (wet ? 150 : 260) * k;
     this.camera.far = this.qLevel >= 2 ? fog.far + 40 : 600; this.camera.updateProjectionMatrix();
   }
@@ -659,7 +660,12 @@ export class World {
     this.env.clear(); this.water = null;
     const zone = REGIONS[regionId]?.zone ?? 'nam', th = this.urban ? CITY : THEMES[zone];
     const r = rng([...regionId].reduce((a, c) => a * 31 + c.charCodeAt(0), 7));
-    const out = (x: number, z: number) => Math.hypot(Math.max(0, Math.abs(x) - (WORLD.x + 6)), Math.max(0, WORLD.zMin - 6 - z, z - WORLD.zMax - 6));
+    const fbox = this.fieldRows && !this.urban ? fieldZoneBox(this.fieldRows) : null; // cánh đồng sau xóm: đất phẳng, không cây rừng
+    const outV = (x: number, z: number) => Math.hypot(Math.max(0, Math.abs(x) - (WORLD.x + 6)), Math.max(0, WORLD.zMin - 6 - z, z - WORLD.zMax - 6));
+    const outF = (x: number, z: number) => (fbox ? Math.hypot(Math.max(0, fbox.x0 - 8 - x, x - fbox.x1 - 8), Math.max(0, fbox.z0 - 8 - z, z - fbox.z1 - 8)) : Infinity);
+    const out = (x: number, z: number) => Math.min(outV(x, z), outF(x, z));
+    const frects = fbox ? fieldZoneRects(this.fieldRows) : [];
+    const inField = (x: number, z: number) => frects.some((q) => x > q.x0 - 4 && x < q.x1 + 4 && z > q.z0 - 4 && z < q.z1 + 3);
     const g = new THREE.PlaneGeometry(520, 520, 80, 80); g.rotateX(-Math.PI / 2);
     const pos = g.attributes.position as THREE.BufferAttribute, colors = new Float32Array(pos.count * 3);
     const c = new THREE.Color(), cg = new THREE.Color(th.grass), cg2 = new THREE.Color(th.grass2), sand = new THREE.Color(0xf6ecc6), rock = new THREE.Color(0xa9b8a2);
@@ -713,6 +719,7 @@ export class World {
     const gapX = (x: number) => Math.abs(((x - 12) % PITCH + PITCH * 1.5) % PITCH - PITCH / 2); // khoảng cách tới tim khe giữa hai lô
     const free = (x: number, z: number) => {
       if (Math.abs(z - ROAD_Z) < ROAD_HALF + 1.5) return false;
+      if (inField(x, z)) return false;
       if (!this.urban && Math.abs(x) < 3 * PITCH && gapX(x) < 2.6 && z > -12 && z < 2 * ROAD_Z + 12) return false;
       for (let i = 0; i < SLOT_COUNT; i++) { const l = toLocal(i, x, z); if (Math.abs(l.x) < FENCE.x + 1.2 && l.z > FENCE.back - 1.2 && l.z < FENCE.front + 4) return false; }
       return true;
@@ -734,7 +741,7 @@ export class World {
     }
     for (let i = 0; i < 60; i++) { const x = (r() * 2 - 1) * WORLD.x, z = WORLD.zMin + r() * (WORLD.zMax - WORLD.zMin); if (free(x, z)) st.add(mesh(GEO.ball, mat(i % 3 ? 0x79c96d : 0x5cb85f), x, 0.2, z, 0.4 + r() * 0.3, 0.3, 0.4)); }
     for (let i = 0; i < th.mountains; i++) {
-      const a = Math.PI * (1.05 + (i / Math.max(1, th.mountains - 1)) * 0.9) + r() * 0.15, dist = 150 + r() * 50, hh = 34 + r() * 36;
+      const a = Math.PI * (1.05 + (i / Math.max(1, th.mountains - 1)) * 0.9) + r() * 0.15, dist = 150 + r() * 50 + (fbox ? -fbox.z0 + 10 : 0), hh = 34 + r() * 36;
       const m = mesh(new THREE.ConeGeometry(26 + r() * 20, hh, 6), mat(zone === 'taynguyen' ? 0x9cc79a : 0xa9cbbd, { rough: 1 }), Math.cos(a) * dist, hh / 2 - 3, 15 + Math.sin(a) * dist); m.castShadow = false; m.rotation.y = r() * 3; this.env.add(m);
     }
     this.envColliders = [];
@@ -766,6 +773,7 @@ export class World {
     while ((ti < 700 || fi < 260) && tries++ < 6000) {
       const x = (r() * 2 - 1) * (WORLD.x + 4), z = WORLD.zMin - 4 + r() * (WORLD.zMax - WORLD.zMin + 8);
       if (!free(x, z)) continue;
+      if (zone === 'nam' && !this.urban && z < WORLD.zMin + 1) continue; // kênh sau xóm miền Nam: không mọc cỏ trên mặt nước
       if (ti < 700 && r() < 0.75) { m4.compose(new THREE.Vector3(x, 0.16, z), q.setFromEuler(new THREE.Euler(0, r() * 6, (r() - 0.5) * 0.5)), new THREE.Vector3(0.09, 0.3 + r() * 0.2, 0.09)); tuft.setMatrixAt(ti++, m4); }
       else if (fi < 260) { m4.compose(new THREE.Vector3(x, 0.2, z), q.identity(), new THREE.Vector3(0.11, 0.11, 0.11)); flower.setMatrixAt(fi, m4); flower.setColorAt(fi++, col.setHex(palette[Math.floor(r() * palette.length)])); }
     }
@@ -878,7 +886,7 @@ export class World {
     // bị hoạt cảnh khác che kín hoặc tab ẩn: nghỉ hẳn; đang mở bảng (paused): chỉ vẽ ~8 khung/giây cho phần nền lộ ra
     if (!this.quality.tick()) { if (!this.quality.throttled) this.clock.getDelta(); return; }
     this.frameNo++;
-    if (this.paused && !this.opts.demo && this.frameNo % 8 !== 0) return;
+    if (this.paused && !this.opts.demo && !this.fields?.sceneActive && this.frameNo % 8 !== 0) return;
     const dt = stepDt(this.clock.getDelta()), t = this.clock.elapsedTime, now = Date.now() + (this.state?.clockOffset ?? 0);
     this.movePlayer(dt, t); this.quality.busy = this.vel.lengthSq() > 0.05;
     this.updateContext(now, t);
@@ -888,7 +896,10 @@ export class World {
     // Máy quay gắn cứng theo nhân vật, chỉ trễ một khoảng tỉ lệ với vận tốc (đã làm mượt). Trước đây máy quay 'đuổi theo' vị trí bằng lerp:
     // khi thời gian mỗi khung không đều, khoảng trễ đổi theo từng khung nên cả cảnh giật theo nhịp dù nhân vật đi đều.
     this.camLag.lerp(this.camTmp.copy(this.vel).multiplyScalar(-0.16), 1 - Math.exp(-dt * 6)); this.camPos.copy(this.pos).add(this.camLag);
-    const portrait = this.camera.aspect < 0.9, k = (portrait ? 1.12 : 1) * this.zoom * (this.driving ? 1.15 : 1);
+    const ff = this.fields?.camFocus() ?? null; // xem tua nhanh việc trên cánh đồng: bám máy dẫn đầu, lùi xa theo cỡ ruộng
+    if (ff) this.camPos.set(ff.x, 0, ff.z);
+    { const fm = ff ? ff.zoom : 1; if (fm !== this.fogMul) { this.fogMul = fm; this.applyFog(); } }
+    const portrait = this.camera.aspect < 0.9, k = (portrait ? 1.12 : 1) * this.zoom * (this.driving ? 1.15 : 1) * (ff ? ff.zoom : this.fields?.camZoom() ?? 1);
     if (this.opts.demo) { const a = 0.55 + Math.sin(t * 0.08) * 0.22; this.camera.position.set(Math.sin(a) * 30, 26, 4 + Math.cos(a) * 30); }
     // Màn dọc: đẩy nhân vật lên nửa trên màn hình để thanh thao tác bên dưới không che.
     // Có khai báo vùng bị che (thanh trên, bảng dưới): dồn nhân vật vào giữa phần còn nhìn thấy; chưa khai báo thì giữ cách cũ.
@@ -908,7 +919,7 @@ export class World {
     if (this.sun.castShadow) this.renderer.shadowMap.needsUpdate = true;
     this.updateGuide(now, t);
     this.animateLife(dt, t);
-    this.fields?.update(t, now, this.camera.position);
+    this.fields?.update(t, now, this.camera.position, this.pos);
     this.others?.update(dt, t);
     this.renderer.render(this.scene, this.camera);
     trace({ t: performance.now(), dt, x: this.pos.x, z: this.pos.z, cx: this.camera.position.x, cy: this.camera.position.y, cz: this.camera.position.z, yaw: 0, level: this.quality.level, ratio: this.quality.pixelRatio });
@@ -930,12 +941,20 @@ export class World {
       if (this.keys.has('ArrowUp') || this.keys.has('KeyW')) dir.z -= 1;
       if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) dir.z += 1;
       if (dir.lengthSq() > 1) dir.normalize();
+      if (this.fields) { // chuyến "Ra đồng": tự đi theo đường đất; người chơi giành lái thì thôi
+        if (dir.lengthSq() > 0.01) this.fields.cancelRoute();
+        else if (this.fields.routing) { const w = this.fields.nextWaypoint(this.pos); if (w) { if (!this.walkTo || this.walkTo.distanceToSquared(new THREE.Vector3(w.x, 0, w.z)) > 0.01) { this.walkTo = new THREE.Vector3(w.x, 0, w.z); this.detour = null; } } }
+        if (this.fields.driving) { // đang lái máy trên ruộng: máy ăn theo cần điều khiển, nhân vật ngồi trên máy
+          this.fields.driveStep(dt, { x: dir.x, z: dir.z }, this.pos, t); this.vel.set(0, 0, 0); this.walkTo = null;
+          this.player.root.visible = false; this.player.root.position.copy(this.pos); return;
+        } else if (!this.driving && !this.player.root.visible) this.player.root.visible = true;
+      }
       if (dir.lengthSq() < 0.01 && this.walkTo) {
         dir.subVectors(this.walkTo, this.pos).setY(0); const d = dir.length();
         if (d < 0.25) { this.walkTo = null; this.detour = null; dir.set(0, 0, 0); } else { dir.normalize(); if (this.detour && t < this.detour.until) dir.set(dir.x * 0.35 + this.detour.x, 0, dir.z * 0.35 + this.detour.z).normalize(); dir.multiplyScalar(Math.min(1, d / 1.2 + 0.35)); }
       }
     }
-    this.vel.lerp(dir.multiplyScalar(this.driving ? 13 : 7.5 * (this.walkJob && this.walkTo === this.walkJob.to ? this.walkJob.mul : 1)), 1 - Math.pow(this.driving ? 0.02 : 0.0005, dt));
+    this.vel.lerp(dir.multiplyScalar(this.driving ? 13 : 7.5 * (this.walkJob && this.walkTo === this.walkJob.to ? this.walkJob.mul : 1) * (this.fields?.routing ? 1.7 : 1)), 1 - Math.pow(this.driving ? 0.02 : 0.0005, dt));
     const before = this.pos.clone();
     this.pos.addScaledVector(this.vel, dt);
     if (this.driving && this.truck) { // xe chỉ chạy trên đường làng
@@ -954,7 +973,8 @@ export class World {
       if (d2 > 1e-6) { const d = Math.sqrt(d2); this.pos.x = cx + (dx / d) * R; this.pos.z = cz + (dz / d) * R; }
       else { this.pos.copy(before); }
     }
-    this.pos.x = THREE.MathUtils.clamp(this.pos.x, -WORLD.x, WORLD.x); this.pos.z = THREE.MathUtils.clamp(this.pos.z, WORLD.zMin, WORLD.zMax);
+    if (this.fieldRows) this.clampWalk(this.pos);
+    else { this.pos.x = THREE.MathUtils.clamp(this.pos.x, -WORLD.x, WORLD.x); this.pos.z = THREE.MathUtils.clamp(this.pos.z, WORLD.zMin, WORLD.zMax); }
     // Vướng vật cản khi tự đi: lách sang bên (đổi bên mỗi lần), thử vài lần không qua mới dừng
     if (this.walkTo) {
       if (before.distanceTo(this.pos) < 7.5 * dt * 0.3 && this.vel.length() > 2) this.stuckT += dt; else this.stuckT = Math.max(0, this.stuckT - dt * 2);
@@ -1153,12 +1173,32 @@ export class World {
     this.buildGroup = g; this.scene.add(g);
   }
 
-  private fields: FieldsLayer | null = null;
-  /** Cánh đồng lớn của nhà nông phía sau xóm (dữ liệu từ GET /api/fields). Mảng rỗng hoặc null thì ẩn. */
+  private fields: FieldsLayer | null = null; private fieldRows = 0;
+  /**
+   * Cánh đồng lớn của nhà nông (dữ liệu từ GET /api/fields): đất thật sau lưng xóm, đi theo đường đất đầu xóm phía đông ra đồng.
+   * Chỉ dựng cánh đồng thuộc vùng đang xem. Mảng rỗng hoặc null thì ẩn và trả lại địa hình đồi như cũ.
+   */
   setFields(data: FieldLite[] | null) {
-    if (!data?.length) { if (this.fields) this.fields.group.visible = false; return; }
-    if (!this.fields) { this.fields = new FieldsLayer(); this.scene.add(this.fields.group); this.cleanup.push(() => this.fields?.dispose()); }
-    this.fields.group.visible = true; this.fields.set(data);
+    const mine = (data ?? []).filter((f) => !f.regionId || !this.regionId || f.regionId === this.regionId);
+    if (!mine.length) {
+      if (this.fields) { this.fields.set([]); this.fields.group.visible = false; }
+      if (this.fieldRows) { this.fieldRows = 0; if (this.regionId) this.rebuildEnv(); }
+      return;
+    }
+    if (!this.fields) { this.fields = new FieldsLayer({ hud: true }); this.scene.add(this.fields.group); this.cleanup.push(() => this.fields?.dispose()); }
+    this.fields.group.visible = true; this.fields.set(mine, { zone: REGIONS[this.regionId]?.zone ?? 'nam' });
+    const rows = this.fields.rows();
+    if (rows !== this.fieldRows) { this.fieldRows = rows; if (this.regionId) this.rebuildEnv(); }
+  }
+  /** Dựng lại cảnh nền (làm phẳng đất ruộng, dời cây và núi khỏi cánh đồng) rồi gom lại vật cản. */
+  private rebuildEnv() {
+    this.buildEnvironment(this.regionId);
+    this.colliders = [...this.lots.flatMap((l) => l.colliders()), ...this.envColliders];
+  }
+  /** Kéo vị trí vào vùng đi được: xóm, cộng đường ra đồng và cánh đồng nếu có. */
+  private clampWalk(p: THREE.Vector3) {
+    const rects = [{ x0: -WORLD.x, x1: WORLD.x, z0: WORLD.zMin, z1: WORLD.zMax }, ...(this.fields && this.fieldRows ? this.fields.walkRects() : [])];
+    const c = clampToRects(p.x, p.z, rects); p.x = c.x; p.z = c.z;
   }
 
   private others: OthersLayer | null = null; private link: PresenceLink | null = null;

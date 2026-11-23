@@ -8,7 +8,7 @@ import { xpFor } from '../../shared/progress.ts';
 import type { XpSource } from '../../shared/progress.ts';
 import {
   FARM_MACHINES, FARM_MACHINE_KINDS, FIELD_BLOCK_TILES, FIELD_MAX_BLOCKS_PER_FIELD, FIELD_MIN_LEVEL, FIELD_RESALE, HELI_TOUR_FEE, HELI_TOUR_MIN_LEVEL,
-  METHOD_NAMES, WORK_NAMES, fieldBlockPrice, fieldColor, fieldMaxBlocks, fieldRegionAllowed, fieldSeedCost, fieldStepWaitMs, fieldSteps, fieldYieldKg, methodsFor, workPlan,
+  METHOD_NAMES, ROBOT_MIN_LEVEL, WORK_METHODS, WORK_NAMES, driveMachineFor, driveSpeedOk, driveTileCap, fieldPhase, fieldBlockPrice, fieldColor, fieldMaxBlocks, fieldRegionAllowed, fieldSeedCost, fieldStepWaitMs, fieldSteps, fieldYieldKg, methodsFor, workPlan,
 } from '../../shared/farm.ts';
 import { issueLot, lotsLeft } from './land.ts';
 import type { FarmMachineKind, WorkMethod } from '../../shared/farm.ts';
@@ -64,13 +64,13 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
         const season = d.inSeason(sp.crop, end), kg = fieldYieldKg(sp.crop, j.blocks * FIELD_BLOCK_TILES, season ? IN_SEASON_YIELD : 1);
         const ql = qualityFromLate(late);
         await d.addInventory(q, userId, sp.id, ql, kg);
-        await q.query('update fields set specialty_id = null, step_index = 0, step_ready_at = null, late_count = 0, planted_at = null where id = $1', [j.field_id]);
+        await q.query("update fields set specialty_id = null, step_index = 0, step_ready_at = null, late_count = 0, planted_at = null, drive_step = null, drive_done = '{}' where id = $1", [j.field_id]);
         await q.query('update users set harvests = harvests + 1 where id = $1', [userId]);
         await d.addXp(q, userId, xpFor('thu_hoach') * Math.min(10, j.blocks), 'thu_hoach');
         out.push({ fieldId: j.field_id, harvested: { specialtyId: sp.id, quality: ql, kg, inSeason: season } });
       } else {
         const wait = Math.round(fieldStepWaitMs(sp, d.timeScale) / Math.max(0.2, d.weatherGrowth(j.region_id, end)));
-        await q.query('update fields set step_index = step_index + 1, step_ready_at = $2, late_count = $3 where id = $1', [j.field_id, new Date(end + wait), late]);
+        await q.query('update fields set step_index = step_index + 1, step_ready_at = $2, late_count = $3, drive_step = null, drive_done = \'{}\' where id = $1', [j.field_id, new Date(end + wait), late]);
         await d.addXp(q, userId, xpFor('cham'), 'cham');
         out.push({ fieldId: j.field_id });
       }
@@ -83,6 +83,10 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
     const { rows } = await q.query(
       `select f.*, j.id as job_id, j.kind as job_kind, j.method as job_method, j.machine as job_machine, j.started_at as job_start, j.ends_at as job_end, j.step_index as job_step
        from fields f left join field_jobs j on j.field_id = f.id and not j.done where f.user_id = $1 order by f.id`, [userId]);
+    const certs = new Map<number, string[]>();
+    for (const r of (await q.query('select field_id, cert_no from land_lots where owner_id = $1 and field_id is not null order by id', [userId])).rows) {
+      const k = Number(r.field_id); if (!certs.has(k)) certs.set(k, []); certs.get(k)!.push(r.cert_no ?? '');
+    }
     return rows.map((f) => {
       const sp = f.specialty_id ? SPECIALTIES[f.specialty_id] : null, tiles = f.blocks * FIELD_BLOCK_TILES;
       const steps = sp ? fieldSteps(sp.id) : [];
@@ -96,6 +100,8 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
         readyAt: f.step_ready_at ? new Date(f.step_ready_at).getTime() : null, ready: !!f.step_ready_at && new Date(f.step_ready_at).getTime() <= now && !f.job_id,
         lateCount: f.late_count, expectKg: sp ? fieldYieldKg(sp.crop, tiles) : 0, progress, color: fieldColor(sp?.crop ?? null, progress),
         job: f.job_id ? { id: f.job_id, kind: f.job_kind, method: f.job_method, machine: f.job_machine, startedAt: new Date(f.job_start).getTime(), endsAt: new Date(f.job_end).getTime(), step: f.job_step } : null,
+        phase: fieldPhase(sp?.id ?? null, f.step_index), certNos: certs.get(Number(f.id)) ?? [],
+        drive: f.drive_step !== null && f.drive_step === f.step_index ? { done: (f.drive_done as number[]).length, tiles: f.drive_done as number[] } : null,
         pricePaid: Number(f.price_paid), resale: Math.round((Number(f.price_paid) * FIELD_RESALE) / 1000) * 1000,
       };
     });
@@ -205,8 +211,12 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
       if (body.step !== undefined && Number(body.step) !== f.step_index) throw bad('sai_buoc', `Bước cần làm bây giờ là "${step.name}".`, 409);
       const now = Date.now(), ready = new Date(f.step_ready_at).getTime();
       if (now < ready) throw bad('chua_den_luc', 'Chưa đến lúc làm bước này.', 409);
-      const method = (['tay', 'thue', 'may', 'drone'].includes(String(body.method)) ? body.method : 'thue') as WorkMethod;
-      const owned = await machinesOf(q, userId), tiles = f.blocks * FIELD_BLOCK_TILES;
+      const method = ((WORK_METHODS as string[]).includes(String(body.method)) ? body.method : 'thue') as WorkMethod;
+      const owned = await machinesOf(q, userId), allTiles = f.blocks * FIELD_BLOCK_TILES;
+      // đã tự lái máy làm được một phần bước này: phần còn lại mới tính tiền, tính giờ
+      const drove = f.drive_step === f.step_index ? (f.drive_done as number[]).length : 0, tiles = Math.max(1, allTiles - drove);
+      if (method === 'robot' && levelOf((await q.query('select xp from users where id = $1', [userId])).rows[0].xp).level < ROBOT_MIN_LEVEL)
+        throw bad('chua_du_cap', `Thuê robot làm vườn từ cấp ${ROBOT_MIN_LEVEL}.`, 409);
       const plan = workPlan(step.kind, method, tiles, owned.map((m) => m.kind));
       if (!plan.ok) throw bad('khong_lam_duoc', plan.why!, 409);
       if (method === 'drone' && (await q.query('select home_region_id from users where id = $1', [userId])).rows[0].home_region_id !== f.region_id)
@@ -232,6 +242,60 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
   }
   app.post('/api/fields/:id/work', (req) => doWork(req, false));
   app.post('/api/fields/:id/harvest', (req) => doWork(req, true));
+
+  /**
+   * Tự lái máy trên ruộng: giao diện gửi theo lô các ô giàn cày/gieo/gặt vừa đi qua, kèm quãng đường và thời gian của đoạn lái.
+   * Máy chủ kiểm: đúng máy cho việc của bước, bước đã tới giờ, không có lượt khác đang làm, tốc độ và số ô hợp với quãng đường.
+   * Đủ hết ô thì bước xong ngay (như một lượt làm máy kết thúc lúc này) và cánh đồng sang bước kế.
+   */
+  app.post('/api/fields/:id/drive', async (req) => {
+    const userId = await d.requireUser(req);
+    const id = Number((req.params as { id: string }).id);
+    const body = (req.body ?? {}) as { step?: unknown; tiles?: unknown; meters?: unknown; seconds?: unknown };
+    const meters = Number(body.meters), seconds = Number(body.seconds);
+    const raw = Array.isArray(body.tiles) ? body.tiles : null;
+    if (!raw || raw.length > 400 || !Number.isFinite(meters) || !Number.isFinite(seconds)) throw bad('du_lieu_sai', 'Dữ liệu lái máy không hợp lệ.', 400);
+    if (!driveSpeedOk(meters, seconds)) throw bad('qua_nhanh', 'Máy không chạy nhanh vậy được.', 409);
+    return db.tx(async (q) => {
+      await settle(q, userId);
+      const f = (await q.query('select * from fields where id = $1 and user_id = $2 for update', [id, userId])).rows[0];
+      if (!f) throw bad('khong_tim_thay', 'Không tìm thấy cánh đồng.', 404);
+      if (!f.specialty_id) throw bad('chua_trong', 'Cánh đồng chưa trồng gì.', 409);
+      if (body.step !== undefined && Number(body.step) !== f.step_index) throw bad('sai_buoc', 'Cánh đồng đã sang bước khác.', 409);
+      if ((await q.query('select 1 from field_jobs where field_id = $1 and not done', [id])).rowCount) throw bad('dang_lam', 'Cánh đồng đang có việc làm dở.', 409);
+      const steps = fieldSteps(f.specialty_id), step = steps[f.step_index], now = Date.now(), ready = new Date(f.step_ready_at).getTime();
+      if (now < ready) throw bad('chua_den_luc', 'Chưa đến lúc làm bước này.', 409);
+      const owned = await machinesOf(q, userId), mk = driveMachineFor(step.kind, owned.map((m) => m.kind));
+      if (!mk) throw bad('khong_lai_duoc', `Việc "${WORK_NAMES[step.kind]}" không có máy nào của bạn lái được.`, 409);
+      const busy = owned.find((m) => m.kind === mk)?.busyUntil ?? 0;
+      if (busy > now) throw bad('may_ban', 'Máy đang chạy ở cánh đồng khác.', 409);
+      const total = f.blocks * FIELD_BLOCK_TILES;
+      const prev: number[] = f.drive_step === f.step_index ? f.drive_done : [];
+      const have = new Set(prev), fresh: number[] = [];
+      for (const v of raw) { const t = Number(v); if (Number.isInteger(t) && t >= 0 && t < total && !have.has(t)) { have.add(t); fresh.push(t); } }
+      if (fresh.length > driveTileCap(meters)) throw bad('qua_nhieu_o', 'Số ô vượt quá bề rộng giàn máy trên quãng đường đã đi.', 409);
+      const m = FARM_MACHINES[mk], cost = Math.round(fresh.length * m.costPerTile);
+      if (cost) {
+        const u = await userInfo(q, userId, true);
+        if (u.cash < cost) throw bad('khong_du_tien', 'Không đủ tiền dầu cho máy.', 409);
+        await d.addCash(q, userId, -cost, `dầu máy ${m.name.toLowerCase()} ${fresh.length} ô`);
+      }
+      const done = [...prev, ...fresh];
+      let finished = false;
+      if (done.length >= total) {
+        // đủ ô: ghi một lượt làm máy kết thúc ngay để settle chuyển bước như mọi lượt khác
+        const late = now > ready + d.lateGraceMs;
+        await q.query('insert into field_jobs (field_id, user_id, step_index, kind, method, machine, started_at, ends_at, cost, late) values ($1,$2,$3,$4,\'may\',$5,$6,$6,0,$7)',
+          [id, userId, f.step_index, step.kind, mk, new Date(now - 1), late]);
+        await q.query("update fields set drive_step = null, drive_done = '{}' where id = $1", [id]);
+        await settle(q, userId);
+        finished = true;
+      } else {
+        await q.query('update fields set drive_step = $2, drive_done = $3 where id = $1', [id, f.step_index, done]);
+      }
+      return { ok: true, machine: mk, added: fresh.length, done: finished ? total : done.length, total, finished, cost };
+    });
+  });
 
   app.get('/api/farm/machines', async (req) => {
     const userId = await d.requireUser(req);
@@ -291,7 +355,12 @@ export function registerFarm(app: FastifyInstance, d: FarmDeps) {
     return db.tx(async (q) => {
       const u = await userInfo(q, userId);
       let fieldId: number | null = null;
-      if (body.blocks) fieldId = (await q.query('insert into fields (user_id, region_id, blocks, price_paid) values ($1,$2,$3,0) returning id', [userId, u.home, Math.min(FIELD_MAX_BLOCKS_PER_FIELD, Math.max(1, Number(body.blocks)))])).rows[0].id;
+      if (body.blocks) {
+        const n = Math.min(FIELD_MAX_BLOCKS_PER_FIELD, Math.max(1, Number(body.blocks)));
+        fieldId = (await q.query('insert into fields (user_id, region_id, blocks, price_paid) values ($1,$2,$3,0) returning id', [userId, u.home, n])).rows[0].id;
+        const province = u.home ? REGIONS[u.home]?.province : null; // mỗi khối cũng là một thửa có sổ như khi mua thật
+        if (province) for (let i = 0; i < n; i++) await issueLot(q, userId, province, 'nong_nghiep', 0, Number(fieldId));
+      }
       if (Array.isArray(body.machines)) for (const k of body.machines) if (Object.hasOwn(FARM_MACHINES, String(k))) await q.query('insert into farm_machines (user_id, kind) values ($1,$2) on conflict do nothing', [userId, String(k)]);
       if (body.finishJobs) await q.query('update field_jobs set ends_at = now() - interval \'1 second\' where user_id = $1 and not done', [userId]);
       if (body.readyNow) await q.query('update fields set step_ready_at = now() - interval \'1 second\' where user_id = $1 and specialty_id is not null', [userId]);

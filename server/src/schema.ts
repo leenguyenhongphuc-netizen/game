@@ -426,6 +426,9 @@ create table if not exists field_jobs (
   done boolean not null default false
 );
 create index if not exists field_jobs_open on field_jobs (user_id) where not done;
+-- tự lái máy trên ruộng: các ô đã làm của bước đang lái dở (nhánh F4)
+alter table fields add column if not exists drive_step int;
+alter table fields add column if not exists drive_done int[] not null default '{}';
 -- kinh tế mở rộng (server/src/economy.ts): lô xuất khẩu nhiều mặt hàng, hợp đồng công ty, tài sản thương mại
 alter table export_shipments add column if not exists bundle_id text;
 create index if not exists export_shipments_market_idx on export_shipments (market, specialty_id, created_at desc);
