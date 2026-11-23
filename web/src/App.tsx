@@ -36,6 +36,7 @@ import { GaragePanel } from './vehicles.tsx';
 import { FieldsPanel } from './fields.tsx';
 import { ContractsPanel } from './contracts.tsx';
 import { PropertiesPanel } from './properties.tsx';
+import { ExportDeskDialog } from './exportDesk.tsx';
 import type { FieldsData, HeliTourData } from './fields.tsx';
 import { HeliTour } from './drive/HeliTour.tsx';
 import { ShoppingPanel, useOwnedGoods } from './shopping.tsx';
@@ -290,6 +291,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [xomTab, setXomTab] = useState<'ban' | 'htx' | 'qua'>('ban');
   const [khoTab, setKhoTab] = useState<'kho' | 'don' | 'xuong' | 'xuat' | 'mua' | 'tui' | 'dunghop' | 'ruong' | 'hopdong'>('kho');
   const [heli, setHeli] = useState<HeliTourData | null>(null);
+  const [desk, setDesk] = useState(false);
   type FactoryView = { machines: { id: number | string; kind: string; name: string; level?: number; slots?: number; jobs?: { recipeId?: string; doneAt?: number; done?: boolean }[] }[] };
   const [factory, setFactory] = useState<FactoryView | null>(null);
   const isWorkshop = me?.user.role === 'xuong';
@@ -632,6 +634,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
               )}
               {ctx.kind === 'machine' && ctxLot?.plot.mine && <button className="ctx-btn go" onClick={() => { setKhoTab('xuong'); setTab('kho'); }}>{ctx.machineId === null ? '🛒 Mua thêm máy' : '⚙️ Mở xưởng'}</button>}
               {ctx.kind === 'truck' && <button className="ctx-btn go" onClick={() => { worldRef.current?.enterTruck(); setDriving(true); }}>🚚 Lên xe tải</button>}
+              {ctx.kind === 'export-desk' && <button className="ctx-btn go" onClick={() => setDesk(true)}>🚢 Nói chuyện với đại lý xuất khẩu</button>}
               {ctx.kind === 'empty-lot' && <button className="ctx-btn go" onClick={() => setTab('ban')}>🧑‍🤝‍🧑 Mời bạn về làm hàng xóm</button>}
             </div>
           </>
@@ -681,6 +684,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
         setTravelTab(r.toMarket ? 'sieuthi' : 'thamquan'); setTab('bando');
       }} />}
       {sightWalk && shopOpen && <ShopSheet sightId={sightWalk.sight.id} shopId={shopOpen} onClose={() => setShopOpen(null)} onChanged={() => { void refresh(); }} />}
+      {desk && <ExportDeskDialog onClose={() => setDesk(false)} onContracts={() => { setDesk(false); setKhoTab('hopdong'); setTab('kho'); }} onExport={() => { setDesk(false); setKhoTab('xuat'); setTab('kho'); }} />}
       {heli && <HeliTour tour={heli} onDone={() => setHeli(null)} />}
       {importRide && <ImportRide order={importRide} onDone={() => { setImportRide(null); setKhoTab('xuong'); setTab('kho'); }} />}
       {cert !== null && <LandCertificate plotId={cert} onClose={() => setCert(null)} />}
@@ -718,7 +722,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
             )}
             {tab === 'toi' && <div className="cert-list"><h3>Giấy chứng nhận quyền sử dụng đất</h3>{me.plots.map((p) => <button key={p.id} onClick={() => setCert(p.id)}>📜 {p.isHome ? 'Thửa nhà' : 'Thửa'} ở {REGIONS[p.regionId].name}{p.wardName ? ` · ${p.wardName}` : ''}</button>)}</div>}
             {tab === 'toi' && mine && center && !(isWorkshop && center.plot.isHome) && <div className="cert-list"><h3>Nâng cấp thửa đang xem</h3><LandUpgrades plotId={center.plot.id} me={me} onChanged={reload} /></div>}
-            {tab === 'toi' && <div className="cert-list"><h3>Tài sản: siêu thị, xưởng chi nhánh</h3><PropertiesPanel refresh={reload} /></div>}
+            {tab === 'toi' && <div className="cert-list"><h3>Tài sản, đất đai</h3><PropertiesPanel refresh={reload} /></div>}
             {tab === 'toi' && <ProfilePanel onRespin={() => { setTab('vuon'); setRespin(true); }} me={me} homePlotId={homePlotId} wardProvince={(atHome ? center?.plot.wardProvince : null) ?? null} wardName={me.plots.find((p) => p.isHome)?.wardName ?? null} onChanged={reload} />}
             {tab === 'toi' && <p><button onClick={async () => { if (confirm('Đăng xuất khỏi Vườn Việt?')) { await api('POST', '/api/auth/logout', {}); await refresh(); } }}>⏻ Đăng xuất</button></p>}
             {tab === 'cho' && (
