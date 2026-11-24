@@ -16,6 +16,8 @@ export interface ExamGameProps {
   cls: string; title?: string; fee?: number;
   /** Mở thẳng vào chế độ tập (không tính điểm lên máy chủ). */
   practiceOnly?: boolean;
+  /** Số bùa may mắn đang có (vật phẩm vui: lượt thi thật có vệt dẫn đường, không đổi cách chấm). */
+  charms?: number;
   onClose: (result: ExamResult | null) => void;
 }
 type Phase = 'intro' | 'run' | 'result';
@@ -28,6 +30,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
   const host = useRef<HTMLDivElement>(null), yard = useRef<ExamYard | null>(null), wheelEl = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>('intro');
   const [practice, setPractice] = useState(!!props.practiceOnly);
+  const [useCharm, setUseCharm] = useState(false), [charmed, setCharmed] = useState(false);
   const [from, setFrom] = useState<ItemId>(1);
   const [hud, setHud] = useState<YardHud | null>(null);
   const [say, setSay] = useState<string>('');
@@ -68,7 +71,7 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
       else if (e.type === 'say') { setSay(e.text ?? ''); pushFeed(e.text ?? '', /NGUY HIỂM/.test(e.text ?? '')); }
       else if (e.type === 'end') void finish();
     };
-    const y = new ExamYard(host.current, cls, { onEvent, onHud: setHud }, { practice, from: practice ? from : 1, assist: 'de', guide: practice });
+    const y = new ExamYard(host.current, cls, { onEvent, onHud: setHud }, { practice, from: practice ? from : 1, assist: 'de', guide: practice || charmed });
     yard.current = y; y.setView(view); setSay(ITEMS[(practice ? from : 1) - 1].say);
     const w = window as unknown as { __exam?: unknown; __examAuto?: boolean };
     w.__exam = {
@@ -84,17 +87,18 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
     if (w.__examAuto) { y.auto = true; setAuto(true); }
     return () => { y.dispose(); yard.current = null; delete w.__exam; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, practice, from, cls]);
+  }, [phase, practice, from, cls, charmed]);
 
   const begin = async (asPractice: boolean, item: ItemId = 1) => {
     setError(null); setFeed([]); setHud(null); setResult(null); setAuto(false);
     setCtl({ gear: 'P', left: false, right: false, hazard: false, belt: false, hand: true });
     if (!asPractice) {
       setBusy(true);
-      try { const r = await api<{ examId?: number | string; minSeconds?: number }>('POST', '/api/licenses/exam/start', { cls: props.cls, part: 'sa_hinh' }); examId.current = r?.examId ?? null; minUntil.current = Date.now() + (r?.minSeconds ?? 0) * 1000; }
+      try { const r = await api<{ examId?: number | string; minSeconds?: number; charm?: boolean }>('POST', '/api/licenses/exam/start', { cls: props.cls, part: 'sa_hinh', charm: useCharm }); examId.current = r?.examId ?? null; minUntil.current = Date.now() + (r?.minSeconds ?? 0) * 1000; setCharmed(!!r?.charm); }
       catch (e) { const msg = e instanceof Error ? e.message : ''; if (/không đủ tiền|chưa đủ cấp|lý thuyết|không cần thi/i.test(msg)) { setError(msg); setBusy(false); return; } examId.current = null; }
       setBusy(false);
     }
+    if (asPractice) setCharmed(false);
     setPractice(asPractice); setFrom(item); setPhase('run');
   };
   const set = (p: Partial<typeof ctl>) => { const i = input(); const base = i ? { gear: i.gear, left: i.left, right: i.right, hazard: i.hazard, belt: i.belt, hand: i.hand } : ctl; const n = { ...base, ...p }; if (i) Object.assign(i, n); setCtl(n); if (yard.current && auto) { yard.current.auto = false; setAuto(false); } };
@@ -121,9 +125,10 @@ export function ExamGame(props: ExamGameProps): JSX.Element {
         {error && <p className="exam-err" role="alert">{error}</p>}
         <p className="exam-assist"><b>Xe có trợ lái</b><span>Xe tự bám làn và tự hãm trước vạch; bạn bấm đúng xi nhan, số, phanh tay, giữ GA/PHANH và chỉnh thêm bằng ◀ ▶. Chạm vào vạch phía trước để xe tự chạy tới và dừng đúng chỗ. Khi tập có vệt dẫn đường, khi thi thì không.</span></p>
         <div className="exam-start">
-          {!props.practiceOnly && <button className="exam-go" disabled={busy} onClick={() => void begin(false)}>🏁 Vào thi{props.fee ? <small>lệ phí {fmtMoney(props.fee)}</small> : null}</button>}
+          {!props.practiceOnly && <button className="exam-go" disabled={busy} onClick={() => void begin(false)}>🏁 Thi sát hạch thật{props.fee ? <small>lệ phí {fmtMoney(props.fee)}</small> : null}</button>}
           <button className="exam-go alt" disabled={busy} onClick={() => void begin(true, 1)}>🎓 Tập cả bài<small>miễn phí, có vệt gợi ý</small></button>
         </div>
+        {!props.practiceOnly && (props.charms ?? 0) > 0 && <label className="exam-charm"><input type="checkbox" checked={useCharm} onChange={(e) => setUseCharm(e.target.checked)} /> 🍀 Dùng bùa may mắn (còn {props.charms}) — lượt thi có vệt dẫn mờ, không đổi cách chấm</label>}
         <h3>Tập riêng từng bài</h3>
         <ol className="exam-items">
           {ITEMS.map((it) => (

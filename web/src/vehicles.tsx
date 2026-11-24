@@ -4,7 +4,7 @@ import type { JSX } from 'react';
 import { REGIONS } from '../../shared/catalog.ts';
 import { fmtMoney } from '../../shared/rules.ts';
 import type { LicenseClass, VehicleSpec } from '../../shared/vehicles.ts';
-import { isBigTruck } from '../../shared/vehicles.ts';
+import { LUCK_CHARM, THEORY_SPEC, isBigTruck } from '../../shared/vehicles.ts';
 import { canUse } from '../../shared/roles.ts';
 import { api } from './api.ts';
 import type { Me } from './api.ts';
@@ -13,6 +13,7 @@ import './vehicles.css';
 import { ExamGame } from './drive/ExamGame.tsx';
 import { MotoExam } from './drive/MotoExam.tsx';
 import { PhuotPanel } from './phuot.tsx';
+import { examFor } from './licenseQuiz.ts';
 
 type Group = VehicleSpec['group'];
 interface CatalogRow extends VehicleSpec { unit: string; powerName: string; rangeKm: number; roadPrice: number; parkPrice: number; tollGroupName: string; licenseName: string; owned: number; canBuy: boolean; why: string | null }
@@ -22,7 +23,7 @@ interface LicenseRow { cls: LicenseClass; name: string; covers: string; price: n
   termYears?: number | null; issuedAt?: number | null; expiresAt?: number | null; expired?: boolean; daysLeft?: number | null; points?: number; maxPoints?: number; suspended?: boolean;
   exam?: { theory?: ExamPart; yard?: ExamPart }; renew?: { mode: 'doi' | 'thi_ly_thuyet' | 'thi_lai'; fee: number; needTheory?: boolean; needYard?: boolean } | null }
 const dmy = (t?: number | null) => (t ? new Date(t).toLocaleDateString('vi-VN') : '—');
-export interface GarageData { level: number; cash: number; atHome: boolean; active: number | null; maxOwned: number; resale: number; catalog: CatalogRow[]; owned: OwnedRow[]; licenses: LicenseRow[]; rules?: { continuousHours: number; dailyHours: number; weeklyHours: number } }
+export interface GarageData { level: number; cash: number; atHome: boolean; active: number | null; maxOwned: number; resale: number; catalog: CatalogRow[]; owned: OwnedRow[]; licenses: LicenseRow[]; rules?: { continuousHours: number; dailyHours: number; weeklyHours: number }; charms?: number }
 
 const kg = (n: number) => (n >= 1000 ? `${(n / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tấn` : `${n.toLocaleString('vi-VN')} kg`);
 const num = (n: number, d = 0) => n.toLocaleString('vi-VN', { maximumFractionDigits: d });
@@ -120,37 +121,53 @@ export const QUIZ: Q[] = [
   { q: 'Giấy phép lái xe có bao nhiêu điểm, và hết điểm thì sao?', a: ['12 điểm; bị trừ hết thì không được lái cho tới khi kiểm tra lại kiến thức', '10 điểm; hết điểm chỉ bị nhắc nhở', 'Không có điểm'], ok: 0, why: 'Từ năm 2025 mỗi giấy phép có 12 điểm. Vi phạm bị trừ điểm; hết điểm phải kiểm tra lại kiến thức pháp luật mới được lái tiếp.' },
   { q: 'Trời mưa to, sương mù làm tầm nhìn kém, bạn nên làm gì?', a: ['Chạy như bình thường', 'Giảm tốc độ, bật đèn, giữ khoảng cách xa hơn', 'Bám sát xe trước để dễ nhìn'], ok: 1, why: 'Đường trơn và tầm nhìn kém thì quãng đường phanh dài hơn nhiều: phải chạy chậm lại và giữ khoảng cách lớn hơn mức tối thiểu.' },
 ];
-const PASS = 4, ASK = 5;
 
-function Quiz({ title, onPass, onClose }: { title: string; onPass: (right: number) => void; onClose: () => void }) {
-  const picks = useMemo(() => [...QUIZ.keys()].sort(() => Math.random() - 0.5).slice(0, ASK), []);
-  const [i, setI] = useState(0), [right, setRight] = useState(0), [chosen, setChosen] = useState<number | null>(null);
-  const done = i >= ASK, q = QUIZ[picks[Math.min(i, ASK - 1)]];
+/** Thi lý thuyết theo bố cục đề của từng hạng (THEORY_SPEC): đếm ngược, làm hết rồi nộp; sai câu điểm liệt là trượt.
+ *  practice = ôn tập: chọn là thấy đúng/sai và giải thích ngay, không tính giờ, không nộp. */
+function Quiz({ cls, title, practice, onPass, onClose }: { cls: LicenseClass; title: string; practice?: boolean; onPass: (scorePct: number, right: number) => void; onClose: () => void }) {
+  const exam = useMemo(() => examFor(cls), [cls]);
+  const { qs, spec } = exam, N = qs.length;
+  const [i, setI] = useState(0), [ans, setAns] = useState<(number | null)[]>(() => qs.map(() => null)), [done, setDone] = useState(false);
+  const [left, setLeft] = useState(spec.minutes * 60);
+  useEffect(() => { if (practice || done) return; const t = window.setInterval(() => setLeft((x) => { if (x <= 1) { setDone(true); return 0; } return x - 1; }), 1000); return () => window.clearInterval(t); }, [practice, done]);
+  const right = ans.filter((a, k) => a === qs[k].ok).length, lieWrong = qs.some((q, k) => q.lie && ans[k] !== q.ok);
+  const passed = right >= spec.pass && !lieWrong, q = qs[i], chosen = ans[i];
+  const pick = (k: number) => { if (done || (practice && chosen !== null)) return; setAns((a) => a.map((x, j) => (j === i ? k : x))); };
+  const mm = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, answered = ans.filter((a) => a !== null).length;
+  // móc cho bộ kiểm tự động: đáp án đúng của đề đang mở (chỉ đọc)
+  useEffect(() => { (window as unknown as { __quiz?: unknown }).__quiz = { ok: qs.map((x) => x.ok), lie: qs.map((x) => !!x.lie), n: N, pass: spec.pass }; return () => { delete (window as unknown as { __quiz?: unknown }).__quiz; }; }, [qs, N, spec.pass]);
   return (
-    <div className="quiz-wrap" role="dialog" aria-label={`Thi lý thuyết ${title}`}>
+    <div className="quiz-wrap" role="dialog" aria-label={`${practice ? 'Ôn' : 'Thi'} lý thuyết ${title}`}>
       <div className="quiz">
-        <header><strong>📝 Thi lý thuyết · {title}</strong><button type="button" className="round" aria-label="Đóng" onClick={onClose}>×</button></header>
+        <header><strong>{practice ? '📚 Ôn lý thuyết' : '📝 Thi lý thuyết'} · {title}</strong><button type="button" className="round" aria-label="Đóng" onClick={onClose}>×</button></header>
         {!done ? (
           <>
-            <p className="quiz-step">Câu {i + 1}/{ASK} · đúng {right} · cần đúng {PASS} câu</p>
-            <h3>{q.q}</h3>
+            <p className="quiz-step">Câu {i + 1}/{N}{!practice && <> · đã làm {answered}/{N} · ⏱ {mm}</>} · đạt từ {spec.pass}/{N} câu, không sai câu điểm liệt</p>
+            <div className="quiz-nav" role="group" aria-label="Chọn câu">{qs.map((_, k) => <button type="button" key={k} aria-current={k === i} className={ans[k] !== null ? (practice ? (ans[k] === qs[k].ok ? 'ok' : 'bad') : 'on') : ''} onClick={() => setI(k)}>{k + 1}</button>)}</div>
+            <h3>{q.lie && <span className="quiz-lie">Điểm liệt</span>} {q.q}</h3>
             <div className="quiz-opts">
               {q.a.map((t, k) => (
-                <button type="button" key={k} disabled={chosen !== null} className={chosen === null ? '' : k === q.ok ? 'ok' : k === chosen ? 'bad' : ''} onClick={() => { setChosen(k); if (k === q.ok) setRight((r) => r + 1); }}>{t}</button>
+                <button type="button" key={k} disabled={practice && chosen !== null} className={practice && chosen !== null ? (k === q.ok ? 'ok' : k === chosen ? 'bad' : '') : chosen === k ? 'sel' : ''} onClick={() => pick(k)}>{t}</button>
               ))}
             </div>
-            {chosen !== null && <p className={`quiz-why ${chosen === q.ok ? 'ok' : 'bad'}`} role="status"><b>{chosen === q.ok ? 'Đúng. ' : 'Chưa đúng. '}</b>{q.why}</p>}
-            {chosen !== null && <button type="button" className="go wide" onClick={() => { setChosen(null); setI(i + 1); }}>{i + 1 < ASK ? 'Câu tiếp' : 'Xem kết quả'}</button>}
-          </>
-        ) : right >= PASS ? (
-          <>
-            <h3>🎉 Đạt {right}/{ASK} câu</h3><p>Bạn đã qua phần lý thuyết của {title}.</p>
-            <button type="button" className="go wide" onClick={() => onPass(right)}>Nộp bài</button>
+            {practice && chosen !== null && <p className={`quiz-why ${chosen === q.ok ? 'ok' : 'bad'}`} role="status"><b>{chosen === q.ok ? 'Đúng. ' : 'Chưa đúng. '}</b>{q.why}</p>}
+            <div className="quiz-row">
+              <button type="button" disabled={i === 0} onClick={() => setI(i - 1)}>‹ Câu trước</button>
+              {i + 1 < N ? <button type="button" className="go" onClick={() => setI(i + 1)}>Câu tiếp ›</button>
+                : <button type="button" className="go" onClick={() => setDone(true)}>{practice ? 'Xem kết quả' : 'Nộp bài'}</button>}
+            </div>
           </>
         ) : (
           <>
-            <h3>Chưa đạt: {right}/{ASK} câu</h3><p>Cần đúng ít nhất {PASS} câu. Đọc lại phần giải thích rồi thi lại nhé, thi lại không mất tiền.</p>
-            <button type="button" className="go wide" onClick={onClose}>Để sau thi lại</button>
+            <h3>{passed ? `🎉 Đạt ${right}/${N} câu` : `Chưa đạt: ${right}/${N} câu`}</h3>
+            {lieWrong && <p className="quiz-why bad">Sai câu điểm liệt — trượt dù đủ điểm. Đây là lỗi nguy hiểm, luật không cho phép.</p>}
+            {!passed && !lieWrong && <p>Cần đúng ít nhất {spec.pass}/{N} câu.</p>}
+            <details className="quiz-review"><summary>Xem lại {N - right} câu sai</summary>
+              {qs.map((x, k) => ans[k] === x.ok ? null : <p key={k}><b>Câu {k + 1}{x.lie ? ' (điểm liệt)' : ''}:</b> {x.q}<br />✔ {x.a[x.ok]} — <small>{x.why}</small></p>)}
+            </details>
+            {practice ? <button type="button" className="go wide" onClick={onClose}>Xong ôn tập</button>
+              : passed ? <button type="button" className="go wide" onClick={() => onPass(Math.round((right / N) * 100), right)}>Nộp kết quả, sang bước tiếp</button>
+              : <button type="button" className="go wide" onClick={() => onPass(lieWrong ? 0 : Math.round((right / N) * 100), right)}>Nộp bài (chưa đạt), ôn thêm rồi thi lại</button>}
           </>
         )}
       </div>
@@ -182,7 +199,7 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
   const [tab, setTab] = useState<'daily' | 'bang' | 'phuot'>(() => { try { const t = sessionStorage.getItem('vv-garage-tab'); sessionStorage.removeItem('vv-garage-tab'); return t === 'phuot' || t === 'bang' ? t : 'daily'; } catch { return 'daily'; } });
   const [filter, setFilter] = useState<'tat_ca' | 'xe_may' | 'xang_dau' | 'dien' | 'lanh'>('tat_ca');
   const [open, setOpen] = useState<string | null>(null);
-  const [quiz, setQuiz] = useState<LicenseRow | null>(null);
+  const [quiz, setQuiz] = useState<{ l: LicenseRow; practice: boolean } | null>(null);
   const [yard, setYard] = useState<{ l: LicenseRow; practice: boolean } | null>(null);
   const theoryExam = useRef<{ id: number | string | null; until: number }>({ id: null, until: 0 });
   const [note, setNote] = useState<string | null>(null);
@@ -198,7 +215,7 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
     return { hasYard, theory: !l.exam?.theory?.passed, yard: hasYard && !l.exam?.yard?.passed };
   };
   const startTheory = async (l: LicenseRow) => {
-    try { const r = await api<{ examId?: number | string; minSeconds?: number }>('POST', '/api/licenses/exam/start', { cls: l.cls, part: 'ly_thuyet' }); theoryExam.current = { id: r?.examId ?? null, until: Date.now() + (r?.minSeconds ?? 0) * 1000 }; setQuiz(l); refresh(); }
+    try { const r = await api<{ examId?: number | string; minSeconds?: number }>('POST', '/api/licenses/exam/start', { cls: l.cls, part: 'ly_thuyet' }); theoryExam.current = { id: r?.examId ?? null, until: Date.now() + (r?.minSeconds ?? 0) * 1000 }; setQuiz({ l, practice: false }); refresh(); }
     catch (e) { setNote(e instanceof Error ? e.message : 'Chưa vào thi được.'); }
   };
   /** Bước cuối: nhận bằng mới hoặc đổi bằng. `quiet` = gọi ngay sau khi vừa đạt phần thi, còn thiếu phần khác thì chỉ nhắc. */
@@ -280,7 +297,7 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
       )}
       {tab === 'bang' && (
         <section className="veh-lic">
-          <p className="veh-tip">Muốn có bằng phải qua <b>thi lý thuyết</b> ({ASK} câu, đúng từ {PASS}) và <b>thi sa hình</b> (đạt từ 80/100 điểm): xe máy A1, A thi 4 bài (hình số 8, vạch đường thẳng, vạch cản, đường gồ ghề); ô tô thi 11 bài trong sân sát hạch. Bằng ô tô có thời hạn; hết hạn phải đổi hoặc thi lại. Bị phạt khi lái xe sẽ trừ điểm bằng lái.</p>
+          <p className="veh-tip">Muốn có bằng phải qua <b>thi lý thuyết</b> (số câu theo từng hạng, ví dụ A1: 25 câu, đúng từ 21, có câu điểm liệt) và <b>thi sa hình</b> (đạt từ 80/100 điểm): xe máy A1, A thi 4 bài (hình số 8, vạch đường thẳng, vạch cản, đường gồ ghề); ô tô thi 11 bài trong sân sát hạch. Bằng ô tô có thời hạn; hết hạn phải đổi hoặc thi lại. Bị phạt khi lái xe sẽ trừ điểm bằng lái.</p>
           {data.licenses.map((l) => {
             const need = needs(l), holding = l.owned, bad = l.expired || l.suspended;
             return (
@@ -305,13 +322,15 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
                     </ol>
                   )}
                   <div className="lic-acts">
-                    {!l.covered && !holding && !l.canBuy && l.why && <span className="tag">{l.why}</span>}
-                    {(holding ? !!l.renew || l.suspended : !l.covered && l.canBuy) && (
-                      need.theory ? <button type="button" className="go" disabled={act.busy} onClick={() => void startTheory(l)}>📝 Thi lý thuyết{l.exam?.theory?.fee ? <small>lệ phí {fmtMoney(l.exam.theory.fee)}</small> : null}</button>
-                      : need.yard ? <button type="button" className="go" disabled={act.busy} onClick={() => setYard({ l, practice: false })}>🏁 Vào sân thi{l.exam?.yard?.fee ? <small>lệ phí {fmtMoney(l.exam.yard.fee)}</small> : null}</button>
-                      : <button type="button" className="go" disabled={act.busy} onClick={() => void conclude(l)}>{holding ? `Đổi bằng${l.renew?.fee ? ` · ${fmtMoney(l.renew.fee)}` : ''}` : `Nhận bằng · ${fmtMoney(l.price)}`}</button>
+                    {!l.covered && !holding && l.why && /^Cần cấp|^Đã có|^Chưa đủ tiền/.test(l.why) && <span className="tag">{l.why}</span>}
+                    {(holding ? !!l.renew || l.suspended : !l.covered && !/^Cần cấp|^Đã có/.test(l.why ?? '')) && (
+                      need.theory ? <button type="button" className="go" disabled={act.busy} onClick={() => void startTheory(l)}>📝 Thi lý thuyết<small>{THEORY_SPEC[l.cls].questions} câu · đúng từ {THEORY_SPEC[l.cls].pass} · {THEORY_SPEC[l.cls].minutes} phút{l.exam?.theory?.fee ? ` · ${fmtMoney(l.exam.theory.fee)}` : ''}</small></button>
+                      : need.yard ? <button type="button" className="go" disabled={act.busy} onClick={() => setYard({ l, practice: false })}>🏁 Thi sa hình (sát hạch thật){l.exam?.yard?.fee ? <small>lệ phí {fmtMoney(l.exam.yard.fee)}</small> : null}</button>
+                      : <button type="button" className="go" disabled={act.busy || (!holding && !l.canBuy)} onClick={() => void conclude(l)}>{holding ? `Đổi bằng${l.renew?.fee ? ` · ${fmtMoney(l.renew.fee)}` : ''}` : `🪪 Nhận bằng · ${fmtMoney(l.price)}`}</button>
                     )}
+                    {!l.covered && !holding && need.theory && <button type="button" className="lic-practice" onClick={() => setQuiz({ l, practice: true })}>📚 Ôn lý thuyết</button>}
                     {need.hasYard && <button type="button" className="lic-practice" onClick={() => setYard({ l, practice: true })}>🎓 Tập lái sa hình</button>}
+                    {!l.covered && !holding && !need.theory && need.yard && <button type="button" className="lic-practice" disabled={act.busy || (data.charms ?? 0) >= 5} onClick={() => act.run(async () => { await api('POST', '/api/licenses/charm'); setNote(`Đã mua ${LUCK_CHARM.name} (vật phẩm vui, không phải hối lộ): lần thi sa hình tới bật vệt dẫn đường.`); })}>🍀 Mua bùa may mắn · {fmtMoney(LUCK_CHARM.price)}{(data.charms ?? 0) > 0 ? ` (có ${data.charms})` : ''}</button>}
                     {(l.owned || l.covered) && !bad && !l.renew && <span className="tag">✓ Đang có hiệu lực</span>}
                   </div>
                 </div>
@@ -319,12 +338,13 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
           })}
         </section>
       )}
-      {quiz && <Quiz title={quiz.name} onClose={() => setQuiz(null)} onPass={(right) => { const l = quiz; setQuiz(null); void act.run(async () => {
+      {quiz && <Quiz cls={quiz.l.cls} title={quiz.l.name} practice={quiz.practice} onClose={() => setQuiz(null)} onPass={(pct) => { const l = quiz.l; setQuiz(null); void act.run(async () => {
         const wait = theoryExam.current.until - Date.now(); if (wait > 0) await new Promise((r) => window.setTimeout(r, wait + 200));
-        await api('POST', '/api/licenses/exam', { cls: l.cls, part: 'ly_thuyet', score: right * 20, examId: theoryExam.current.id });
-        const n = needs(l); if (n.hasYard && n.yard) setNote(`Đã đạt lý thuyết ${l.name}. Bước tiếp: vào sân thi sa hình.`); else await conclude({ ...l, exam: { ...l.exam, theory: { ...l.exam?.theory, passed: true } } }, true);
+        const r = await api<{ passed?: boolean }>('POST', '/api/licenses/exam', { cls: l.cls, part: 'ly_thuyet', score: pct, examId: theoryExam.current.id });
+        if (!r?.passed) { setNote(`Chưa đạt lý thuyết ${l.name}. Bấm "📚 Ôn lý thuyết" để luyện rồi thi lại.`); return; }
+        const n = needs(l); if (n.hasYard && n.yard) setNote(`Đã đạt lý thuyết ${l.name}. Bước tiếp: 🏁 Thi sa hình (sát hạch thật).`); else await conclude({ ...l, exam: { ...l.exam, theory: { ...l.exam?.theory, passed: true } } }, true);
       }); }} />}
-      {yard && (yard.l.cls === 'A1' || yard.l.cls === 'A') && <MotoExam cls={yard.l.cls} title={yard.l.name} fee={yard.l.exam?.yard?.fee} practiceOnly={yard.practice} onClose={(r) => { const l = yard.l; setYard(null); void load(); if (r?.passed) void act.run(async () => { await conclude({ ...l, exam: { ...l.exam, yard: { ...l.exam?.yard, passed: true } } }, true); }); else if (r) setNote(`Chưa đạt phần sa hình ${l.name}${r.out ? ` (truất quyền: ${r.out})` : ` (${r.score}/100 điểm)`}. Hãy tập thêm rồi thi lại.`); }} />}
-      {yard && yard.l.cls !== 'A1' && yard.l.cls !== 'A' && <ExamGame cls={yard.l.cls} title={yard.l.name} fee={yard.l.exam?.yard?.fee} practiceOnly={yard.practice} onClose={(r) => { const l = yard.l; setYard(null); void load(); if (r?.passed) void act.run(async () => { await conclude({ ...l, exam: { ...l.exam, yard: { ...l.exam?.yard, passed: true } } }, true); }); else if (r) setNote(`Chưa đạt phần sa hình ${l.name}${r.out ? ` (truất quyền: ${r.out})` : ` (${r.score}/100 điểm)`}. Hãy tập thêm rồi thi lại.`); }} />}
+      {yard && (yard.l.cls === 'A1' || yard.l.cls === 'A') && <MotoExam cls={yard.l.cls} title={yard.l.name} fee={yard.l.exam?.yard?.fee} practiceOnly={yard.practice} charms={data.charms} onClose={(r) => { const l = yard.l; setYard(null); void load(); if (r?.passed) void act.run(async () => { await conclude({ ...l, exam: { ...l.exam, yard: { ...l.exam?.yard, passed: true } } }, true); }); else if (r) setNote(`Chưa đạt phần sa hình ${l.name}${r.out ? ` (truất quyền: ${r.out})` : ` (${r.score}/100 điểm)`}. Hãy tập thêm rồi thi lại.`); }} />}
+      {yard && yard.l.cls !== 'A1' && yard.l.cls !== 'A' && <ExamGame cls={yard.l.cls} title={yard.l.name} fee={yard.l.exam?.yard?.fee} practiceOnly={yard.practice} charms={data.charms} onClose={(r) => { const l = yard.l; setYard(null); void load(); if (r?.passed) void act.run(async () => { await conclude({ ...l, exam: { ...l.exam, yard: { ...l.exam?.yard, passed: true } } }, true); }); else if (r) setNote(`Chưa đạt phần sa hình ${l.name}${r.out ? ` (truất quyền: ${r.out})` : ` (${r.score}/100 điểm)`}. Hãy tập thêm rồi thi lại.`); }} />}
     </div>);
 }
