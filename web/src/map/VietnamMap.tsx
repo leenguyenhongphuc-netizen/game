@@ -17,6 +17,9 @@ export interface VietnamMapProps {
   sightProvinces: string[];
   selectedId?: string | null;
   onSelect: (regionId: string) => void;
+  /** Địa danh, khu vui chơi: ghim sao vàng luôn hiện tên, chạm để lên kế hoạch đi. */
+  sights?: { id: string; name: string; emoji: string; lat: number; lng: number; province: string }[];
+  onSelectSight?: (sightId: string) => void;
 }
 
 const BOX = { lat0: 7.6, lat1: 23.7, lng0: 101.8, lng1: 115.2 };
@@ -39,19 +42,26 @@ const PLACE_LABELS: { name: string; lng: number; lat: number; dx?: number; dy?: 
 const COUNTRY_LABELS: [string, number, number][] = [['TRUNG QUỐC', 107.6, 23.35], ['LÀO', 103.6, 18.6], ['CAM-PU-CHIA', 104.7, 12.6], ['THÁI LAN', 103.0, 15.6]];
 const ZONE_COLOR: Record<string, string> = { bac: '#5b8def', trung: '#e58a2b', taynguyen: '#b0522d', nam: '#2f9e55', dao: '#12a5b8' };
 
-export function VietnamMap({ regions, homeId, currentId, visited, owned = [], sightProvinces, selectedId, onSelect }: VietnamMapProps) {
+export function VietnamMap({ regions, homeId, currentId, visited, owned = [], sightProvinces, selectedId, onSelect, sights = [], onSelectSight }: VietnamMapProps) {
   const pz = usePanZoom(P, 9);
   const u = pz.unit, z = pz.zoom;
   const seen = useMemo(() => (visited instanceof Set ? visited : new Set(visited)), [visited]);
   const pins = useMemo(() => regions.map((r) => ({ r, x: P.x(r.lng), y: P.y(r.lat) })), [regions]);
   const cur = pins.find((p) => p.r.id === currentId), sel = pins.find((p) => p.r.id === selectedId);
-  // màn ngang chỉ thấy một khúc đất nước: mở đầu ở chỗ người chơi đang đứng
+  const spins = useMemo(() => sights.map((s) => ({ s, x: P.x(s.lng), y: P.y(s.lat) })), [sights]);
+  // mở đầu ở chỗ người chơi đang đứng (phóng vừa đủ thấy tỉnh xung quanh) để biết mình ở đâu
   const centred = useRef(false);
-  useEffect(() => { if (!centred.current && pz.landscape && cur) { centred.current = true; pz.focus(cur.x, cur.y, 1); } }, [pz.landscape, cur]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!centred.current && cur) { centred.current = true; pz.focus(cur.x, cur.y, pz.landscape ? 1.4 : 1.8); } }, [pz.landscape, cur]); // eslint-disable-line react-hooks/exhaustive-deps
   const km = cur && sel && cur !== sel ? Math.round(haversineKm(cur.r.lat, cur.r.lng, sel.r.lat, sel.r.lng)) : 0;
 
   const onClick = (e: React.MouseEvent) => {
     const t = pz.tap(e); if (!t) return;
+    // địa danh ưu tiên hơn vùng trồng khi chạm gần
+    if (onSelectSight) {
+      let bs: (typeof spins)[number] | null = null, bsd = 18 * u;
+      for (const p of spins) { const d = Math.hypot(p.x - t[0], p.y - t[1]); if (d < bsd) { bsd = d; bs = p; } }
+      if (bs) { onSelectSight(bs.s.id); return; }
+    }
     let best: (typeof pins)[number] | null = null, bd = 24 * u; // chạm trong bán kính 24 điểm ảnh quanh ghim gần nhất
     for (const p of pins) { const d = Math.hypot(p.x - t[0], p.y - t[1]); if (d < bd) { bd = d; best = p; } }
     if (best) onSelect(best.r.id);
@@ -107,6 +117,24 @@ export function VietnamMap({ regions, homeId, currentId, visited, owned = [], si
             </g>
           );
         })}
+        {spins.map(({ s: sg, x, y }) => {
+          const near = spins.filter((o) => o.s.id !== sg.id && Math.hypot(o.x - x, o.y - y) < 26 * u).length, label = z >= 2.2 || !near;
+          return (
+            <g key={sg.id} className="vm-sight" data-sight={sg.id} role="button" tabIndex={0} aria-label={`${sg.name}, ${sg.province}`}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectSight?.(sg.id); } }}>
+              <path d={`M${x} ${y - 9 * u}l${2.6 * u} ${5.6 * u}l${6.1 * u} ${0.7 * u}l${-4.5 * u} ${4.2 * u}l${1.2 * u} ${6 * u}l${-5.4 * u} ${-3 * u}l${-5.4 * u} ${3 * u}l${1.2 * u} ${-6 * u}l${-4.5 * u} ${-4.2 * u}l${6.1 * u} ${-0.7 * u}z`}
+                fill="#ffcf3a" stroke="#7a2a10" strokeWidth={1.3 * u} />
+              {label && <text x={x + 9 * u} y={y + 3.5 * u} className="vm-sight-label" style={{ fontSize: 9.5 * u, strokeWidth: 2.6 * u }} pointerEvents="none">{sg.emoji} {sg.name}</text>}
+            </g>
+          );
+        })}
+        {cur && (
+          <g pointerEvents="none" transform={`translate(${cur.x} ${cur.y - 22 * u})`}>
+            <rect x={-30 * u} y={-9 * u} width={60 * u} height={17 * u} rx={8.5 * u} fill="#2f7d26" stroke="#fff" strokeWidth={1.4 * u} />
+            <path d={`M${-4 * u} ${8 * u}L0 ${13 * u}L${4 * u} ${8 * u}Z`} fill="#2f7d26" />
+            <text textAnchor="middle" y={3.8 * u} className="vm-here-label" style={{ fontSize: 10 * u }}>Bạn ở đây</text>
+          </g>
+        )}
         {cur && sel && cur !== sel && (
           <g pointerEvents="none">
             <line x1={cur.x} y1={cur.y} x2={sel.x} y2={sel.y} stroke="#c0391f" strokeWidth={2.4 * u} strokeDasharray={`${7 * u} ${5 * u}`} strokeLinecap="round" />
@@ -123,7 +151,7 @@ export function VietnamMap({ regions, homeId, currentId, visited, owned = [], si
         {cur && <button type="button" aria-label="Về chỗ tôi đang đứng" onClick={() => pz.focus(cur.x, cur.y, 3.2)}>◎</button>}
       </div>
       <ul className="vmap-legend" aria-label="Chú giải">
-        <li><i className="home" />Nhà</li><li><i className="here" />Đang ở</li><li><i className="owned" />Có đất</li><li><i className="seen" />Đã tới</li><li><i className="new" />Chưa tới</li><li><span aria-hidden="true">🏛</span>Có điểm tham quan</li>
+        <li><i className="home" />Nhà</li><li><i className="here" />Đang ở</li><li><i className="owned" />Có đất</li><li><i className="seen" />Đã tới</li><li><i className="new" />Chưa tới</li><li><span aria-hidden="true">🏛</span>Tỉnh có điểm tham quan</li>{sights.length > 0 && <li><span aria-hidden="true">⭐</span>Địa danh, khu vui chơi</li>}
       </ul>
       {!showNames && <p className="vmap-tip">Chụm hai ngón hoặc bấm + để phóng to và hiện tên từng vùng.</p>}
     </div>

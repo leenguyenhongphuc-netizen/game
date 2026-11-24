@@ -21,6 +21,8 @@ export interface RideOptions {
   seconds: number;
   /** Ghi đè tên nơi đến (đi tới điểm tham quan chứ không phải vùng trồng). */
   toName?: string;
+  /** Ghi đè tên nơi đi (chặng giữa của lộ trình nhiều chặng, ví dụ "bến Bính"). */
+  fromName?: string;
   /** Taxi: quãng đường, giá cước cho đồng hồ tính tiền, cảnh bên phải đường. */
   km?: number; fare?: number; sideHint?: SideHint;
   onMeter?: (dong: number) => void;
@@ -91,7 +93,7 @@ export class RideScene {
     this.container = container; this.opts = opts;
     const seconds = Math.min(30, Math.max(6, opts.seconds || 10)), mode = opts.mode;
     const from = REGIONS[opts.fromRegionId], to = REGIONS[opts.toRegionId];
-    const zA: Zone = from?.zone ?? 'nam', zB: Zone = to?.zone ?? 'nam', fromName = from?.name ?? 'Nơi đi', toName = opts.toName ?? to?.name ?? 'Nơi đến';
+    const zA: Zone = from?.zone ?? 'nam', zB: Zone = to?.zone ?? 'nam', fromName = opts.fromName ?? from?.name ?? 'Nơi đi', toName = opts.toName ?? to?.name ?? 'Nơi đến';
 
     this.renderer = new THREE.WebGLRenderer(rendererParams(container));
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = IS_MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;

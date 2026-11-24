@@ -1,8 +1,10 @@
 // Hoạt cảnh chuyến du lịch: ra bến xe trước xóm, xe đưa đón, lên tàu/máy bay, đi qua cảnh quan rồi tới nơi.
 // Là một trải nghiệm trọn vẹn nên không có nút bỏ qua. Tự chứa CSS, phủ kín màn hình.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { REGIONS } from '../../../shared/catalog.ts';
+import { TRAVEL_MODES, travelOptions } from '../../../shared/rules.ts';
+import type { TravelLeg } from '../../../shared/rules.ts';
 import { RideScene } from './RideScene.ts';
 import type { RideMode } from './RideScene.ts';
 import { RIDE_CSS, RideHud } from './RideHud.tsx';
@@ -40,18 +42,50 @@ const STEPS: Record<RideMode, RideStep[]> = {
   taxi: [{ icon: '📱', label: 'Gọi xe' }, { icon: '🚕', label: 'Lên xe' }, { icon: '🛣️', label: 'Trên đường' }, { icon: '📍', label: 'Tới nơi' }],
 };
 
-export function TravelRide(props: {
+type RideProps = {
   mode: RideMode;
   fromRegionId: string; toRegionId: string;
   km: number; seconds: number;
   /** Ghi đè tên nơi đến, ví dụ tên điểm tham quan. */
   toName?: string;
+  /** Ghi đè tên nơi đi (chặng giữa của lộ trình nhiều chặng). */
+  fromName?: string;
+  /** Lộ trình nhiều chặng: "chặng 2/3" hiện cạnh số km. */
+  legNote?: string;
   /** Giá cước taxi, để đồng hồ tính tiền chạy tới đúng số này. */
   fare?: number;
   /** Taxi: cảnh bên phải đường. */
   sideHint?: 'bien' | 'song' | 'nui' | 'pho';
   onFinish: () => void;
-}): JSX.Element {
+};
+
+/** Chặng chính của lộ trình (tàu cao tốc, máy bay, tàu hoả, xe khách); chặng taxi/xe buýt ra vào ga, sân bay, cảng đã nằm trong
+ *  phần mở đầu của từng hoạt cảnh nên không chiếu riêng. Lộ trình chỉ có taxi thì giữ chặng taxi. */
+function mainLegs(legs: TravelLeg[]): (TravelLeg & { mode: RideMode })[] {
+  const main = legs.filter((l): l is TravelLeg & { mode: RideMode } => l.mode === 'xe_khach' || l.mode === 'tau_hoa' || l.mode === 'may_bay' || l.mode === 'tau_thuy');
+  return main.length ? main : legs.filter((l): l is TravelLeg & { mode: RideMode } => l.mode === 'taxi');
+}
+
+/** Hoạt cảnh chuyến đi giữa hai vùng. Lộ trình nhiều chặng (ví dụ tàu cao tốc vào bờ rồi bay) chiếu lần lượt từng chặng chính,
+ *  dựa trên đúng phương án máy chủ đã tính tiền (travelOptions cùng nơi đi, nơi đến, phương tiện chính). */
+export function TravelRide(props: RideProps): JSX.Element {
+  const legs = useMemo(() => {
+    if (props.toName || props.fare !== undefined || props.fromRegionId === props.toRegionId) return [];
+    const plan = travelOptions(props.fromRegionId, props.toRegionId).find((o) => o.mode === props.mode);
+    return plan ? mainLegs(plan.legs) : [];
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [i, setI] = useState(0);
+  if (legs.length <= 1) return <RideLeg {...props} />;
+  const l = legs[i], last = i === legs.length - 1;
+  return (
+    <RideLeg key={i} mode={l.mode} fromRegionId={props.fromRegionId} toRegionId={props.toRegionId}
+      fromName={i === 0 ? undefined : l.from} toName={last ? undefined : l.to} km={l.km}
+      seconds={Math.max(6, Math.round(TRAVEL_MODES[l.mode].seconds * (legs.length > 2 ? 0.75 : 0.9)))}
+      legNote={`chặng ${i + 1}/${legs.length}`} onFinish={() => (last ? props.onFinish() : setI(i + 1))} />
+  );
+}
+
+function RideLeg(props: RideProps): JSX.Element {
   const host = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<RideScene | null>(null);
   const [meter, setMeter] = useState(0);
@@ -62,7 +96,7 @@ export function TravelRide(props: {
   const [stage, setStage] = useState<{ n: number; caption: string; index: number }>({ n: 0, caption: '', index: 0 });
   const [frac, setFrac] = useState(0);
   const [failed, setFailed] = useState(false);
-  const from = REGIONS[props.fromRegionId]?.name ?? 'Nơi đi', to = props.toName ?? REGIONS[props.toRegionId]?.name ?? 'Nơi đến';
+  const from = props.fromName ?? REGIONS[props.fromRegionId]?.name ?? 'Nơi đi', to = props.toName ?? REGIONS[props.toRegionId]?.name ?? 'Nơi đến';
   const finish = () => { if (done.current) return; done.current = true; cb.current.onFinish(); };
 
   useEffect(() => {
@@ -70,7 +104,7 @@ export function TravelRide(props: {
     try {
       scene = new RideScene(host.current!, {
         mode: props.mode, fromRegionId: props.fromRegionId, toRegionId: props.toRegionId, seconds: props.seconds,
-        toName: props.toName, km: props.km, fare: props.fare, sideHint: props.sideHint, onMeter: setMeter,
+        toName: props.toName, fromName: props.fromName, km: props.km, fare: props.fare, sideHint: props.sideHint, onMeter: setMeter,
         onTick: (p) => { const r = Math.round(p * 200); if (r !== last) { last = r; setProgress(p); } },
         onStage: (n, caption, index) => { setStage({ n, caption, index }); setFrac(0); if (n === 5) setProgress(1); },
         onStep: setFrac,
@@ -93,7 +127,7 @@ export function TravelRide(props: {
     <div className={cabin ? 'tr taxi-cabin' : 'tr'} role="dialog" aria-label={`Hành trình ${info.name} từ ${from} tới ${to}`} data-stage={stage.n}>
       <style>{RIDE_CSS}{props.mode === 'taxi' ? TAXI_CSS : ''}</style>
       <div ref={host} className="tr-scene" />
-      <RideHud icon={info.icon} from={from} to={to} note={`${Math.round(props.km).toLocaleString('vi-VN')} km`}
+      <RideHud icon={info.icon} from={from} to={to} note={`${Math.round(props.km).toLocaleString('vi-VN')} km${props.legNote ? ` · ${props.legNote}` : ''}`}
         steps={STEPS[props.mode]} current={stage.index} frac={frac} finished={arrived} status={status} caption={failed ? '' : stage.caption}>
         {cabin && (
           <div className="tr-look">

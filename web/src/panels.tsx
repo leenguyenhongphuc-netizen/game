@@ -14,7 +14,9 @@ import { fmtDuration, regionLabel, useAction } from './ui.ts';
 import { NpcBadge } from './work.tsx';
 import { CompareCard, WhyLimit } from './trade.tsx';
 import { VietnamMap } from './map/VietnamMap.tsx';
-import { SIGHT_PROVINCES } from '../../shared/sights.ts';
+import { SIGHTS, SIGHT_PROVINCES } from '../../shared/sights.ts';
+import { TravelPlanCards } from './travelPlans.tsx';
+import { nearestRegionTo } from '../../shared/rules.ts';
 import { VEHICLES, tripPlanFor } from '../../shared/vehicles.ts';
 
 const ZONES = Object.keys(ZONE_NAMES) as Zone[];
@@ -172,6 +174,8 @@ export function TravelPanel({ me, startRide, startTrip, touring, openGarage }: {
 }) {
   const [visited, setVisited] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
+  /** Địa danh vừa chạm trên bản đồ: mở vùng gần nhất và nhắc đi tiếp bằng taxi/tàu ở thẻ Tham quan. */
+  const [sightPick, setSightPick] = useState<{ name: string; emoji: string; regionId: string } | null>(null);
   useEffect(() => { void api('GET', '/api/travel').then((r) => setVisited(new Set(r.visited))); }, []);
   const act = useAction();
   const home = me.user.homeRegionId!;
@@ -182,7 +186,14 @@ export function TravelPanel({ me, startRide, startTrip, touring, openGarage }: {
     <div>
       <p className="muted">Đã tới {visited.size}/{Object.keys(REGIONS).length} vùng trồng. Chạm một ghim trên bản đồ hoặc chọn trong danh sách, rồi đi bằng xe khách, taxi, tàu hoả, máy bay hoặc tàu thuỷ. Tới nơi bạn được dạo vườn mẫu, ghé quầy trưng bày để mua đặc sản và sưu tập tem.</p>
       <VietnamMap regions={Object.values(REGIONS)} homeId={home} currentId={touring ?? home} visited={visited} owned={[...owned]} sightProvinces={SIGHT_PROVINCES} selectedId={open ?? undefined}
-        onSelect={(id) => { setOpen(id); window.setTimeout(() => document.getElementById(`vung-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }} />
+        sights={SIGHTS.map((x) => ({ id: x.id, name: x.name, emoji: x.emoji, lat: x.lat, lng: x.lng, province: x.province }))}
+        onSelectSight={(id) => {
+          const x = SIGHTS.find((y) => y.id === id); if (!x) return;
+          const r = nearestRegionTo(x.lat, x.lng, x.province); if (!r) return;
+          setSightPick({ name: x.name, emoji: x.emoji, regionId: r.id }); setOpen(r.id);
+          window.setTimeout(() => document.getElementById(`vung-${r.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+        }}
+        onSelect={(id) => { setSightPick(null); setOpen(id); window.setTimeout(() => document.getElementById(`vung-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60); }} />
       <CompareCard isTrader={!!startTrip} />
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {ZONES.map((z) => (
@@ -198,13 +209,9 @@ export function TravelPanel({ me, startRide, startTrip, touring, openGarage }: {
                 </button>
                 {open === r.id && r.id !== home && (
                   <div className="region-body">
-                    <div className="pick-row">
-                      {travelOptions(home, r.id).map((o) => (
-                        <button key={o.mode} className="pick" disabled={act.busy || me.user.cash < o.fare} onClick={() => act.run(() => startRide(o.mode, r.id, o.km))}>
-                          <span className="emoji">{TRAVEL_MODES[o.mode].icon}</span><strong>{TRAVEL_MODES[o.mode].name}</strong>{o.via && <small style={{ fontSize: '0.72rem', opacity: 0.85 }}>{o.via}</small>}<small>{o.km.toLocaleString('vi-VN')} km · {o.hours.toLocaleString('vi-VN')} giờ</small><small><b>{fmtMoney(o.fare)}</b></small>
-                        </button>
-                      ))}
-                    </div>
+                    {sightPick?.regionId === r.id && <p className="tp-head">{sightPick.emoji} {sightPick.name}: tới {r.name} rồi mở thẻ Tham quan bắt taxi/tàu vào điểm tham quan.</p>}
+                    <TravelPlanCards options={travelOptions(home, r.id)} cash={me.user.cash} busy={act.busy} pickLabel="Mua vé đi"
+                      onPick={(o) => act.run(() => startRide(o.mode, r.id, o.km))} />
                     {startTrip && (me.user.truckRegionId ?? home) !== r.id && (() => {
                       const at = me.user.truckRegionId ?? home, plan = vspec ? tripPlanFor(vspec, at, r.id) : tripPlan(at, r.id), fuel = me.user.fuelL ?? TRUCK.startFuelL;
                       const unit = veh?.unit ?? 'lít', ev = veh?.power === 'dien', cargo = veh?.cargoKg ?? plan.cargoKg ?? TRUCK.cargoKg, rests = vspec ? (plan as ReturnType<typeof tripPlanFor>).restsNeeded : 0;

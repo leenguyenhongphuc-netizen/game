@@ -396,33 +396,45 @@ export const AIRPORTS: { code: string; name: string; lat: number; lng: number }[
 export const AIRPORT_MAX_KM = 150, FLIGHT_MIN_KM = 200, ISLAND_AIRPORT_KM = 30;
 /** Ba sân bay trung chuyển; sân bay địa phương thường chỉ có đường bay thẳng tới các sân bay này. */
 export const AIRPORT_HUBS = ['HAN', 'SGN', 'DAD'];
-/** Các sân bay trong tầm AIRPORT_MAX_KM của một vùng, kèm quãng đường bộ ước tính. Vùng trên đảo chỉ dùng sân bay ngay trên đảo. */
-export function airportsNear(regionId: string): { code: string; name: string; lat: number; lng: number; km: number }[] {
-  const r = region(regionId);
-  if (!r) return [];
-  return AIRPORTS.map((a) => ({ ...a, km: haversineKm(r.lat, r.lng, a.lat, a.lng) }))
-    .filter((a) => a.km <= (r.island ? ISLAND_AIRPORT_KM : AIRPORT_MAX_KM))
+/** Một điểm trên bản đồ để lập lộ trình: vùng trồng, cảng, ga, sân bay. `island` = điểm nằm trên đảo (không đi đường bộ ra đất liền). */
+export interface GeoPoint { lat: number; lng: number; name: string; island?: boolean }
+/** Các sân bay trong tầm AIRPORT_MAX_KM của một điểm, kèm quãng đường bộ ước tính. Điểm trên đảo chỉ dùng sân bay ngay trên đảo. */
+export function airportsNearPoint(p: GeoPoint): { code: string; name: string; lat: number; lng: number; km: number }[] {
+  return AIRPORTS.map((a) => ({ ...a, km: haversineKm(p.lat, p.lng, a.lat, a.lng) }))
+    .filter((a) => a.km <= (p.island ? ISLAND_AIRPORT_KM : AIRPORT_MAX_KM))
     .map((a) => ({ ...a, km: Math.max(3, roadKmOf(a.km)) }))
     .sort((x, y) => x.km - y.km);
+}
+/** Các sân bay trong tầm AIRPORT_MAX_KM của một vùng. */
+export function airportsNear(regionId: string): { code: string; name: string; lat: number; lng: number; km: number }[] {
+  const r = region(regionId);
+  return r ? airportsNearPoint(r) : [];
 }
 /** Vé máy bay phổ thông (đã gồm thuế, phí sân bay) theo km bay. */
 export function flightTicket(airKm: number): number {
   return Math.round((refPrice('may_bay_co_ban') + refPrice('may_bay_km') * airKm) / 1000) * 1000;
 }
 export interface FlightPlan { from: string; to: string; airKm: number; fare: number; ticket: number; groundKm: number; hours: number }
-/** Chuyến bay giữa hai vùng: ra sân bay + vé bay + từ sân bay về. Chọn cặp sân bay có đường bay thẳng
+/** Chuyến bay giữa hai điểm: ra sân bay + vé bay + từ sân bay về. Chọn cặp sân bay có đường bay thẳng
  *  (ít nhất một đầu là sân bay trung chuyển) và tổng đường bộ ngắn nhất. null nếu không có đường bay hợp lý. */
-export function flightPlan(fromRegionId: string, toRegionId: string): FlightPlan | null {
-  let best: FlightPlan | null = null;
-  for (const a of airportsNear(fromRegionId)) for (const b of airportsNear(toRegionId)) {
+export function flightPlanPts(p: GeoPoint, q: GeoPoint): (FlightPlan & { legs: TravelLeg[] }) | null {
+  let best: (FlightPlan & { legs: TravelLeg[] }) | null = null;
+  for (const a of airportsNearPoint(p)) for (const b of airportsNearPoint(q)) {
     if (a.code === b.code || !(AIRPORT_HUBS.includes(a.code) || AIRPORT_HUBS.includes(b.code))) continue;
     const airKm = Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng));
     if (airKm < FLIGHT_MIN_KM || (best && a.km + b.km >= best.groundKm)) continue;
     const ticket = flightTicket(airKm);
-    best = { from: a.name, to: b.name, airKm, ticket, groundKm: a.km + b.km, fare: ticket + transferFare(a.km) + transferFare(b.km),
-      hours: roundH(AIRPORT_HOURS + airKm / SPEED_KMH.plane + 0.3 + (a.km + b.km) / SPEED_KMH.transfer) };
+    const legs: TravelLeg[] = [transferLeg(p.name, `sân bay ${a.name}`, a.km),
+      { mode: 'may_bay', from: `sân bay ${a.name}`, to: `sân bay ${b.name}`, km: airKm, fare: ticket, hours: AIRPORT_HOURS + airKm / SPEED_KMH.plane + 0.3 },
+      transferLeg(`sân bay ${b.name}`, q.name, b.km)];
+    best = { from: a.name, to: b.name, airKm, ticket, groundKm: a.km + b.km, fare: legs.reduce((t, l) => t + l.fare, 0), hours: roundH(legs.reduce((t, l) => t + l.hours, 0)), legs };
   }
   return best;
+}
+/** Chuyến bay giữa hai vùng. */
+export function flightPlan(fromRegionId: string, toRegionId: string): FlightPlan | null {
+  const a = region(fromRegionId), b = region(toRegionId);
+  return a && b ? flightPlanPts(a, b) : null;
 }
 
 /** Ga khách đang có tàu chạy thường lệ. `line` là tuyến, `km` là lý trình tính từ ga Hà Nội (các tuyến nối nhau ở Hà Nội).
@@ -471,33 +483,58 @@ export const STATION_MAX_KM = 80, RAIL_MIN_KM = 80;
 export function railKmBetween(a: { line: RailLine; km: number }, b: { line: RailLine; km: number }): number {
   return a.line === b.line ? Math.abs(a.km - b.km) : a.km + b.km;
 }
-/** Các ga trong tầm STATION_MAX_KM đường bộ của một vùng (vùng trên đảo không có ga). */
+/** Các ga trong tầm STATION_MAX_KM đường bộ của một điểm (điểm trên đảo không có ga). */
+export function stationsNearPoint(p: GeoPoint): { id: string; name: string; line: RailLine; km: number; groundKm: number }[] {
+  if (p.island) return [];
+  return RAIL_STATIONS.map((s) => ({ ...s, groundKm: Math.max(2, roadKmOf(haversineKm(p.lat, p.lng, s.lat, s.lng))) }))
+    .filter((s) => s.groundKm <= STATION_MAX_KM).sort((x, y) => x.groundKm - y.groundKm);
+}
+/** Các ga trong tầm STATION_MAX_KM đường bộ của một vùng. */
 export function stationsNear(regionId: string): { id: string; name: string; line: RailLine; km: number; groundKm: number }[] {
   const r = region(regionId);
-  if (!r || r.island) return [];
-  return RAIL_STATIONS.map((s) => ({ ...s, groundKm: Math.max(2, roadKmOf(haversineKm(r.lat, r.lng, s.lat, s.lng))) }))
-    .filter((s) => s.groundKm <= STATION_MAX_KM).sort((x, y) => x.groundKm - y.groundKm);
+  return r ? stationsNearPoint(r) : [];
 }
 /** Vé tàu SE ghế ngồi mềm điều hoà theo km đường sắt. */
 export function trainTicket(railKm: number): number {
   return Math.round((refPrice('tau_mo_ve') + refPrice('tau_ghe_mem_km') * railKm) / 1000) * 1000;
 }
 export interface TrainPlan { from: string; to: string; railKm: number; fare: number; ticket: number; groundKm: number; hours: number }
-/** Chuyến tàu giữa hai vùng: ra ga + vé tàu + từ ga về. Chọn cặp ga có tổng đường bộ ngắn nhất. */
-export function trainPlan(fromRegionId: string, toRegionId: string): TrainPlan | null {
-  let best: TrainPlan | null = null;
-  for (const a of stationsNear(fromRegionId)) for (const b of stationsNear(toRegionId)) {
+/** Chuyến tàu giữa hai điểm: ra ga + vé tàu + từ ga về. Chọn cặp ga có tổng đường bộ ngắn nhất. */
+export function trainPlanPts(p: GeoPoint, q: GeoPoint): (TrainPlan & { legs: TravelLeg[] }) | null {
+  let best: (TrainPlan & { legs: TravelLeg[] }) | null = null;
+  for (const a of stationsNearPoint(p)) for (const b of stationsNearPoint(q)) {
     if (a.id === b.id) continue;
     const railKm = railKmBetween(a, b);
     if (railKm < RAIL_MIN_KM || (best && a.groundKm + b.groundKm >= best.groundKm)) continue;
     const ticket = trainTicket(railKm);
-    best = { from: a.name, to: b.name, railKm, ticket, groundKm: a.groundKm + b.groundKm, fare: ticket + transferFare(a.groundKm) + transferFare(b.groundKm),
-      hours: roundH(STATION_HOURS + railKm / SPEED_KMH.train + (a.groundKm + b.groundKm) / SPEED_KMH.transfer) };
+    const legs: TravelLeg[] = [transferLeg(p.name, `ga ${a.name}`, a.groundKm),
+      { mode: 'tau_hoa', from: `ga ${a.name}`, to: `ga ${b.name}`, km: railKm, fare: ticket, hours: STATION_HOURS + railKm / SPEED_KMH.train },
+      transferLeg(`ga ${b.name}`, q.name, b.groundKm)];
+    best = { from: a.name, to: b.name, railKm, ticket, groundKm: a.groundKm + b.groundKm, fare: legs.reduce((t, l) => t + l.fare, 0), hours: roundH(legs.reduce((t, l) => t + l.hours, 0)), legs };
   }
   return best;
 }
-/** Một lựa chọn đi lại. km là quãng đường bộ (taxi, xe khách), đường ray (tàu), đường bay (máy bay), đường biển (tàu thuỷ); hours là tổng thời gian. */
-export interface TravelOption { mode: TravelMode; fare: number; km: number; hours: number; via?: string }
+/** Chuyến tàu giữa hai vùng. */
+export function trainPlan(fromRegionId: string, toRegionId: string): TrainPlan | null {
+  const a = region(fromRegionId), b = region(toRegionId);
+  return a && b ? trainPlanPts(a, b) : null;
+}
+/** Phương tiện của một chặng: các phương tiện chính, cộng xe buýt/xe trung chuyển ra vào ga, sân bay, cảng. */
+export type LegMode = TravelMode | 'xe_buyt';
+export const LEG_MODES: Record<LegMode, { name: string; icon: string }> = {
+  xe_khach: { name: 'Xe khách', icon: '🚌' }, tau_hoa: { name: 'Tàu hoả', icon: '🚆' }, may_bay: { name: 'Máy bay', icon: '✈️' },
+  tau_thuy: { name: 'Tàu cao tốc', icon: '⛴️' }, taxi: { name: 'Taxi', icon: '🚕' }, xe_buyt: { name: 'Xe buýt', icon: '🚐' },
+};
+/** Một chặng của lộ trình. km theo loại đường của chặng (bộ, ray, bay, biển); hours chưa làm tròn. */
+export interface TravelLeg { mode: LegMode; from: string; to: string; km: number; fare: number; hours: number }
+/** Chặng ra/vào ga, sân bay, cảng: gần thì taxi, xa thì xe buýt (cùng giá transferFare). */
+export function transferLeg(from: string, to: string, km: number): TravelLeg {
+  return { mode: km <= 15 ? 'taxi' : 'xe_buyt', from, to, km, fare: transferFare(km), hours: km / SPEED_KMH.transfer };
+}
+/** Một lựa chọn đi lại (một phương án lộ trình). mode là phương tiện chính (máy bay > tàu hoả > tàu thuỷ > xe khách > taxi);
+ *  km là quãng của chặng chính (đường bộ, ray, bay; ra đảo bằng tàu thì tổng quãng); hours là tổng thời gian; legs là từng chặng
+ *  theo thứ tự; tags đánh dấu phương án nhanh nhất / rẻ nhất. */
+export interface TravelOption { mode: TravelMode; fare: number; km: number; hours: number; via?: string; legs: TravelLeg[]; tags?: ('nhanh' | 're')[] }
 /** Xe khách tuyến dài hơn mức này (km đường bộ): giường nằm chạy xuyên đêm, có thể phải đổi xe ở bến lớn. */
 export const BUS_LONG_KM = 1000;
 /** Vé tàu cao tốc ra đảo theo km đường biển (Rạch Giá – Phú Quốc ~115 km: 330.000–350.000đ). */
@@ -511,43 +548,93 @@ export const ISLAND_FERRIES: Record<string, { port: string; lat: number; lng: nu
   qng_lyson: { port: 'cảng Sa Kỳ', lat: 15.21, lng: 108.92, seaKm: 30, hours: 1, boat: 'tàu cao tốc' },
   hp_catba: { port: 'bến Bính (Hải Phòng)', lat: 20.87, lng: 106.68, seaKm: 40, hours: 1, boat: 'tàu cao tốc' },
 };
-/** Chuyến tàu ra/vào đảo: đi đường bộ (xe khách hoặc trung chuyển) tới cảng đất liền + vé tàu. Hai đảo khác nhau thì về đất liền rồi ra đảo kia. */
-export function ferryPlan(fromRegionId: string, toRegionId: string): { fare: number; km: number; hours: number; via: string } | null {
-  const a = region(fromRegionId), b = region(toRegionId);
-  if (!a || !b) return null;
-  let fare = 0, km = 0, hours = 0, cur: { lat: number; lng: number } = a;
-  const names: string[] = [];
-  const ground = (to: { lat: number; lng: number }) => {
-    const road = roadKmOf(haversineKm(cur.lat, cur.lng, to.lat, to.lng));
-    if (road > 2) { fare += road <= 60 ? transferFare(road) : busFare(road); km += road; hours += 0.5 + road / SPEED_KMH.bus; }
-  };
-  const fa = a.island ? ISLAND_FERRIES[a.id] : undefined, fb = b.island ? ISLAND_FERRIES[b.id] : undefined;
-  if ((a.island && !fa) || (b.island && !fb)) return null;
-  if (fa) { fare += boatTripFare(fa.seaKm); km += fa.seaKm; hours += fa.hours + 0.5; cur = fa; names.push(`${fa.boat} vào ${fa.port}`); }
-  if (fb) { ground(fb); fare += boatTripFare(fb.seaKm); km += fb.seaKm; hours += fb.hours + 0.5; names.push(`xe tới ${fb.port}, ${fb.boat} ra đảo`); }
-  else ground(b);
-  return { fare: Math.round(fare / 1000) * 1000, km, hours: roundH(hours), via: names.join(', ') };
+/** Chặng đường bộ giữa hai điểm khi không đi tàu/máy bay: ≤ 60 km thì xe trung chuyển/taxi, xa hơn thì xe khách. */
+function groundLeg(p: GeoPoint, q: GeoPoint): TravelLeg | null {
+  const road = roadKmOf(haversineKm(p.lat, p.lng, q.lat, q.lng));
+  if (road <= 2) return null;
+  return road <= 60 ? { ...transferLeg(p.name, q.name, road), hours: 0.5 + road / SPEED_KMH.bus }
+    : { mode: 'xe_khach', from: p.name, to: q.name, km: road, fare: busFare(road), hours: 0.5 + road / SPEED_KMH.bus };
 }
-/** Các phương tiện đi được giữa hai vùng, kèm giá vé và thời gian. Ra vào đảo phải đi tàu thuỷ hoặc máy bay; máy bay chỉ khi
- *  hai đầu đều gần sân bay có đường bay; tàu hoả chỉ khi hai đầu đều gần ga trên mạng đường sắt. */
+const MODE_RANK: TravelMode[] = ['may_bay', 'tau_hoa', 'tau_thuy', 'xe_khach', 'taxi'];
+function planOf(legs: TravelLeg[]): TravelOption {
+  const mode = MODE_RANK.find((m) => legs.some((l) => l.mode === m)) ?? 'xe_khach';
+  const main = legs.find((l) => l.mode === mode);
+  const fare = Math.round(legs.reduce((t, l) => t + l.fare, 0) / 1000) * 1000, hours = roundH(legs.reduce((t, l) => t + l.hours, 0));
+  const km = mode === 'tau_thuy' ? legs.reduce((t, l) => t + l.km, 0) : main?.km ?? 0;
+  return { mode, fare, km, hours, legs };
+}
+/** Lời mô tả ngắn lộ trình cho nút chọn. */
+function viaOf(o: TravelOption): string | undefined {
+  const parts: string[] = [];
+  for (const l of o.legs) {
+    if (l.mode === 'tau_thuy') parts.push(/^(cảng|bến)/.test(l.to) ? `tàu cao tốc vào ${l.to}` : `xe tới ${l.from}, tàu cao tốc ra đảo`);
+    else if (l.mode === 'may_bay') parts.push(`${l.from.replace('sân bay ', '')} → ${l.to.replace('sân bay ', '')}`);
+    else if (l.mode === 'tau_hoa') parts.push(`${l.from} → ${l.to}`);
+  }
+  if (o.mode === 'xe_khach' && o.km > BUS_LONG_KM) parts.push('giường nằm tuyến dài, có thể đổi xe');
+  return parts.length ? parts.join(', ') : undefined;
+}
+/** Các phương án lộ trình giữa hai vùng (bộ lập lộ trình đa phương tiện). Nút: vùng, cảng ra đảo, ga, sân bay; cạnh: taxi/xe buýt
+ *  ra vào, xe khách, tàu hoả, máy bay, tàu cao tốc. Vùng trên đảo: tàu vào cảng đất liền rồi đi tiếp bằng xe khách, tàu hoả hoặc
+ *  máy bay; hoặc bay thẳng nếu đảo có sân bay. Mỗi phương tiện chính một phương án (cách nhanh nhất dùng phương tiện đó);
+ *  máy bay chỉ có khi nhanh hơn mọi cách khác. */
 export function travelOptions(fromRegionId: string, toRegionId: string): TravelOption[] {
   const a = region(fromRegionId), b = region(toRegionId);
   if (!a || !b || a.id === b.id) return [];
-  const straight = haversineKm(a.lat, a.lng, b.lat, b.lng), road = roadKmOf(straight);
-  const out: TravelOption[] = [];
-  if (a.island || b.island) {
-    const ferry = ferryPlan(a.id, b.id);
-    if (ferry) out.push({ mode: 'tau_thuy', ...ferry });
-  } else {
-    out.push({ mode: 'xe_khach', fare: busFare(road), km: road, hours: roundH(0.5 + road / SPEED_KMH.bus), ...(road > BUS_LONG_KM ? { via: 'giường nằm tuyến dài, có thể đổi xe' } : {}) });
-    if (road <= TAXI_MAX_KM) out.push({ mode: 'taxi', fare: taxiFare(road), km: road, hours: roundH(road / SPEED_KMH.taxi) });
-    const train = trainPlan(a.id, b.id);
-    if (train) out.push({ mode: 'tau_hoa', fare: train.fare, km: train.railKm, hours: train.hours, via: `ga ${train.from} → ga ${train.to}` });
+  const fa = a.island ? ISLAND_FERRIES[a.id] : undefined, fb = b.island ? ISLAND_FERRIES[b.id] : undefined;
+  type End = { pt: GeoPoint; boat: TravelLeg | null; stay: boolean };
+  // Đầu đi/đầu đến: chính vùng đó (trên đảo thì chỉ bay được), hoặc cảng đất liền kèm chặng tàu cao tốc.
+  const starts: End[] = [{ pt: a, boat: null, stay: !!a.island }], ends: End[] = [{ pt: b, boat: null, stay: !!b.island }];
+  if (fa) starts.push({ pt: { lat: fa.lat, lng: fa.lng, name: fa.port }, stay: false, boat: { mode: 'tau_thuy', from: a.name, to: fa.port, km: fa.seaKm, fare: boatTripFare(fa.seaKm), hours: fa.hours + 0.5 } });
+  if (fb) ends.push({ pt: { lat: fb.lat, lng: fb.lng, name: fb.port }, stay: false, boat: { mode: 'tau_thuy', from: fb.port, to: b.name, km: fb.seaKm, fare: boatTripFare(fb.seaKm), hours: fb.hours + 0.5 } });
+  const plans: TravelOption[] = [];
+  for (const s of starts) for (const e of ends) {
+    const wrap = (core: TravelLeg[]) => { const legs = [...(s.boat ? [s.boat] : []), ...core, ...(e.boat ? [e.boat] : [])]; if (legs.length) plans.push(planOf(legs)); };
+    const fly = flightPlanPts(s.pt, e.pt);
+    if (fly) wrap(fly.legs.filter((l) => l.mode === 'may_bay' || l.km > 2));
+    if (s.stay || e.stay) continue; // một đầu vẫn ở trên đảo: chỉ còn cách bay
+    const train = trainPlanPts(s.pt, e.pt);
+    if (train) wrap(train.legs);
+    const g = groundLeg(s.pt, e.pt);
+    wrap(g ? [g] : []);
+    const road = roadKmOf(haversineKm(s.pt.lat, s.pt.lng, e.pt.lat, e.pt.lng));
+    if (!s.boat && !e.boat && road <= TAXI_MAX_KM) wrap([{ mode: 'taxi', from: a.name, to: b.name, km: road, fare: taxiFare(road), hours: road / SPEED_KMH.taxi }]);
   }
-  // Máy bay chỉ hiện khi thật sự nhanh hơn đi đường bộ (tính cả thủ tục sân bay và đường ra/vào sân bay).
-  const fly = flightPlan(a.id, b.id), busH = out.find((o) => o.mode === 'xe_khach')?.hours ?? Infinity, boatH = out.find((o) => o.mode === 'tau_thuy')?.hours ?? Infinity;
-  if (fly && fly.hours < Math.min(busH, boatH === Infinity ? Infinity : boatH * 2)) out.push({ mode: 'may_bay', fare: fly.fare, km: fly.airKm, hours: fly.hours, via: `${fly.from} → ${fly.to}` });
+  // Mỗi phương tiện chính giữ phương án nhanh nhất (bằng giờ thì rẻ hơn).
+  const best = new Map<TravelMode, TravelOption>();
+  for (const p of plans) {
+    const cur = best.get(p.mode);
+    if (!cur || p.hours < cur.hours || (p.hours === cur.hours && p.fare < cur.fare)) best.set(p.mode, p);
+  }
+  // Máy bay chỉ khi nhanh hơn mọi cách đi khác (đã tính thủ tục và đường ra/vào sân bay).
+  const others = [...best.values()].filter((p) => p.mode !== 'may_bay'), plane = best.get('may_bay');
+  if (plane && others.length && plane.hours >= Math.min(...others.map((p) => p.hours))) best.delete('may_bay');
+  // Ra/vào đảo: bỏ phương án vừa chậm hơn vừa đắt hơn một phương án khác (ví dụ đi tàu hoả một đoạn ngắn rồi mới ra cảng).
+  if (a.island || b.island) for (const [m, p] of [...best]) {
+    if ([...best.values()].some((q) => q !== p && q.hours <= p.hours && q.fare <= p.fare)) best.delete(m);
+  }
+  const order: TravelMode[] = ['xe_khach', 'tau_thuy', 'taxi', 'tau_hoa', 'may_bay'];
+  const out = order.flatMap((m) => { const o = best.get(m); return o ? [o] : []; });
+  for (const o of out) o.via = viaOf(o);
+  if (out.length > 1) {
+    const fast = out.reduce((x, y) => (y.hours < x.hours ? y : x)), cheap = out.reduce((x, y) => (y.fare < x.fare ? y : x));
+    for (const o of out) { const t: ('nhanh' | 're')[] = []; if (o === fast) t.push('nhanh'); if (o === cheap) t.push('re'); if (t.length) o.tags = t; }
+  }
   return out;
+}
+/** Lộ trình tàu ra/vào đảo (xe tới cảng + tàu cao tốc), giữ cho mã cũ. */
+export function ferryPlan(fromRegionId: string, toRegionId: string): { fare: number; km: number; hours: number; via: string } | null {
+  const o = travelOptions(fromRegionId, toRegionId).find((x) => x.mode === 'tau_thuy');
+  return o ? { fare: o.fare, km: o.km, hours: o.hours, via: o.via ?? '' } : null;
+}
+/** Vùng trồng gần một toạ độ nhất (để lên kế hoạch tới một địa danh/khu vui chơi): ưu tiên vùng cùng tỉnh. */
+export function nearestRegionTo(lat: number, lng: number, province?: string): Region | null {
+  let best: Region | null = null, bd = Infinity;
+  for (const r of Object.values(REGIONS)) {
+    const d = haversineKm(lat, lng, r.lat, r.lng) + (province && r.province !== province ? 80 : 0);
+    if (d < bd) { bd = d; best = r; }
+  }
+  return best;
 }
 export const GIFT_DAILY_LIMIT = 5, GIFT_MAX_KG = 20, REGION_SET_REWARD = 50_000;
 

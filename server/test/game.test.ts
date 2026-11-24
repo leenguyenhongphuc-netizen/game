@@ -10,7 +10,7 @@ import {
   COOP_ORDER_BONUS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, IN_SEASON_YIELD, ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS_XUONG,
   ROLE_INFO, inSeason, marketEventsAt, seasonAt, supplyKg,
   DUMP_RATIO, FUEL_PER_KM, ROLES, ROLE_TARGETS, SEASON_DAYS, SMALL_TILES, allowedTiles, spinWeights, tripInfo, TRUCK, landPrice, roadKm, tripPlan,
-  HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_MODES, glutFactor, paceFactor, stepWaitMs, travelOptions, flightPlan, trainPlan, trainTicket, busFare, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
+  HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_MODES, glutFactor, paceFactor, stepWaitMs, travelOptions, nearestRegionTo, flightPlan, trainPlan, trainTicket, busFare, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
   seedCost, snapCell, stepCount, urbanCoreAt, weatherAt, weatherInfo,
   speedFine, SPEED_FINES, wholesalePrice, wholesaleSupplyKg, WHOLESALE_RATIO, WHOLESALE_SUPPLY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_MAX_ACTIVE, exportModesFor, exportQuote, coopOrderRoute,
   LIMIT_REASONS, TRAVEL_VS_TRUCK, QUALITY_MULT, taxiFare, TAXI_MAX_KM, haversineKm,
@@ -1485,6 +1485,19 @@ test('vé du lịch theo phương tiện', async () => {
   assert.ok(fast.hours < slow.hours / 4 && fast.fare > slow.fare, 'máy bay nhanh hơn nhiều, đắt hơn xe khách');
   assert.ok(!travelOptions('dt_caibe', 'dt_caolanh').some((o) => o.mode === 'may_bay'), 'máy bay chậm hơn đường bộ thì không hiện');
   assert.match(travelOptions('gl_hoainhon', 'qng_lyson')[0].via ?? '', /cảng Sa Kỳ/, 'ra đảo đi xe tới cảng rồi tàu cao tốc');
+  // Lộ trình nhiều chặng (nhánh Q7): đảo không có sân bay đi xa thì tàu cao tốc vào bờ rồi bay
+  for (const [from, to] of [['hp_catba', 'ld_dalat'], ['ld_dalat', 'hp_catba']] as const) {
+    const o = travelOptions(from, to), fly = o.find((x) => x.mode === 'may_bay');
+    assert.ok(fly, `${from} → ${to} có máy bay`);
+    assert.equal(fly!.legs[from === 'hp_catba' ? 0 : fly!.legs.length - 1].mode, 'tau_thuy', 'chặng tàu cao tốc ra/vào đảo');
+    assert.ok(fly!.legs.some((l) => l.mode === 'may_bay' && l.from.startsWith('sân bay ') && l.to.startsWith('sân bay ')));
+    assert.equal(fly!.fare, Math.round(fly!.legs.reduce((t, l) => t + l.fare, 0) / 1000) * 1000, 'giá = tổng các chặng');
+    assert.ok(fly!.hours < o.find((x) => x.mode === 'tau_thuy')!.hours, 'bay nhanh hơn đi xe khách cả nghìn km');
+    for (let i = 1; i < fly!.legs.length; i++) assert.equal(fly!.legs[i - 1].to, fly!.legs[i].from, 'các chặng nối liền');
+  }
+  const mw = SIGHTS.find((x) => x.id === 'park_mw_ha_long')!;
+  assert.equal(nearestRegionTo(mw.lat, mw.lng, mw.province)?.id, 'qn_dongtrieu', 'Moon World Hạ Long: vùng gần nhất để tới là Đông Triều (Quảng Ninh)');
+  assert.ok(travelOptions('hn_phudien', 'qn_dongtrieu').length >= 2, 'Hà Nội đi Đông Triều có nhiều phương án');
 
   const cookie = await signup('mua_ve');
   assert.equal((await call('POST', '/api/travel', { regionId: 'hn_phudien' }, cookie)).body.error, 'chua_co_dat');
@@ -1502,6 +1515,14 @@ test('vé du lịch theo phương tiện', async () => {
   assert.equal((await meOf(cookie)).user.cash, 5000000 - plane.fare - train.fare);
   const reasons = await db.query(`select reason from ledger where user_id = $1 and reason like 've:%' order by id`, [me0.user.id]);
   assert.deepEqual(reasons.rows.map((r: any) => r.reason), ['ve:may_bay:hn_phudien', 've:xe_khach:hn_phudien']);
+  // vé lộ trình nhiều chặng: nhà ở Đà Lạt đi Đảo Cát Bà bằng máy bay + tàu cao tốc, trừ đúng tổng các chặng
+  const c2 = await signup('mua_ve_dao');
+  await call('POST', '/api/onboard', { regionId: 'ld_dalat' }, c2);
+  const u2 = (await meOf(c2)).user.id;
+  await db.query('update users set cash = 5000000 where id = $1', [u2]);
+  const flyIsland = travelOptions('ld_dalat', 'hp_catba').find((o) => o.mode === 'may_bay')!;
+  assert.deepEqual(core((await call('POST', '/api/travel', { regionId: 'hp_catba', mode: 'may_bay' }, c2)).body), { cost: flyIsland.fare, isNew: true, mode: 'may_bay' });
+  assert.equal((await meOf(c2)).user.cash, 5000000 - flyIsland.fare);
   await db.query('update users set cash = 1000 where id = $1', [me0.user.id]);
   const poor = await call('POST', '/api/travel', { regionId: 'vl_cholach' }, cookie);
   assert.deepEqual([poor.status, poor.body.error], [409, 'khong_du_tien']);

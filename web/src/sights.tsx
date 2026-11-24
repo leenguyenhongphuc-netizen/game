@@ -2,8 +2,9 @@
 import { canUse } from '../../shared/roles.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { CROPS, REGIONS, SPECIALTIES } from '../../shared/catalog.ts';
-import { QUALITY_NAMES, fmtMoney } from '../../shared/rules.ts';
-import type { Quality, SightLeg } from '../../shared/rules.ts';
+import { QUALITY_NAMES, fmtMoney, nearestRegionTo } from '../../shared/rules.ts';
+import { TripPlanner } from './travelPlans.tsx';
+import type { Quality, SightLeg, TravelMode } from '../../shared/rules.ts';
 import type { Sight } from '../../shared/sights.ts';
 import { api } from './api.ts';
 import { ProvinceShops } from './properties.tsx';
@@ -31,12 +32,17 @@ const SIGHT_FILTERS: { id: string; label: string; kinds?: Sight['kind'][] }[] = 
 ];
 
 /** Bản đồ tỉnh và danh sách địa danh; bấm "Bắt taxi" thì trừ tiền rồi báo cho App phát hoạt cảnh. */
-export function SightsPanel({ me, refresh, onGo }: { me: Me; refresh: () => void; onGo: (trip: SightTrip) => void }) {
+export function SightsPanel({ me, refresh, onGo, onTravel }: { me: Me; refresh: () => void; onGo: (trip: SightTrip) => void;
+  /** Mua vé đi tới một vùng (startRide của App). Có thì thẻ "Lên kế hoạch đi" đi được luôn; không thì chỉ xem lộ trình. */
+  onTravel?: (mode: TravelMode, regionId: string, km: number) => Promise<void>;
+}) {
   const [data, setData] = useState<SightsData | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [sel, setSel] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [flt, setFlt] = useState('tat_ca');
+  /** Địa danh đang mở bảng lộ trình "Lên kế hoạch đi". */
+  const [plan, setPlan] = useState<string | null>(null);
   const act = useAction(refresh);
   useEffect(() => {
     let alive = true;
@@ -65,7 +71,7 @@ export function SightsPanel({ me, refresh, onGo }: { me: Me; refresh: () => void
           ? `${data.province} chưa dựng điểm tham quan. Đội làm game đang dựng dần từng tỉnh theo địa danh thật.`
           : here
             ? `Bạn đang ở ${data.province}. Chọn một địa danh trên bản đồ, bắt taxi tới nơi (ra đảo thì taxi tới cảng rồi đi tàu) và đi bộ tham quan; lối ra của mỗi nơi dẫn sang siêu thị đặc sản.`
-            : `Xem trước ${data.province}. Hãy tới ${gates.length ? gates.join(' hoặc ') : 'một vùng thuộc tỉnh này'} trước (mua vé hoặc lái xe tải ở thẻ Các vùng trồng), rồi mới bắt taxi đi tham quan được.`}
+            : `Xem trước ${data.province}. Hãy tới ${gates.length ? gates.join(' hoặc ') : 'một vùng thuộc tỉnh này'} trước, rồi mới bắt taxi đi tham quan được. Bấm 🧭 Lên kế hoạch đi ở từng địa danh để xem lộ trình và mua vé.`}
       </p>
       {data.sights.length > 0 && hasProvinceMap(data.province) && (
         <ProvinceMap province={data.province} sights={data.sights} regions={ALL_REGIONS} currentRegionId={here ? data.regionId : null} selectedId={sel}
@@ -101,14 +107,23 @@ export function SightsPanel({ me, refresh, onGo }: { me: Me; refresh: () => void
               )}
               <div className="sight-foot">
                 <span className="sight-facts">
-                  {(s.route?.legs?.length ? s.route.legs : [{ mode: 'taxi' as const, from: '', to: s.name, km: s.km, fare: s.taxiFare, seconds: 0 }]).map((l, k) => <span key={k}>{legLabel(l)} · {l.km} km · {fmtMoney(l.fare)}</span>)}
+                  {/* xem trước tỉnh khác: quãng taxi tính từ chỗ đang đứng không có nghĩa, lộ trình ở nút Lên kế hoạch đi */}
+                  {here && (s.route?.legs?.length ? s.route.legs : [{ mode: 'taxi' as const, from: '', to: s.name, km: s.km, fare: s.taxiFare, seconds: 0 }]).map((l, k) => <span key={k}>{legLabel(l)} · {l.km} km · {fmtMoney(l.fare)}</span>)}
                   <span>🎟️ Vé cổng: {s.entryFee > 0 ? fmtMoney(s.entryFee) : 'vào cửa tự do'}</span>
                   {s.island && s.port?.note && sel === s.id && <small className="muted">{s.port.note}</small>}
                 </span>
                 {here
                   ? <button type="button" className="go" disabled={act.busy || me.user.cash < total} onClick={() => go(s)}>{s.route?.legs.some((l) => l.mode === 'tau_thuy') ? (s.route.legs.length > 1 ? '🚕⛴️ Đi ra đảo' : '⛴️ Đi tàu tới đây') : '🚕 Bắt taxi tới đây'}<small>{me.user.cash < total ? 'không đủ tiền' : `hết ${fmtMoney(total)}`}</small></button>
-                  : <small className="muted">Tới {data.province} mới đi được</small>}
+                  : <button type="button" className="ghost sight-plan-btn" aria-expanded={plan === s.id} onClick={() => setPlan(plan === s.id ? null : s.id)}>🧭 Lên kế hoạch đi</button>}
               </div>
+              {!here && plan === s.id && (() => {
+                const home = me.user.homeRegionId, target = nearestRegionTo(s.lat, s.lng, s.province);
+                if (!home || !target) return <p className="muted">Hãy nhận lô đất đầu tiên trước khi đi du lịch.</p>;
+                if (target.id === home) return <p className="muted">{target.name} là nhà bạn: về nhà rồi mở lại thẻ Tham quan để bắt taxi tới {s.name}.</p>;
+                return <TripPlanner fromRegionId={home} toRegionId={target.id} cash={me.user.cash} busy={act.busy}
+                  title={`Tới ${target.name} (${target.province}) — vùng gần ${s.name} nhất — rồi bắt taxi${s.island ? ', đi tàu' : ''} vào điểm tham quan`}
+                  onTravel={onTravel ? (o) => act.run(() => onTravel(o.mode, target.id, o.km)) : undefined} />;
+              })()}
             </li>
           );
         })}
