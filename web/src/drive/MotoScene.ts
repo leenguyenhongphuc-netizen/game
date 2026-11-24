@@ -13,6 +13,8 @@ import type { Sea } from './RideParts.ts';
 import { gradient, makeSign } from './RideKit.ts';
 import { HELMETS, RIDER_SHIRTS, buildMoto } from './MotoParts.ts';
 import type { MotoLook, MotoModel, MotoStyle } from './MotoParts.ts';
+import { WEATHER_GRIP, weatherAt } from '../../../shared/moto.ts';
+import type { PhuotWeather, WeatherSpan } from '../../../shared/moto.ts';
 
 export type MotoTheme = 'karst' | 'pass_sea' | 'coast' | 'plain';
 export interface MotoStop { id: string; name: string; atKm: number; kind: 'photo' | 'fuel' | 'cafe'; note?: string }
@@ -27,6 +29,8 @@ export interface MotoHud {
   /** Cảnh báo: cua gắt phía trước (tốc độ khuyên), xe ngược chiều, xe chậm. */
   warn: { text: string; urgent: boolean } | null;
   lane: -1 | 1; lean: number; falls: number; others: number; stopping: boolean; done: boolean;
+  /** Thời tiết đang gặp. */
+  weather: PhuotWeather;
 }
 export interface MotoSceneOpts {
   theme: MotoTheme; km: number; seconds: number; twisty: number; stops: MotoStop[]; look: MotoLook;
@@ -34,6 +38,8 @@ export interface MotoSceneOpts {
   title: string; startName: string; endName: string;
   /** Khoá cảnh hiện diện (cùng khoá thì thấy nhau trên đường). */
   presenceKey?: string;
+  /** Thời tiết theo từng đoạn km (máy chủ chọn theo mùa); không có = nắng ráo. */
+  weather?: WeatherSpan[];
   seed?: number;
   autopilot?: boolean;
   onTick?: (h: MotoHud) => void;
@@ -75,7 +81,7 @@ const THEME_SKY: Record<MotoTheme, { sky: number; fog: number; near: number; far
 function landmark(id: string, g: THREE.Group, sx: number) {
   const brick = mat(0x9a7a5a), stone = mat(0xb9ad98), roof = mat(0x5a4a3a), red = mat(0xc0392b);
   if (id === 'hai_van_quan') { // cổng thành cổ trên đỉnh đèo: hai trụ gạch, vòm cổng, mái
-    const gx = -sx * 7;
+    const gx = sx * 1.5; // cổng đứng bên đường (trước đây đè lên mặt đường, xe và máy quay chui qua tường gạch)
     g.add(mesh(GEO.box, brick, gx, 2.2, -2.6, 3, 4.4, 2.4), mesh(GEO.box, brick, gx, 2.2, 2.6, 3, 4.4, 2.4), mesh(GEO.box, brick, gx, 4.9, 0, 3, 1.2, 7.6));
     g.add(mesh(GEO.box, stone, gx, 5.7, 0, 3.4, 0.4, 8.2), mesh(GEO.box, roof, gx, 6.4, 0, 2.6, 1.0, 5.4), mesh(GEO.box, mat(0xe8d9a8), gx - sx * 1.55, 4.9, 0, 0.05, 0.6, 2.4));
   } else if (id === 'ma_pi_leng') { // cột cờ, bia đá ghi tên đèo
@@ -116,6 +122,9 @@ export class MotoScene {
   private others = new Map<number, Other>();
   private link: PresenceLink | null = null;
   private kmps = 0; private lastS = 4;
+  private wx: PhuotWeather = 'nang'; private grip = 1; private rain: THREE.LineSegments | null = null; private rainV: Float32Array | null = null;
+  private roadMat: THREE.MeshPhongMaterial | null = null; private fogWant = { near: 150, far: 700 }; private sun: THREE.DirectionalLight | null = null; private hemi: THREE.HemisphereLight | null = null;
+  private convoyColors = new Map<number, string>();
   private tickAcc = 0; private camPos = new THREE.Vector3(); private camLook = new THREE.Vector3(); private camInit = false;
   private wheelSpin = 0; private hudWarn: MotoHud['warn'] = null;
   private auto: boolean;
@@ -132,8 +141,8 @@ export class MotoScene {
     const sky = THEME_SKY[opts.theme];
     this.scene.background = gradient(opts.theme === 'karst' ? 0x8fc6e6 : 0x6fb9ea, sky.sky);
     this.scene.fog = new THREE.Fog(sky.fog, sky.near, sky.far);
-    this.scene.add(new THREE.HemisphereLight(0xfdfcf4, opts.theme === 'coast' ? 0xc8b07a : 0x5d7a46, 1.45));
-    const sun = new THREE.DirectionalLight(0xfff0d2, 1.75); sun.position.set(-60, 120, 40); this.scene.add(sun);
+    this.hemi = new THREE.HemisphereLight(0xfdfcf4, opts.theme === 'coast' ? 0xc8b07a : 0x5d7a46, 1.45); this.scene.add(this.hemi);
+    const sun = new THREE.DirectionalLight(0xfff0d2, 1.75); sun.position.set(-60, 120, 40); this.scene.add(sun); this.sun = sun;
 
     this.buildPath();
     this.buildTerrain();
@@ -150,6 +159,8 @@ export class MotoScene {
     this.shade = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 2.4).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sh), transparent: true, depthWrite: false }));
     this.scene.add(this.shade);
 
+    this.buildRain();
+    this.applyWeather(weatherAt(opts.weather ?? [], 0), true);
     if (opts.presenceKey) this.link = new PresenceLink(() => this.presenceState(), (list, at) => this.setOthers(list, at.local));
     this.ro = new ResizeObserver(() => this.resize()); this.ro.observe(host); this.resize();
     this.renderer.setAnimationLoop(() => this.frame());
@@ -331,7 +342,8 @@ export class MotoScene {
       if (i < n - 1) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
     }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex })); m.userData.own = true; m.renderOrder = 1;
+    this.roadMat = new THREE.MeshPhongMaterial({ map: tex, specular: 0x000000, shininess: 8 });
+    const m = new THREE.Mesh(geo, this.roadMat); m.userData.own = true; m.renderOrder = 1;
     m.material.polygonOffset = true; m.material.polygonOffsetFactor = -2; m.material.polygonOffsetUnits = -2;
     this.scene.add(m);
   }
@@ -488,12 +500,16 @@ export class MotoScene {
       keep.add(o.id);
       const styles: MotoStyle[] = ['so', 'con_tay', 'adventure', 'ga', 'so'], st = styles[hash32(`moto:${o.id}`) % styles.length];
       const shirt = o.avatar?.shirt && /^#[0-9a-f]{6}$/i.test(o.avatar.shirt) ? parseInt(o.avatar.shirt.slice(1), 16) : RIDER_SHIRTS[o.id % RIDER_SHIRTS.length];
-      const look = `${st}|${shirt}|${o.name}`;
+      const team = this.convoyColors.get(o.id) ?? '', look = `${st}|${shirt}|${o.name}|${team}`;
       let it = this.others.get(o.id);
       if (it && it.look !== look) { this.dropOther(it); it = undefined; }
       if (!it) {
         const m = buildMoto({ style: st, color: [0xc0392b, 0x2b2f38, 0x1f6fb8, 0xf4c430][o.id % 4], shirt, helmet: HELMETS[o.id % HELMETS.length] }, true);
-        const tag = nameTag(o, 0.9); tag.position.set(0, 2.4, 0); m.root.add(tag);
+        const tag = nameTag(team ? { ...o, name: `🏁 ${o.name}` } : o, 0.9); tag.position.set(0, 2.4, 0); m.root.add(tag);
+        if (team) { // cờ đuôi màu đoàn cắm sau yên
+          const col = parseInt(team.slice(1), 16);
+          m.root.add(mesh(GEO.cyl, mat(0xdddddd), 0, 1.6, 0.85, 0.02, 1.5, 0.02), mesh(GEO.box, mat(col), 0, 2.15, 1.05, 0.03, 0.34, 0.42));
+        }
         it = { o, m, tag, pos0: 0, v: 0, t0: local, shown: null, lane: 0.9 + (hash32(`lane:${o.id}`) % 3) * 0.55, look };
         this.scene.add(m.root); this.others.set(o.id, it);
       }
@@ -502,6 +518,50 @@ export class MotoScene {
     }
     for (const [id, it] of this.others) if (!keep.has(id)) { this.dropOther(it); this.others.delete(id); }
   }
+  // ---------------------------------------------------------------- thời tiết
+  /** Mưa: các vệt nước rơi quanh máy quay, một lần vẽ (LineSegments), cập nhật theo dt. */
+  private buildRain() {
+    const N = 700, v = new Float32Array(N * 6), r = rng(77);
+    for (let i = 0; i < N; i++) { const x = (r() - 0.5) * 60, y = r() * 26, z = (r() - 0.5) * 60; v.set([x, y, z, x + 0.05, y - 0.9, z], i * 6); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(v, 3));
+    const m = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xcfe0ea, transparent: true, opacity: 0.55, fog: false, depthWrite: false }));
+    m.frustumCulled = false; m.visible = false; m.userData.own = true; this.rain = m; this.rainV = v; this.scene.add(m);
+  }
+  private applyWeather(kind: PhuotWeather, initial = false) {
+    this.wx = kind; this.grip = WEATHER_GRIP[kind];
+    const sky = THEME_SKY[this.opts.theme], fog = this.scene.fog as THREE.Fog;
+    const want = kind === 'mua' ? { color: 0x9aa7ae, near: 40, far: 300 } : kind === 'suong' ? { color: 0xd4dadd, near: 12, far: 150 } : { color: sky.fog, near: sky.near, far: sky.far };
+    fog.color.setHex(want.color); this.fogWant = { near: want.near, far: want.far };
+    if (initial) { fog.near = want.near; fog.far = want.far; }
+    const old = this.scene.background as THREE.Texture | null;
+    this.scene.background = kind === 'mua' ? gradient(0x6d7d88, 0xa9b5bc) : kind === 'suong' ? gradient(0xc9d2d6, 0xdfe5e7) : gradient(this.opts.theme === 'karst' ? 0x8fc6e6 : 0x6fb9ea, sky.sky);
+    if (old && old.isTexture) old.dispose();
+    if (this.sun) this.sun.intensity = kind === 'nang' ? 1.75 : kind === 'mua' ? 0.75 : 1.0;
+    if (this.hemi) this.hemi.intensity = kind === 'nang' ? 1.45 : 1.25;
+    if (this.roadMat) {
+      // mặt đường ướt: tối màu hơn và bóng loáng
+      this.roadMat.color.setHex(kind === 'mua' ? 0x9a9fa6 : 0xffffff);
+      this.roadMat.specular.setHex(kind === 'mua' ? 0x6b7280 : 0x000000); this.roadMat.shininess = kind === 'mua' ? 70 : 8; this.roadMat.needsUpdate = true;
+    }
+    if (this.rain) this.rain.visible = kind === 'mua';
+    if (!initial) this.opts.onEvent?.(kind === 'mua' ? '🌧️ Trời đổ mưa: đường trơn, giảm tốc trước khi vào cua. Ghé quán mua áo mưa để đỡ mất sức.' : kind === 'suong' ? '🌫️ Sương mù kéo xuống: tầm nhìn ngắn, đi chậm.' : '☀️ Trời đã tạnh ráo.', kind === 'nang' ? 'good' : 'info');
+  }
+  private tickRain(dt: number) {
+    if (!this.rain?.visible || !this.rainV) return;
+    const v = this.rainV, fall = 22 * dt;
+    for (let i = 0; i < v.length; i += 6) { let y = v[i + 1] - fall; if (y < -4) y += 30; v[i + 1] = y; v[i + 4] = y - 0.9; }
+    this.rain.position.set(this.camPos.x, this.camPos.y - 8, this.camPos.z);
+    (this.rain.geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+  }
+  /** Tô màu đoàn cho người cùng đoàn (mã người chơi → màu #rrggbb). */
+  setConvoy(colors: Map<number, string>) {
+    const changed = colors.size !== this.convoyColors.size || [...colors].some(([k, c]) => this.convoyColors.get(k) !== c);
+    if (!changed) return;
+    this.convoyColors = new Map(colors);
+    for (const [id, it] of this.others) { this.dropOther(it); this.others.delete(id); }
+  }
+  get weather() { return this.wx; }
+
   private dropOther(it: Other) { it.m.root.removeFromParent(); disposeTag(it.tag); }
   /** Danh sách người cùng tuyến gần đây (bảng thông tin, kiểm thử). */
   nearby(): { name: string; bot: boolean; aheadKm: number }[] {
@@ -515,9 +575,9 @@ export class MotoScene {
     let worst = { v: 30, at: 0 };
     for (let d = 0; d <= look; d += 6) {
       const k = Math.abs(this.at_(this.s + d).k); if (k < 1e-4) continue;
-      const vs = Math.sqrt(3.6 / k); // gia tốc ngang ~3,6 m/s² là vào cua thoải mái
-      // cần phanh kịp: v² = vs² + 2·a·d
-      const vAllow = Math.sqrt(vs * vs + 2 * 3.2 * d);
+      const vs = Math.sqrt((3.6 * this.grip) / k); // gia tốc ngang ~3,6 m/s² là vào cua thoải mái (đường ướt kém bám hơn)
+      // cần phanh kịp: v² = vs² + 2·a·d (đường ướt phanh dài hơn)
+      const vAllow = Math.sqrt(vs * vs + 2 * 3.2 * this.grip * d);
       if (vAllow < worst.v) worst = { v: vAllow, at: d };
     }
     return worst;
@@ -531,9 +591,10 @@ export class MotoScene {
   private frame() {
     if (this.disposed) return;
     if (!this.quality.tick()) return;
-    const fast = (window as unknown as { __rideStep?: number }).__rideStep ?? 1;
-    const dt = Math.min(0.05, stepDt(1 / 60)) * fast;
-    this.update(dt);
+    // kiểm thử tăng tốc: chạy nhiều bước vật lý nhỏ mỗi khung (không phóng to dt, tránh vượt qua điểm dừng)
+    const fast = Math.max(1, Math.min(40, Math.round((window as unknown as { __rideStep?: number }).__rideStep ?? 1)));
+    const dt = Math.min(0.05, stepDt(1 / 60));
+    for (let i = 0; i < fast && !this.disposed; i++) this.update(dt);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -557,7 +618,7 @@ export class MotoScene {
     else {
       const climb = (this.at_(this.s + 4).y - this.at_(this.s - 4).y) / 8; // độ dốc
       if (this.dry) { acc = -2.2; }
-      else acc = this.throttle * (3.0 - Math.max(0, climb) * 6) - this.brakeIn * 7.5 - 0.35 - climb * 3;
+      else acc = this.throttle * (3.0 - Math.max(0, climb) * 6) - this.brakeIn * 7.5 * this.grip - 0.35 - climb * 3;
       if (this.stopping) {
         const left = this.stopping.s - this.s;
         const want = left <= 0.5 ? 0 : Math.min(vmax, Math.sqrt(2 * 3.5 * Math.max(0, left - 1)) + 0.4);
@@ -575,12 +636,12 @@ export class MotoScene {
     const here = this.at_(this.s), latAcc = this.v * this.v * Math.abs(here.k);
     this.hudWarn = null;
     if (this.fallT <= 0 && !this.paused) {
-      if (latAcc > 7.2) {
-        this.falls++; this.fallT = 2.4; this.v *= 0.3; this.opts.onEvent?.('Vào cua quá nhanh, xe trượt ngã! Mất chút thời gian và thể lực.', 'bad');
-      } else if (latAcc > 5.2) { this.slideT = 0.6; this.hudWarn = { text: 'Bánh xe đang trượt, giảm ga!', urgent: true }; }
+      if (latAcc > 7.2 * this.grip) {
+        this.falls++; this.fallT = 2.4; this.v *= 0.3; this.opts.onEvent?.(this.wx === 'mua' ? 'Đường ướt trơn, vào cua quá nhanh nên xe trượt ngã! Trời mưa phải đi chậm hơn nhiều.' : 'Vào cua quá nhanh, xe trượt ngã! Mất chút thời gian và thể lực.', 'bad');
+      } else if (latAcc > 5.2 * this.grip) { this.slideT = 0.6; this.hudWarn = { text: this.wx === 'mua' ? 'Đường trơn, bánh xe đang trượt: nhả ga!' : 'Bánh xe đang trượt, giảm ga!', urgent: true }; }
       else {
         const safe = this.safeAhead(80);
-        if (safe.v < this.v - 1.5 && safe.at > 4) this.hudWarn = { text: `Cua gắt phía trước: giảm còn ${Math.round(safe.v * 3.6)} km/h`, urgent: safe.at < 30 };
+        if (safe.v < this.v - 1.5 && safe.at > 4) this.hudWarn = { text: `${this.wx === 'mua' ? '⚠️ Đường trơn! ' : ''}Cua gắt phía trước: giảm còn ${Math.round(safe.v * 3.6)} km/h`, urgent: safe.at < 30 };
       }
     }
     this.slideT = Math.max(0, this.slideT - dt);
@@ -637,6 +698,10 @@ export class MotoScene {
     const gy = this.groundY(this.camPos.x, this.camPos.z); if (this.camPos.y < gy + 1.2) this.camPos.y = gy + 1.2;
     this.camera.position.copy(this.camPos); this.camera.lookAt(this.camLook);
     if (this.sea) { this.sea.mesh.position.x = this.camPos.x; this.sea.mesh.position.z = this.camPos.z; this.sea.tick(t, 0); }
+    // --- thời tiết đổi theo km, sương/mưa kéo tới từ từ
+    const wNow = weatherAt(o.weather ?? [], this.kmNow); if (wNow !== this.wx) this.applyWeather(wNow);
+    { const fog = this.scene.fog as THREE.Fog, kf = Math.min(1, dt * 0.6); fog.near += (this.fogWant.near - fog.near) * kf; fog.far += (this.fogWant.far - fog.far) * kf; }
+    this.tickRain(dt);
     // --- tới đích
     if (!this.arrived && this.s >= this.L - 10) { this.arrived = true; this.v = 0; this.opts.onArrive?.(); }
     // --- bảng thông tin
@@ -652,7 +717,7 @@ export class MotoScene {
       fuel: Math.round(this.fuel * 100) / 100, tank: this.opts.bike.tank, unit: this.opts.bike.unit, dry: this.dry,
       next: n ? { name: n.stop.name, kind: n.stop.kind, inKm: Math.max(0, Math.round((n.stop.atKm - km) * 10) / 10) } : null,
       at: this.at, canStop: !!n && !this.stopping && !this.paused && n.s - this.s < 260 && n.s - this.s > 2,
-      warn: this.hudWarn, lane: this.laneWant, lean: this.leanA, falls: this.falls, others: this.others.size, stopping: !!this.stopping, done: this.arrived,
+      warn: this.hudWarn, lane: this.laneWant, lean: this.leanA, falls: this.falls, others: this.others.size, stopping: !!this.stopping, done: this.arrived, weather: this.wx,
     };
   }
 

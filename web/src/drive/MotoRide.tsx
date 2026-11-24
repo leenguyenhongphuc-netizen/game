@@ -5,15 +5,24 @@ import { createPortal } from 'react-dom';
 import { MotoScene } from './MotoScene.ts';
 import type { MotoHud, MotoStop, MotoTheme } from './MotoScene.ts';
 import type { MotoStyle } from './MotoParts.ts';
+import { WEATHER_ICON, WEATHER_NAME } from '../../../shared/moto.ts';
+import type { WeatherSpan } from '../../../shared/moto.ts';
+import { rallyCount } from '../../../shared/convoy.ts';
+import type { ConvoyView } from '../../../shared/convoy.ts';
+import { api } from '../api.ts';
 
 export interface MotoRideRoute { title: string; startName: string; endName: string; km: number; theme: MotoTheme; twisty: number; seconds: number; stops: MotoStop[] }
 export interface MotoRideBike { name: string; style: MotoStyle; tank: number; per100: number; unit: string; maxKmh: number; fuel: number; price: number; color: number }
-export interface MotoRideResult { kmDone: number; aborted: boolean; photos: string[]; cafes: string[]; refuels: { at: string; amount: number }[]; falls: number; seconds: number }
+export interface MotoRideResult { kmDone: number; aborted: boolean; photos: string[]; cafes: string[]; refuels: { at: string; amount: number }[]; falls: number; seconds: number; raincoat: string | null }
 export interface MotoRideProps {
   mode: 'phuot' | 'buon'; route: MotoRideRoute; bike: MotoRideBike;
   shirt?: number; helmet?: number; cargo?: boolean; presenceKey?: string;
   /** Giá một lần ngồi quán (đi phượt) và thể lực hồi lại, để hiện trên nút. */
   cafe?: { cost: number; energy: number };
+  /** Thời tiết từng đoạn (đi phượt) và giá áo mưa bán ở quán. */
+  weather?: WeatherSpan[]; raincoatCost?: number;
+  /** Đang đi cùng đoàn: mã đoàn (báo vị trí, tập trung ở điểm dừng). */
+  convoyId?: number;
   onDone: (r: MotoRideResult) => void;
 }
 
@@ -61,11 +70,22 @@ const CSS = `
 .mr-row button.blue { background: #1f6fb8; color: #fff; }
 .mr-flash { position: absolute; inset: 0; background: #fff; pointer-events: none; animation: mr-flash 0.5s ease-out forwards; }
 @keyframes mr-flash { from { opacity: 0.95; } to { opacity: 0; } }
+.mr-visor { position: absolute; inset: 0; pointer-events: none; background:
+  radial-gradient(circle at 6% 30%, #ffffff55 0 5px, transparent 7px), radial-gradient(circle at 11% 62%, #ffffff44 0 7px, transparent 9px), radial-gradient(circle at 4% 82%, #ffffff50 0 4px, transparent 6px),
+  radial-gradient(circle at 94% 26%, #ffffff4d 0 6px, transparent 8px), radial-gradient(circle at 90% 55%, #ffffff40 0 4px, transparent 6px), radial-gradient(circle at 96% 78%, #ffffff55 0 8px, transparent 10px),
+  radial-gradient(circle at 30% 96%, #ffffff3d 0 5px, transparent 7px), radial-gradient(circle at 72% 95%, #ffffff44 0 6px, transparent 8px), radial-gradient(circle at 50% 4%, #ffffff33 0 5px, transparent 7px),
+  radial-gradient(ellipse at center, transparent 62%, #b8c6ce55 100%); animation: mr-drip 2.4s linear infinite; }
+@keyframes mr-drip { 0% { background-position: 0 0; } 100% { background-position: 0 14px; } }
+.mr-team { display: flex; gap: 3px; align-items: center; }
+.mr-team i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; display: inline-block; box-shadow: 0 0 0 1px #7a4a22; }
+.mr-rally { background: #eef6ff; border: 2px dashed #1f6fb8; border-radius: 12px; padding: 6px 8px; font-weight: 700; color: #1f4f8a; }
 .mr-err { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; }
 @media (orientation: landscape) and (max-height: 500px) { .mr-btn { min-width: 54px; min-height: 54px; } .mr-btn.gas { height: 70px; } .mr-panel { max-height: 80%; } }
 `;
 
 const ICON: Record<MotoStop['kind'], string> = { photo: '📸', fuel: '⛽', cafe: '☕' };
+/** Chính mình đang đứng ở điểm dừng thì tính là đã tới, không đợi nhịp báo vị trí kế tiếp. */
+const withMe = (ms: ConvoyView['members'], at: MotoStop) => ms.map((m) => (m.me ? { ...m, atStop: at.id, km: Math.max(m.km, at.atKm) } : m));
 const vnd = (n: number) => `${Math.round(n).toLocaleString('vi-VN')}đ`;
 
 export function MotoRide(p: MotoRideProps): JSX.Element {
@@ -76,7 +96,10 @@ export function MotoRide(p: MotoRideProps): JSX.Element {
   const [err, setErr] = useState<string | null>(null);
   const [arrived, setArrived] = useState(false);
   const [held, setHeld] = useState<'gas' | 'brake' | null>(null);
-  const log = useRef<{ photos: Set<string>; cafes: Set<string>; refuels: { at: string; amount: number }[]; t0: number }>({ photos: new Set(), cafes: new Set(), refuels: [], t0: Date.now() });
+  const log = useRef<{ photos: Set<string>; cafes: Set<string>; refuels: { at: string; amount: number }[]; t0: number; raincoat: string | null }>({ photos: new Set(), cafes: new Set(), refuels: [], t0: Date.now(), raincoat: null });
+  const [team, setTeam] = useState<ConvoyView | null>(null);
+  const teamRef = useRef<ConvoyView | null>(null); teamRef.current = team;
+  const atRef = useRef<string | null>(null);
   const [, force] = useState(0);
   const sent = useRef(false);
   const auto = (window as unknown as { __motoAuto?: boolean }).__motoAuto === true;
@@ -85,7 +108,7 @@ export function MotoRide(p: MotoRideProps): JSX.Element {
   const finish = (aborted: boolean) => {
     if (sent.current) return; sent.current = true;
     const s = scene.current, L = log.current;
-    p.onDone({ kmDone: aborted ? s?.kmNow ?? 0 : p.route.km, aborted, photos: [...L.photos], cafes: [...L.cafes], refuels: L.refuels, falls: s?.hud().falls ?? 0, seconds: Math.round((Date.now() - L.t0) / 1000) });
+    p.onDone({ kmDone: aborted ? s?.kmNow ?? 0 : p.route.km, aborted, photos: [...L.photos], cafes: [...L.cafes], refuels: L.refuels, falls: s?.hud().falls ?? 0, seconds: Math.round((Date.now() - L.t0) / 1000), raincoat: L.raincoat });
   };
 
   useEffect(() => {
@@ -94,7 +117,7 @@ export function MotoRide(p: MotoRideProps): JSX.Element {
         theme: p.route.theme, km: p.route.km, seconds: p.route.seconds, twisty: p.route.twisty, stops: p.route.stops,
         look: { style: p.bike.style, color: p.bike.color, shirt: p.shirt, helmet: p.helmet, cargo: p.cargo },
         bike: { tank: p.bike.tank, per100: p.bike.per100, fuel: p.bike.fuel, unit: p.bike.unit, maxKmh: p.bike.maxKmh },
-        title: p.route.title, startName: p.route.startName, endName: p.route.endName, presenceKey: p.presenceKey,
+        title: p.route.title, startName: p.route.startName, endName: p.route.endName, presenceKey: p.presenceKey, weather: p.weather,
         onTick: setHud,
         onStop: () => force((x) => x + 1),
         onEvent: (text, kind) => say(text, kind === 'bad'),
@@ -104,6 +127,27 @@ export function MotoRide(p: MotoRideProps): JSX.Element {
     return () => { scene.current?.dispose(); scene.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // đi đoàn: báo km và điểm đang đứng mỗi 3 giây (nhanh hơn khi đang chờ ở điểm tập trung), nhận vị trí cả đoàn
+  useEffect(() => {
+    if (!p.convoyId) return;
+    let stop = false, timer = 0;
+    const beat = async () => {
+      if (stop) return;
+      if (!document.hidden) {
+        const s = scene.current;
+        try {
+          const r = await api<{ convoy: ConvoyView }>('POST', `/api/convoys/${p.convoyId}/pos`, { km: Math.round((s?.kmNow ?? 0) * 100) / 100, atStop: atRef.current });
+          if (stop) return;
+          setTeam(r.convoy);
+          s?.setConvoy(new Map(r.convoy.members.filter((m) => !m.me).map((m) => [m.userId, m.color])));
+        } catch { /* mạng chập chờn: thử lại nhịp sau */ }
+      }
+      timer = window.setTimeout(beat, atRef.current ? 2000 : 3000);
+    };
+    void beat();
+    return () => { stop = true; window.clearTimeout(timer); };
+  }, [p.convoyId]);
 
   // bàn phím (máy tính): ↑ ga, ↓ phanh, ← → đổi làn, Space dừng ở điểm sắp tới
   useEffect(() => {
@@ -121,6 +165,12 @@ export function MotoRide(p: MotoRideProps): JSX.Element {
   }, []);
 
   const at = hud?.at ?? null;
+  atRef.current = at?.id ?? null;
+  const rally = at && team && (at.kind === 'photo' || at.kind === 'cafe') ? rallyCount(withMe(team.members, at), at.id, at.atKm) : null;
+  const meKm = hud?.kmDone ?? 0, mates = team?.members.filter((m) => !m.me && !m.aborted) ?? [];
+  const lead = team?.members.find((m) => m.leader && !m.me), last = mates.length ? mates.reduce((a, b) => (b.km < a.km ? b : a)) : null;
+  const raining = hud?.weather === 'mua';
+  const buyCoat = (st: MotoStop) => { log.current.raincoat = st.id; if (!log.current.cafes.has(st.id)) log.current.cafes.add(st.id); say(`🧥 Đã mặc áo mưa${p.raincoatCost ? ` (${vnd(p.raincoatCost)})` : ''}: đi mưa không mất thêm sức.`); force((x) => x + 1); };
   // hành động ở điểm dừng
   const photo = (st: MotoStop) => { setFlash((f) => f + 1); log.current.photos.add(st.id); say(`📸 Đã chụp ở ${st.name}: được đóng dấu sổ phượt!`); force((x) => x + 1); };
   const fill = (st: MotoStop) => {
@@ -139,8 +189,13 @@ export function MotoRide(p: MotoRideProps): JSX.Element {
     const id = window.setTimeout(() => {
       if (at.kind === 'photo') photo(at);
       else if (at.kind === 'fuel') { if ((scene.current?.fuelNow ?? 0) < p.bike.tank * 0.8) fill(at); }
-      else { rest(at); if (p.bike.unit === 'kWh') fill(at); }
-      window.setTimeout(go, 250);
+      else { rest(at); if (p.bike.unit === 'kWh') fill(at); if (scene.current?.weather === 'mua' && !log.current.raincoat) buyCoat(at); }
+      // đi đoàn: chờ cả đoàn tới điểm tập trung (tối đa ~20 giây khi kiểm thử) rồi mới đi tiếp
+      if (p.convoyId && (at.kind === 'photo' || at.kind === 'cafe')) {
+        const t0 = Date.now();
+        const wait = () => { const t = teamRef.current, r = t ? rallyCount(withMe(t.members, at), at.id, at.atKm) : null; if ((r && r.here >= r.total) || Date.now() - t0 > 20_000) go(); else window.setTimeout(wait, 500); };
+        window.setTimeout(wait, 250);
+      } else window.setTimeout(go, 250);
     }, 250);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,11 +235,15 @@ export function MotoRide(p: MotoRideProps): JSX.Element {
               <div className="mr-stat"><b>{hud?.kmh ?? 0}</b> km/h <small>· tối đa {p.bike.maxKmh}</small></div>
               <div className="mr-stat">{p.bike.unit === 'kWh' ? '🔋' : '⛽'}<span className={`mr-gauge${fuelPct < 0.2 ? ' low' : ''}`}><u style={{ width: `${Math.max(0, Math.min(1, fuelPct)) * 100}%` }} /></span>{hud ? `${hud.fuel.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} ${p.bike.unit}` : ''}</div>
               {hud?.next && <div className="mr-stat">{ICON[hud.next.kind]} {hud.next.name} · {hud.next.inKm} km</div>}
+              {hud && <div className="mr-stat" title={WEATHER_NAME[hud.weather]}>{WEATHER_ICON[hud.weather]} {hud.weather === 'nang' ? 'Nắng ráo' : hud.weather === 'mua' ? `Mưa · đường trơn${log.current.raincoat ? ' · 🧥' : ''}` : 'Sương mù'}</div>}
+              {team && mates.length > 0 && <div className="mr-stat"><span className="mr-team">{team.members.map((m) => <i key={m.userId} style={{ background: m.color, opacity: m.aborted ? 0.3 : 1 }} title={m.name} />)}</span>
+                {lead ? `Trưởng đoàn ${lead.km >= meKm ? 'trước' : 'sau'} ${Math.abs(Math.round((lead.km - meKm) * 10) / 10)} km` : 'Bạn dẫn đoàn'}{last && last.km < meKm - 0.05 ? ` · cuối đoàn sau ${Math.round((meKm - last.km) * 10) / 10} km` : ''}</div>}
               {(hud?.others ?? 0) > 0 && <div className="mr-stat">🏍️ {hud!.others} người cùng đường</div>}
             </div>
             {hud?.warn ? <div className={`mr-warn${hud.warn.urgent ? ' urgent' : ''}`} role="status">{hud.warn.text}</div>
               : hud?.stopping ? <div className="mr-warn" role="status">Đang giảm tốc, tấp vào lề…</div> : null}
           </div>
+          {raining && <div className="mr-visor" aria-hidden="true" />}
           {toast && <div className={`mr-toast${toast.bad ? ' bad' : ''}`} role="status" key={toast.id}>{toast.text}</div>}
           {flash > 0 && <div className="mr-flash" key={flash} />}
           {!at && !arrived && (
@@ -205,11 +264,13 @@ export function MotoRide(p: MotoRideProps): JSX.Element {
             <div className="mr-panel" role="dialog" aria-label={at.name}>
               <h3>{ICON[at.kind]} {at.name}</h3>
               {at.note && <p>{at.note}</p>}
+              {rally && <div className="mr-rally" role="status">🏁 Điểm tập trung: {rally.here}/{rally.total} xe đã tới{rally.waiting.length ? ` · đang chờ ${rally.waiting.join(', ')}` : ' · đủ đoàn rồi!'}</div>}
               <div className="mr-row">
                 {at.kind === 'photo' && <button className="blue" disabled={L.photos.has(at.id)} onClick={() => photo(at)}>{L.photos.has(at.id) ? '✓ Đã chụp, đóng dấu' : '📸 Chụp ảnh, đóng dấu'}</button>}
                 {(at.kind === 'fuel' || (at.kind === 'cafe' && p.bike.unit === 'kWh')) && <button className="blue" onClick={() => fill(at)}>{p.bike.unit === 'kWh' ? '⚡ Sạc đầy' : '⛽ Đổ đầy bình'} · ~{vnd(Math.max(0, p.bike.tank - (scene.current?.fuelNow ?? 0)) * p.bike.price)}</button>}
                 {at.kind === 'cafe' && <button className="blue" disabled={L.cafes.has(at.id)} onClick={() => rest(at)}>{L.cafes.has(at.id) ? '✓ Đã nghỉ' : `☕ Ngồi nghỉ${p.cafe ? ` · ${vnd(p.cafe.cost)} · +${p.cafe.energy} thể lực` : ', đi vệ sinh'}`}</button>}
-                <button className="go" onClick={go}>Đi tiếp ▶</button>
+                {at.kind === 'cafe' && p.raincoatCost !== undefined && <button className="blue" disabled={!!L.raincoat} onClick={() => buyCoat(at)}>{L.raincoat ? '✓ Đã mặc áo mưa' : `🧥 Mua áo mưa · ${vnd(p.raincoatCost)}`}</button>}
+                <button className="go" onClick={go}>{rally && rally.here < rally.total ? 'Đi tiếp, không chờ ▶' : 'Đi tiếp ▶'}</button>
               </div>
             </div>
           )}

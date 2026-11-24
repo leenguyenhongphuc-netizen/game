@@ -7,7 +7,8 @@ import { buildApp } from '../src/app.ts';
 import { openDb } from '../src/db.ts';
 import type { Db } from '../src/db.ts';
 import { LICENSES, MOTO_KINDS, VEHICLES, isMoto, licenseCovers, needsYard, tripPlanFor } from '../../shared/vehicles.ts';
-import { MOTO_RENTALS, PHUOT_BY_ID, PHUOT_ROUTES, PHUOT_RULES, phuotFuel } from '../../shared/moto.ts';
+import { MOTO_RENTALS, PHUOT_BY_ID, PHUOT_CLIMATE, PHUOT_ROUTES, PHUOT_RULES, RAINCOAT, WEATHER_GRIP, phuotFuel, rainEnergy, rainKm, weatherAt, weatherPlan } from '../../shared/moto.ts';
+import { CONVOY_MAX, rallyCount } from '../../shared/convoy.ts';
 import { fuelPriceNow } from '../../shared/realPrices.ts';
 
 const url = process.env.TEST_MOTO_DATABASE_URL ?? 'postgres://vuon:vuon@localhost:5432/vuon_test_moto';
@@ -150,4 +151,110 @@ test('xe của mình đi phượt: hết xăng giữa đường phải trả ti�
   const ab = await call('POST', `/api/phuot/${s3.body.tripId}/finish`, { aborted: true, km: 50, photos: ['ma_pi_leng', 'cong_troi_quan_ba'] }, u);
   assert.deepEqual([ab.body.kmDone, ab.body.firstFinish], [50, false]);
   assert.deepEqual(ab.body.photos, ['cong_troi_quan_ba'], 'chưa tới Mã Pí Lèng thì không có tem');
+});
+
+test('thời tiết theo mùa: Hải Vân mưa nhiều tháng 10, Vĩnh Hy khô; mưa giảm độ bám; áo mưa đỡ mất sức', () => {
+  const freq = (route: string, month: number) => { let rain = 0; for (let s = 1; s <= 2000; s++) if (weatherPlan(route, month, s).some((w) => w.kind === 'mua')) rain++; return rain / 2000; };
+  assert.ok(freq('hai_van', 10) > 0.5, 'Hải Vân tháng 10 là mùa mưa');
+  assert.ok(freq('hai_van', 4) < 0.25, 'Hải Vân tháng 4 ít mưa');
+  assert.ok(freq('bien_vinh_hy', 3) < 0.08, 'ven biển Ninh Thuận cũ khô hạn');
+  assert.ok(freq('ha_giang', 7) > freq('ha_giang', 1), 'Hà Giang mưa mùa hè');
+  for (const r of PHUOT_ROUTES) { const c = PHUOT_CLIMATE[r.id]; assert.ok(c && c.rain.length === 12 && c.fog.length === 12, r.id); }
+  for (let s = 1; s < 300; s++) {
+    const p = weatherPlan('hai_van', 11, s);
+    assert.deepEqual(p, weatherPlan('hai_van', 11, s), 'tất định theo hạt giống');
+    assert.ok(p.length <= 2 && p[0].fromKm === 0 && (p.length === 1 || (p[1].fromKm > 0 && p[1].fromKm < PHUOT_BY_ID.hai_van.km && p[1].kind !== p[0].kind)));
+  }
+  const plan = [{ fromKm: 0, kind: 'nang' as const }, { fromKm: 10, kind: 'mua' as const }];
+  assert.equal(weatherAt(plan, 5), 'nang'); assert.equal(weatherAt(plan, 12), 'mua');
+  assert.equal(rainKm(plan, 0, 36), 26);
+  assert.equal(rainEnergy(plan, 36, null), Math.round(2.6 * RAINCOAT.extraEnergyPer10Km), 'dầm mưa cả đoạn sau');
+  assert.equal(rainEnergy(plan, 36, 19), Math.round(0.9 * RAINCOAT.extraEnergyPer10Km), 'mặc áo mưa ở km 19 thì phần sau không mất thêm');
+  assert.ok(WEATHER_GRIP.mua < 0.8 && WEATHER_GRIP.nang === 1, 'đường ướt kém bám');
+});
+
+test('đi phượt gặp mưa: máy chủ chọn thời tiết lúc xuất phát, tính thể lực dầm mưa, thu tiền áo mưa ở quán đã ghé', async () => {
+  const u = await signup('phuot_mua');
+  await getLicense(u, 'A1');
+  await db.query(`update users set energy = 100, energy_at = now() where username = 'phuot_mua'`);
+  const route = PHUOT_BY_ID.hai_van, cafe = route.checkpoints.find((c) => c.kind === 'cafe')!;
+  const s = await call('POST', '/api/phuot/start', { routeId: route.id, rent: 'moto_so110' }, u);
+  assert.equal(s.status, 200, JSON.stringify(s.body));
+  assert.ok(Array.isArray(s.body.weather) && s.body.weather[0].fromKm === 0 && s.body.raincoat.cost === RAINCOAT.cost);
+  // ép một kế hoạch mưa cả tuyến để kiểm tính toán
+  await db.query(`update moto_trips set weather = '[{"fromKm":0,"kind":"mua"}]' where id = $1`, [s.body.tripId]);
+  const f = await call('POST', `/api/phuot/${s.body.tripId}/finish`, { cafes: [cafe.id], raincoat: cafe.id }, u);
+  assert.equal(f.status, 200, JSON.stringify(f.body));
+  assert.equal(f.body.coatCost, RAINCOAT.cost);
+  assert.equal(f.body.wetLost, Math.round((cafe.atKm / 10) * RAINCOAT.extraEnergyPer10Km), 'chỉ phần trước khi mặc áo mưa');
+  assert.equal(f.body.energyLost, Math.round(route.km / 10 * PHUOT_RULES.energyPer10Km) + f.body.wetLost);
+  // áo mưa ở quán chưa ghé thì không nhận
+  const s2 = await call('POST', '/api/phuot/start', { routeId: route.id, rent: 'moto_so110' }, u);
+  await db.query(`update moto_trips set weather = '[{"fromKm":0,"kind":"mua"}]' where id = $1`, [s2.body.tripId]);
+  const f2 = await call('POST', `/api/phuot/${s2.body.tripId}/finish`, { raincoat: cafe.id }, u);
+  assert.equal(f2.body.coatCost, 0);
+  assert.equal(f2.body.wetLost, Math.round((route.km / 10) * RAINCOAT.extraEnergyPer10Km));
+});
+
+test('đi đoàn: lập đoàn, mời bạn, vào bằng mã, tối đa 8 xe, xuất phát cùng lúc, tập trung, về cùng nhau thưởng thêm EXP', async () => {
+  const lead = await signup('doan_truong'), b = await signup('doan_ban'), c = await signup('doan_la');
+  for (const u of [lead, b, c]) await getLicense(u, 'A1');
+  await db.query(`update users set energy = 100, energy_at = now() where username in ('doan_truong','doan_ban','doan_la')`);
+  const route = PHUOT_BY_ID.hai_van;
+  const cr = await call('POST', '/api/convoys', { routeId: route.id }, lead);
+  assert.equal(cr.status, 200, JSON.stringify(cr.body));
+  const cv = cr.body.convoy; assert.equal(cv.code.length, 6); assert.equal(cv.members.length, 1); assert.ok(cv.members[0].leader);
+  // mời: chỉ bạn bè
+  const idB = Number((await db.query(`select id from users where username = 'doan_ban'`)).rows[0].id);
+  assert.equal((await call('POST', `/api/convoys/${cv.id}/invite`, { userId: idB }, lead)).body.error, 'khong_phai_ban');
+  const idL = Number((await db.query(`select id from users where username = 'doan_truong'`)).rows[0].id);
+  const [a1, b1] = idL < idB ? [idL, idB] : [idB, idL];
+  await db.query(`insert into friendships (user_a, user_b, requested_by, status, accepted_at) values ($1,$2,$1,'accepted',now())`, [a1, b1]);
+  assert.equal((await call('POST', `/api/convoys/${cv.id}/invite`, { userId: idB }, lead)).status, 200);
+  const inv = (await call('GET', '/api/convoys/mine', undefined, b)).body.invites;
+  assert.equal(inv.length, 1); assert.equal(inv[0].code, cv.code);
+  assert.equal((await call('POST', `/api/convoys/${cv.id}/accept`, {}, b)).status, 200);
+  // người lạ vào bằng mã (gõ thường, có dấu cách vẫn được)
+  const j = await call('POST', '/api/convoys/join', { code: ` ${cv.code.toLowerCase()} ` }, c);
+  assert.equal(j.status, 200, JSON.stringify(j.body)); assert.equal(j.body.convoy.members.length, 3);
+  // chưa chọn xe thì chưa cho xuất phát; chỉ trưởng đoàn xuất phát
+  assert.equal((await call('POST', `/api/convoys/${cv.id}/start`, {}, lead)).body.error, 'chua_chon_xe');
+  for (const u of [lead, b, c]) assert.equal((await call('POST', `/api/convoys/${cv.id}/ready`, { pick: 'thue:moto_so110' }, u)).status, 200);
+  assert.equal((await call('POST', `/api/convoys/${cv.id}/start`, {}, b)).status, 403);
+  // chuyến của đoàn: phải đợi trưởng đoàn cho chạy
+  assert.equal((await call('POST', '/api/phuot/start', { routeId: route.id, rent: 'moto_so110', convoyId: cv.id }, b)).body.error, 'chua_xuat_phat');
+  const st = await call('POST', `/api/convoys/${cv.id}/start`, {}, lead);
+  assert.equal(st.status, 200); assert.equal(st.body.convoy.status, 'chay');
+  assert.equal((await call('GET', '/api/convoys/mine', undefined, c)).body.convoy.myPick, 'thue:moto_so110');
+  // không vào thêm khi đã chạy
+  const d = await signup('doan_tre'); assert.equal((await call('POST', '/api/convoys/join', { code: cv.code }, d)).status, 404);
+  const trips: Record<string, any> = {};
+  for (const [name, u] of [['lead', lead], ['b', b], ['c', c]] as const) {
+    const s = await call('POST', '/api/phuot/start', { routeId: route.id, rent: 'moto_so110', convoyId: cv.id }, u);
+    assert.equal(s.status, 200, JSON.stringify(s.body)); trips[name] = s.body;
+  }
+  assert.deepEqual(trips.lead.weather, trips.b.weather, 'cả đoàn gặp cùng một thời tiết');
+  // báo vị trí, đếm người ở điểm tập trung
+  const cp = route.checkpoints.find((x) => x.kind === 'photo')!;
+  await call('POST', `/api/convoys/${cv.id}/pos`, { km: cp.atKm, atStop: cp.id }, lead);
+  await call('POST', `/api/convoys/${cv.id}/pos`, { km: cp.atKm, atStop: cp.id }, b);
+  const pos = (await call('POST', `/api/convoys/${cv.id}/pos`, { km: 3 }, c)).body.convoy;
+  const rc = rallyCount(pos.members, cp.id, cp.atKm);
+  assert.deepEqual([rc.here, rc.total, rc.waiting], [2, 3, ['doan_la']]);
+  // về đích: hai người trước chưa có thưởng đoàn (còn chờ), người cuối về thì cả đoàn được thưởng
+  const f1 = await call('POST', `/api/phuot/${trips.lead.tripId}/finish`, {}, lead);
+  assert.equal(f1.status, 200, JSON.stringify(f1.body)); assert.equal(f1.body.convoyBonusXp, 0); assert.ok(f1.body.convoyWaiting);
+  const xpB0 = Number((await db.query(`select xp from users where username = 'doan_ban'`)).rows[0].xp);
+  await call('POST', `/api/phuot/${trips.b.tripId}/finish`, {}, b);
+  const f3 = await call('POST', `/api/phuot/${trips.c.tripId}/finish`, {}, c);
+  assert.equal(f3.status, 200, JSON.stringify(f3.body));
+  assert.equal(f3.body.convoyTogether, 3);
+  assert.ok(f3.body.convoyBonusXp > 0, 'người về cuối nhận thưởng đoàn ngay');
+  const xpB1 = Number((await db.query(`select xp from users where username = 'doan_ban'`)).rows[0].xp);
+  assert.ok(xpB1 > xpB0, 'các thành viên về trước cũng được cộng thưởng đoàn');
+  assert.equal((await db.query(`select status from convoys where id = $1`, [cv.id])).rows[0].status, 'xong');
+  // tối đa 8 xe
+  const big = await call('POST', '/api/convoys', { routeId: route.id }, lead);
+  for (let i = 0; i < CONVOY_MAX - 1; i++) { const u = await signup(`doan_x${i}`); assert.equal((await call('POST', '/api/convoys/join', { code: big.body.convoy.code }, u)).status, 200); }
+  assert.equal((await call('POST', '/api/convoys/join', { code: big.body.convoy.code }, d)).body.error, 'day');
 });

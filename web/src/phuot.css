@@ -1,0 +1,11 @@
+/* Đi phượt: dự báo thời tiết, đi đoàn (nhánh N6). */
+.phuot-fc { display: block; background: #eef6ff; border: 1.5px solid #9cc3e8; border-radius: 10px; padding: 5px 8px; color: #1f4f8a; line-height: 1.35; }
+.phuot-convoy { display: grid; gap: 6px; margin-top: 8px; padding: 8px 10px; border: 2px dashed #b89b6a; border-radius: 12px; background: #fffaf0; min-width: 0; }
+.phuot-convoy.on { border-style: solid; border-color: #1f6fb8; background: #f3f8ff; }
+.phuot-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.phuot-row > * { flex: 1 1 120px; min-width: 0; min-height: 44px; }
+.phuot-row input { font: inherit; padding: 6px 10px; border: 2px solid #b89b6a; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.12em; }
+.phuot-members { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.phuot-members li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; overflow-wrap: anywhere; }
+.phuot-members i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #7a4a22; flex: none; background: #ccc; }
+.phuot-members small { color: #6b5a44; }

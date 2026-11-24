@@ -105,3 +105,57 @@ export const MOTO_TESTS: Record<MotoTest, { name: string; how: string }> = {
 /** Trừ điểm và truất quyền (thang 100, đạt từ 80 theo EXAM.sa_hinh). Mức trừ mỗi lỗi là tham khảo các tài liệu ôn thi, chưa đối chiếu văn bản gốc. */
 export const MOTO_YARD = { touchLine: 5, footDown: 5, stall: 5, outOfCourse: 'Đi ra ngoài hình thi', fall: 'Đổ xe', wrongOrder: 'Đi sai thứ tự bài', timeLimitSec: 600 };
 export const motoStraightLen = (cls: 'A1' | 'A') => (cls === 'A1' ? 18 : 27);
+
+// ---------------------------------------------------------------- thời tiết trên cung đường phượt
+/** Kiểu thời tiết: nắng ráo, mưa (đường trơn), sương mù (tầm nhìn ngắn). */
+export type PhuotWeather = 'nang' | 'mua' | 'suong';
+export interface WeatherSpan { fromKm: number; kind: PhuotWeather }
+export const WEATHER_NAME: Record<PhuotWeather, string> = { nang: 'Trời nắng ráo', mua: 'Trời mưa, đường trơn', suong: 'Sương mù dày' };
+export const WEATHER_ICON: Record<PhuotWeather, string> = { nang: '☀️', mua: '🌧️', suong: '🌫️' };
+/**
+ * Xác suất mưa và sương mù theo tháng (1–12) cho từng tuyến, theo khí hậu thật:
+ * - Đèo Hải Vân (Đà Nẵng): mùa mưa tháng 9–12, đỉnh tháng 10–11; tháng 12–2 hay có mây mù trên đỉnh đèo.
+ * - Hà Giang: mưa nhiều tháng 5–9; mùa đông (12–2) sương mù dày trên cao nguyên đá.
+ * - Ven biển Ninh Thuận cũ (Vĩnh Hy): khô hạn nhất cả nước, mưa ít, chủ yếu tháng 9–11.
+ * Con số là ước tính theo mô tả khí hậu vùng (mùa mưa, số ngày mưa trung bình), chưa lấy từ chuỗi số liệu trạm khí tượng.
+ */
+export const PHUOT_CLIMATE: Record<string, { rain: number[]; fog: number[] }> = {
+  hai_van: { rain: [0.2, 0.12, 0.1, 0.08, 0.12, 0.12, 0.1, 0.15, 0.4, 0.6, 0.6, 0.45], fog: [0.3, 0.25, 0.15, 0.05, 0, 0, 0, 0, 0.05, 0.1, 0.15, 0.3] },
+  ha_giang: { rain: [0.05, 0.08, 0.12, 0.2, 0.4, 0.55, 0.6, 0.55, 0.4, 0.2, 0.1, 0.05], fog: [0.4, 0.35, 0.2, 0.1, 0.05, 0.05, 0.05, 0.05, 0.08, 0.15, 0.25, 0.4] },
+  bien_vinh_hy: { rain: [0.03, 0.02, 0.02, 0.03, 0.06, 0.06, 0.06, 0.08, 0.15, 0.25, 0.25, 0.1], fog: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+};
+/** Độ bám đường (1 = khô ráo). Mưa làm giảm cả tốc độ vào cua an toàn lẫn lực phanh. */
+export const WEATHER_GRIP: Record<PhuotWeather, number> = { nang: 1, mua: 0.68, suong: 0.9 };
+/** Áo mưa mua ở quán ven đường (áo mưa bộ phổ thông, giá ước tính theo bán lẻ phổ biến); mưa mà không mặc áo thì mất thêm thể lực. */
+export const RAINCOAT = { cost: 60_000, extraEnergyPer10Km: 1 };
+/** Thời tiết từng đoạn. Đổi tối đa một lần giữa chuyến. Tất định theo hạt giống (mã chuyến) để máy chủ và máy người chơi khớp nhau. */
+export function weatherPlan(routeId: string, month: number, seed: number): WeatherSpan[] {
+  const route = PHUOT_BY_ID[routeId], c = PHUOT_CLIMATE[routeId];
+  if (!route || !c) return [{ fromKm: 0, kind: 'nang' }];
+  let x = ((seed >>> 0) ^ 0x9e3779b9) >>> 0 || 1;
+  const rnd = () => { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; };
+  const m = Math.min(12, Math.max(1, Math.round(month))) - 1;
+  const draw = (): PhuotWeather => { const r = rnd(); return r < c.rain[m] ? 'mua' : r < c.rain[m] + c.fog[m] ? 'suong' : 'nang'; };
+  const first = draw(), plan: WeatherSpan[] = [{ fromKm: 0, kind: first }];
+  // một nửa số chuyến đổi trời giữa đường (mưa đèo đến nhanh, tạnh cũng nhanh)
+  if (rnd() < 0.5) { const second = draw(); if (second !== first) plan.push({ fromKm: Math.round(route.km * (0.3 + rnd() * 0.4)), kind: second }); }
+  return plan;
+}
+export function weatherAt(plan: WeatherSpan[], km: number): PhuotWeather {
+  let k: PhuotWeather = plan[0]?.kind ?? 'nang'; for (const p of plan) if (km >= p.fromKm) k = p.kind; return k;
+}
+/** Số km chạy dưới mưa trong đoạn [a, b]. */
+export function rainKm(plan: WeatherSpan[], a: number, b: number): number {
+  let sum = 0;
+  for (let i = 0; i < plan.length; i++) {
+    if (plan[i].kind !== 'mua') continue;
+    const lo = Math.max(a, plan[i].fromKm), hi = Math.min(b, plan[i + 1]?.fromKm ?? Infinity);
+    if (hi > lo) sum += hi - lo;
+  }
+  return sum;
+}
+/** Thể lực mất thêm vì dầm mưa (không áo mưa) trong đoạn đã chạy; mặc áo mưa từ km `coatAtKm` thì phần sau không mất thêm. */
+export function rainEnergy(plan: WeatherSpan[], kmDone: number, coatAtKm: number | null): number {
+  const wet = rainKm(plan, 0, coatAtKm === null ? kmDone : Math.min(kmDone, coatAtKm));
+  return Math.round((wet / 10) * RAINCOAT.extraEnergyPer10Km);
+}

@@ -8,7 +8,7 @@ import { api } from './api.ts';
 import type { Me } from './api.ts';
 import './passport.css';
 
-export interface PassportStamp { kind: 'stop' | 'sight' | 'region'; sightId?: string; stopId?: string; regionId?: string; name: string; province: string; at: number | null }
+export interface PassportStamp { kind: 'stop' | 'sight' | 'region' | 'phuot' | 'phuot_cp'; sightId?: string; stopId?: string; regionId?: string; name: string; province: string; at: number | null }
 export interface PassportData {
   holder: string; issuedAt: number; no: string; xp: number; level: number; title: string; nextXp: number | null; prevXp: number;
   perks: { energyMax: number; exportActive: number; superDailyKg: number };
@@ -75,9 +75,10 @@ export function StampMark({ stamp, size }: { stamp: PassportStamp; size?: number
       </svg>
     );
   }
-  const big = stamp.kind === 'sight', lines = twoLines(stamp.name, big ? 14 : 12);
+  const big = stamp.kind === 'sight' || stamp.kind === 'phuot', moto = stamp.kind === 'phuot' || stamp.kind === 'phuot_cp', lines = twoLines(stamp.name, big ? 14 : 12);
+  const arcTop = stamp.kind === 'phuot' ? '★ CHINH PHỤC CUNG ĐƯỜNG ★' : stamp.kind === 'phuot_cp' ? 'SỔ PHƯỢT · VƯỜN VIỆT' : big ? '★ CHỨNG NHẬN THAM QUAN ★' : 'CHECK-IN · VƯỜN VIỆT';
   return (
-    <svg className={`pp-stamp k-${stamp.kind}`} viewBox="0 0 120 120" width={size ?? 112} style={style} role="img" aria-label={`${big ? 'Dấu chứng nhận tham quan' : 'Dấu check-in'} ${stamp.name}${date ? ` ngày ${date}` : ''}`}>
+    <svg className={`pp-stamp k-${stamp.kind}`} viewBox="0 0 120 120" width={size ?? 112} style={style} role="img" aria-label={`${stamp.kind === 'phuot' ? 'Dấu chinh phục cung đường' : stamp.kind === 'phuot_cp' ? 'Dấu sổ phượt' : big ? 'Dấu chứng nhận tham quan' : 'Dấu check-in'} ${stamp.name}${date ? ` ngày ${date}` : ''}`}>
       <defs>
         <clipPath id={`${uid}c`}><circle cx="60" cy="60" r="39" /></clipPath>
         <path id={`${uid}t`} d="M60 60 m-47 0 a47 47 0 1 1 94 0" /><path id={`${uid}b`} d="M60 60 m-49 0 a49 49 0 0 0 98 0" />
@@ -85,10 +86,12 @@ export function StampMark({ stamp, size }: { stamp: PassportStamp; size?: number
       {big && stamp.sightId && <image href={`/art/sights/${stamp.sightId}-s.jpg`} x="16" y="16" width="88" height="88" preserveAspectRatio="xMidYMid slice" clipPath={`url(#${uid}c)`} opacity="0.3" onError={(e) => { (e.currentTarget as SVGImageElement).style.display = 'none'; }} />}
       {big ? <path d={scallop(60, 60, 58, 28, 3.2)} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round" /> : <circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" strokeWidth="2.6" />}
       <circle cx="60" cy="60" r={big ? 40 : 41} fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray={big ? undefined : '3 2.4'} />
-      <text className="pp-st-arc"><textPath href={`#${uid}t`} startOffset="50%" textAnchor="middle">{big ? '★ CHỨNG NHẬN THAM QUAN ★' : 'CHECK-IN · VƯỜN VIỆT'}</textPath></text>
+      <text className="pp-st-arc"><textPath href={`#${uid}t`} startOffset="50%" textAnchor="middle">{arcTop}</textPath></text>
       <text className="pp-st-arc"><textPath href={`#${uid}b`} startOffset="50%" textAnchor="middle">{stamp.province.toUpperCase()}</textPath></text>
       {lines.map((l, i) => <text key={i} x="60" y={(lines.length === 1 ? 60 : 53) + i * 13.5} textAnchor="middle" className="pp-st-b" fontSize={l.length > 13 ? 10 : 12}>{l}</text>)}
       {date && <text x="60" y={lines.length === 1 ? 77 : 84} textAnchor="middle" className="pp-st-d">{date}</text>}
+      {moto && <g transform={`translate(60 ${lines.length === 1 ? 37 : 31})`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="-9" cy="3" r="4" /><circle cx="9" cy="3" r="4" /><path d="M-9 3 L-3 -4 L5 -4 L9 3 M-3 -4 L-1 -8 M3 -6 L7 -6" /></g>}
     </svg>
   );
 }
@@ -105,6 +108,7 @@ function Portrait({ me }: { me: Me }) {
 }
 
 type Page = { id: string; label: string };
+interface PhuotRouteLite { id: string; name: string; province: string; km: number; checkpoints: { id: string; name: string; kind: string }[]; stamps: { cpId: string; at: number }[]; done: { firstAt: number; times: number } | null }
 
 /** Cuốn hộ chiếu: bìa, trang thông tin, mục lục, mỗi tỉnh một trang dấu, trang vùng trồng. */
 export function PassportPanel({ me, refresh }: { me: Me; refresh: () => void }) {
@@ -113,9 +117,11 @@ export function PassportPanel({ me, refresh }: { me: Me; refresh: () => void }) 
   const [page, setPage] = useState(0);
   const [how, setHow] = useState(false);
   const drag = useRef<{ x: number; y: number } | null>(null);
+  const [phuot, setPhuot] = useState<PhuotRouteLite[] | null>(null);
+  useEffect(() => { let on = true; api<{ routes: PhuotRouteLite[] }>('GET', '/api/phuot').then((d) => { if (on) setPhuot(d.routes); }).catch(() => { if (on) setPhuot([]); }); return () => { on = false; }; }, [me.user.id]);
   useEffect(() => { let on = true; api<PassportData>('GET', '/api/passport').then((d) => { if (on) setData(d); }).catch((e) => { if (on) setErr(e instanceof Error ? e.message : 'Không mở được hộ chiếu.'); }); return () => { on = false; }; }, [me.user.id]);
   void refresh;
-  const pages = useMemo<Page[]>(() => !data ? [] : [{ id: 'bia', label: 'Bìa' }, { id: 'thongtin', label: 'Thông tin' }, { id: 'mucluc', label: 'Mục lục' }, ...data.provinces.map((p) => ({ id: `tinh:${p.province}`, label: p.province })), { id: 'vung', label: 'Vùng trồng' }], [data]);
+  const pages = useMemo<Page[]>(() => !data ? [] : [{ id: 'bia', label: 'Bìa' }, { id: 'thongtin', label: 'Thông tin' }, { id: 'mucluc', label: 'Mục lục' }, ...data.provinces.map((p) => ({ id: `tinh:${p.province}`, label: p.province })), { id: 'vung', label: 'Vùng trồng' }, { id: 'phuot', label: 'Cung đường phượt' }], [data]);
   if (err) return <p className="error" role="alert">{err}</p>;
   if (!data) return <p className="muted">Đang mở hộ chiếu…</p>;
   const go = (i: number) => setPage(Math.max(0, Math.min(pages.length - 1, i)));
@@ -181,7 +187,8 @@ export function PassportPanel({ me, refresh }: { me: Me; refresh: () => void }) 
               <span className="grow"><b>{p.province}</b><small>{sightsOfProvince(p.province).map((s) => s.name).slice(0, 3).join(' · ')}{p.total > 3 ? '…' : ''}</small></span>
               <span className={`pp-frac${p.done === p.total ? ' full' : ''}`}>{p.done}/{p.total}</span></button></li>
           ))}
-          <li><button type="button" onClick={() => go(pages.length - 1)}><span className="grow"><b>Vùng trồng đã tới</b><small>Dấu nhập cảnh từng vùng đặc sản</small></span><span className="pp-frac">{data.regions.done}/{data.regions.total}</span></button></li>
+          <li><button type="button" onClick={() => go(pages.findIndex((x) => x.id === 'phuot'))}><span className="grow"><b>Cung đường phượt</b><small>Dấu các điểm dừng chụp ảnh và dấu chinh phục cung đường</small></span><span className="pp-frac">{phuot ? `${phuot.filter((r) => r.done).length}/${phuot.length}` : '…'}</span></button></li>
+          <li><button type="button" onClick={() => go(pages.findIndex((x) => x.id === 'vung'))}><span className="grow"><b>Vùng trồng đã tới</b><small>Dấu nhập cảnh từng vùng đặc sản</small></span><span className="pp-frac">{data.regions.done}/{data.regions.total}</span></button></li>
         </ul>
         <p className="pp-tip">Mỗi điểm dừng bạn chụp ảnh khi tham quan được đóng một dấu check-in. Xem đủ mọi điểm dừng của một địa danh thì được dấu chứng nhận lớn.</p>
       </div>
@@ -192,6 +199,26 @@ export function PassportPanel({ me, refresh }: { me: Me; refresh: () => void }) 
         <h3 className="pp-h">VÙNG TRỒNG ĐÃ TỚI <small>{data.regions.done}/{data.regions.total}</small></h3>
         {regionStamps.length === 0 ? <p className="pp-tip">Chưa có dấu nào. Mua vé hoặc lái xe tới một vùng trồng để được đóng dấu.</p>
           : <div className="pp-grid rg">{regionStamps.map((s) => <StampMark key={s.regionId} stamp={s} />)}</div>}
+      </div>
+    );
+  } else if (cur.id === 'phuot') {
+    body = (
+      <div className="pp-page">
+        <h3 className="pp-h">CUNG ĐƯỜNG PHƯỢT <small>{phuot ? `${phuot.filter((r) => r.done).length}/${phuot.length} cung đường` : ''}</small></h3>
+        {!phuot ? <p className="muted">Đang mở sổ phượt…</p> : phuot.map((r) => {
+          const photos = r.checkpoints.filter((c) => c.kind === 'photo'), got = new Map(r.stamps.map((x) => [x.cpId, x.at]));
+          return (
+            <section key={r.id} className="pp-sight">
+              <header><span aria-hidden="true">🏍️</span><b>{r.name}</b><small>{photos.filter((c) => got.has(c.id)).length}/{photos.length} dấu</small></header>
+              <div className="pp-grid">
+                {r.done ? <StampMark stamp={{ kind: 'phuot', name: r.name.replace(/^Cung đường /, ''), province: r.province, at: r.done.firstAt, regionId: `phuot:${r.id}` }} />
+                  : <div className="pp-empty big"><span>Dấu chinh phục</span><small>đi trọn {r.km} km</small></div>}
+                {photos.map((c) => got.has(c.id) ? <StampMark key={c.id} stamp={{ kind: 'phuot_cp', name: c.name, province: r.province, at: got.get(c.id)!, regionId: `phuot:${r.id}:${c.id}` }} /> : <div key={c.id} className="pp-empty"><span>{c.name}</span></div>)}
+              </div>
+            </section>
+          );
+        })}
+        <p className="pp-tip">Đi phượt bằng xe máy (Bãi xe → Đi phượt): dừng ở điểm ngắm cảnh, chụp ảnh để được đóng dấu; đi trọn cung đường được dấu chinh phục.</p>
       </div>
     );
   } else {

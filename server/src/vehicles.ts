@@ -9,7 +9,9 @@ import {
   licenseCovers, parkPrice, rangeKm, restStopItems, roadPrice, tripPlanFor, truckOf, unitOf,
 } from '../../shared/vehicles.ts';
 import type { ExamPart, LicenseClass, TruckInfo, VehicleSpec, VehicleTripPlan } from '../../shared/vehicles.ts';
-import { MOTO_RENTALS, PHUOT_BY_ID, PHUOT_ROUTES, PHUOT_RULES, phuotFuel, phuotMinSeconds, phuotSeconds } from '../../shared/moto.ts';
+import { MOTO_RENTALS, PHUOT_BY_ID, PHUOT_ROUTES, PHUOT_CLIMATE, PHUOT_RULES, RAINCOAT, phuotFuel, phuotMinSeconds, phuotSeconds, rainEnergy, weatherPlan } from '../../shared/moto.ts';
+import type { WeatherSpan } from '../../shared/moto.ts';
+import { registerConvoy } from './convoy.ts';
 import { xpFor } from '../../shared/progress.ts';
 import type { XpSource } from '../../shared/progress.ts';
 
@@ -59,7 +61,11 @@ create table if not exists moto_done (
   first_at timestamptz not null default now(),
   times int not null default 1,
   primary key (user_id, route_id)
-);`;
+);
+alter table moto_trips add column if not exists weather jsonb;
+alter table moto_trips add column if not exists convoy_id bigint;`;
+/** Tháng hiện tại theo giờ Việt Nam (UTC+7), để chọn thời tiết theo mùa. */
+const vnMonth = (ms = Date.now()) => new Date(ms + 7 * 3600_000).getUTCMonth() + 1;
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
@@ -453,6 +459,9 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
   const motoSchema = () => (motoReady ??= db.query(MOTO_SCHEMA).catch((e) => { motoReady = null; throw e; }));
   const motoOut = (v: VehicleSpec) => ({ kind: v.kind, name: v.name, emoji: v.emoji, moto: v.moto ?? 'so', cc: v.cc ?? null, kw: v.kw ?? null, power: v.power, unit: unitOf(v.power), tank: v.tank, per100: v.per100, maxKmh: v.maxKmh, cargoKg: v.cargoKg, license: v.license, licenseName: LICENSES[v.license].name, price: v.price });
   /** Bằng còn hiệu lực đang có (để biết thuê được xe nào). */
+  const convoy = registerConvoy(app, { db, requireUser: d.requireUser, bad, addXp: d.addXp });
+  /** Tài khoản thử được chạy nhanh (?nhanh=1 trên máy, gửi nhanh: true khi kết thúc). */
+  const isTester = async (req: FastifyRequest) => { try { await d.requireTester(req); return true; } catch { return false; } };
   const okLicenses = async (q: Q, userId: number) => (await licenseRows(q, userId)).filter((l) => !l.expired && !l.suspended).map((l) => l.cls as string);
 
   app.get('/api/phuot', async (req) => {
@@ -479,7 +488,8 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       routes: PHUOT_ROUTES.map((r) => {
         const mine = stamps.rows.filter((s) => s.route_id === r.id), dn = done.rows.find((x) => x.route_id === r.id);
         return { ...r, seconds: phuotSeconds(r), stamps: mine.map((s) => ({ cpId: s.cp_id as string, at: new Date(s.at).getTime() })), done: dn ? { firstAt: new Date(dn.first_at).getTime(), times: Number(dn.times) } : null,
-          photos: r.checkpoints.filter((c) => c.kind === 'photo').length };
+          photos: r.checkpoints.filter((c) => c.kind === 'photo').length,
+          forecast: PHUOT_CLIMATE[r.id] ? { month: vnMonth(), rain: PHUOT_CLIMATE[r.id].rain[vnMonth() - 1], fog: PHUOT_CLIMATE[r.id].fog[vnMonth() - 1] } : null };
       }),
     };
   });
@@ -517,10 +527,18 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
         if (Number(u.cash) < rentCost) throw bad('khong_du_tien', `Thuê ${spec.name} hết ${rentCost.toLocaleString('vi-VN')}đ một ngày.`, 409);
         await d.addCash(q, userId, -rentCost, `thue_xe_may:${spec.kind}`);
       }
-      const row = (await q.query('insert into moto_trips (user_id, route_id, vehicle_kind, vehicle_id, rented, fuel_start) values ($1,$2,$3,$4,$5,$6) returning id',
-        [userId, route.id, spec.kind, vehicleId, rented, fuel])).rows[0];
+      const convoyId = Number(b.convoyId) || null;
+      const row = (await q.query('insert into moto_trips (user_id, route_id, vehicle_kind, vehicle_id, rented, fuel_start, convoy_id) values ($1,$2,$3,$4,$5,$6,$7) returning id',
+        [userId, route.id, spec.kind, vehicleId, rented, fuel, convoyId])).rows[0];
+      // thời tiết: cả đoàn dùng chung hạt giống (mã đoàn) để cùng gặp một cơn mưa; đi một mình thì theo mã chuyến
+      let weather = weatherPlan(route.id, vnMonth(), convoyId ? convoyId * 7919 : Number(row.id));
+      // tài khoản thử: ép thời tiết để chụp ảnh, kiểm thử (nang | mua | suong | doi = nắng rồi mưa giữa đường)
+      const force = String(b.thoiTiet ?? '');
+      if (force && (await isTester(req))) weather = force === 'doi' ? [{ fromKm: 0, kind: 'nang' }, { fromKm: Math.round(route.km * 0.3), kind: 'mua' }] : force === 'mua' || force === 'suong' || force === 'nang' ? [{ fromKm: 0, kind: force }] : weather;
+      await q.query('update moto_trips set weather = $2 where id = $1', [row.id, JSON.stringify(weather)]);
+      if (convoyId) await convoy.attachTrip(q, userId, convoyId, route.id, Number(row.id));
       const f = phuotFuel(spec, route.km);
-      return { ok: true, tripId: Number(row.id), route: { ...route, seconds: phuotSeconds(route) }, bike: motoOut(spec), rented, rentCost, fuel, fuelNeed: f.need, fuelPrice: f.price, cash: Number(u.cash) - rentCost, energy: e.cur };
+      return { ok: true, tripId: Number(row.id), route: { ...route, seconds: phuotSeconds(route) }, bike: motoOut(spec), rented, rentCost, fuel, fuelNeed: f.need, fuelPrice: f.price, cash: Number(u.cash) - rentCost, energy: e.cur, weather, raincoat: RAINCOAT, convoyId };
     });
   });
 
@@ -538,7 +556,8 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       const aborted = b.aborted === true;
       const kmDone = aborted ? Math.max(0, Math.min(route.km, Number(b.km) || 0)) : route.km;
       // chạy nhanh hơn mức có thể thì không nhận (chống nộp kết quả giả)
-      const minSec = (phuotMinSeconds(route) * kmDone) / route.km / Math.max(1, d.phuotHurry ?? 1);
+      const hurry = Math.max(1, d.phuotHurry ?? 1) * (b.nhanh === true && (await isTester(req)) ? 20 : 1);
+      const minSec = (phuotMinSeconds(route) * kmDone) / route.km / hurry;
       if (took + 0.5 < minSec) throw bad('qua_nhanh', 'Chuyến đi kết thúc quá nhanh, không hợp lệ.', 409);
       const ids = (v: unknown) => (Array.isArray(v) ? [...new Set(v.slice(0, 20).map(String))] : []);
       const reached = (k: string) => route.checkpoints.filter((c) => c.kind === k && c.atKm <= kmDone + 0.01);
@@ -563,9 +582,15 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       if (rescue > 0) { const c = Math.min(cash, rescue); if (c > 0) { await d.addCash(q, userId, -c, `phuot_cuu_ho:${route.id}`); cash -= c; } }
       const cafeCost = Math.min(cash, cafes.length * PHUOT_RULES.cafeCost);
       if (cafeCost > 0) { await d.addCash(q, userId, -cafeCost, `phuot_quan:${route.id}`); cash -= cafeCost; }
+      // áo mưa: chỉ mua được ở quán đã ghé; từ chỗ mua trở đi không mất thêm thể lực vì dầm mưa
+      const plan: WeatherSpan[] = Array.isArray(t.weather) ? t.weather : [{ fromKm: 0, kind: 'nang' }];
+      const coatAt = cafes.includes(String(b.raincoat ?? '')) ? route.checkpoints.find((c) => c.id === String(b.raincoat))!.atKm : null;
+      const coatCost = coatAt !== null ? Math.min(cash, RAINCOAT.cost) : 0;
+      if (coatCost > 0) { await d.addCash(q, userId, -coatCost, `phuot_ao_mua:${route.id}`); cash -= coatCost; }
+      const wetLost = rainEnergy(plan, kmDone, coatAt);
       // thể lực: mất theo quãng đèo, quán nghỉ hồi lại
       const e = await d.energyState(q, userId, true);
-      const energyLost = Math.round((kmDone / 10) * PHUOT_RULES.energyPer10Km), energyBack = cafes.length * PHUOT_RULES.cafeEnergy;
+      const energyLost = Math.round((kmDone / 10) * PHUOT_RULES.energyPer10Km) + wetLost, energyBack = cafes.length * PHUOT_RULES.cafeEnergy;
       const energy = await d.setEnergy(q, userId, e, e.cur - energyLost + energyBack);
       // xe của mình: cộng công-tơ-mét, cập nhật xăng còn lại
       if (t.vehicle_id) {
@@ -575,15 +600,19 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       // tem điểm dừng: lần đầu chụp mới cộng EXP
       const fresh: string[] = [];
       for (const id of photos) if ((await q.query('insert into moto_stamps (user_id, route_id, cp_id) values ($1,$2,$3) on conflict do nothing', [userId, route.id, id])).rowCount) fresh.push(id);
-      let xp: unknown = null, reward = 0, firstFinish = false;
+      let xp: unknown = null, reward = 0, firstFinish = false, tripXp = 0;
       const gain = async (n: number, src: XpSource) => { if (d.addXp && n > 0) xp = await d.addXp(q, userId, n, src); };
       if (fresh.length) await gain(xpFor('diem_dung') * fresh.length, 'diem_dung');
       if (!aborted) {
         firstFinish = !!(await q.query('insert into moto_done (user_id, route_id) values ($1,$2) on conflict (user_id, route_id) do update set times = moto_done.times + 1 returning (xmax = 0) as fresh', [userId, route.id])).rows[0]?.fresh;
         if (firstFinish) { reward = PHUOT_RULES.firstFinishReward; await d.addCash(q, userId, reward, `phuot_tron_tuyen:${route.id}`); cash += reward; }
-        await gain(xpFor('chuyen_xe', route.km * 6), 'chuyen_xe');
+        tripXp = xpFor('chuyen_xe', route.km * 6);
+        await gain(tripXp, 'chuyen_xe');
       }
-      const result = { kmDone, aborted, fuelUsed: used, refuel: round1(refuel), fuelCost, rescue, fuelLeft: round1(left), cafes: cafes.length, cafeCost, energyLost, energyBack, photos, freshStamps: fresh, firstFinish, reward };
+      // đi đoàn: khi cả đoàn đã xong, ai về đích cùng nhau được thưởng thêm EXP
+      const team = t.convoy_id ? await convoy.onFinish(q, userId, Number(t.id), aborted, tripXp) : null;
+      const result = { kmDone, aborted, fuelUsed: used, refuel: round1(refuel), fuelCost, rescue, fuelLeft: round1(left), cafes: cafes.length, cafeCost, energyLost, energyBack, photos, freshStamps: fresh, firstFinish, reward,
+        weather: plan, wetLost, coatCost, convoyBonusXp: team?.bonusXp ?? 0, convoyTogether: team?.together ?? 0, convoyWaiting: !!team && team.together === 0 && !aborted };
       await q.query('update moto_trips set finished_at = now(), result = $2 where id = $1', [t.id, JSON.stringify(result)]);
       return { ok: true, routeId: route.id, ...result, unit: f.unit, cash, ...energy, ...(xp && typeof xp === 'object' ? xp : {}) };
     });
