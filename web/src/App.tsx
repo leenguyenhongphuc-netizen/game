@@ -38,6 +38,8 @@ import { ContractsPanel } from './contracts.tsx';
 import { PropertiesPanel } from './properties.tsx';
 import { ExportDeskDialog } from './exportDesk.tsx';
 import { FieldHud } from './fieldHud.tsx';
+import { VillageMap } from './map/VillageMap.tsx';
+import './map/sightmap.css';
 import { ChatLayer } from './chat/ChatLayer.tsx';
 import { JetSkiPanel } from './sea/JetSkiPanel.tsx';
 import { AdminCenter } from './admin/AdminCenter.tsx';
@@ -394,7 +396,19 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   // vẽ lại cả App mỗi giây làm khung hình hụt đều đặn mỗi giây (giật lặp lại) mà không ai nhìn thấy đồng hồ.
   const fullScene = !!(sightWalk || trip || ride || heli || importRide || exportRide || sightTrip || adminAt);
   const [chatDock, setChatDock] = useState<HTMLSpanElement | null>(null);
-  useEffect(() => { if (fullScene) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [fullScene]);
+  // Đồng hồ đếm ngược trên màn vườn hiện theo phút khi còn trên 1 phút (fmtDuration), nên chỉ vẽ lại cả App đúng lúc con số đổi:
+  // mỗi giây khi có bước sắp tới trong 60 giây, còn lại hẹn đúng mốc phút kế tiếp (trước đây vẽ lại mỗi giây ⇒ hụt khung đều đặn).
+  const [tickN, setTickN] = useState(0);
+  useEffect(() => {
+    if (fullScene) return;
+    const now = Date.now() + offset;
+    let next = Infinity;
+    for (const l of lots) for (const p of l.plantings) if (p.stepReadyAt > now) next = Math.min(next, p.stepReadyAt);
+    const left = next - now;
+    const delay = !Number.isFinite(left) ? 30_000 : left <= 61_000 ? 1000 : Math.max(500, Math.min(30_000, (left % 60_000) + 50));
+    const t = window.setTimeout(() => { tick((n) => n + 1); setTickN((n) => n + 1); }, delay);
+    return () => window.clearTimeout(t);
+  }, [fullScene, lots, offset, tickN]);
   const [acted, setActed] = useState<{ sp: Specialty; stepIndex: number; kg?: number; at: number } | null>(null);
   useEffect(() => { if (!acted) return; const t = setTimeout(() => setActed(null), 2500); return () => clearTimeout(t); }, [acted]);
   const visit = (id: number) => { setTour(null); setPlotId(id); setTab('vuon'); worldRef.current?.goHome(); };
@@ -721,6 +735,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       }} />}
       {sightWalk && shopOpen && <ShopSheet sightId={sightWalk.sight.id} shopId={shopOpen} onClose={() => setShopOpen(null)} onChanged={() => { void refresh(); }} />}
       {desk && <ExportDeskDialog onClose={() => setDesk(false)} onContracts={() => { setDesk(false); setKhoTab('hopdong'); setTab('kho'); }} onExport={() => { setDesk(false); setKhoTab('xuat'); setTab('kho'); }} />}
+      {!fullScene && tab === 'vuon' && !tour && <VillageMap getWorld={() => worldRef.current} />}
       {me?.user.role === 'nong_dan' && !tour && <FieldHud getWorld={() => worldRef.current} />}
       {adminAt && <AdminCenter province={adminAt.province} counter={adminAt.counter} onClose={() => setAdminAt(null)} onChanged={reload} onCoop={() => { setAdminAt(null); setXomTab('htx'); setTab('ban'); }} onLicense={() => { setAdminAt(null); setShopTab('baixe'); setTab('trangtri'); }} />}
       <ChatLayer me={{ id: me.user.id, level: me.user.level, cash: me.user.cash }} onFriendsChanged={() => void loadSocial()} dock={fullScene ? null : chatDock} hidden={!fullScene && tab !== 'vuon'} />

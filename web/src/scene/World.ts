@@ -1,4 +1,5 @@
 // Thế giới xóm vườn 3D: đường làng, các lô vườn (nhà mình và hàng xóm), nhân vật chạy bằng cần điều khiển.
+import { attachTapPick } from '../chat/tapPick.ts';
 import * as THREE from 'three';
 import { HIT_AT, makeTool, poseWork, toolHand } from './actions.ts';
 import type { WorkKind } from './actions.ts';
@@ -214,6 +215,8 @@ class Lot {
   private goods = new THREE.Group();
   private label: THREE.Sprite | null = null;
   private labelText = '';
+  /** Tên hiện trên cổng (Vườn nhà, tên hàng xóm…), dùng cho bản đồ. */
+  get name() { return this.labelText; }
   private look = '';
   private signs: THREE.Sprite[] = [];
   private goodsKey = '';
@@ -529,7 +532,7 @@ export class World {
     for (let i = 0; i < 30; i++) { const m = mesh(GEO.ball, mat(0xffffff), 0, -10, 0, 0.1); m.castShadow = false; m.visible = false; this.scene.add(m); this.sparks.push({ m, v: new THREE.Vector3(), life: 0 }); }
     this.buildLife();
     // người chơi khác, cư dân ảo cùng làng (nhịp gửi vị trí; xem web/src/presence.ts)
-    if (!opts.demo) { const others = new OthersLayer(makeFarmer, { z: ROAD_Z, halfX: WORLD.x }); this.others = others; this.scene.add(others.group); this.link = new PresenceLink(() => this.presenceState(), (list, at) => others.set(list, at)); }
+    if (!opts.demo) { const others = new OthersLayer(makeFarmer, { z: ROAD_Z, halfX: WORLD.x }); this.others = others; this.scene.add(others.group); this.untap = attachTapPick(this.renderer.domElement, () => this.camera, () => others.pickables()); this.link = new PresenceLink(() => this.presenceState(), (list, at) => others.set(list, at)); }
 
     // Cần điều khiển ảo
     this.stickEl = document.createElement('div'); this.knobEl = document.createElement('div');
@@ -961,6 +964,7 @@ export class World {
     this.vel.lerp(dir.multiplyScalar(this.driving ? 13 : 7.5 * (this.walkJob && this.walkTo === this.walkJob.to ? this.walkJob.mul : 1) * (this.fields?.routing ? 1.7 : 1)), 1 - Math.pow(this.driving ? 0.02 : 0.0005, dt));
     const before = this.pos.clone();
     this.pos.addScaledVector(this.vel, dt);
+    if (!this.driving) this.fields?.pushOut(this.pos); // không đi xuyên máy cày đang đậu
     if (this.driving && this.truck) { // xe chỉ chạy trên đường làng
       this.pos.z = THREE.MathUtils.clamp(this.pos.z, ROAD_Z - 1.9, ROAD_Z + 1.9); this.pos.x = THREE.MathUtils.clamp(this.pos.x, -WORLD.x, WORLD.x);
       const sp = this.vel.length(), tr = this.truck.root;
@@ -1212,10 +1216,50 @@ export class World {
     return { scene: 'village', key: `plot:${d.plotId}`, x: Math.round(this.pos.x * 100) / 100, z: Math.round(this.pos.z * 100) / 100, yaw: Math.round(this.player.root.rotation.y * 100) / 100, speed: Math.round(this.vel.length() * 10) / 10, walk: !this.driving };
   }
   /** Số người khác đang thấy trong làng (kiểm thử). */
+  // ---------------------------------------------------------------- bản đồ làng (web/src/map/VillageMap.tsx, cùng kiểu SightMap)
+  private mapCache: { url: string; x0: number; z0: number; w: number; d: number } | null = null;
+  private wp: THREE.Vector3 | null = null;
+  /** Ảnh chụp từ trên xuống cả làng (bắc ở trên), chụp một lần rồi giữ. */
+  mapImage(): { url: string; x0: number; z0: number; w: number; d: number } {
+    if (this.mapCache) return this.mapCache;
+    const x0 = -WORLD.x - 6, z0 = WORLD.zMin - 6, W = WORLD.x * 2 + 12, D = WORLD.zMax - WORLD.zMin + 12, k = 1024 / Math.max(W, D);
+    const pw = Math.round(W * k), ph = Math.round(D * k), cx = x0 + W / 2, cz = z0 + D / 2;
+    const cam = new THREE.OrthographicCamera(-W / 2, W / 2, D / 2, -D / 2, 1, 600);
+    cam.position.set(cx, 300, cz); cam.up.set(0, 0, -1); cam.lookAt(cx, 0, cz); cam.updateProjectionMatrix();
+    const hidden: THREE.Object3D[] = []; this.scene.traverse((o) => { if (o.visible && (o as THREE.Sprite).isSprite) { o.visible = false; hidden.push(o); } });
+    const fog = this.scene.fog; this.scene.fog = null;
+    const r = this.renderer, size = new THREE.Vector2(); r.getSize(size); const pr = r.getPixelRatio();
+    r.setPixelRatio(1); r.setSize(pw, ph, false); r.render(this.scene, cam);
+    const c = document.createElement('canvas'); c.width = pw; c.height = ph; c.getContext('2d')!.drawImage(r.domElement, 0, 0, pw, ph);
+    r.setPixelRatio(pr); r.setSize(size.x, size.y, false); this.resize();
+    this.scene.fog = fog; for (const o of hidden) o.visible = true;
+    this.mapCache = { url: c.toDataURL('image/jpeg', 0.82), x0, z0, w: W, d: D }; return this.mapCache;
+  }
+  mapMarks(): { me: { x: number; z: number; heading: number }; stops: { x: number; z: number; name: string; seen: boolean }[]; shops: { x: number; z: number }[]; extras: { x: number; z: number; kind: string }[]; exit: { x: number; z: number }; wp: { x: number; z: number } | null; route: { x: number; z: number }[] } {
+    const stops = this.lots.filter((l) => l.data && l.name).map((l) => { const p = l.group.getWorldPosition(new THREE.Vector3()); return { x: p.x, z: p.z, name: l.name, seen: !!l.data?.mine }; });
+    const desk = this.exportDeskSpot();
+    if (this.wp && Math.hypot(this.wp.x - this.pos.x, this.wp.z - this.pos.z) < 2) this.wp = null; // tới nơi thì bỏ điểm đến
+    return {
+      me: { x: this.pos.x, z: this.pos.z, heading: Math.PI - this.player.root.rotation.y },
+      stops, shops: desk ? [desk] : [], extras: [], exit: { x: WORLD.x, z: ROAD_Z },
+      wp: this.wp ? { x: this.wp.x, z: this.wp.z } : null,
+      route: this.wp ? [{ x: this.pos.x, z: this.pos.z }, { x: this.wp.x, z: this.wp.z }] : [],
+    };
+  }
+  setWaypoint(x: number | null, z?: number): { x: number; z: number } | null {
+    if (x === null || z === undefined) { this.wp = null; return null; }
+    const cx = Math.max(-WORLD.x, Math.min(WORLD.x, x)), cz = Math.max(WORLD.zMin, Math.min(WORLD.zMax, z));
+    this.wp = new THREE.Vector3(cx, 0, cz); return { x: cx, z: cz };
+  }
+  followWaypoint() { if (!this.wp) return; if (this.driving) this.exitTruck(); this.walkTo = this.snapTap(this.wp.clone()); this.detour = null; }
+  /** Người chơi khác cho bản đồ. */
+  mapOthers(): { x: number; z: number; name: string; bot: boolean }[] { return this.others?.list().map((o) => ({ x: o.x, z: o.z, name: o.name, bot: o.bot })) ?? []; }
+
+  private untap: (() => void) | null = null;
   othersCount() { return this.others?.count() ?? 0; }
   othersList() { return this.others?.list() ?? []; }
   dispose() {
-    this.link?.stop(); this.others?.dispose();
+    this.link?.stop(); this.others?.dispose(); this.untap?.();
     this.disposed = true; this.renderer.setAnimationLoop(null); this.quality.dispose();
     for (const fn of this.cleanup) fn();
     this.ro.disconnect(); this.renderer.dispose(); this.renderer.forceContextLoss(); this.renderer.domElement.remove(); this.stickEl.remove();

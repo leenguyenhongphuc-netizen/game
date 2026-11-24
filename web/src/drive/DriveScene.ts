@@ -1,5 +1,6 @@
 // Màn lái xe tải của Thương lái: rời làng, lên cao tốc ba làn, theo biển rẽ ở nút giao, ghé trạm xăng,
 // qua trạm thu phí ETC, ra đường tỉnh tới cổng chào. Chặng biển đi theo luồng có phao số.
+import { attachTapPick } from '../chat/tapPick.ts';
 import * as THREE from 'three';
 import { bakeColored } from '../scene/batch.ts';
 import { IS_MOBILE, Quality, debugScene, rendererParams , stepDt , trace } from '../perf.ts';
@@ -396,7 +397,7 @@ export class DriveScene {
     this.applyLeg(true);
     this.quality = new Quality(this.renderer, { name: 'lái xe', onLevel: (l) => { this.sun.castShadow = l < (IS_MOBILE ? 1 : 2); } }); debugScene(this.scene); this.resize();
     // xe người chơi khác, cư dân ảo cùng tuyến (nhịp gửi vị trí; xem web/src/presence.ts)
-    { const hk = highwayKey(opts.fromRegionId, opts.toRegionId); this.others = new OtherCars(this.world, () => this.mode === 'boat' || this.disposed ? null : { key: hk.key, dir: hk.dir, km: this.kmNow(), totalKm: this.opts.plan.km }); }
+    { const hk = highwayKey(opts.fromRegionId, opts.toRegionId); this.others = new OtherCars(this.world, () => this.mode === 'boat' || this.disposed ? null : { key: hk.key, dir: hk.dir, km: this.kmNow(), totalKm: this.opts.plan.km }); const oc = this.others; this.untap = attachTapPick(this.renderer.domElement, () => this.camera, () => oc.pickables()); }
     this.renderer.setAnimationLoop(() => this.frame());
   }
   private others: OtherCars | null = null;
@@ -411,6 +412,7 @@ export class DriveScene {
     return true;
   };
   /** Người chơi khác đang thấy trên tuyến (kiểm thử, bảng thông tin). */
+  private untap: (() => void) | null = null;
   othersNearby() { return this.others?.nearby() ?? []; }
 
   // ---------------------------------------------------------------- dựng lộ trình
@@ -1159,7 +1161,7 @@ export class DriveScene {
   }
 
   dispose() {
-    this.others?.dispose();
+    this.others?.dispose(); this.untap?.();
     this.disposed = true; this.renderer.setAnimationLoop(null); this.quality?.dispose();
     for (const fn of this.cleanup) fn();
     this.ro.disconnect();

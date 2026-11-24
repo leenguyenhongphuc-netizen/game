@@ -87,6 +87,12 @@ export class OthersLayer {
     }
   }
   count() { return this.items.size; }
+  /** Người chơi thật đang hiện (không tính cư dân ảo): điểm thân và điểm bảng tên để chạm mở thẻ (chat/tapPick.ts). */
+  pickables(): { id: number; pts: THREE.Vector3[] }[] {
+    const out: { id: number; pts: THREE.Vector3[] }[] = [];
+    for (const it of this.items.values()) { if (it.o.bot || !it.body.root.visible) continue; const p = it.body.root.getWorldPosition(new THREE.Vector3()); out.push({ id: it.o.id, pts: [p.clone().setY(p.y + 1.0), p.clone().setY(p.y + 2.75)] }); }
+    return out;
+  }
   list() { return [...this.items.values()].map((it) => ({ name: it.o.name, bot: it.o.bot, x: Math.round(it.x * 10) / 10, z: Math.round(it.z * 10) / 10, say: !!it.body.root.userData.saySp })); }
   dispose() { for (const it of this.items.values()) this.drop(it); this.items.clear(); this.group.removeFromParent(); }
 }
