@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import type { PresenceIn, PresenceOther } from '../../../shared/social.ts';
 import { rand01 } from '../../../shared/social.ts';
-import { PresenceLink, disposeTag, hexOf, nameTag, turnTo } from '../presence.ts';
+import { PresenceLink, disposeTag, dropSay, hexOf, nameTag, syncSay, turnTo } from '../presence.ts';
 import { playerVehicle } from './DriveExtras.ts';
 import type { VehGroup } from './DriveExtras.ts';
 import { bakeColored } from '../scene/batch.ts';
@@ -36,7 +36,7 @@ export function attachStopOthers(scene: THREE.Scene, stopName: string, getMe: ()
   const items = new Map<number, Item>(), group = new THREE.Group(); scene.add(group);
   let skew = 0, raf = 0, last = performance.now(), dead = false, botN = 0;
   const state = (): PresenceIn | null => { const me = getMe(); if (!me) return null; return { scene: 'rest_stop', key: stopName.slice(0, 80), x: Math.round(me.x * 100) / 100, z: Math.round(me.z * 100) / 100, walk: me.walk, car: me.car }; };
-  const drop = (it: Item) => { group.remove(it.car, it.person.root); disposeTag(it.tag); };
+  const drop = (it: Item) => { group.remove(it.car, it.person.root); disposeTag(it.tag); dropSay(it.person.root); };
   const link = new PresenceLink(state, (list, at) => {
     skew = at.server - Date.now(); const keep = new Set<number>(); botN = 0;
     for (const o of list) {
@@ -55,6 +55,7 @@ export function attachStopOthers(scene: THREE.Scene, stopName: string, getMe: ()
         group.add(car, person.root); items.set(o.id, it);
       }
       it.o = o; it.bay = bay;
+      syncSay(it.person.root, o, 3.3, 1.35); // bong bóng chat (web/src/chat)
     }
     for (const [id, it] of items) if (!keep.has(id)) { drop(it); items.delete(id); }
   });

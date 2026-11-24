@@ -43,6 +43,8 @@ export interface PresenceOther {
   script?: BotScript;
   /** Biểu cảm đang hiện trên đầu (vẫy tay, thả tim, chụp ảnh chung…), chỉ giữ vài giây. */
   emote?: string;
+  /** Tin chat công cộng vừa nói (bong bóng trên đầu, giữ vài giây) — xem shared/chat.ts. */
+  say?: { id: number; text: string };
   /** Tuổi của số liệu khi máy chủ trả (ms) để trình duyệt ngoại suy. */
   ageMs: number;
 }
@@ -55,8 +57,14 @@ export interface PresenceIn {
   count?: boolean;
   /** Biểu cảm vừa bấm (một trong EMOTES); trình duyệt gửi lặp lại trong vài giây cho người khác kịp thấy. */
   emote?: string;
+  /** Mã tin chat công cộng lớn nhất đã nhận; có thì máy chủ trả kèm các tin mới hơn của cảnh (nhật ký chat). */
+  chatSince?: number;
 }
-export interface PresenceOut { at: number; interval: number; others: PresenceOther[]; online?: number; bots?: boolean }
+export interface PresenceOut {
+  at: number; interval: number; others: PresenceOther[]; online?: number; bots?: boolean;
+  /** Tin chat công cộng mới trong cảnh (kể cả của mình) — chỉ khi yêu cầu có chatSince. */
+  chat?: import('./chat.ts').PublicMsg[];
+}
 
 /** Biểu cảm cho phép (máy chủ bỏ mọi giá trị khác). */
 export const EMOTES = ['👋', '❤️', '😄', '📸', '🎉', '👍'] as const;

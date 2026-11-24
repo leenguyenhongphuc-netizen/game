@@ -4,9 +4,10 @@
 import * as THREE from 'three';
 import type { PresenceIn, PresenceOther } from '../../../shared/social.ts';
 import { rand01 } from '../../../shared/social.ts';
-import { PresenceLink, disposeTag, hexOf, nameTag, turnTo } from '../presence.ts';
+import { PresenceLink, disposeTag, dropSay, hexOf, nameTag, syncSay, turnTo } from '../presence.ts';
 import { makeFarmer } from '../scene/World.ts';
 import type { SightScene } from './SightScene.ts';
+import { openPlayerCard } from '../chat/events.ts';
 
 const BODY_H = 1.95;
 type Body = ReturnType<typeof makeFarmer>;
@@ -47,7 +48,7 @@ export function attachSightOthers(sc: SightScene, key: string): SightOthers {
     const emote = myEmote && Date.now() < myEmote.until ? myEmote.e : undefined;
     return { scene: 'sight', key: key.slice(0, 80), x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100, yaw: Math.round(p.yaw * 100) / 100, walk: p.walk, ...(emote ? { emote } : {}) };
   };
-  const drop = (it: Item) => { group.remove(it.body.root); disposeTag(it.tag); if (it.emo) disposeTag(it.emo); };
+  const drop = (it: Item) => { group.remove(it.body.root); disposeTag(it.tag); if (it.emo) disposeTag(it.emo); dropSay(it.body.root); };
   const link = new PresenceLink(state, (list, at) => {
     skew = at.server - Date.now(); const keep = new Set<number>();
     for (const o of list) {
@@ -64,6 +65,7 @@ export function attachSightOthers(sc: SightScene, key: string): SightOthers {
         group.add(body.root); items.set(o.id, it);
       }
       it.o = o;
+      syncSay(it.body.root, o, BODY_H + 0.95, it.body.root.scale.x); // bong bóng chat (web/src/chat)
       const ek = o.emote ?? '';
       if (ek !== it.emoKey) {
         if (it.emo) { it.body.root.remove(it.emo); disposeTag(it.emo); it.emo = null; }
@@ -95,9 +97,28 @@ export function attachSightOthers(sc: SightScene, key: string): SightOthers {
     }
   };
   sc.extraTicks.push(tick);
+  // chạm vào người chơi khác (bảng tên hoặc thân người) → thẻ người chơi để kết bạn, nhắn tin, chặn, báo cáo (web/src/chat)
+  const priv = sc as unknown as { camera?: THREE.Camera; host?: HTMLElement };
+  let down: { x: number; y: number; t: number } | null = null;
+  const onDown = (e: PointerEvent) => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; };
+  const onUp = (e: PointerEvent) => {
+    const d0 = down; down = null; const cam = priv.camera, host = priv.host;
+    if (!d0 || !cam || !host || Math.hypot(e.clientX - d0.x, e.clientY - d0.y) > 10 || performance.now() - d0.t > 400) return;
+    const r = host.getBoundingClientRect(), v = new THREE.Vector3(); let best: Item | null = null, bd = 40;
+    for (const it of items.values()) {
+      if (it.o.bot) continue;
+      for (const h of [1.0, BODY_H + 0.55]) {
+        v.set(it.x, sc.groundY(it.x, it.z) + h, it.z).project(cam); if (v.z > 1) continue;
+        const dd = Math.hypot((v.x * 0.5 + 0.5) * r.width + r.left - e.clientX, (-v.y * 0.5 + 0.5) * r.height + r.top - e.clientY);
+        if (dd < bd) { bd = dd; best = it; }
+      }
+    }
+    if (best) openPlayerCard(best.o.id);
+  };
+  priv.host?.addEventListener('pointerdown', onDown, true); priv.host?.addEventListener('pointerup', onUp, true);
   (window as unknown as { __sightOthers?: () => { name: string; bot: boolean }[] }).__sightOthers = () => [...items.values()].map((it) => ({ name: it.o.name, bot: it.o.bot }));
   return {
-    dispose() { dead = true; link.stop(); const i = sc.extraTicks.indexOf(tick); if (i >= 0) sc.extraTicks.splice(i, 1); for (const it of items.values()) drop(it); items.clear(); group.removeFromParent(); },
+    dispose() { dead = true; link.stop(); priv.host?.removeEventListener('pointerdown', onDown, true); priv.host?.removeEventListener('pointerup', onUp, true); const i = sc.extraTicks.indexOf(tick); if (i >= 0) sc.extraTicks.splice(i, 1); for (const it of items.values()) drop(it); items.clear(); group.removeFromParent(); },
     count: () => items.size,
     positions: () => [...items.values()].map((it) => ({ x: it.x, z: it.z, name: it.o.name, bot: it.o.bot })),
     names: () => { const p = sc.pose(); return [...items.values()].map((it) => ({ name: it.o.name, bot: it.o.bot, d: Math.hypot(it.x - p.x, it.z - p.z) })).sort((a, b) => a.d - b.d); },

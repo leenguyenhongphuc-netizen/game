@@ -38,6 +38,7 @@ import { ContractsPanel } from './contracts.tsx';
 import { PropertiesPanel } from './properties.tsx';
 import { ExportDeskDialog } from './exportDesk.tsx';
 import { FieldHud } from './fieldHud.tsx';
+import { ChatLayer } from './chat/ChatLayer.tsx';
 import { AdminCenter } from './admin/AdminCenter.tsx';
 import { onAdminCenter, openAdminCenter } from './admin/open.ts';
 import type { AdminOpen } from './admin/open.ts';
@@ -719,6 +720,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       {desk && <ExportDeskDialog onClose={() => setDesk(false)} onContracts={() => { setDesk(false); setKhoTab('hopdong'); setTab('kho'); }} onExport={() => { setDesk(false); setKhoTab('xuat'); setTab('kho'); }} />}
       {me?.user.role === 'nong_dan' && !tour && <FieldHud getWorld={() => worldRef.current} />}
       {adminAt && <AdminCenter province={adminAt.province} counter={adminAt.counter} onClose={() => setAdminAt(null)} onChanged={reload} onCoop={() => { setAdminAt(null); setXomTab('htx'); setTab('ban'); }} onLicense={() => { setAdminAt(null); setShopTab('baixe'); setTab('trangtri'); }} />}
+      <ChatLayer me={{ id: me.user.id, level: me.user.level, cash: me.user.cash }} onFriendsChanged={() => void loadSocial()} />
       {heli && <HeliTour tour={heli} onDone={() => setHeli(null)} />}
       {importRide && <ImportRide order={importRide} onDone={() => { setImportRide(null); setKhoTab('xuong'); setTab('kho'); }} />}
       {cert !== null && <LandCertificate plotId={cert} onClose={() => setCert(null)} />}
