@@ -22,7 +22,9 @@ export function tube(c: number | THREE.Material, curve: THREE.Curve<THREE.Vector
 }
 
 // ---------------------------------------------------------------------------- đu quay
-export function ferrisWheel(kit: Kit, x: number, z: number, ry: number, R: number, main: number, accent: number): { hub: THREE.Vector3 } {
+/** ctl.rot khác null thì vòng quay đứng theo góc đó (hoạt cảnh lên trò điều khiển: dừng cho khách lên, quay trọn một vòng). */
+export function ferrisWheel(kit: Kit, x: number, z: number, ry: number, R: number, main: number, accent: number): { hub: THREE.Vector3; ctl: { rot: number | null } } {
+  const ctl = { rot: null as number | null };
   const hubY = R + 3, g = grp(x, 0, z, ry);
   // chân chữ A hai bên, bệ, nhà ga lên cabin
   for (const sz of [-1, 1]) for (const sx of [-1, 1]) { const leg = cyl(0xe8e8ee, sx * R * 0.32, hubY / 2, sz * 2.2, 0.35, hubY + 0.6); leg.rotation.z = sx * 0.33; g.add(leg); }
@@ -40,11 +42,11 @@ export function ferrisWheel(kit: Kit, x: number, z: number, ry: number, R: numbe
   const inst = instanced(cab, n); for (const m of inst.meshes) kit.live(m);
   const cy = Math.cos(ry), sy = Math.sin(ry);
   kit.onTick((t) => {
-    const rot = t * 0.12; wb.rotation.z = rot;
+    const rot = ctl.rot ?? t * 0.12; wb.rotation.z = rot;
     for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2 + rot, lx = Math.cos(a) * R, ly = Math.sin(a) * R; place(x + lx * cy, hubY + ly, z - lx * sy, ry); inst.set(i, M4); }
     inst.done();
   });
-  return { hub: new THREE.Vector3(x, hubY, z) };
+  return { hub: new THREE.Vector3(x, hubY, z), ctl };
 }
 
 // ---------------------------------------------------------------------------- tàu lượn
@@ -54,7 +56,9 @@ export function coasterCurve(x: number, z: number, ry: number, w: number, d: num
   const c = Math.cos(ry), s = Math.sin(ry);
   return new THREE.CatmullRomCurve3(pts.map(([px, py, pz]) => new THREE.Vector3(x + px * c + pz * s, py, z - px * s + pz * c)), true, 'catmullrom', 0.4);
 }
-export function coaster(kit: Kit, x: number, z: number, ry: number, w: number, d: number, h: number, main: number, accent: number): THREE.CatmullRomCurve3 {
+/** Trả về đường ray và vị trí hiện tại của toa đầu (0..1 theo đường ray) để hoạt cảnh lên trò bám đúng đoàn tàu đang chạy. */
+export function coaster(kit: Kit, x: number, z: number, ry: number, w: number, d: number, h: number, main: number, accent: number): { curve: THREE.CatmullRomCurve3; train: () => number; ctl: { u: number | null } } {
+  const ctl = { u: null as number | null };
   const curve = coasterCurve(x, z, ry, w, d, h), railM = new THREE.MeshLambertMaterial({ color: main });
   // hai ray song song và các trụ đỡ
   const off = (k: number) => new THREE.CatmullRomCurve3(Array.from({ length: 160 }, (_, i) => { const u = i / 160, p = curve.getPointAt(u), tg = curve.getTangentAt(u); return new THREE.Vector3(p.x - tg.z * k, p.y, p.z + tg.x * k); }), true);
@@ -69,22 +73,25 @@ export function coaster(kit: Kit, x: number, z: number, ry: number, w: number, d
   let u = 0;
   kit.onTick((_t, dt) => {
     // nhanh khi xuống dốc, chậm khi lên dốc
-    const p = curve.getPointAt(u), tg = curve.getTangentAt(u); u = (u + dt * (0.045 + Math.max(0, -tg.y) * 0.08)) % 1;
+    const p = curve.getPointAt(u), tg = curve.getTangentAt(u); u = ctl.u !== null ? ((ctl.u % 1) + 1) % 1 : (u + dt * (0.045 + Math.max(0, -tg.y) * 0.08)) % 1;
     for (let i = 0; i < 4; i++) { const uu = (u - i * 0.012 + 1) % 1, q = curve.getPointAt(uu); look.copy(q).add(curve.getTangentAt(uu)); mm.lookAt(look, q, up); M4.copy(mm).setPosition(q.x, q.y + 0.2, q.z); inst.set(i, M4); }
     inst.done(); void p;
   });
-  return curve;
+  return { curve, train: () => u, ctl };
 }
 
 // ---------------------------------------------------------------------------- tháp rơi
-export function dropTower(kit: Kit, x: number, z: number, H: number, main: number, accent: number, stripes = false): void {
+/** ctl.y/ctl.rot khác null thì vòng ghế đứng ở độ cao/góc đó (hoạt cảnh lên trò tự điều khiển kéo lên, rơi, hãm). */
+export function dropTower(kit: Kit, x: number, z: number, H: number, main: number, accent: number, stripes = false): { ctl: { y: number | null; rot: number | null } } {
+  const ctl = { y: null as number | null, rot: null as number | null };
   kit.add(cyl(0xd9dde6, x, 0.4, z, 4.2, 0.8), cyl(stripes ? 0xf4f4f8 : main, x, H / 2, z, 1.1, H));
   if (stripes) for (let y = 6; y < H; y += 10) kit.add(cyl(0xd2301e, x, y, z, 1.14, 4));
   kit.add(cone(accent, x, H + 1.4, z, 1.8, 2.8), bead(glow(0xff5a4a), x, H + 3, z, 0.4));
   const ring = baked(grp(0, 0, 0, 0, cyl(accent, 0, 0, 0, 2.6, 1.2), ...Array.from({ length: 10 }, (_, i) => { const a = (i / 10) * 6.28; return grp(Math.cos(a) * 2.7, -0.3, Math.sin(a) * 2.7, -a, box(main, 0, 0, 0, 0.7, 1.1, 0.7), person(i, 0, [0xff8a3d, 0x4aa3d8, 0xffd23f][i % 3]).translateY(-1.3)); })));
   kit.live(ring); ring.position.set(x, 3, z);
-  kit.onTick((t) => { const c = t % 14; ring.position.y = c < 7 ? 3 + (H - 6) * (c / 7) : c < 9 ? H - 3 : c < 9.8 ? H - 3 - (H - 6) * ((c - 9) / 0.8) ** 2 : 3; ring.rotation.y = c < 7 ? t * 0.3 : ring.rotation.y; });
+  kit.onTick((t) => { const c = t % 14; ring.position.y = ctl.y ?? (c < 7 ? 3 + (H - 6) * (c / 7) : c < 9 ? H - 3 : c < 9.8 ? H - 3 - (H - 6) * ((c - 9) / 0.8) ** 2 : 3); ring.rotation.y = ctl.rot ?? (c < 7 ? t * 0.3 : ring.rotation.y); });
   kit.add(box(0xd9dde6, x + 5.2, 0.6, z, 3, 1.2, 6), box(accent, x + 5.2, 3, z, 3.6, 0.2, 6.6));
+  return { ctl };
 }
 
 // ---------------------------------------------------------------------------- nhà ma / lâu đài tối
@@ -131,7 +138,8 @@ export function bumperArena(kit: Kit, x: number, z: number, ry: number, main: nu
 }
 
 // ---------------------------------------------------------------------------- tháp máng trượt nước
-export function slideTower(kit: Kit, x: number, z: number, ry: number, colors: number[], lanes: number): void {
+/** Trả về đường trượt của làn đầu (người trượt chạy theo làn này) và tâm bể đón. */
+export function slideTower(kit: Kit, x: number, z: number, ry: number, colors: number[], lanes: number): { lane: THREE.CatmullRomCurve3; pool: THREE.Vector3 } {
   const H = 16, g = grp(x, 0, z, ry);
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(cyl(0xe8dcc4, sx * 3, H / 2, sz * 3, 0.3, H));
   g.add(box(0xd9c8a8, 0, H, 0, 7.4, 0.4, 7.4), box(0x2ec4b6, 0, H + 2.6, 0, 7.8, 0.2, 7.8), ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => cyl(0xf4f4f8, sx * 3.6, H + 1.3, sz * 3.6, 0.1, 2.6))));
@@ -151,6 +159,7 @@ export function slideTower(kit: Kit, x: number, z: number, ry: number, colors: n
   const rider = baked(grp(0, 0, 0, 0, ball(0xffd23f, 0, 0.3, 0, 0.5, 0.25, 0.9), ball(0xf2c69c, 0, 0.55, -0.5, 0.25))); kit.live(rider);
   const lane0 = new THREE.CatmullRomCurve3([W(-(lanes - 1) * 0.8, H + 0.6, 3.6), W(-(lanes - 1) * 0.8 + 5, H - 2.4, 6), W(-(lanes - 1) * 0.8 + 2, H - 5.4, 11), W(-(lanes - 1) * 0.8 - 4, H - 8.4, 9), W(-(lanes - 1) * 0.8 - 3, H - 11.4, 14), W(-(lanes - 1) * 0.5, 3.1, 18), W(-(lanes - 1) * 0.5, 1.4, 21)]);
   kit.onTick((t) => { const u = (t * 0.22) % 1.4; rider.visible = u < 1; if (u < 1) rider.position.copy(lane0.getPointAt(u)); });
+  return { lane: lane0, pool: W(0, 0.62, 22) };
 }
 
 // ---------------------------------------------------------------------------- hồ tạo sóng
@@ -183,7 +192,7 @@ export function lazyRiver(kit: Kit, x: number, z: number, R: number): void {
 
 // ---------------------------------------------------------------------------- cáp treo
 /** Ga đi tại (x, z), dây cáp vươn về hướng `toward` (điểm ga đến xa). Trả về đường cáp để hoạt cảnh đi theo. */
-export function cableCar(kit: Kit, x: number, z: number, to: THREE.Vector3, main: number, accent: number): THREE.CatmullRomCurve3 {
+export function cableCar(kit: Kit, x: number, z: number, to: THREE.Vector3, main: number, accent: number): { curve: THREE.CatmullRomCurve3; up: THREE.CatmullRomCurve3; ry: number } {
   const from = new THREE.Vector3(x, 9, z), dir = to.clone().sub(from), len = dir.length(), ry = Math.atan2(dir.x, dir.z);
   kit.add(grp(x, 0, z, ry, box(0xf4f4f8, 0, 1, 0, 11, 2, 13), ...[-1, 1].flatMap((sx) => [-1, 1].map((sz) => cyl(main, sx * 4.8, 5, sz * 5.6, 0.45, 8))), box(0xbfe6ff, 0, 5, 0, 9, 4, 11),
     box(main, 0, 8.4, 0, 12, 0.8, 14), box(accent, 0, 9.2, 0, 10, 0.8, 12), cone(accent, 0, 10.6, 0, 6, 2.2), box(0xd2301e, 0, 1.4, -6.6, 4, 2.4, 0.2), bead(glow(0xffe066), 0, 12, 0, 0.5)));
@@ -199,7 +208,7 @@ export function cableCar(kit: Kit, x: number, z: number, to: THREE.Vector3, main
   const n = 10, inst = instanced(cab, n); for (const m of inst.meshes) kit.live(m);
   const sa = sideOff(1.8), sb = sideOff(-1.8);
   kit.onTick((t) => { for (let i = 0; i < n; i++) { const up = i % 2 === 0, u = ((t * 0.02 + i / n) % 1), q = (up ? sa : sb).getPointAt(up ? u : 1 - u); place(q.x, q.y - 1.3, q.z, ry); inst.set(i, M4); } inst.done(); });
-  return curve;
+  return { curve, up: sa, ry };
 }
 
 // ---------------------------------------------------------------------------- cổng chào, nhà trò chơi, quầy, trang trí
