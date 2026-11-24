@@ -96,7 +96,7 @@ export class RideCutScene {
   private bgTicks: ((t: number, dt: number) => void)[] = []; private rideTicks: ((t: number, dt: number) => void)[] = [];
   private rig!: Rig; private drag: LookDrag; private blend = new CamBlend(); private view: ViewMode; private shot = -1;
   private camSmooth = new THREE.Vector3(); private hasSmooth = false; private marker: THREE.Sprite; private frameGrp: THREE.Group;
-  private time = 0;
+  private time = 0; private effView: ViewMode | null = null;
   /** 0..1 tiến độ. */
   progress = 0;
   constructor(private host: HTMLElement, private o: RideCutOpts, private onEnd: () => void) {
@@ -400,9 +400,14 @@ export class RideCutScene {
     const fov = (f: number) => { if (Math.abs(cam.fov - f) > 0.05) { cam.fov += (f - cam.fov) * (1 - Math.exp(-dt * 6)); cam.updateProjectionMatrix(); } };
     const look = (p: THREE.Vector3, yaw: number, pitch: number) => { cam.position.copy(p); tmpA.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).add(p); cam.up.copy(UP); cam.lookAt(tmpA); };
     const smoothTo = (p: THREE.Vector3, rate: number) => { if (!this.hasSmooth) { this.camSmooth.copy(p); this.hasSmooth = true; } else this.camSmooth.lerp(p, 1 - Math.exp(-dt * rate)); return this.camSmooth; };
-    this.frameGrp.visible = false; this.marker.visible = this.view !== 'trong';
+    // đu quay, cáp treo: lúc xếp hàng, vào cabin, về ga và bước ra thì cabin nằm trong nhà ga ⇒ góc trong cabin sẽ xuyên tường ga;
+    // tạm dùng góc bám theo ở các giai đoạn đó (chuyển mượt), lên khỏi ga thì về lại góc trong cabin
+    let eff: ViewMode = this.view;
+    if (eff === 'trong' && (this.o.kind === 'du_quay' || this.o.kind === 'cap_treo')) { const ph = rig.phases.at(t).i, n = rig.phases.names.length; if (ph <= 1 || ph >= n - 2) eff = 'theo'; }
+    if (eff !== this.effView) { if (this.effView !== null) { this.blend.start(cam, 0.6); this.hasSmooth = false; } this.effView = eff; }
+    this.frameGrp.visible = false; this.marker.visible = eff !== 'trong';
     this.marker.position.copy(pose.head).y += 1.3;
-    switch (this.view as ViewMode | 'toan_ngoai' | 'dien_anh_ngoai') {
+    switch (eff as ViewMode | 'toan_ngoai' | 'dien_anh_ngoai') {
       case 'trong': {
         fov(portrait ? 76 : 62);
         look(pose.head, baseYaw + this.drag.yaw, THREE.MathUtils.clamp(basePitch * 0.85 + (rig.pitch?.(t) ?? 0) + this.drag.pitch, -1.2, 1.0));
@@ -457,7 +462,7 @@ export class RideCutScene {
   private rideDyn: THREE.Object3D | null = null;
   /** Ngồi trong: thu nhỏ về 0 bản sao toa/xe của chính mình trong mô hình (đã đặt lại mỗi khung bởi mô hình). */
   private hideOwn() {
-    const own = this.rig.own; if (!own || this.view !== 'trong' || !this.rideDyn) return;
+    const own = this.rig.own; if (!own || (this.effView ?? this.view) !== 'trong' || !this.rideDyn) return;
     const z = new THREE.Matrix4().makeScale(0, 0, 0);
     this.rideDyn.traverse((o) => { const im = o as THREE.InstancedMesh; if (im.isInstancedMesh && im.count === own.count) { im.setMatrixAt(own.index, z); im.instanceMatrix.needsUpdate = true; } });
   }

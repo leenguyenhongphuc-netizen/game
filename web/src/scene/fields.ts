@@ -115,7 +115,16 @@ function machineModel(kind: FarmMachineKind): THREE.Group {
     if (kind === 'may_gieo') { box(g, 3.6, 0.7, 0.9, 0, 1.0, -2.4, 0x2f78c4); box(g, 3.4, 0.2, 0.8, 0, 1.45, -2.4, 0xf2c14e); for (let i = -3; i <= 3; i++) box(g, 0.1, 0.5, 0.1, i * 0.5, 0.35, -2.4, 0x444444); }
     else { box(g, 3.6, 0.25, 0.4, 0, 0.75, -2.3, 0x6b6b6b); for (let i = -3; i <= 3; i++) box(g, 0.1, 0.6, 0.12, i * 0.55, 0.35, -2.4, 0x8a8a8a); }
   }
-  return bakeColored(g, false, false);
+  const out = bakeColored(g, false, false);
+  // người lái ngồi trong ca-bin (nón lá, áo xanh, hai tay ra vô-lăng); chỉ hiện khi máy đang chạy, máy đậu thì ẩn
+  const d = new THREE.Group(), seat = kind === 'may_thu' ? { y: 2.55, z: 0.75 } : { y: 1.62, z: -0.7 };
+  box(d, 0.5, 0.55, 0.34, 0, seat.y + 0.28, seat.z, 0x3b6fb5);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), M(0xf0c8a0)); head.position.set(0, seat.y + 0.72, seat.z); d.add(head);
+  const hat = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.2, 14), M(0xe9d08a)); hat.position.set(0, seat.y + 0.9, seat.z); d.add(hat);
+  for (const sx of [-1, 1]) { const a = box(d, 0.11, 0.11, 0.45, sx * 0.2, seat.y + 0.38, seat.z + 0.26, 0x3b6fb5); a.rotation.x = 0.35; }
+  box(d, 0.42, 0.04, 0.04, 0, seat.y + 0.32, seat.z + 0.52, 0x222222); // vô-lăng
+  const db = bakeColored(d, false, false); db.name = 'driver'; out.add(db);
+  return out;
 }
 function droneModel(): THREE.Group {
   const g = new THREE.Group();
@@ -527,11 +536,13 @@ export class FieldsLayer {
       }
     }
     this.crews.set(people, robots, t);
+    for (const m of Object.values(this.models)) { const dr = m.getObjectByName('driver'); if (dr) dr.visible = true; } // máy đang chạy có người lái
     // máy đang có mà không làm việc: đậu bên đường bờ ruộng
     for (const mk of this.hud ? fieldZone.machines() : []) {
       if (!(mk in this.models) || used.has(mk)) continue;
       const m = this.models[mk as keyof typeof this.models], p = this.parked.get(mk) ?? { ...PARK[mk], yaw: -Math.PI / 2 };
       m.visible = true; m.position.set(p.x, 0, p.z); m.rotation.y = p.yaw;
+      const dr = m.getObjectByName('driver'); if (dr) dr.visible = false;
     }
     // xem tua nhanh
     if (this.scene) {
@@ -591,6 +602,15 @@ export class FieldsLayer {
     if (r.kind === 'synced') {
       const s = this.slots.find((x) => x.f.id === r.fieldId); if (!s) return;
       if (!r.ok) { for (const t2 of r.tiles) s.local.delete(t2); s.doneKey = ''; if (this.drv) { this.drv.note = r.note ?? 'Máy chủ không nhận đoạn vừa lái.'; this.drv.noteUntil = t + 4; } }
+    }
+  }
+
+  /** Đẩy người đi bộ ra khỏi máy đang đậu (không đi xuyên qua máy). */
+  pushOut(pos: THREE.Vector3) {
+    if (!this.hud || this.drv) return;
+    for (const [mk, q] of this.parkedSpots()) {
+      const R = mk === 'may_thu' ? 2.3 : 1.8, dx = pos.x - q.x, dz = pos.z - q.z, d = Math.hypot(dx, dz);
+      if (d < R) { if (d < 1e-3) { pos.x = q.x + R; continue; } pos.x = q.x + (dx / d) * R; pos.z = q.z + (dz / d) * R; }
     }
   }
 

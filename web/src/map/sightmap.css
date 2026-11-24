@@ -36,3 +36,7 @@
 .sw-albumsheet li b { font-size: 0.82rem; line-height: 1.2; overflow-wrap: anywhere; color: #3b2a17; }
 .sw-albumsheet li small { font-size: 0.7rem; color: #7a5a3a; }
 .sw-albumsheet li em { position: absolute; right: 8px; top: 8px; padding: 2px 6px; border: 2px solid #c0281e; border-radius: 6px; color: #c0281e; font-style: normal; font-weight: 800; font-size: 0.62rem; rotate: 8deg; background: #fff8; }
+
+/* Nút mở bản đồ làng (VillageMap): tròn nhỏ ở mép phải, giữa màn, không đè HUD trên và thanh điều hướng dưới. */
+.vmap-btn{position:fixed;right:max(10px,env(safe-area-inset-right));top:46%;z-index:6;width:48px;height:48px;border-radius:50%;border:3px solid #7a4a22;background:#fff8e6;font-size:22px;line-height:1;box-shadow:0 3px 0 #5b3416;display:grid;place-items:center;padding:0}
+.vmap-btn:active{transform:translateY(2px);box-shadow:0 1px 0 #5b3416}

@@ -54,6 +54,13 @@ export class OtherCars {
   }
   private drop(it: Item) { it.obj.removeFromParent(); disposeTag(it.tag); dropSay(it.obj); it.obj.traverse((m) => { const g = (m as THREE.Mesh).geometry; if ((m as THREE.Mesh).isMesh && g) g.dispose(); }); }
 
+  /** Xe người chơi thật đang hiện: điểm thân xe và bảng tên để chạm mở thẻ (chat/tapPick.ts). */
+  pickables(): { id: number; pts: THREE.Vector3[] }[] {
+    const out: { id: number; pts: THREE.Vector3[] }[] = [];
+    for (const it of this.items.values()) { if (it.o.bot || !it.obj.visible) continue; const p = it.obj.getWorldPosition(new THREE.Vector3()); out.push({ id: it.o.id, pts: [p.clone().setY(p.y + 1.5), p.clone().setY(p.y + 4.6)] }); }
+    return out;
+  }
+
   /** Gọi mỗi khung từ DriveScene. kmU = số km ứng với một đơn vị cảnh (đường trong cảnh được nén lại). */
   frame(dt: number, myKm: number | null, kmU: number, myLane: number, place: PlaceFn) {
     if (myKm === null) { for (const it of this.items.values()) it.obj.visible = false; this.lastKm = null; return; }

@@ -16,6 +16,9 @@ const SPECS: Record<RideMode, Spec> = {
   taxi: { speed: 30, half: 2.2, radius: 12, height: 4, look: 1.2, wide: 1.4 }, // taxi có cảnh riêng (TaxiRide), dòng này chỉ để đủ kiểu
   tau_thuy: { speed: 22, half: 8.6, radius: 27, height: 11, look: 3.2, wide: 2.8 },
 };
+/** Đoạn giữa hành trình nhìn qua ô cửa sổ (máy bay, tàu hoả, xe khách): tỉ lệ quãng đường [bắt đầu, kết thúc]. */
+export const WINDOW_VIEW: [number, number] = [0.36, 0.64];
+export const windowView = (mode: RideMode, p: number) => mode !== 'tau_thuy' && mode !== 'taxi' && p > WINDOW_VIEW[0] && p < WINDOW_VIEW[1];
 const CRUISE = 62; // độ cao bay bằng, phía trên tầng mây
 const WATER = 0x7fd3e8;
 const ss = THREE.MathUtils.smoothstep;
@@ -271,8 +274,18 @@ export class Journey implements Act {
     } else { a = THREE.MathUtils.lerp(0.62, 1.9, sm); R = sp.radius * (cam.aspect < 1.3 ? 1.25 : 1); }
     if (mode === 'may_bay') { H += (cx.portrait ? 4 : 13) * Math.sin(sm * Math.PI); if (!cx.portrait) a = -a; } // máy quay bên -x để nhìn ra bờ biển chữ S ở +x
     const lookZ = cx.portrait ? -sp.half * 0.35 : 0;
-    cam.position.set(Math.sin(a) * R, v.position.y + H, Math.cos(a) * R + lookZ);
-    cam.lookAt(0, v.position.y + sp.look, lookZ);
+    if (windowView(mode, p)) {
+      // ngồi cạnh ô cửa sổ bên trái, nhìn ra ngoài (máy bay thấy cánh và tầng mây, tàu hoả và xe khách thấy cảnh trôi qua)
+      const k = (p - WINDOW_VIEW[0]) / (WINDOW_VIEW[1] - WINDOW_VIEW[0]), sway = Math.sin(time * 0.6) * 0.6;
+      const W = mode === 'may_bay' ? { x: -0.75, y: 0.4, z: 3.6, lx: -30, ly: -1.5, lz: 1 - 12 * k } : mode === 'tau_hoa' ? { x: -1.05, y: 2.4, z: -2.2, lx: -30, ly: 0.8, lz: -4 - 8 * k } : { x: -0.5, y: 2.3, z: -1, lx: -30, ly: 0.2, lz: -4 - 6 * k };
+      v.visible = false; // ẩn thân xe của mình để vách trong, cánh, mỏm cánh không che ô cửa
+      cam.position.set(W.x, v.position.y + W.y, W.z);
+      cam.lookAt(W.lx, v.position.y + W.ly + sway, W.lz);
+    } else {
+      v.visible = true;
+      cam.position.set(Math.sin(a) * R, v.position.y + H, Math.cos(a) * R + lookZ);
+      cam.lookAt(0, v.position.y + sp.look, lookZ);
+    }
 
     for (const f of this.puffs) {
       f.life += dt * (0.5 + speed * 0.8); const k = f.life % 1.2;

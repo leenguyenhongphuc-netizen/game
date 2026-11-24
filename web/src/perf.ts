@@ -24,7 +24,7 @@ export const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(UA) || (/Macintosh/i.t
 /** Chạy dưới bộ kiểm tự động: giữ nguyên bậc cao để ảnh chụp ổn định (máy thử không có GPU nên lúc nào cũng "chậm"). */
 const AUTOMATED = !!(nav as Navigator & { webdriver?: boolean }).webdriver && LS.get('vv-quality-auto') !== '1'; // vv-quality-auto=1: thử cơ chế tự thích nghi ngay cả khi chạy tự động
 /** Số điểm ảnh tối đa mỗi khung. */
-const BUDGET = IS_MOBILE ? 1_400_000 : (nav.hardwareConcurrency ?? 4) >= 8 ? 5_000_000 : 3_000_000;
+const BUDGET = IS_MOBILE ? 1_900_000 : (nav.hardwareConcurrency ?? 4) >= 8 ? 5_000_000 : 3_000_000;
 const DPR_CAP = 2;
 
 export function qualityPref(): QualityPref { const v = LS.get(PREF_KEY); return v === 'thap' || v === 'vua' || v === 'cao' ? v : 'tu_dong'; }

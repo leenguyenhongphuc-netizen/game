@@ -2,7 +2,7 @@
 // mô tô nước, cùng phao luồng, đảo đá vôi, đá ngầm. Mũi tàu hướng -z. Đèn hành trình: đỏ mạn trái, xanh mạn phải, trắng cột.
 import * as THREE from 'three';
 import { GEO, mat, mesh } from '../scene/plants.ts';
-import { cargoShip, ferry } from '../drive/DriveExtras.ts';
+import { cargoShip } from '../drive/DriveExtras.ts';
 import type { LaneKind } from './seaWorld.ts';
 
 const box = (g: THREE.Group, c: number, x: number, y: number, z: number, sx: number, sy: number, sz: number, o?: { emissive?: number; rough?: number }) => { const m = mesh(GEO.box, mat(c, o), x, y, z, sx, sy, sz); g.add(m); return m; };
@@ -33,10 +33,50 @@ export function bulkCarrier(): THREE.Group {
   return g;
 }
 export function containerShip(): THREE.Group { const g = cargoShip(); navLights(g, 3.6, 5.5, 14, 10.5, 16); return g; }
-export function carFerry(): THREE.Group {
-  const cars: THREE.Object3D[] = [];
-  for (let i = 0; i < 4; i++) { const c = new THREE.Group(); box(c, [0xe8e3d6, 0xd9534f, 0x3b82c4, 0x7cbf5a][i], 0, 0.45, 0, 1.6, 0.8, 3.2); box(c, 0xbfe6f7, 0, 1.0, 0.2, 1.4, 0.5, 1.8, { rough: 0.3 }); c.position.set(i % 2 ? 1.05 : -1.05, 1.02, -3 + Math.floor(i / 2) * 4); cars.push(c); }
-  const g = ferry(cars); navLights(g, 2.4, 2.4, -2, 4.6, 3); return g;
+/** Vỏ tàu nhìn từ trên: mũi nhọn thuôn, đuôi vuông bo góc; đùn theo chiều cao, vát mép cho đường nét mềm. Mũi hướng -z, đáy y = 0. */
+export function hullGeometry(len: number, width: number, depth: number, bowLen: number, sternRound = 0.25, bevel = 0.12): THREE.BufferGeometry {
+  const w = width / 2, h = len / 2, sh = new THREE.Shape();
+  sh.moveTo(-w + sternRound, h); sh.lineTo(w - sternRound, h); sh.quadraticCurveTo(w, h, w, h - sternRound);
+  sh.lineTo(w, -h + bowLen); sh.bezierCurveTo(w, -h + bowLen * 0.35, w * 0.35, -h + 0.05, 0, -h);
+  sh.bezierCurveTo(-w * 0.35, -h + 0.05, -w, -h + bowLen * 0.35, -w, -h + bowLen); sh.lineTo(-w, h - sternRound); sh.quadraticCurveTo(-w, h, -w + sternRound, h);
+  const b = Math.min(bevel, depth / 3, w / 3);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: depth - 2 * b, bevelEnabled: b > 0, bevelThickness: b, bevelSize: b, bevelSegments: 2, curveSegments: 10 });
+  g.rotateX(Math.PI / 2); g.translate(0, depth - b, 0); g.computeVertexNormals();
+  return g;
+}
+const hull = (g: THREE.Group, c: number, y: number, z: number, len: number, width: number, depth: number, bowLen: number, o?: { rough?: number }) => {
+  const m = new THREE.Mesh(hullGeometry(len, width, depth, bowLen), mat(c, o)); m.position.set(0, y, z); m.castShadow = true; m.receiveShadow = true; g.add(m); return m;
+};
+
+/** Phà chở ô tô hai đầu: vỏ thép xanh than, sọc đỏ mớn nước, boong xám có vạch đỗ, cầu dẫn hai đầu, lan can, cabin lái đặt lệch mạn,
+ *  phao cứu sinh, ống khói, cột đèn; chở 4 ô tô và vài người đứng. */
+export function carFerry(cars = 4): THREE.Group {
+  const g = new THREE.Group(), navy = 0x2b4766, white = 0xf6f3ea;
+  hull(g, navy, -0.3, 0, 15, 5.6, 1.45, 2.2); hull(g, 0xb8362b, -0.5, 0, 15.05, 5.65, 0.42, 2.2);
+  box(g, 0xffffff, 0, 1.18, 0.8, 5.5, 0.08, 10.6); box(g, 0x8c949e, 0, 1.24, 0.8, 5.0, 0.06, 10.2, { rough: 0.9 });
+  for (const x of [-1.3, 1.3]) box(g, 0xf2c94c, x, 1.29, 0.6, 0.08, 0.02, 8.4);
+  for (const z of [-5.6, 6.6]) { const r = box(g, 0x6f7882, 0, 1.45, z, 3.6, 0.1, 1.7); r.rotation.x = z < 0 ? 0.35 : -0.35; for (const x of [-1.85, 1.85]) box(g, 0x4b5563, x, 1.5, z, 0.08, 0.5, 1.6); }
+  for (const sx of [-1, 1]) {
+    box(g, white, sx * 2.72, 2.15, 0.8, 0.07, 0.07, 10); box(g, white, sx * 2.72, 1.75, 0.8, 0.05, 0.05, 10);
+    for (let z = -4.2; z <= 5.8; z += 1.0) box(g, white, sx * 2.72, 1.7, z, 0.06, 0.95, 0.06);
+    for (const z of [-2.5, 3]) { const ring = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.09, 8, 16), mat(0xf0682a)); ring.position.set(sx * 2.8, 1.75, z); ring.rotation.y = Math.PI / 2; g.add(ring); }
+  }
+  // cabin lái lệch mạn phải, hai tầng, kính bao quanh
+  box(g, white, 1.9, 2.4, 2.2, 1.6, 2.2, 3.4); box(g, 0x24425e, 1.9, 2.9, 2.2, 1.66, 0.55, 3.0, { rough: 0.25 });
+  box(g, white, 1.9, 4.0, 2.2, 1.9, 1.1, 3.0); box(g, 0x9fd3ea, 1.9, 4.05, 2.2, 1.96, 0.55, 2.6, { rough: 0.2 }); box(g, 0xd9dde2, 1.9, 4.65, 2.2, 2.2, 0.12, 3.4);
+  cyl(g, 0xe0342b, 1.9, 5.4, 3.3, 0.32, 1.2); cyl(g, 0x1c1c1c, 1.9, 6.05, 3.3, 0.34, 0.16);
+  cyl(g, 0x8f97a3, 1.9, 5.6, 1.2, 0.05, 1.8); box(g, 0x8f97a3, 1.9, 6.3, 1.2, 0.7, 0.05, 0.05);
+  flagVN(g, -2.5, 2.2, 6.2, 0.8);
+  const carCols = [0xe8e3d6, 0xd9534f, 0x3b82c4, 0x7cbf5a];
+  for (let i = 0; i < cars; i++) {
+    const c = new THREE.Group(), x = i % 2 ? 0.1 : -1.5, z = -3 + Math.floor(i / 2) * 4.4;
+    box(c, carCols[i], 0, 0.42, 0, 1.6, 0.62, 3.4); box(c, carCols[i], 0, 0.92, 0.25, 1.4, 0.5, 1.9); box(c, 0x9fc9e0, 0, 0.95, 0.25, 1.44, 0.34, 1.7, { rough: 0.2 });
+    for (const [wx, wz] of [[-0.78, -1.1], [0.78, -1.1], [-0.78, 1.1], [0.78, 1.1]]) { const t = mesh(GEO.cyl, mat(0x1d1d22), wx, 0.28, wz, 0.3, 0.2, 0.3); t.rotation.z = Math.PI / 2; c.add(t); }
+    c.position.set(x, 1.27, z); g.add(c);
+  }
+  for (const [x, z, col] of [[-2.2, 4.4, 0xf2a03d], [-2.0, 5.2, 0x3b7dd8], [0.9, 5.6, 0xd94b6a]] as const) { box(g, col, x, 1.75, z, 0.4, 0.6, 0.3); ball(g, 0xf0c8a0, x, 2.2, z, 0.17); }
+  navLights(g, 2.9, 2.3, -1, 6.4, 1.2);
+  return g;
 }
 export function fishingBoat(): THREE.Group {
   // tàu cá vỏ gỗ sơn xanh, mạn đỏ vàng, cabin trắng phía đuôi, cột đèn câu
@@ -65,15 +105,32 @@ export function bananaCano(): THREE.Group {
   for (let i = 0; i < 3; i++) { box(g, [0xff7a00, 0x2ecc71, 0x9b59b6][i], 0, 0.95, 9.8 + i * 1.2, 0.36, 0.5, 0.3); ball(g, 0xf0c8a0, 0, 1.35, 9.8 + i * 1.2, 0.17); }
   return g;
 }
-/** Mô tô nước: thân trắng sọc màu, yên đen, tay lái; người lái mặc áo phao cam. */
+/** Mô tô nước: vỏ trắng thuôn có sọc màu, mũi vát, yên dài bọc đen, tay lái có tay nắm và gương, nắp máy màu,
+ *  vòi phản lực phía đuôi; người lái mặc áo phao cam, ngồi ôm tay lái, chân đặt trên bậc. */
 export function jetSki(color = 0xe63946): THREE.Group {
   const g = new THREE.Group();
-  box(g, 0xf7f7f2, 0, 0.32, 0.1, 1.15, 0.55, 3.0); bow(g, 0xf7f7f2, 0.32, -1.85, 1.15, 0.55, 0.8); box(g, color, 0, 0.5, 0, 1.18, 0.14, 2.9);
-  box(g, 0x1d1d22, 0, 0.72, 0.5, 0.5, 0.22, 1.3); box(g, color, 0, 0.78, -0.55, 0.7, 0.35, 0.5); cyl(g, 0x333333, 0, 1.05, -0.55, 0.04, 0.35);
-  const bar = box(g, 0x333333, 0, 1.22, -0.5, 0.9, 0.06, 0.06); bar.rotation.z = 0;
-  // người lái
-  box(g, 0x2c3e50, 0, 1.05, 0.55, 0.42, 0.45, 0.35); box(g, 0xff7a1a, 0, 1.45, 0.4, 0.55, 0.55, 0.42); ball(g, 0xf0c8a0, 0, 1.92, 0.36, 0.2); box(g, 0x2c3e50, 0, 2.06, 0.36, 0.38, 0.12, 0.38);
-  for (const s of [-1, 1]) { const a = box(g, 0xff7a1a, s * 0.33, 1.35, 0.05, 0.13, 0.13, 0.65); a.rotation.x = 0.5; }
+  hull(g, 0xf7f7f2, 0, 0, 3.2, 1.2, 0.62, 1.2, { rough: 0.35 });
+  hull(g, color, 0.42, -0.05, 3.0, 1.22, 0.16, 1.15, { rough: 0.4 });
+  // nắp máy phía trước, kính chắn gió nhỏ
+  const hood = mesh(GEO.ball, mat(color, { rough: 0.35 }), 0, 0.72, -0.75, 0.48, 0.24, 0.7); g.add(hood);
+  box(g, 0x2b3440, 0, 0.98, -0.42, 0.5, 0.22, 0.05, { rough: 0.2 });
+  // yên dài bo tròn
+  const seat = mesh(GEO.cyl, mat(0x1d1d22, { rough: 0.7 }), 0, 0.84, 0.45, 0.24, 1.4, 0.24); seat.rotation.x = Math.PI / 2; seat.scale.z *= 0.75; g.add(seat);
+  for (const s of [-1, 1]) box(g, 0x3a3f47, s * 0.5, 0.5, 0.45, 0.14, 0.05, 1.3); // bậc để chân
+  // tay lái: cổ, ghi đông, tay nắm, gương
+  cyl(g, 0x2d2f33, 0, 0.98, -0.5, 0.05, 0.4);
+  box(g, 0x2d2f33, 0, 1.18, -0.48, 0.86, 0.05, 0.05);
+  for (const s of [-1, 1]) { cyl(g, 0x111111, s * 0.44, 1.18, -0.48, 0.045, 0.14).rotation.z = Math.PI / 2; box(g, 0xc9d1d9, s * 0.38, 1.38, -0.55, 0.14, 0.09, 0.02, { rough: 0.2 }); }
+  // vòi phản lực đuôi
+  const noz = mesh(GEO.cyl, mat(0x4b5563), 0, 0.22, 1.62, 0.12, 0.18, 0.12); noz.rotation.x = Math.PI / 2; g.add(noz);
+  // người lái: hông trên yên, đùi, ống chân trên bậc, thân nghiêng tới, tay ra ghi đông, áo phao cam, mũ bảo hiểm
+  box(g, 0x23384d, 0, 1.05, 0.55, 0.44, 0.24, 0.42);
+  for (const s of [-1, 1]) { const th = box(g, 0x23384d, s * 0.2, 1.0, 0.15, 0.17, 0.17, 0.6); th.rotation.x = 0.15; const sh = box(g, 0x23384d, s * 0.3, 0.72, -0.08, 0.15, 0.5, 0.15); sh.rotation.x = 0.25; }
+  const torso = box(g, 0xff7a1a, 0, 1.48, 0.38, 0.56, 0.62, 0.38); torso.rotation.x = -0.32;
+  box(g, 0x1f2933, 0, 1.36, 0.38, 0.58, 0.08, 0.4); // đai áo phao
+  ball(g, 0xf0c8a0, 0, 1.92, 0.2, 0.19); const helm = mesh(GEO.ball, mat(0xf5f5f5, { rough: 0.3 }), 0, 2.0, 0.22, 0.22, 0.17, 0.24); g.add(helm);
+  box(g, 0x111111, 0, 1.93, 0.02, 0.26, 0.06, 0.05, { rough: 0.2 }); // kính râm
+  for (const s of [-1, 1]) { const arm = box(g, 0xff7a1a, s * 0.34, 1.42, 0.0, 0.13, 0.13, 0.62); arm.rotation.x = 0.55; arm.rotation.z = s * -0.18; ball(g, 0xf0c8a0, s * 0.42, 1.2, -0.42, 0.06); }
   return g;
 }
 
