@@ -23,6 +23,7 @@ import type { FactoryData, FactoryMachine, MachineState } from './factory.ts';
 import { blobTex, boardCanvas, edgeFade, grassTex, roadTex, softDot } from './tex.ts';
 import { FieldsLayer, clampToRects, fieldZoneBox, fieldZoneRects } from './fields.ts';
 import { buildExportDesk } from './exportDesk.ts';
+import { CAMERA_FEEL } from '../cameraFeel.ts';
 import type { ExportDesk } from './exportDesk.ts';
 import type { FieldLite } from './fields.ts';
 import { OthersLayer } from './others.ts';
@@ -591,9 +592,10 @@ export class World {
     on(el, 'pointermove', (e: PointerEvent) => {
       const s = this.stick; if (!s || s.id !== e.pointerId) return;
       const dx = e.clientX - s.x, dy = e.clientY - s.y, len = Math.hypot(dx, dy);
-      if (!s.moved && len > 10) { s.moved = true; this.walkTo = null; const r = this.container.getBoundingClientRect(); this.stickEl.style.left = `${s.x - r.left}px`; this.stickEl.style.top = `${s.y - r.top}px`; this.stickEl.classList.add('on'); }
+      if (!s.moved && len > CAMERA_FEEL.stickDeadPx) { s.moved = true; this.walkTo = null; const r = this.container.getBoundingClientRect(); this.stickEl.style.left = `${s.x - r.left}px`; this.stickEl.style.top = `${s.y - r.top}px`; this.stickEl.classList.add('on'); }
       if (!s.moved) return;
-      const k = Math.min(1, len / 56); this.input.set((dx / (len || 1)) * k, (dy / (len || 1)) * k);
+      // đáp ứng mịn ở giữa (đường cong mũ), cần kéo xa hơn mới chạy hết tốc → khó lệch hướng khi chỉ muốn nhích nhẹ
+      const k = Math.min(1, Math.max(0, len - CAMERA_FEEL.stickDeadPx) / (CAMERA_FEEL.stickFullPx - CAMERA_FEEL.stickDeadPx)) ** CAMERA_FEEL.stickCurve; this.input.set((dx / (len || 1)) * k, (dy / (len || 1)) * k);
       this.knobEl.style.transform = `translate(${this.input.x * 44}px, ${this.input.y * 44}px)`;
     });
     const end = (e: PointerEvent) => {
