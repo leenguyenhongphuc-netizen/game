@@ -1,5 +1,10 @@
 // Điểm tham quan thật ở từng tỉnh, thành: toạ độ thật, các điểm dừng theo đúng thứ tự đi bộ ngoài đời.
 import { PARKS, PASS_HOURS as PARK_PASS_HOURS } from './parks.ts';
+import { SIGHTS_BAC_NUI } from './sights/bac_nui.ts';
+import { SIGHTS_DONG_BANG_BAC } from './sights/dong_bang_bac.ts';
+import { SIGHTS_BAC_TRUNG_BO } from './sights/bac_trung_bo.ts';
+import { SIGHTS_NAM_TRUNG_TAY_NGUYEN } from './sights/nam_trung_tay_nguyen.ts';
+import { SIGHTS_NAM_BO } from './sights/nam_bo.ts';
 // Người chơi phải đang ở trong tỉnh đó (vùng nhà hoặc vùng đang tham quan) mới đi tới được: taxi trên đất liền, ra đảo thì taxi tới cảng rồi đi tàu.
 
 export type SightKind = 'pho_co' | 'den_thap' | 'nui' | 'cau' | 'chua' | 'dao' | 'bien' | 'lang_nghe' | 'deo' | 'khu_vui_choi';
@@ -200,6 +205,8 @@ for (const p of PARKS) {
     ],
   });
 }
+// các vùng khác (mỗi vùng một file để nhiều người thêm cùng lúc không đụng nhau)
+SIGHTS.push(...SIGHTS_BAC_NUI, ...SIGHTS_DONG_BANG_BAC, ...SIGHTS_BAC_TRUNG_BO, ...SIGHTS_NAM_TRUNG_TAY_NGUYEN, ...SIGHTS_NAM_BO);
 
 export function sight(id: string): Sight | undefined { return SIGHTS.find((s) => s.id === id); }
 export function sightsOfProvince(province: string): Sight[] { return SIGHTS.filter((s) => s.province === province); }

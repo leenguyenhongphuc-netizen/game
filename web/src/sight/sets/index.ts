@@ -15,6 +15,11 @@ import { bayMau } from './dn_bay_mau.ts';
 import { tamThanh } from './dn_tam_thanh.ts';
 import { lySon } from './qng_ly_son.ts';
 import { parkSet } from '../../park/parkSet.ts';
+import { SETS_BAC_NUI } from './regions/bac_nui.ts';
+import { SETS_DONG_BANG_BAC } from './regions/dong_bang_bac.ts';
+import { SETS_BAC_TRUNG_BO } from './regions/bac_trung_bo.ts';
+import { SETS_NAM_TRUNG_TAY_NGUYEN } from './regions/nam_trung_tay_nguyen.ts';
+import { SETS_NAM_BO } from './regions/nam_bo.ts';
 
 import { decorate } from '../guide.ts';
 export type SetBuilder = (kit: Kit, sight: Sight) => SightSet;
@@ -32,6 +37,11 @@ const RAW: Record<string, SetBuilder> = {
   dn_bay_mau: bayMau,
   dn_tam_thanh: tamThanh,
   qng_ly_son: lySon,
+  ...SETS_BAC_NUI,
+  ...SETS_DONG_BANG_BAC,
+  ...SETS_BAC_TRUNG_BO,
+  ...SETS_NAM_TRUNG_TAY_NGUYEN,
+  ...SETS_NAM_BO,
   'kind:pho_co': hoiAn,
   'kind:chua': sonTra,
   'kind:dao': cuLaoCham,
