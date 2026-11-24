@@ -1,4 +1,5 @@
-// Màn đi bộ tham quan một địa danh thật: đi vào, xem từng điểm dừng theo đúng thứ tự ngoài đời, chụp ảnh lưu niệm rồi ra cổng sang siêu thị đặc sản.
+// Màn đi bộ tham quan một địa danh thật: đi tự do khắp khu, xem các điểm dừng theo thứ tự tuỳ ý (có gợi ý điểm kế), bản đồ kiểu GTA
+// để đặt điểm đến và dẫn đường, chụp ảnh lưu niệm thật từ cảnh, rồi ra cổng sang siêu thị đặc sản.
 import { useEffect, useRef, useState } from 'react';
 import type { JSX, PointerEvent as RPointerEvent } from 'react';
 import { sight as findSight } from '../../../shared/sights.ts';
@@ -16,10 +17,14 @@ import { ParkStopBody } from '../park/ParkStop.tsx';
 import type { ParkView } from '../park/ParkStop.tsx';
 import { RideCut } from '../park/RideCut.tsx';
 import { Arcade } from '../park/Arcade.tsx';
+import { SightMap, SightMiniMap } from '../map/SightMap.tsx';
+import type { Other } from '../map/SightMap.tsx';
+import { albumOf, savePhoto } from './album.ts';
+import type { AlbumPhoto } from './album.ts';
 import './sight.css';
 
 interface TestHook { goto: (i: number) => void; snap: () => void; pos: () => unknown; info: () => unknown; close: () => void }
-type W = Window & { __sight?: TestHook; __sightAuto?: boolean; __rideStep?: number };
+type W = Window & { __sight?: TestHook; __sightAuto?: boolean; __rideStep?: number; __sightSpeed?: number };
 
 export interface SightWalkProps {
   sightId: string; seen?: string[];
@@ -52,7 +57,11 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const knob = useRef<HTMLElement>(null);
   const ptr = useRef<{ move: number | null; look: number | null; lx: number; ly: number; ox: number; oy: number }>({ move: null, look: null, lx: 0, ly: 0, ox: 0, oy: 0 });
   const nearRef = useRef<number | null>(null); nearRef.current = near;
+  const lookLive = useRef(false);
+  const othersPos = useRef((): Other[] => others.current?.positions() ?? []).current;
   const [album, setAlbum] = useState(false);
+  const [photos, setPhotos] = useState<AlbumPhoto[]>(() => (s ? albumOf(s.id) : []));
+  const [mapOpen, setMapOpen] = useState(false); const [mapReady, setMapReady] = useState(false);
   const [exNear, setExNear] = useState<number | null>(null);
   const [ex, setEx] = useState<{ i: number; x: SightExtra; pick: number | null; pan: boolean } | null>(null);
   const [exDone, setExDone] = useState<number[]>([]);
@@ -72,6 +81,8 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
   const snap = () => {
     const i = nearRef.current; if (i === null || !s) return; const id = s.stops[i].id;
     if (!seenRef.current.includes(id)) { const next = [...seenRef.current, id]; seenRef.current = next; setSeen(next); scene.current?.markSeen(i); setFlash((f) => f + 1); setStamp({ k: Date.now(), name: s.stops[i].name }); }
+    // ảnh lưu niệm thật: chụp đúng khung đang thấy (render target), lưu trên máy
+    try { const url = scene.current?.photo(); if (url) { savePhoto(s.id, id, url); setPhotos(albumOf(s.id)); } } catch { /* máy không đọc được điểm ảnh: album dùng ảnh minh hoạ */ }
   };
   const close = () => { scene.current?.dismiss(); };
 
@@ -79,12 +90,12 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
     if (!s || !host.current) return;
     const w = window as W;
     const sc = new SightScene(host.current, s, seenRef.current, { onNear: (i) => { setNear(i); setAlbum(false); if (i !== null) setEx(null); }, onHud: setHud, onShop: setShop }, props.shops);
-    sc.auto = !!w.__sightAuto; sc.speedMul = w.__sightAuto && w.__rideStep ? 6 : 1; scene.current = sc;
+    sc.auto = !!w.__sightAuto; sc.speedMul = w.__sightAuto && w.__rideStep ? 6 : w.__sightSpeed ?? 1; scene.current = sc;
     w.__sight = { goto: (i) => sc.goto(i), snap, pos: () => sc.pos(), info: () => sc.info(), close };
     others.current = attachSightOthers(sc, s.id);
     const t = window.setTimeout(() => setHint(false), 9000);
     // màn chào: giữ ảnh tới khi cảnh dựng xong rồi mới mờ dần vào cảnh 3D
-    const hold = w.__sightAuto ? 250 : 1500, t2 = window.setTimeout(() => setSplash('fade'), hold), t3 = window.setTimeout(() => setSplash('off'), hold + 800);
+    const hold = w.__sightAuto ? 250 : 1500, t2 = window.setTimeout(() => { try { sc.mapImage(); setMapReady(true); } catch { /* không chụp được bản đồ */ } setSplash('fade'); }, hold), t3 = window.setTimeout(() => setSplash('off'), hold + 800);
     return () => { window.clearTimeout(t); window.clearTimeout(t2); window.clearTimeout(t3); others.current?.dispose(); others.current = null; sc.dispose(); scene.current = null; delete w.__sight; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.sightId]);
@@ -137,14 +148,18 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
     const r = e.currentTarget.getBoundingClientRect(), p = ptr.current; setHint(false);
     e.currentTarget.setPointerCapture(e.pointerId);
     if (e.clientY - r.top > r.height * 0.5 && p.move === null) { p.move = e.pointerId; p.ox = e.clientX; p.oy = e.clientY; setStick({ x: e.clientX - r.left, y: e.clientY - r.top, dx: 0, dy: 0 }); }
-    else if (p.look === null) { p.look = e.pointerId; p.lx = e.clientX; p.ly = e.clientY; }
+    else if (p.look === null) { p.look = e.pointerId; p.lx = e.clientX; p.ly = e.clientY; p.ox = e.clientX; p.oy = e.clientY; lookLive.current = false; }
   };
   const moveP = (e: RPointerEvent<HTMLDivElement>) => {
     const p = ptr.current;
     if (e.pointerId === p.move) {
       let dx = e.clientX - p.ox, dy = e.clientY - p.oy; const l = Math.hypot(dx, dy), R = 46; if (l > R) { dx *= R / l; dy *= R / l; }
       scene.current?.setMove(dx / R, -dy / R); if (knob.current) knob.current.style.transform = `translate(${dx}px, ${dy}px)`; // ghi thẳng DOM: không vẽ lại React theo từng sự kiện chạm
-    } else if (e.pointerId === p.look) { scene.current?.look((e.clientX - p.lx) * 0.006, (e.clientY - p.ly) * 0.003); p.lx = e.clientX; p.ly = e.clientY; }
+    } else if (e.pointerId === p.look) {
+      // nhạy bằng nửa trước đây; vùng chết 6 px để chạm nhẹ không làm lệch góc; kéo dọc nhẹ hơn kéo ngang
+      if (!lookLive.current && Math.hypot(e.clientX - p.ox, e.clientY - p.oy) < 6) return;
+      lookLive.current = true; scene.current?.look((e.clientX - p.lx) * 0.0032, (e.clientY - p.ly) * 0.0016); p.lx = e.clientX; p.ly = e.clientY;
+    }
   };
   const up = (e: RPointerEvent<HTMLDivElement>) => {
     const p = ptr.current;
@@ -206,18 +221,32 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
       {!stop && !ex && hud && (
         <div className="sw-guide">
           <i style={{ transform: `rotate(${hud.bearing}rad)` }} aria-hidden="true">➤</i>
-          <span>{allSeen ? 'Ra cổng:' : 'Tới:'} <b>{hud.next + 1}. {next.name}</b></span>
+          {hud.wp ? <span>Tới: <b>📍 điểm đã chọn</b></span> : <span>{allSeen ? 'Ra cổng:' : 'Gợi ý:'} <b>{hud.next + 1}. {next.name}</b></span>}
           <small>{Math.round(hud.dist)} m</small>
-          {canWalk && hud.dist > 3 && <button className="sw-walk" onClick={() => walker!.walkToStop!(hud.next)}>▶ Đi tới</button>}
+          {hud.wp ? <>
+            <button className="sw-walk" onClick={() => scene.current?.followWaypoint()}>▶ Đi tới</button>
+            <button className="sw-walk ghost" aria-label="Huỷ dẫn đường" onClick={() => scene.current?.setWaypoint(null)}>✕</button>
+          </> : canWalk && hud.dist > 3 && <button className="sw-walk" onClick={() => walker!.walkToStop!(hud.next)}>▶ Đi tới</button>}
         </div>
       )}
-      {seen.length > 0 && !stop && !ex && (
-        <div className={`sw-album${album ? ' open' : ''}`}>
-          <button className="sw-album-btn" aria-expanded={album} aria-label={`Ảnh đã chụp: ${seen.length}`} onClick={() => setAlbum((a) => !a)}><span aria-hidden="true">📷</span>{seen.length}</button>
-          {album && <ul>{s.stops.filter((x) => seen.includes(x.id)).map((x) => <li key={x.id} data-art><img src={`${ART}${s.id}-s.jpg`} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} /><span>{x.name}</span></li>)}</ul>}
+      {seen.length > 0 && !stop && !ex && !mapOpen && (
+        <div className="sw-album">
+          <button className="sw-album-btn" aria-expanded={album} aria-label={`Ảnh đã chụp: ${seen.length}`} onClick={() => setAlbum(true)}><span aria-hidden="true">📷</span>{seen.length}</button>
         </div>
       )}
-      {hint && !stop && <div className="sw-hint">Kéo nửa dưới màn hình để đi · kéo nửa trên để nhìn quanh</div>}
+      {album && (
+        <div className="sw-albumsheet" role="dialog" aria-label="Album ảnh" onClick={(e) => { if (e.target === e.currentTarget) setAlbum(false); }}>
+          <div>
+            <header><b>📷 Album · {s.name}</b><button aria-label="Đóng album" onClick={() => setAlbum(false)}>✕</button></header>
+            <ul>{s.stops.filter((x) => seen.includes(x.id)).map((x) => { const ph = photos.find((q) => q.stop === x.id); return (
+              <li key={x.id}>{ph ? <img src={ph.url} alt={`Ảnh tại ${x.name}`} /> : <div className="noimg" aria-hidden="true">{s.emoji}</div>}
+                <b>{x.name}</b><small>{ph ? new Date(ph.at).toLocaleDateString('vi-VN') : today()}</small><em>ĐÃ ĐẾN</em></li>); })}</ul>
+          </div>
+        </div>
+      )}
+      {mapReady && splash === 'off' && !stop && !ex && !mapOpen && !album && scene.current && <SightMiniMap src={scene.current} others={othersPos} onOpen={() => setMapOpen(true)} />}
+      {mapOpen && scene.current && <SightMap src={scene.current} others={othersPos} onClose={() => setMapOpen(false)} />}
+      {hint && !stop && <div className="sw-hint">Đi tự do khắp khu: kéo nửa dưới để đi · nửa trên để nhìn · chạm 🗺️ để mở bản đồ</div>}
       {stick && <div className="sw-stick" style={{ left: stick.x, top: stick.y }}><i ref={knob} /></div>}
       {splash !== 'off' && <div className={`sw-splash${splash === 'fade' ? ' fade' : ''}`} aria-hidden="true"><img src={`${ART}${s.id}.jpg`} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} /><div><b>{s.emoji}</b><h1>{s.name}</h1><p>{s.blurb}</p></div></div>}
       {flash > 0 && <div className="sw-flash" key={flash} />}

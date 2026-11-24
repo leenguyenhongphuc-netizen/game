@@ -36,7 +36,7 @@ function emojiSprite(e: string): THREE.Sprite {
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, depthTest: false })); sp.renderOrder = 8; sp.scale.setScalar(0.9); return sp;
 }
 
-export interface SightOthers { dispose(): void; count(): number; names(): { name: string; bot: boolean; d: number }[]; emote(e: string | null): void }
+export interface SightOthers { dispose(): void; count(): number; names(): { name: string; bot: boolean; d: number }[]; emote(e: string | null): void; /** Vị trí người khác (cho bản đồ). */ positions(): { x: number; z: number; name: string; bot: boolean }[] }
 
 export function attachSightOthers(sc: SightScene, key: string): SightOthers {
   const items = new Map<number, Item>(), group = new THREE.Group(); sc.world.add(group);
@@ -99,6 +99,7 @@ export function attachSightOthers(sc: SightScene, key: string): SightOthers {
   return {
     dispose() { dead = true; link.stop(); const i = sc.extraTicks.indexOf(tick); if (i >= 0) sc.extraTicks.splice(i, 1); for (const it of items.values()) drop(it); items.clear(); group.removeFromParent(); },
     count: () => items.size,
+    positions: () => [...items.values()].map((it) => ({ x: it.x, z: it.z, name: it.o.name, bot: it.o.bot })),
     names: () => { const p = sc.pose(); return [...items.values()].map((it) => ({ name: it.o.name, bot: it.o.bot, d: Math.hypot(it.x - p.x, it.z - p.z) })).sort((a, b) => a.d - b.d); },
     emote(e) { myEmote = e ? { e, until: Date.now() + 4_500 } : null; },
   };

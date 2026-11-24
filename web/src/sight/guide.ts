@@ -10,6 +10,8 @@ export const guide = {
   next: 0, seen: new Set<string>(), extras: [] as PlacedExtra[], done: new Set<number>(),
   /** Tắt mũi tên (khi đang mở thẻ, đang lia máy ngắm cảnh). */
   quiet: false,
+  /** Đường dẫn hiện tại (cảnh tìm trên lưới đi bộ, điểm đầu là chân nhân vật); null = không dẫn. */
+  route: null as THREE.Vector3[] | null,
 };
 
 export type PlacedExtra = SightExtra & { at: THREE.Vector3 };
@@ -94,7 +96,7 @@ export function decorate(kit: Kit, sight: Sight, set: SightSet): SightSet {
     else kit.add(cyl(0xffe9a8, p.x, p.y + 0.04, p.z, 0.9, 0.06), bead(glow(0xffd95e), p.x, p.y + 0.09, p.z, 0.5, 0.03, 0.5));
     const sp = iconSprite(x.emoji ?? ICON[x.kind]); sp.position.set(p.x, p.y + (x.kind === 'thu_vat' ? 2.6 : 2.7), p.z); icons.push(sp); kit.live(sp);
   }
-  guide.extras = extras; guide.done = new Set(); guide.next = 0; guide.quiet = false;
+  guide.extras = extras; guide.done = new Set(); guide.next = 0; guide.quiet = false; guide.route = null;
 
   let tamed = false;
   kit.onTick((t, _dt, pl) => {
@@ -111,15 +113,17 @@ export function decorate(kit: Kit, sight: Sight, set: SightSet): SightSet {
     });
     caps.instanceMatrix.needsUpdate = halo.instanceMatrix.needsUpdate = true; if (caps.instanceColor) caps.instanceColor.needsUpdate = true; if (halo.instanceColor) halo.instanceColor.needsUpdate = true;
     icons.forEach((sp, i) => { sp.position.y = extras[i].at.y + 2.7 + Math.sin(t * 2 + i) * 0.12; sp.material.opacity = guide.done.has(i) ? 0.35 : 1; });
-    // mũi tên: từ trước mặt người chơi chạy dần về điểm kế
-    const target = stopS[Math.min(n - 1, guide.next)], d = target - pl.s, show = !guide.quiet && pl.near === null && Math.abs(d) > 4;
+    // mũi tên: chạy dọc đường dẫn tìm trên lưới đi bộ (vòng qua nhà, tường, mép nước) từ trước mặt người chơi tới đích
+    const r = guide.route; let total = 0; if (r) for (let i = 0; i < r.length - 1; i++) total += Math.hypot(r[i + 1].x - r[i].x, r[i + 1].z - r[i].z);
+    const show = !guide.quiet && pl.near === null && !!r && r.length > 1 && total > 4;
     arrows.visible = show;
-    if (show) {
-      const sg = Math.sign(d), gap = 2.3, flow = (t * 2.2) % gap;
+    if (show && r) {
+      const gap = 2.3, flow = (t * 2.2) % gap;
       for (let i = 0; i < NA; i++) {
-        const off = 2.2 + i * gap + flow, s = pl.s + sg * off, left = Math.abs(d) - off;
+        const off = 2.2 + i * gap + flow, left = total - off;
         if (left < 1.2) { arrows.setMatrixAt(i, m4.makeScale(0, 0, 0)); continue; }
-        const seg = at(s, ap); dir.copy(path[seg + 1]).sub(path[seg]).multiplyScalar(sg);
+        let d = off, k2 = 0; while (k2 < r.length - 2 && d > Math.hypot(r[k2 + 1].x - r[k2].x, r[k2 + 1].z - r[k2].z)) { d -= Math.hypot(r[k2 + 1].x - r[k2].x, r[k2 + 1].z - r[k2].z); k2++; }
+        const a0 = r[k2], a1 = r[k2 + 1], len = Math.hypot(a1.x - a0.x, a1.z - a0.z) || 1; ap.copy(a0).lerp(a1, Math.min(1, d / len)); dir.copy(a1).sub(a0);
         e.set(0, Math.atan2(-dir.x, -dir.z), 0); qt.setFromEuler(e);
         const k = Math.min(1, left / 3) * (1 - i / (NA + 3)) * Math.min(1, off / 3.4); sc.set(k, 1, k); ap.y += 0.1;
         arrows.setMatrixAt(i, m4.compose(ap, qt, sc));

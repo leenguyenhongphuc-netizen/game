@@ -3,6 +3,10 @@ import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { SightWalk } from './SightWalk.tsx';
 
+// &qa=1 bật đo chất lượng máy quay (tools/ui-test/camera-qa.mjs); &speed=2 tốc độ đi tự động
+const Q0 = new URLSearchParams(location.search);
+if (Q0.get('qa') === '1') void import('./camQA.ts').then((m) => m.startCamQA());
+if (Q0.get('speed')) (window as unknown as { __sightSpeed?: number }).__sightSpeed = Number(Q0.get('speed'));
 declare global { interface Window { __sightResult?: { stops: string[]; toMarket: boolean } } }
 function Test() {
   const q = new URLSearchParams(location.search);
