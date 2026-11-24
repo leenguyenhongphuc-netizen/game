@@ -1967,7 +1967,7 @@ test('hộ chiếu và cấp bậc: check-in điểm dừng có dấu, tham quan
   const p1 = (await call('GET', '/api/passport', undefined, cookie)).body;
   assert.deepEqual([p1.stamps.filter((x: any) => x.kind === 'stop').length, p1.stamps.filter((x: any) => x.kind === 'sight').length, p1.sights.done, p1.xp], [stops.length, 1, 1, full.body.xp]);
   assert.ok(p1.stamps.every((x: any) => typeof x.at === 'number' && x.name && x.province));
-  assert.deepEqual(p1.provinces.find((x: any) => x.province === 'Quảng Ngãi'), { province: 'Quảng Ngãi', done: 1, total: 1 });
+  assert.deepEqual(p1.provinces.find((x: any) => x.province === 'Quảng Ngãi'), { province: 'Quảng Ngãi', done: 1, total: sightsOfProvince('Quảng Ngãi').length });
   // Lần tới vùng mới và mua đất cũng cộng điểm; mua đất thu thêm lệ phí trước bạ và phí cấp giấy.
   const price = landPrice('qng_trabong'), fees = landFees(price);
   assert.deepEqual(fees, { registration: Math.round((price * 0.005) / 1000) * 1000, certificate: 100000, total: Math.round((price * 0.005) / 1000) * 1000 + 100000 });
