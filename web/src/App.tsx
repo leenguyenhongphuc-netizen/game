@@ -39,6 +39,7 @@ import { PropertiesPanel } from './properties.tsx';
 import { ExportDeskDialog } from './exportDesk.tsx';
 import { FieldHud } from './fieldHud.tsx';
 import { ChatLayer } from './chat/ChatLayer.tsx';
+import { JetSkiPanel } from './sea/JetSkiPanel.tsx';
 import { AdminCenter } from './admin/AdminCenter.tsx';
 import { onAdminCenter, openAdminCenter } from './admin/open.ts';
 import type { AdminOpen } from './admin/open.ts';
@@ -778,6 +779,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
               <>
                 <div className="tabs"><button aria-selected={travelTab === 'di'} onClick={() => setTravelTab('di')}>Bản đồ</button><button aria-selected={travelTab === 'thamquan'} onClick={() => setTravelTab('thamquan')}>Tham quan</button><button aria-selected={travelTab === 'sieuthi'} onClick={() => setTravelTab('sieuthi')}>Siêu thị</button><button aria-selected={travelTab === 'hochieu'} onClick={() => setTravelTab('hochieu')}>Hộ chiếu</button><button aria-selected={travelTab === 'tientrinh'} onClick={() => setTravelTab('tientrinh')}>Thăng hạng</button><button aria-selected={travelTab === 'so'} onClick={() => setTravelTab('so')}>Sổ tem</button></div>
                 {travelTab === 'di' && <TravelPanel me={me} startRide={startRide} startTrip={isTrader || me.user.vehicle ? startTrip : undefined} openGarage={() => { setShopTab('baixe'); setTab('trangtri'); }} touring={tour} />}
+                {travelTab === 'thamquan' && <JetSkiPanel refresh={reload} />}
                 {travelTab === 'thamquan' && <SightsPanel me={me} refresh={reload} onTravel={startRide} onGo={(t) => { setTab('vuon'); setSightTrip(t); }} />}
                 {travelTab === 'sieuthi' && <SupermarketPanel me={me} province={REGIONS[tour ?? me.user.homeRegionId!].province} refresh={reload} />}
                 {travelTab === 'hochieu' && <PassportPanel me={me} refresh={reload} />}

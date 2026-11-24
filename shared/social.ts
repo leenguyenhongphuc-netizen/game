@@ -1,8 +1,8 @@
 // Người chơi thấy nhau (hiện diện) và cư dân ảo giữ cho chợ, cao tốc, trạm dừng luôn có người.
 // Dùng chung cho máy chủ (server/src/social.ts) và trình duyệt (web/src/presence.ts).
 
-export type PresenceScene = 'village' | 'highway' | 'rest_stop' | 'sight' | 'market' | 'admin';
-export const PRESENCE_SCENES: PresenceScene[] = ['village', 'highway', 'rest_stop', 'sight', 'market', 'admin'];
+export type PresenceScene = 'village' | 'highway' | 'rest_stop' | 'sight' | 'market' | 'admin' | 'sea';
+export const PRESENCE_SCENES: PresenceScene[] = ['village', 'highway', 'rest_stop', 'sight', 'market', 'admin', 'sea'];
 /** Một người không gửi nhịp quá lâu thì coi như đã rời cảnh. */
 export const PRESENCE_TTL_MS = 10_000;
 /** Số người tối đa trả về cho một cảnh (gần nhất trước). */
