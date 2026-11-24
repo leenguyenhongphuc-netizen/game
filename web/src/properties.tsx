@@ -10,6 +10,8 @@ import { fmtDuration, useAction } from './ui.ts';
 import { DealCard, LotLookup, short } from './admin/landDeals.tsx';
 import type { DealView } from './admin/landDeals.tsx';
 import { openAdminCenter } from './admin/open.ts';
+import { BUILDING_FEATURE, LAND_USE_FEATURE, canUse } from '../../shared/roles.ts';
+import type { Role } from '../../shared/rules.ts';
 
 type Kind = 'cua_hang' | 'sieu_thi' | 'xuong';
 const isShop = (k: Kind) => k === 'sieu_thi' || k === 'cua_hang';
@@ -21,7 +23,7 @@ interface KindView {
   kind: Kind; name: string; emoji: string; note: string; buildHours: number; minLevel: number; lots: number; use: string;
   cost?: { land: number; build: number; permit: number; total: number; lots: number; lotPrice: number; registration: number }; blocked: string | null; ownedHere: boolean; max: number;
 }
-interface PropertiesData { mine: PropertyView[]; kinds: KindView[]; province: string | null; inProvince: PropertyView[]; consignFee: number; branchSlots: number }
+interface PropertiesData { mine: PropertyView[]; kinds: KindView[]; province: string | null; inProvince: PropertyView[]; consignFee: number; branchSlots: number; role?: Role | null }
 interface ShelfView { id: number; specialtyId: string; quality: Quality; processed: boolean; kg: number; soldKg: number; price: number; refPrice: number; name: string; sellerName: string; mine: boolean }
 interface Stockable { specialtyId: string; quality: Quality; kg: number; processed: boolean; name: string; refPrice: number }
 interface DetailData { property: PropertyView; mine: boolean; consignFee: number; shelves?: ShelfView[]; stockable?: Stockable[]; kgPerHour?: number; priceRange?: { minRatio: number; maxRatio: number } }
@@ -114,7 +116,7 @@ export function ProvinceShops({ province, refresh }: { province: string; refresh
   useEffect(() => { void load(); }, [load]);
   const act = useAction(() => { void load(); refresh?.(); });
   if (!data) return null;
-  const shopKinds = data.kinds.filter((k) => isShop(k.kind));
+  const shopKinds = data.kinds.filter((k) => isShop(k.kind) && canUse(data.role, BUILDING_FEATURE[k.kind]));
   return (
     <div className="province-shops">
       <h3>Cửa hàng, siêu thị của người chơi ở {province}</h3>
@@ -142,11 +144,12 @@ export function PropertiesPanel({ refresh }: { refresh?: () => void }) {
   useEffect(() => { void load(); }, [load]);
   const act = useAction(() => { void load(); refresh?.(); });
   if (!data) return <p className="hint">Đang tải tài sản…</p>;
+  const kinds = data.kinds.filter((k) => canUse(data.role, BUILDING_FEATURE[k.kind]));
   return (
     <div className="properties">
-      <p className="muted">Mỗi tỉnh có quỹ đất hữu hạn theo quy hoạch thật. Thương lái mua đất thương mại mở cửa hàng, siêu thị; chủ xưởng thuê đất khu công nghiệp dựng xưởng chi nhánh; nhà nông mua đất nông nghiệp ở mục Cánh đồng. Thành phố đắt, đông khách; tỉnh xa rẻ, gần vùng nguyên liệu.</p>
+      <p className="muted">{ROLE_LAND_INTRO[data.role ?? 'nong_dan']}</p>
       <h3>Tài sản của bạn ({data.mine.length})</h3>
-      {data.mine.length === 0 && <p className="hint">Bạn chưa có công trình nào.</p>}
+      {data.mine.length === 0 && <p className="hint">{kinds.length ? 'Bạn chưa có công trình nào.' : 'Vai của bạn không dựng công trình; tài sản là các thửa đất trong sổ địa chính bên dưới.'}</p>}
       {data.mine.map((p) => (
         <div className="row" key={p.id}>
           <button type="button" className="row-line row-toggle" aria-expanded={open === p.id} onClick={() => setOpen(open === p.id ? null : p.id)}>
@@ -160,9 +163,11 @@ export function PropertiesPanel({ refresh }: { refresh?: () => void }) {
       <h3>Sổ địa chính</h3>
       <label className="land-prov">Xem quỹ đất và mở công trình ở <select value={province} onChange={(e) => setProvince(e.target.value)}>{PROVINCES.map((p) => <option key={p}>{p}</option>)}</select></label>
       <LandRegistry province={province} onChanged={() => { void load(); refresh?.(); }} />
-      <h3>Mở công trình ở {province}</h3>
-      {act.error && <p className="error" role="alert">{act.error}</p>}
-      {data.kinds.map((k) => <BuyKind key={k.kind} k={k} province={province} busy={act.busy} onBuy={() => act.run(() => api('POST', '/api/properties/buy', { province, kind: k.kind }))} />)}
+      {kinds.length > 0 && <>
+        <h3>Mở công trình ở {province}</h3>
+        {act.error && <p className="error" role="alert">{act.error}</p>}
+        {kinds.map((k) => <BuyKind key={k.kind} k={k} province={province} busy={act.busy} onBuy={() => act.run(() => api('POST', '/api/properties/buy', { province, kind: k.kind }))} />)}
+      </>}
     </div>
   );
 }
@@ -179,7 +184,21 @@ interface LotView {
   parcelCode: string | null; serial: string | null; sheet: number | null; parcel: number | null; inDeal: boolean;
   mine: boolean; propertyId: number | null; fieldId: number | null; listingPrice: number | null; statePrice: number; used: boolean;
 }
-interface LandData { province: string | null; summary: UseRow[] | null; mine: LotView[]; listings: LotView[]; deals: DealView[]; resale: { min: number; max: number } }
+interface LandData { province: string | null; summary: UseRow[] | null; mine: LotView[]; listings: LotView[]; deals: DealView[]; resale: { min: number; max: number }; role?: Role | null }
+
+/** Mỗi vai thấy loại đất nào và dùng làm gì (shared/roles.ts quyết định vai nào thấy loại đất nào). */
+const ROLE_LAND_INTRO: Record<Role, string> = {
+  nong_dan: 'Nhà vườn sở hữu đất nông nghiệp: mỗi thửa là một khối ruộng 100 ô ở cánh đồng sau xóm. Mỗi thửa có sổ đỏ riêng, bán lại được cho nhà vườn khác qua Trung tâm hành chính công.',
+  xuong: 'Chủ xưởng thuê đất khu công nghiệp để dựng xưởng chi nhánh, và có thể mua đất thương mại mở cửa hàng bán thành phẩm. Mỗi thửa có sổ đỏ riêng, chuyển nhượng qua Trung tâm hành chính công.',
+  thuong_lai: 'Thương lái mua đất thương mại – dịch vụ để mở cửa hàng đặc sản, siêu thị. Mỗi thửa có sổ đỏ riêng, chuyển nhượng qua Trung tâm hành chính công.',
+};
+/** Một câu: loại đất này dùng làm gì, nhận xong làm gì tiếp. */
+const LAND_USE_HOWTO: Record<LandUse, string> = {
+  nong_nghiep: 'Đất trồng trọt: mỗi thửa 2.500 m² là một khối ruộng 100 ô. Mua hoặc thuê ở Kho → Cánh đồng, rồi gieo, chăm bằng máy, thu hoạch vào kho.',
+  thuong_mai: 'Đất mặt tiền: 1 thửa dựng cửa hàng đặc sản, 4 thửa dựng siêu thị. Nhận đất → xin giấy phép xây dựng ở Quầy 4 → bấm Mở công trình bên dưới.',
+  cong_nghiep: 'Đất trong khu công nghiệp: 1 thửa dựng xưởng chi nhánh thêm 4 chỗ đặt máy. Nhận đất → xin giấy phép xây dựng ở Quầy 4 → mở công trình.',
+  o: 'Đất ở để dựng nhà thứ hai, homestay — sẽ mở bán ở bản sau.',
+};
 
 /** Giấy chứng nhận thu nhỏ: số phát hành, mã thửa (tờ bản đồ, số thửa), loại đất, diện tích. */
 function CertBadge({ l }: { l: LotView }) {
@@ -206,12 +225,13 @@ export function LandRegistry({ province, onChanged }: { province: string; onChan
   const act = useAction(() => { void load(); onChanged?.(); });
   if (!d?.summary) return <p className="hint">Đang mở sổ địa chính…</p>;
   const mineHere = d.mine.filter((l) => l.province === province), others = d.mine.filter((l) => l.province !== province);
-  const forSale = d.listings.filter((l) => !l.mine);
+  const forSale = d.listings.filter((l) => !l.mine && canUse(d.role, LAND_USE_FEATURE[l.use]));
+  const rows = d.summary.filter((r) => canUse(d.role, LAND_USE_FEATURE[r.use]));
   const live = d.deals.filter((x) => x.status !== 'hoan_tat' && x.status !== 'da_huy'), past = d.deals.filter((x) => x.status === 'hoan_tat' || x.status === 'da_huy');
   return (
     <div className="land">
       <div className="land-grid" aria-label={`Quỹ đất ${province}`}>
-        {d.summary.map((r) => (
+        {rows.map((r) => (
           <div className={`land-card${r.open ? '' : ' closed'}`} key={r.use}>
             <div className="land-head"><span aria-hidden="true">{r.emoji}</span><strong>{r.short}</strong><span className="land-left">{r.open ? `còn ${r.left.toLocaleString('vi-VN')}/${r.released.toLocaleString('vi-VN')} thửa` : 'chưa mở bán'}</span></div>
             <div className="land-bar" aria-hidden="true"><i style={{ width: `${Math.round((r.left / Math.max(1, r.released)) * 100)}%` }} /></div>
@@ -221,8 +241,9 @@ export function LandRegistry({ province, onChanged }: { province: string; onChan
               <div><dt>Đất còn lại</dt><dd>{short(r.leftValue)}</dd></div>
               <div><dt>Quy hoạch</dt><dd>{r.realHa.toLocaleString('vi-VN')} ha</dd></div>
             </dl>
-            {r.use === 'nong_nghiep' ? <small className="muted">Mua ở Kho → Cánh đồng (mỗi thửa là một khối ruộng 100 ô).</small>
-              : !r.open ? <small className="muted">{r.note}</small>
+            <small className="land-howto">{LAND_USE_HOWTO[r.use]}</small>
+            {r.use === 'nong_nghiep' ? null
+              : !r.open ? null
               : r.blocked ? <small className="error">{r.blocked}</small>
               : <button className="primary land-buy" disabled={act.busy || r.left < 1} onClick={() => act.run(() => api('POST', '/api/land/buy', { province, use: r.use, count: 1 }))}>
                   Nhận giao 1 thửa<small>{short(r.cost.total)}, gồm trước bạ {short(r.cost.registration)}</small>

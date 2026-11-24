@@ -11,6 +11,7 @@ import { blobTex } from '../scene/tex.ts';
 import { gradient } from '../drive/RideKit.ts';
 import { V, ball, box, cyl, flag, glow, grp, lampPost, potPlant, tree } from '../sight/SightKit.ts';
 import { COUNTERS } from '../../../shared/admin.ts';
+import { CAMERA_FEEL } from '../cameraFeel.ts';
 import type { CounterId } from '../../../shared/admin.ts';
 
 export type Spot = CounterId | 'kiosk';
@@ -29,7 +30,8 @@ export const SPOTS: Record<Spot, THREE.Vector3> = {
 const CHAIRS: Aabb[] = [[-11.4, -4.2, -1.6, 2.6], [1.6, -4.2, 11.4, 2.6]];
 const START = V(0, 0, 28);
 /** Bồn hoa cột cờ giữa sân: đi vòng hai bên. */
-const PLANTER: Aabb = [-2.3, 18.7, 2.3, 23.3];
+const FLAG_AT = V(-14, 0, 24);
+const PLANTER: Aabb = [FLAG_AT.x - 2.3, FLAG_AT.z - 2.3, FLAG_AT.x + 2.3, FLAG_AT.z + 2.3];
 
 function seeded(seed: number) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 
@@ -73,12 +75,17 @@ export class AdminScene {
   private staff: { body: ReturnType<typeof makeFarmer>; ph: number }[] = [];
   private tap: { x: number; y: number; t: number } | null = null; private ray = new THREE.Raycaster(); private ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private rnd = seeded(7);
+  /** Góc máy quay quanh nhân vật (0 = đứng phía cổng nhìn vào toà nhà), kéo để xoay; cần điều khiển đi bộ. */
+  private camYaw = 0; private camYawV = 0; private stick: { id: number; ox: number; oy: number; x: number; y: number } | null = null;
+  private look: { id: number; x: number; on: boolean } | null = null; private stickEl: HTMLDivElement; private knobEl: HTMLDivElement;
 
   constructor(private host: HTMLElement, private province: string, private cb: AdminCallbacks) {
     this.renderer = new THREE.WebGLRenderer(rendererParams(host));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.quality = new Quality(this.renderer, { name: 'hành chính' }); debugScene(this.scene);
     host.appendChild(this.renderer.domElement); this.renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;touch-action:none';
+    this.stickEl = document.createElement('div'); this.stickEl.className = 'admin-stick'; this.knobEl = document.createElement('div'); this.knobEl.className = 'admin-knob';
+    this.stickEl.appendChild(this.knobEl); host.appendChild(this.stickEl);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.3, 400);
     this.scene.background = gradient(0x9fd3f2, 0xe9f4fb); this.scene.fog = new THREE.Fog(0xe4eff6, 60, 150);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x9a8f80, 1.15));
@@ -94,10 +101,10 @@ export class AdminScene {
     this.link = new PresenceLink(() => this.disposed ? null : { scene: 'admin', key: province, x: Math.round(this.pos.x * 100) / 100, z: Math.round(this.pos.z * 100) / 100, yaw: Math.round(this.yaw * 100) / 100, speed: this.path.length ? 4 : 0, walk: true },
       (list, at) => this.others.set(list, at));
 
-    host.addEventListener('pointerdown', this.onDown); host.addEventListener('pointerup', this.onUp);
+    host.addEventListener('pointerdown', this.onDown); host.addEventListener('pointermove', this.onMove); host.addEventListener('pointerup', this.onUp); host.addEventListener('pointercancel', this.onUp);
     window.addEventListener('keydown', this.onKey); window.addEventListener('keyup', this.onKey);
     window.addEventListener('resize', this.resize); this.resize();
-    this.camPos.copy(this.pos).add(V(0, 14, 13)); this.camLook.copy(this.pos);
+    this.camPos.copy(this.pos).add(V(0, 6.2, 12)); this.camLook.copy(this.pos).add(V(0, 2.6, -3.5));
     (window as unknown as { __admin?: AdminScene }).__admin = this;
     this.raf = requestAnimationFrame(this.loop);
   }
@@ -227,10 +234,12 @@ export class AdminScene {
   private buildPlaza() {
     const g = new THREE.Group(), r = this.rnd;
     // cột cờ giữa sân, bồn hoa tròn
-    const f = flag(11); f.position.set(0, 0, 21); g.add(f);
-    g.add(cyl(0xd9d2c4, 0, 0.25, 21, 2.2, 0.5), cyl(0x5a9a4a, 0, 0.52, 21, 2.0, 0.08));
-    for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; g.add(ball([0xe85aa0, 0xffd23f, 0xff7a45][i % 3], Math.cos(a) * 1.6, 0.68, 21 + Math.sin(a) * 1.6, 0.22)); }
-    this.blockers.push([-2.3, 18.7, 2.3, 23.3]);
+    // cột cờ đặt lệch về bên trái sân (không chắn biển tên và lối vào khi nhìn từ cổng)
+    const fx = FLAG_AT.x, fz = FLAG_AT.z;
+    const f = flag(11); f.position.set(fx, 0, fz); g.add(f);
+    g.add(cyl(0xd9d2c4, fx, 0.25, fz, 2.2, 0.5), cyl(0x5a9a4a, fx, 0.52, fz, 2.0, 0.08));
+    for (let i = 0; i < 14; i++) { const a = (i / 14) * Math.PI * 2; g.add(ball([0xe85aa0, 0xffd23f, 0xff7a45][i % 3], fx + Math.cos(a) * 1.6, 0.68, fz + Math.sin(a) * 1.6, 0.22)); }
+    this.blockers.push(PLANTER);
     // hàng cây hai bên, đèn sân, ghế đá
     for (let z = 12; z <= 31; z += 4.6) for (const x of [-21, 21]) { const t = tree(r, 1.25); t.position.set(x, 0, z); g.add(t); }
     for (const x of [-9, 9]) for (const z of [14, 28]) { g.add(lampPost(x, 0, z, 4.2)); }
@@ -295,7 +304,7 @@ export class AdminScene {
       const [ax, az, bx, bz] = PLANTER;
       let hit = false; for (let k = 0; k <= 20 && !hit; k++) { const x = a.x + (b.x - a.x) * k / 20, z = a.z + (b.z - a.z) * k / 20; hit = x > ax - 0.6 && x < bx + 0.6 && z > az - 0.6 && z < bz + 0.6; }
       if (!hit) return [b];
-      const side = (a.x + b.x) / 2 >= 0 ? bx + 1.4 : ax - 1.4;
+      const side = (a.x + b.x) / 2 >= (ax + bx) / 2 ? bx + 1.4 : ax - 1.4;
       const south = a.z > (az + bz) / 2; // a ở phía cổng (z lớn)
       return [V(side, 0, south ? bz + 0.8 : az - 0.8), V(side, 0, south ? az - 0.8 : bz + 0.8), b];
     };
@@ -306,10 +315,38 @@ export class AdminScene {
     this.path = pts;
   }
   goToSpot(s: Spot) { this.walkTo(SPOTS[s]); }
-  private onDown = (e: PointerEvent) => { this.tap = { x: e.clientX, y: e.clientY, t: performance.now() }; };
+  // Chạm nửa trái phía dưới = cần điều khiển đi bộ (gốc đặt tại chỗ chạm); chỗ khác: kéo ngang để xoay máy quay,
+  // chạm nhanh xuống sàn = tự đi tới đó.
+  private onDown = (e: PointerEvent) => {
+    const r = this.host.getBoundingClientRect(), lx = e.clientX - r.left, ly = e.clientY - r.top;
+    this.tap = { x: e.clientX, y: e.clientY, t: performance.now() };
+    if (!this.stick && lx < r.width * 0.5 && ly > r.height * 0.42) {
+      this.stick = { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: e.clientX, y: e.clientY }; this.path = [];
+      this.stickEl.style.left = `${lx}px`; this.stickEl.style.top = `${ly}px`; this.stickEl.classList.add('on'); this.knobEl.style.transform = 'translate(-50%,-50%)';
+    } else if (!this.look) this.look = { id: e.pointerId, x: e.clientX, on: false };
+    try { this.host.setPointerCapture(e.pointerId); } catch { /* bỏ qua */ }
+  };
+  private onMove = (e: PointerEvent) => {
+    const st = this.stick;
+    if (st && st.id === e.pointerId) {
+      st.x = e.clientX; st.y = e.clientY;
+      let dx = st.x - st.ox, dy = st.y - st.oy; const d = Math.hypot(dx, dy), m = CAMERA_FEEL.stickFullPx;
+      if (d > m) { dx *= m / d; dy *= m / d; }
+      this.knobEl.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      return;
+    }
+    const lk = this.look;
+    if (lk && lk.id === e.pointerId) {
+      const dx = e.clientX - lk.x;
+      if (!lk.on) { if (Math.abs(dx) < CAMERA_FEEL.deadzonePx) return; lk.on = true; lk.x = e.clientX; return; }
+      lk.x = e.clientX; const a = -dx * CAMERA_FEEL.yawPerPx; this.camYaw += a; this.camYawV = a * 60;
+    }
+  };
   private onUp = (e: PointerEvent) => {
+    if (this.stick?.id === e.pointerId) { this.stick = null; this.stickEl.classList.remove('on'); }
+    const wasLook = this.look?.id === e.pointerId ? this.look : null; if (wasLook) this.look = null;
     const t = this.tap; this.tap = null;
-    if (!t || Math.hypot(e.clientX - t.x, e.clientY - t.y) > 12 || performance.now() - t.t > 600) return;
+    if (e.type !== 'pointerup' || !t || wasLook?.on || Math.hypot(e.clientX - t.x, e.clientY - t.y) > 12 || performance.now() - t.t > 600) return;
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), this.camera);
     const hit = new THREE.Vector3();
@@ -338,16 +375,24 @@ export class AdminScene {
     const dt = stepDt(this.last ? (now - this.last) / 1000 : 0.016); this.last = now; this.time += dt;
     // di chuyển: phím hoặc theo lộ trình
     const SPEED = 4.2; let mx = 0, mz = 0;
+    let sx = 0, sy = 0, sp = 1;
     if (this.keys.size) {
-      if (this.keys.has('w') || this.keys.has('arrowup')) mz -= 1; if (this.keys.has('s') || this.keys.has('arrowdown')) mz += 1;
-      if (this.keys.has('a') || this.keys.has('arrowleft')) mx -= 1; if (this.keys.has('d') || this.keys.has('arrowright')) mx += 1;
+      if (this.keys.has('w') || this.keys.has('arrowup')) sy -= 1; if (this.keys.has('s') || this.keys.has('arrowdown')) sy += 1;
+      if (this.keys.has('a') || this.keys.has('arrowleft')) sx -= 1; if (this.keys.has('d') || this.keys.has('arrowright')) sx += 1;
+    } else if (this.stick) {
+      const dx = this.stick.x - this.stick.ox, dy = this.stick.y - this.stick.oy, d = Math.hypot(dx, dy);
+      if (d > CAMERA_FEEL.stickDeadPx) { const k = Math.min(1, (d - CAMERA_FEEL.stickDeadPx) / (CAMERA_FEEL.stickFullPx - CAMERA_FEEL.stickDeadPx)); sp = Math.pow(k, CAMERA_FEEL.stickCurve); sx = dx / d; sy = dy / d; }
+    }
+    if (sx || sy) { // hướng theo máy quay: đẩy lên = đi xa khỏi máy quay
+      const c = Math.cos(this.camYaw), s2 = Math.sin(this.camYaw);
+      mx = (sx * c + sy * s2) * sp; mz = (-sx * s2 + sy * c) * sp;
     } else if (this.path.length) {
       const goal = this.path[0], dx = goal.x - this.pos.x, dz = goal.z - this.pos.z, d = Math.hypot(dx, dz);
       if (d < 0.25) this.path.shift(); else { mx = dx / d; mz = dz / d; }
     }
     const moving = mx !== 0 || mz !== 0;
     if (moving) {
-      const l = Math.hypot(mx, mz), step = Math.min(SPEED * dt, this.path.length ? Math.hypot(this.path[0].x - this.pos.x, this.path[0].z - this.pos.z) : 99);
+      const l = Math.hypot(mx, mz), step = Math.min(SPEED * dt * Math.min(1, l), this.path.length ? Math.hypot(this.path[0].x - this.pos.x, this.path[0].z - this.pos.z) : 99);
       const before = this.pos.clone(); this.pos.x += (mx / l) * step; this.pos.z += (mz / l) * step; this.collide(this.pos);
       if (this.path.length && before.distanceTo(this.pos) < step * 0.2) this.path.shift(); // bị chặn: bỏ điểm này
       const want = Math.atan2(mx, mz), d = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw)); this.yaw += d * Math.min(1, dt * 12);
@@ -362,11 +407,24 @@ export class AdminScene {
     // trong sảnh: ẩn tường trước, tầng trên để nhìn thấy quầy; máy quay cao hơn
     const inside = this.pos.z < HALL.z1 + 0.6;
     this.cutaway.visible = !inside;
-    const cx = Math.max(-11, Math.min(11, this.pos.x));
-    const want = inside ? V(cx, 15, this.pos.z + 11.5) : V(cx * 0.8, 13.5, this.pos.z + 14.5);
-    const look = inside ? V(cx, 0, this.pos.z - 2.5) : V(cx * 0.85, 1.5, this.pos.z - 4);
-    const k = 1 - Math.exp(-dt * 4); this.camPos.lerp(want, k); this.camLook.lerp(look, k);
+    // máy quay xoay quanh nhân vật theo camYaw (kéo để xoay, có quán tính); trong sảnh chỉ cho xoay về phía tường trước đã ẩn
+    if (!this.look?.on && Math.abs(this.camYawV) > 1e-3) { this.camYaw += this.camYawV * dt; this.camYawV *= Math.exp(-dt / CAMERA_FEEL.inertiaTau); }
+    if (inside) { const lim = 1.05; this.camYaw = Math.max(-lim, Math.min(lim, this.camYaw)); }
+    const dist = inside ? 10.5 : 12, h = inside ? 9.5 : 6.2;
+    const want = V(this.pos.x + Math.sin(this.camYaw) * dist, h, this.pos.z + Math.cos(this.camYaw) * dist);
+    // không để máy quay chui vào toà nhà khi ở ngoài: tường trước là mặt z = HALL.z1
+    if (!inside && want.z < HALL.z1 + 1.2 && want.x > HALL.x0 - 1 && want.x < HALL.x1 + 1) want.z = HALL.z1 + 1.2;
+    if (inside) { want.x = Math.max(HALL.x0 + 1, Math.min(HALL.x1 - 1, want.x)); }
+    want.x = Math.max(-40, Math.min(40, want.x)); want.z = Math.max(HALL.z0 + 1, Math.min(50, want.z));
+    // ngoài sân nhìn hơi về phía trước nhân vật và cao hơn để thấy cả biển tên toà nhà
+    const ahead = inside ? 0 : 3.5, look = V(this.pos.x - Math.sin(this.camYaw) * ahead, inside ? 1.4 : 2.6, this.pos.z - Math.cos(this.camYaw) * ahead);
+    const k = 1 - Math.exp(-dt * 6); this.camPos.lerp(want, k); this.camLook.lerp(look, 1 - Math.exp(-dt * 10));
     this.camera.position.copy(this.camPos); this.camera.lookAt(this.camLook);
+    // nhãn tên người khác chỉ hiện khi ở gần (không chồng lên biển tên toà nhà); bong bóng chat vẫn hiện
+    for (const root of this.others.group.children) {
+      const nearMe = Math.hypot(root.position.x - this.pos.x, root.position.z - this.pos.z) < 8;
+      for (const ch of root.children) if ((ch as THREE.Sprite).isSprite && ch !== root.userData.saySp) ch.visible = nearMe;
+    }
     // đứng trước quầy nào
     let near: Spot | null = null;
     for (const [id, p] of Object.entries(SPOTS) as [Spot, THREE.Vector3][]) if (Math.hypot(p.x - this.pos.x, p.z - this.pos.z) < 1.5) near = id;
@@ -374,10 +432,10 @@ export class AdminScene {
     this.renderer.render(this.scene, this.camera);
   };
   private resize = () => { const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1; this.quality.resize(w, h); this.camera.aspect = w / h; this.camera.fov = w < h ? 62 : 48; this.camera.updateProjectionMatrix(); };
-  state() { return { x: Math.round(this.pos.x * 10) / 10, z: Math.round(this.pos.z * 10) / 10, near: this.near, walking: this.path.length > 0, others: this.others.list() }; }
+  state() { return { x: Math.round(this.pos.x * 10) / 10, z: Math.round(this.pos.z * 10) / 10, near: this.near, walking: this.path.length > 0, camYaw: Math.round(this.camYaw * 100) / 100, others: this.others.list() }; }
   dispose() {
     this.disposed = true; cancelAnimationFrame(this.raf); this.quality.dispose(); this.link.stop(); this.others.dispose();
-    this.host.removeEventListener('pointerdown', this.onDown); this.host.removeEventListener('pointerup', this.onUp);
+    this.host.removeEventListener('pointerdown', this.onDown); this.host.removeEventListener('pointermove', this.onMove); this.host.removeEventListener('pointerup', this.onUp); this.host.removeEventListener('pointercancel', this.onUp); this.stickEl.remove();
     window.removeEventListener('keydown', this.onKey); window.removeEventListener('keyup', this.onKey); window.removeEventListener('resize', this.resize);
     this.scene.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.userData.own) { m.geometry.dispose(); const mm = m.material as THREE.MeshBasicMaterial; mm.map?.dispose(); mm.dispose(); } });
     this.board?.tex.dispose();

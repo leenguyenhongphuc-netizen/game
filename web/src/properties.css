@@ -28,3 +28,5 @@
 .land-use { flex: 1 1 100%; color: rgba(60, 40, 20, 0.7); }
 .land-lot > .lookup { flex: 1 1 100%; }
 .land-law ol { margin: 4px 0; padding-left: 1.3em; }
+
+.land-howto { display: block; margin: 4px 0 6px; color: #5a4a33; line-height: 1.35; }

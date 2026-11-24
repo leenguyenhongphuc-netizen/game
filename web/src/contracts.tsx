@@ -6,6 +6,7 @@ import type { Quality } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import type { Me } from './api.ts';
 import { fmtDuration, useAction } from './ui.ts';
+import { canUse } from '../../shared/roles.ts';
 
 interface ContractView {
   id: string; companyId: string; specialtyId: string; processed: boolean; minGrade: Quality; kg: number; price: number; expiresAt: number;
@@ -83,14 +84,14 @@ export function ContractsPanel({ me, refresh }: { me: Me; refresh: () => void })
                           setKgOf({ ...kgOf, [c.id]: 0 });
                         })}>Giao hàng<small>≈ {fmtMoney(want * c.price)}</small></button>
                       </div>
-                    ) : <small className="hint">Kho chưa có {c.name} đạt loại yêu cầu — thu mua sỉ, thu hoạch hoặc chế biến rồi quay lại.</small>)}
+                    ) : <small className="hint">Kho chưa có {c.name} đạt loại yêu cầu — {me.user.role === 'nong_dan' ? 'trồng, thu hoạch' : me.user.role === 'xuong' ? 'chế biến' : 'thu mua sỉ'} rồi quay lại.</small>)}
                     {(board[c.id]?.length ?? 0) > 0 && (
                       <ol className="contract-board">{board[c.id]!.slice(0, 5).map((r) => <li key={r.userId} className={r.me ? 'me' : ''}>{r.name}: {r.kg.toLocaleString('vi-VN')} kg</li>)}</ol>
                     )}
                   </div>
                 );
               })}
-              {co.shop.length > 0 && (
+              {co.shop.length > 0 && canUse(me.user.role, 'mua_may') && (
                 <>
                   <h4>Máy nhập khẩu công ty bán lại</h4>
                   {co.shop.map((m) => <div className="row-line" key={m.kind}><span className="emoji" aria-hidden="true">{m.emoji}</span><div className="grow">{m.name}</div><span className="price">{fmtMoney(m.price)}</span></div>)}

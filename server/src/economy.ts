@@ -5,6 +5,7 @@ import type { Db, Q } from './db.ts';
 import { CROPS, REGIONS, SPECIALTIES, recipeOf } from '../../shared/catalog.ts';
 import { EXPORT_MARKETS, EXPORT_MODES, MACHINES, SUPER_MAX_RATIO, SUPER_MIN_RATIO, haversineKm, levelOf } from '../../shared/rules.ts';
 import type { ExportMarket, ExportMode, MachineKind, Quality, Role } from '../../shared/rules.ts';
+import { canUse } from '../../shared/roles.ts';
 import {
   BRANCH_MACHINE_SLOTS, COMPANIES, CONTRACT_SHIP_PER_KG_KM, PROPERTY_FARMER_LEVEL, PROPERTY_KINDS, SHOP_CONSIGN_FEE,
   company as findCompany, isProvince, contractDaysOpen, contractsOfDay, econDay, exportBundleQuote, propertyCost, provinceTraffic, shopKgPerHour,
@@ -163,10 +164,11 @@ export function registerEconomy(app: FastifyInstance, d: EconomyDeps) {
   });
   app.get('/api/companies', async (req) => {
     const userId = await d.requireUser(req);
+    const role = ((await db.query('select role from users where id = $1', [userId])).rows[0]?.role ?? null) as Role | null;
     const open = openContracts();
     const del = await deliveredOf(db, open.map((c) => c.id), userId);
     return {
-      companies: COMPANIES.map((c) => ({ ...companyOut(c), contracts: open.filter((x) => x.companyId === c.id).map((x) => contractOut(x, del.total.get(x.id) ?? 0, del.mine.get(x.id) ?? 0)) })),
+      companies: COMPANIES.map((c) => { const co = companyOut(c); return { ...co, shop: canUse(role, 'mua_may') ? co.shop : [], contracts: open.filter((x) => x.companyId === c.id).map((x) => contractOut(x, del.total.get(x.id) ?? 0, del.mine.get(x.id) ?? 0)) }; }),
       shipPerKgKm: CONTRACT_SHIP_PER_KG_KM, now: Date.now(),
     };
   });

@@ -4,6 +4,8 @@ import type { JSX } from 'react';
 import { REGIONS } from '../../shared/catalog.ts';
 import { fmtMoney } from '../../shared/rules.ts';
 import type { LicenseClass, VehicleSpec } from '../../shared/vehicles.ts';
+import { isBigTruck } from '../../shared/vehicles.ts';
+import { canUse } from '../../shared/roles.ts';
 import { api } from './api.ts';
 import type { Me } from './api.ts';
 import { useAction } from './ui.ts';
@@ -210,7 +212,7 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
   if (!data) return <div className="garage"><p className="hint">{loadError ?? 'Đang mở bãi xe…'}</p></div>;
   const byKind = Object.fromEntries(data.catalog.map((c) => [c.kind, c])) as Record<string, CatalogRow>;
   const active = data.owned.find((o) => o.active) ?? null, cur = active ? byKind[active.kind] : null;
-  const list = data.catalog.filter((c) => (filter === 'tat_ca' ? true : filter === 'xe_may' ? c.group === 'xe_may' : filter === 'dien' ? c.power === 'dien' : filter === 'lanh' ? !!c.cold : c.power !== 'dien' && !c.cold && c.group !== 'xe_may'));
+  const list = data.catalog.filter((c) => !isBigTruck(c) || canUse(me.user.role, 'xe_tai_lon')).filter((c) => (filter === 'tat_ca' ? true : filter === 'xe_may' ? c.group === 'xe_may' : filter === 'dien' ? c.power === 'dien' : filter === 'lanh' ? !!c.cold : c.power !== 'dien' && !c.cold && c.group !== 'xe_may'));
   const cmp = (v: CatalogRow) => {
     if (!cur || cur.kind === v.kind) return null;
     const dc = v.cargoKg - cur.cargoKg, dk = perKm(v) - perKm(cur);

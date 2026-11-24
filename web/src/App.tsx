@@ -392,6 +392,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   // Đồng hồ đếm ngược 1 giây chỉ chạy khi đang ở màn vườn/bảng. Trong cảnh toàn màn hình (tham quan, lái xe, hoạt cảnh)
   // vẽ lại cả App mỗi giây làm khung hình hụt đều đặn mỗi giây (giật lặp lại) mà không ai nhìn thấy đồng hồ.
   const fullScene = !!(sightWalk || trip || ride || heli || importRide || exportRide || sightTrip || adminAt);
+  const [chatDock, setChatDock] = useState<HTMLSpanElement | null>(null);
   useEffect(() => { if (fullScene) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [fullScene]);
   const [acted, setActed] = useState<{ sp: Specialty; stepIndex: number; kg?: number; at: number } | null>(null);
   useEffect(() => { if (!acted) return; const t = setTimeout(() => setActed(null), 2500); return () => clearTimeout(t); }, [acted]);
@@ -564,6 +565,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
           <button className="plot-switch" aria-expanded={hudPop === 'plots'} onClick={() => setHudPop(hudPop === 'plots' ? null : 'plots')}>📍 <span>{center ? REGIONS[center.plot.regionId].name : 'Thửa'}</span> ▾</button>
         )}
         {!atHome && <button className="hud-ico" aria-label="Về nhà" title="Về nhà" onClick={goHome}><Icon name="nha" size={22} /></button>}
+        <span className="chat-dock" ref={setChatDock} />
       </div>
       {hudPop === 'quest' && <div className="hud-pop" role="status"><p><span aria-hidden="true">{quest[0]}</span> {quest[1]}</p></div>}
       {hudPop === 'wx' && (
@@ -720,7 +722,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
       {desk && <ExportDeskDialog onClose={() => setDesk(false)} onContracts={() => { setDesk(false); setKhoTab('hopdong'); setTab('kho'); }} onExport={() => { setDesk(false); setKhoTab('xuat'); setTab('kho'); }} />}
       {me?.user.role === 'nong_dan' && !tour && <FieldHud getWorld={() => worldRef.current} />}
       {adminAt && <AdminCenter province={adminAt.province} counter={adminAt.counter} onClose={() => setAdminAt(null)} onChanged={reload} onCoop={() => { setAdminAt(null); setXomTab('htx'); setTab('ban'); }} onLicense={() => { setAdminAt(null); setShopTab('baixe'); setTab('trangtri'); }} />}
-      <ChatLayer me={{ id: me.user.id, level: me.user.level, cash: me.user.cash }} onFriendsChanged={() => void loadSocial()} />
+      <ChatLayer me={{ id: me.user.id, level: me.user.level, cash: me.user.cash }} onFriendsChanged={() => void loadSocial()} dock={fullScene ? null : chatDock} hidden={!fullScene && tab !== 'vuon'} />
       {heli && <HeliTour tour={heli} onDone={() => setHeli(null)} />}
       {importRide && <ImportRide order={importRide} onDone={() => { setImportRide(null); setKhoTab('xuong'); setTab('kho'); }} />}
       {cert !== null && <LandCertificate plotId={cert} onClose={() => setCert(null)} />}

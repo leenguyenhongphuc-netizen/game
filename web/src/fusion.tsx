@@ -6,6 +6,7 @@ import { api } from './api.ts';
 import type { Me } from './api.ts';
 import { useAction } from './ui.ts';
 import './progress.css';
+import { FUSION_FEATURE, canUse } from '../../shared/roles.ts';
 
 type Kind = 'giong' | 'san_pham' | 'may';
 interface Recipe {
@@ -107,7 +108,8 @@ function RecipeCard({ r, cash, busy, onRun }: { r: Recipe; cash: number; busy: b
 export function FusionPanel({ me, refresh }: { me: Me; refresh: () => void }) {
   const [data, setData] = useState<FusionData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Kind>(me.user.role === 'xuong' ? 'san_pham' : 'giong');
+  const tabs = TABS.filter((t) => canUse(me.user.role, FUSION_FEATURE[t.kind]));
+  const [tab, setTab] = useState<Kind>(tabs[0]?.kind ?? 'giong');
   const [stage, setStage] = useState<{ phase: 'shake' | 'ok' | 'fail'; recipe: Recipe; out?: FusionOut; error?: string } | null>(null);
   const load = useCallback(() => api<FusionData>('GET', '/api/fusion').then((d) => { setData(d); setLoadError(null); }).catch((e) => setLoadError(e instanceof Error ? e.message : 'Không tải được.')), []);
   useEffect(() => { void load(); }, [load]);
@@ -132,7 +134,7 @@ export function FusionPanel({ me, refresh }: { me: Me; refresh: () => void }) {
     <div className="fusion" data-tab={tab}>
       <p className="muted">Gộp nguyên liệu để tạo ra thứ đặc biệt. Tỉ lệ thành công ghi rõ ở từng công thức; hỏng thì vẫn được giữ lại một phần.</p>
       <div className="tabs" role="tablist">
-        {TABS.map((t) => <button type="button" role="tab" key={t.kind} aria-selected={tab === t.kind} onClick={() => setTab(t.kind)}><span aria-hidden="true">{t.icon} </span>{t.label}</button>)}
+        {tabs.length > 1 && tabs.map((t) => <button type="button" role="tab" key={t.kind} aria-selected={tab === t.kind} onClick={() => setTab(t.kind)}><span aria-hidden="true">{t.icon} </span>{t.label}</button>)}
       </div>
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {list.map((r) => <RecipeCard key={r.id} r={r} cash={Math.max(data.cash, me.user.cash)} busy={!!stage || act.busy} onRun={(inputs, boost) => void run(r, inputs, boost)} />)}

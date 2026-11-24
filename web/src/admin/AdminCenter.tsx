@@ -35,6 +35,7 @@ export function AdminCenter({ province, counter, onClose, onLicense, onCoop, onC
   const [near, setNear] = useState<Spot | null>(null);
   const [data, setData] = useState<CenterData | null>(null);
   const [panel, setPanel] = useState<CounterId | 'kiosk' | null>(null);
+  const [menu, setMenu] = useState(false);
   const [ring, setRing] = useState<Ticket | null>(null);
   const [now, setNow] = useState(Date.now());
   const rung = useRef(new Set<string>());
@@ -68,10 +69,22 @@ export function AdminCenter({ province, counter, onClose, onLicense, onCoop, onC
         <button className="ghost admin-back" onClick={onClose} aria-label="Rời trung tâm">←</button>
         <div className="admin-title"><strong>Trung tâm hành chính công</strong><small>{province} · 👥 {Math.max(1, data?.here ?? 1)} người đang ở đây</small></div>
       </div>
-      <div className="admin-chips" aria-label="Đi tới quầy">
-        <button className="chip" aria-label="Đi tới máy lấy số" title="Máy lấy số" onClick={() => go('kiosk')}>🎫</button>
-        {COUNTERS.map((c) => <button key={c.id} className="chip" aria-label={`Đi tới Quầy ${c.no} · ${c.name}`} title={`Quầy ${c.no} · ${c.name}`} onClick={() => go(c.id)}>{c.emoji}<small>{c.no}</small></button>)}
+      <div className="admin-chips">
+        <button className="chip admin-chip" onClick={() => go('kiosk')}>🎫 Lấy số</button>
+        <button className="chip admin-chip" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>🏛️ Các quầy ▾</button>
       </div>
+      {menu && (
+        <div className="admin-menu" role="menu" aria-label="Đi tới quầy">
+          {COUNTERS.map((c) => {
+            const t = ticketFor(c.id);
+            return (
+              <button key={c.id} role="menuitem" className="admin-menu-item" onClick={() => { setMenu(false); go(c.id); }}>
+                <span aria-hidden="true">{c.emoji}</span><span><b>Quầy {c.no} · {c.short}</b><small>{t ? `Số của bạn ${t.no}` : c.name}</small></span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {ring && (
         <div className="admin-ring" role="status">
           <span>🔔 Mời số <b>{ring.no}</b> đến <b>Quầy {counterOf(ring.counter)?.no}</b></span>
@@ -85,7 +98,7 @@ export function AdminCenter({ province, counter, onClose, onLicense, onCoop, onC
           ? <button className="primary admin-act" onClick={() => setPanel(nearCounter.id)}>{nearCounter.emoji} Làm việc tại Quầy {nearCounter.no} · {nearCounter.short}</button>
           : tk ? <p className="admin-wait">Số của bạn <b>{tk.no}</b> · chờ gọi khoảng {Math.max(1, Math.ceil((tk.callAt - now) / 1000))} giây</p>
           : <div className="admin-wait"><span>Quầy {nearCounter.no} làm việc theo số thứ tự.</span><button className="ghost" onClick={() => go('kiosk')}>🎫 Tới máy lấy số</button></div>)}
-        {!near && <p className="admin-hint">Chạm xuống sàn để đi. {data && data.deals > 0 ? `Bạn có ${data.deals} hồ sơ đất đang làm ở tỉnh này.` : 'Lấy số ở máy cạnh cửa rồi tới quầy khi được gọi.'}</p>}
+        {!near && <p className="admin-hint">Kéo ở góc trái dưới để đi, kéo chỗ khác để xoay, hoặc chạm xuống sàn để tự đi tới. {data && data.deals > 0 ? `Bạn có ${data.deals} hồ sơ đất đang làm ở tỉnh này.` : 'Lấy số ở máy cạnh cửa rồi tới quầy khi được gọi.'}</p>}
       </div>
       {panel === 'kiosk' && <Kiosk province={province} tickets={data?.tickets ?? []} onClose={() => setPanel(null)} onTaken={() => void load()} />}
       {panel && panel !== 'kiosk' && (

@@ -262,3 +262,7 @@ export function personalLegFare(rideId: string | null | undefined, km: number): 
   if (!r || km > r.maxKm) return null;
   return Math.round((r.perKm * km) / 1000) * 1000;
 }
+
+/** Xe tải nặng (8–15 tấn) và đầu kéo chỉ dành cho vai buôn sỉ, chở hàng đường dài (shared/roles.ts). Nhà vườn vẫn có xe tới 3,5 tấn,
+ *  kể cả thùng lạnh, để chở nông sản nhà mình đi bán. */
+export function isBigTruck(v: Pick<VehicleSpec, 'group'>): boolean { return v.group === 'tai_nang' || v.group === 'dau_keo'; }

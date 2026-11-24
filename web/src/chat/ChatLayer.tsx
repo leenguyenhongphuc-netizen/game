@@ -3,6 +3,7 @@
 // bảng "Quanh đây / Tin nhắn / Loa / Đã chặn" và thẻ người chơi (kết bạn, nhắn tin, chặn, báo cáo).
 // Dữ liệu chat chung về theo nhịp hiện diện (web/src/presence.ts → chatStore); hộp thư và loa theo nhịp /api/chat/poll.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import './chat.css';
 import { api, ApiError } from '../api.ts';
 import { chatStore } from '../presence.ts';
@@ -76,41 +77,67 @@ function Ticker({ queue, setQueue }: { queue: Broadcast[]; setQueue: (f: (q: Bro
   );
 }
 
-/** Ô chat chung của cảnh đang đứng + vài dòng gần nhất. */
-function QuickChat({ store, onOpenLog }: { store: typeof chatStore; onOpenLog: () => void }) {
-  const [open, setOpen] = useState(false), [text, setText] = useState(''), [err, setErr] = useState(''), [busy, setBusy] = useState(false);
-  const recent = store.log.filter((m) => Date.now() - m.at < 25_000).slice(-3);
+/** Chiều cao phần màn hình bị bàn phím ảo che (iOS Safari/PWA không co layout viewport, chỉ co visualViewport). */
+function useKeyboardInset(active: boolean): number {
+  const [inset, setInset] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport; if (!active || !vv) { setInset(0); return; }
+    let raf = 0;
+    const upd = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setInset(Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)))); };
+    upd(); vv.addEventListener('resize', upd); vv.addEventListener('scroll', upd);
+    return () => { cancelAnimationFrame(raf); vv.removeEventListener('resize', upd); vv.removeEventListener('scroll', upd); };
+  }, [active]);
+  return inset;
+}
+
+/** Thanh gõ chat chung: dính ngay trên bàn phím, kèm 3 dòng gần nhất và lối vào bảng trò chuyện. */
+function ComposeBar({ store, badge, onClose, onPanel }: { store: typeof chatStore; badge: number; onClose: () => void; onPanel: () => void }) {
+  const [text, setText] = useState(''), [err, setErr] = useState(''), [busy, setBusy] = useState(false);
+  const kb = useKeyboardInset(true);
+  const input = useRef<HTMLInputElement | null>(null);
+  useEffect(() => { const t = setTimeout(() => input.current?.focus({ preventScroll: true }), 30); return () => clearTimeout(t); }, []);
+  // iOS cuộn cả trang khi ô gõ nhận focus → kéo trang về 0 để thanh không trôi lệch
+  useEffect(() => { const f = () => { if (window.scrollY) window.scrollTo(0, 0); }; window.addEventListener('scroll', f); return () => window.removeEventListener('scroll', f); }, []);
+  const recent = store.log.slice(-3);
   const send = async () => {
     const t = text.trim(); if (!t || !store.where || busy) return;
     setBusy(true); setErr('');
     try {
       const r = await api<{ id: number; text: string; at: number }>('POST', '/api/chat/public', { ...store.where, text: t });
       store.push({ id: r.id, userId: -1, name: 'Bạn', text: r.text, at: r.at }); setText('');
+      input.current?.focus({ preventScroll: true });
     } catch (e) { setErr(errText(e)); } finally { setBusy(false); }
   };
-  if (!store.where) return null;
   return (
-    <div className="chat-quick">
-      {recent.length > 0 && (
-        <button className="chat-recent" onClick={onOpenLog} aria-label="Xem nhật ký chat chung">
-          {recent.map((m) => <span key={m.id} className="chat-line"><b>{m.name}</b> {m.text}</span>)}
-        </button>
-      )}
-      {open ? (
-        <form className="chat-quick-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
-          <span className="chat-in">
-            <input autoFocus value={text} maxLength={PUBLIC_MAX} onChange={(e) => setText(e.target.value)} placeholder={`Nói với mọi người ở ${SCENE_NAMES[store.where.scene] ?? 'đây'}…`} aria-label="Tin nhắn chat chung" enterKeyHint="send" />
-            <span className="chat-count">{len(text)}/{PUBLIC_MAX}</span>
-          </span>
-          <button type="submit" disabled={busy || !text.trim()}>Gửi</button>
-          <button type="button" className="ghost" onClick={() => { setOpen(false); setErr(''); }} aria-label="Đóng ô chat">✕</button>
-          {err && <p className="chat-err" role="alert">{err}</p>}
-        </form>
-      ) : (
-        <button className="chat-say-btn" onClick={() => setOpen(true)} aria-label="Nói với mọi người quanh đây">💬 Nói</button>
-      )}
+    <div className="chat-compose" style={{ bottom: kb }} role="dialog" aria-label="Chat chung">
+      <div className="chat-compose-log">
+        {recent.length === 0 ? <p className="chat-line muted">Chưa ai nói gì ở {SCENE_NAMES[store.where?.scene ?? ''] ?? 'đây'}. Chào mọi người nhé!</p>
+          : recent.map((m) => <p key={m.id} className="chat-line"><b>{m.name}</b> {m.text}</p>)}
+      </div>
+      <form className="chat-compose-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+        <button type="button" className="ghost chat-ico" onClick={onPanel} aria-label="Mở bảng trò chuyện">☰{badge > 0 && <span className="chat-dot">{badge > 9 ? '9+' : badge}</span>}</button>
+        <span className="chat-in">
+          <input ref={input} value={text} maxLength={PUBLIC_MAX} onChange={(e) => setText(e.target.value)} placeholder={`Nói ở ${SCENE_NAMES[store.where?.scene ?? ''] ?? 'đây'}…`} aria-label="Tin nhắn chat chung" enterKeyHint="send" autoComplete="off" />
+          <span className="chat-count">{len(text)}/{PUBLIC_MAX}</span>
+        </span>
+        <button type="submit" disabled={busy || !text.trim()}>Gửi</button>
+        <button type="button" className="ghost chat-ico" onClick={onClose} aria-label="Đóng ô chat">✕</button>
+      </form>
+      {err && <p className="chat-err" role="alert">{err}</p>}
     </div>
   );
+}
+
+/** Dòng chat mới nhất hiện thoáng 6 giây cạnh nút 💬 (bong bóng trên đầu chỉ thấy khi người nói trong khung hình). */
+function LatestLine({ store, onOpen }: { store: typeof chatStore; onOpen: () => void }) {
+  const last = store.log.at(-1);
+  const [shownId, setShownId] = useState<number | null>(null);
+  useEffect(() => {
+    if (!last || Date.now() - last.at > 8000) return;
+    setShownId(last.id); const t = setTimeout(() => setShownId(null), 6000); return () => clearTimeout(t);
+  }, [last?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!last || shownId !== last.id) return null;
+  return <button className="chat-recent" onClick={onOpen} aria-label="Mở chat chung"><span className="chat-line"><b>{last.name}</b> {last.text}</span></button>;
 }
 
 function PlayerCardView({ userId, me, onClose, onMessage, onChanged }: { userId: number; me: ChatMe; onClose: () => void; onMessage: (u: { userId: number; name: string }) => void; onChanged: () => void }) {
@@ -231,8 +258,9 @@ function ChatPanel({ me, store, poll, refresh, initial, onClose, onCard, peer, s
   useEffect(() => { if (tab === 'chan') void api<{ blocks: { userId: number; name: string }[] }>('GET', '/api/chat/blocks').then((r) => setBlocks(r.blocks)).catch(() => {}); }, [tab]);
   const near = store.near.filter((o) => !o.bot), bots = store.near.filter((o) => o.bot).length;
   const canLoa = (me.level ?? 1) >= BROADCAST_MIN_LEVEL;
+  const kb = useKeyboardInset(true);
   return (
-    <div className="chat-panel" role="dialog" aria-label="Trò chuyện">
+    <div className="chat-panel" role="dialog" aria-label="Trò chuyện" style={kb > 40 ? { bottom: kb + 6 } : undefined}>
       <div className="chat-panel-head">
         <h3>Trò chuyện</h3>
         <button className="ghost chat-x" onClick={onClose} aria-label="Đóng trò chuyện">✕</button>
@@ -257,7 +285,7 @@ function ChatPanel({ me, store, poll, refresh, initial, onClose, onCard, peer, s
                     </div>
                     <h4>Chat chung</h4>
                     <div className="chat-log">
-                      {store.log.length === 0 && <p className="muted">Chưa ai nói gì. Bấm 💬 Nói để chào mọi người.</p>}
+                      {store.log.length === 0 && <p className="muted">Chưa ai nói gì. Bấm 💬 để chào mọi người.</p>}
                       {store.log.map((m: PublicMsg) => (
                         <p key={m.id} className="chat-line"><small>{hhmm(m.at)}</small> {m.userId > 0 && m.userId !== me.id ? <button className="chat-name" onClick={() => onCard(m.userId)}>{m.name}</button> : <b>{m.name}</b>} {m.text}</p>
                       ))}
@@ -306,25 +334,33 @@ function ChatPanel({ me, store, poll, refresh, initial, onClose, onCard, peer, s
   );
 }
 
-/** Gắn một lần trong App khi đã đăng nhập. */
-export function ChatLayer({ me, onFriendsChanged }: { me: ChatMe; onFriendsChanged?: () => void }) {
+/** Gắn một lần trong App khi đã đăng nhập.
+ *  dock: chỗ trong HUD (thanh thứ hai) để đặt nút 💬 khi đang ở màn làng — App truyền null khi đang ở cảnh toàn màn hình,
+ *  lúc đó nút nổi nhỏ ở mép trái giữa màn. hidden: đang mở bảng (Kho, Hồ sơ…) — ẩn hẳn để không đè nội dung. */
+export function ChatLayer({ me, onFriendsChanged, dock, hidden }: { me: ChatMe; onFriendsChanged?: () => void; dock?: HTMLElement | null; hidden?: boolean }) {
   const store = useChatStore();
-  const [open, setOpen] = useState<Tab | null>(null), [card, setCard] = useState<number | null>(null), [peer, setPeer] = useState<{ userId: number; name: string } | null>(null);
+  const [open, setOpen] = useState<Tab | null>(null), [compose, setCompose] = useState(false), [card, setCard] = useState<number | null>(null), [peer, setPeer] = useState<{ userId: number; name: string } | null>(null);
   const { poll, refresh, queue, setQueue } = usePoll(open !== null);
   useEffect(() => {
     const f = (e: Event) => { const id = Number((e as CustomEvent).detail); if (id > 0) setCard(id); };
     window.addEventListener(PLAYER_CARD_EVENT, f); return () => window.removeEventListener(PLAYER_CARD_EVENT, f);
   }, []);
+  useEffect(() => { if (!store.where) setCompose(false); }, [store.where]);
+  useEffect(() => { if (hidden) setCompose(false); }, [hidden]);
   const badge = poll.unread + poll.requests;
+  const tap = () => { if (badge > 0 || !store.where) setOpen(badge > 0 ? 'tin' : 'quanh'); else setCompose(true); };
+  const fab = (
+    <button className={`chat-fab${dock ? ' docked' : ''}`} onClick={tap} aria-label={`Trò chuyện${badge ? `, ${badge} việc mới` : ''}`}>
+      <span aria-hidden>💬</span>{badge > 0 && <span className="chat-dot">{badge > 9 ? '9+' : badge}</span>}
+    </button>
+  );
+  const idle = open === null && !compose && !hidden;
   return (
     <>
       <Ticker queue={queue} setQueue={setQueue} />
-      {open === null && <QuickChat store={store} onOpenLog={() => setOpen('quanh')} />}
-      {open === null && (
-        <button className="chat-fab" onClick={() => setOpen(badge > 0 ? 'tin' : 'quanh')} aria-label={`Trò chuyện${badge ? `, ${badge} việc mới` : ''}`}>
-          💬{badge > 0 && <span className="chat-dot">{badge > 9 ? '9+' : badge}</span>}
-        </button>
-      )}
+      {idle && (dock ? createPortal(fab, dock) : <div className="chat-float">{fab}<LatestLine store={store} onOpen={() => setCompose(true)} /></div>)}
+      {idle && dock && <div className="chat-latest-docked"><LatestLine store={store} onOpen={() => setCompose(true)} /></div>}
+      {compose && open === null && !hidden && <ComposeBar store={store} badge={badge} onClose={() => setCompose(false)} onPanel={() => { setCompose(false); setOpen(badge > 0 ? 'tin' : 'quanh'); }} />}
       {open !== null && <ChatPanel me={me} store={store} poll={poll} refresh={() => void refresh()} initial={open} onClose={() => { setOpen(null); setPeer(null); }} onCard={setCard} peer={peer} setPeer={setPeer} />}
       {card !== null && <PlayerCardView userId={card} me={me} onClose={() => setCard(null)} onChanged={() => { void refresh(); onFriendsChanged?.(); }}
         onMessage={(u) => { setCard(null); setPeer(u); setOpen('tin'); }} />}

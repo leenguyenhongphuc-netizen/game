@@ -13,7 +13,15 @@ export type Feature =
   | 'xuat_khau'         // gửi lô xuất khẩu (thương lái: tươi + thành phẩm; chủ xưởng: thành phẩm)
   | 'xuat_khau_tuoi'    // xuất khẩu nông sản tươi
   | 'hop_dong'          // nhận hợp đồng của công ty xuất nhập khẩu
-  | 'ky_gui_sieu_thi';  // ký gửi hàng lên kệ siêu thị
+  | 'ky_gui_sieu_thi'   // ký gửi hàng lên kệ siêu thị
+  | 'dat_nong_nghiep'   // nhận/mua lại đất nông nghiệp (khối ruộng)
+  | 'dat_thuong_mai'    // nhận/mua lại đất thương mại – dịch vụ
+  | 'dat_cong_nghiep'   // thuê/mua lại đất khu công nghiệp
+  | 'dat_o'             // đất ở (nhà thứ hai, homestay — chưa mở bán)
+  | 'cua_hang'          // mở cửa hàng đặc sản, siêu thị trên đất thương mại
+  | 'xuong_chi_nhanh'   // mở xưởng chi nhánh trên đất công nghiệp
+  | 'mua_may'           // mua máy chế biến (kể cả máy công ty xuất nhập khẩu bán lại)
+  | 'xe_tai_lon';       // xe tải nặng 8–15 tấn, đầu kéo
 
 export const FEATURE_INFO: Record<Feature, { name: string; roles: Role[]; why: string }> = {
   vuon_nha: { name: 'Trồng ở vườn nhà', roles: ['nong_dan', 'thuong_lai'],
@@ -33,7 +41,28 @@ export const FEATURE_INFO: Record<Feature, { name: string; roles: Role[]; why: s
     why: 'Doanh nghiệp ký hợp đồng liên kết bao tiêu với nông dân/HTX (NĐ 98/2018/NĐ-CP), với thương lái và xưởng. Nông dân chỉ nhận hợp đồng hàng tươi do mình trồng.' },
   ky_gui_sieu_thi: { name: 'Ký gửi lên kệ siêu thị', roles: ['thuong_lai', 'xuong'],
     why: 'Siêu thị nhận hàng từ nhà cung cấp có hoá đơn; nông dân bán qua chợ, thương lái, HTX.' },
+  dat_nong_nghiep: { name: 'Đất nông nghiệp', roles: ['nong_dan'],
+    why: 'Luật Đất đai 2024: đất trồng lúa chỉ chuyển nhượng cho người trực tiếp sản xuất nông nghiệp.' },
+  dat_thuong_mai: { name: 'Đất thương mại – dịch vụ', roles: ['thuong_lai', 'xuong'],
+    why: 'Dùng để dựng cửa hàng, siêu thị bán hàng: việc của thương lái (bán buôn, bán lẻ) và chủ xưởng (cửa hàng giới thiệu sản phẩm). Nhà vườn bán qua chợ, HTX, thương lái nên không cần.' },
+  dat_cong_nghiep: { name: 'Đất khu công nghiệp', roles: ['xuong'],
+    why: 'Đất trong khu công nghiệp cho doanh nghiệp sản xuất thuê lại để dựng nhà xưởng.' },
+  dat_o: { name: 'Đất ở', roles: ['nong_dan', 'xuong', 'thuong_lai'], why: 'Ai cũng được mua nhà ở (mở ở bản sau).' },
+  cua_hang: { name: 'Cửa hàng đặc sản, siêu thị', roles: ['thuong_lai', 'xuong'],
+    why: 'Bán lẻ là nghề của thương lái; chủ xưởng mở cửa hàng bán thành phẩm của mình.' },
+  xuong_chi_nhanh: { name: 'Xưởng chi nhánh', roles: ['xuong'], why: 'Chỉ chủ xưởng chế biến.' },
+  mua_may: { name: 'Mua máy chế biến', roles: ['xuong'], why: 'Máy chế biến chỉ dùng trong nhà xưởng.' },
+  xe_tai_lon: { name: 'Xe tải nặng, đầu kéo', roles: ['thuong_lai', 'xuong'],
+    why: 'Chở hàng sỉ đường dài là việc của thương lái và xưởng. Nhà vườn có xe tới 3,5 tấn (kể cả thùng lạnh) để chở nông sản nhà mình.' },
 };
+
+/** Loại đất → chức năng (để giao diện ẩn và máy chủ chặn cùng một bảng). */
+export const LAND_USE_FEATURE = { nong_nghiep: 'dat_nong_nghiep', thuong_mai: 'dat_thuong_mai', cong_nghiep: 'dat_cong_nghiep', o: 'dat_o' } as const satisfies Record<string, Feature>;
+/** Loại công trình → chức năng. */
+export const BUILDING_FEATURE = { cua_hang: 'cua_hang', sieu_thi: 'cua_hang', xuong: 'xuong_chi_nhanh' } as const satisfies Record<string, Feature>;
+/** Vai được dùng một loại đất / một loại công trình. */
+export const rolesOfLand = (use: keyof typeof LAND_USE_FEATURE): Role[] => FEATURE_INFO[LAND_USE_FEATURE[use]].roles;
+export const rolesOfBuilding = (kind: keyof typeof BUILDING_FEATURE): Role[] => FEATURE_INFO[BUILDING_FEATURE[kind]].roles;
 
 export function canUse(role: Role | null | undefined, f: Feature): boolean {
   return !!role && FEATURE_INFO[f].roles.includes(role);
@@ -64,6 +93,7 @@ export const ROUTE_FEATURES: Record<string, Feature> = {
   'POST /api/contracts/:id/deliver': 'hop_dong',
   'POST /api/supermarket/consign': 'ky_gui_sieu_thi',
 };
+// Đất và công trình chặn theo loại trong thân yêu cầu (shared/land.ts canBuyLand/canBuild đọc rolesOfLand/rolesOfBuilding).
 
 /** Loại công thức trong Lò lai tạo → chức năng. */
 export const FUSION_FEATURE: Record<'giong' | 'san_pham' | 'may', Feature> = { giong: 'lai_giong', san_pham: 'phoi_hop_qua', may: 'xuong' };

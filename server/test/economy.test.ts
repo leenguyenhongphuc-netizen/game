@@ -136,7 +136,9 @@ test('công ty xuất nhập khẩu: hợp đồng, giao từng phần, phí ch�
   const me = await signup('hd_giao', 'nong_dan');
   const list = (await call('GET', '/api/companies', undefined, me)).body;
   assert.equal(list.companies.length, COMPANIES.length);
-  assert.ok(list.companies.every((c: any) => c.contracts.length >= CONTRACTS_PER_COMPANY && c.shop.length > 0));
+  assert.ok(list.companies.every((c: any) => c.contracts.length >= CONTRACTS_PER_COMPANY && c.shop.length === 0), 'nhà vườn không thấy máy công ty bán lại');
+  const xw = await signup('hd_xuong_may', 'xuong');
+  assert.ok((await call('GET', '/api/companies', undefined, xw)).body.companies.every((c: any) => c.shop.length > 0), 'chủ xưởng thấy máy công ty bán lại');
   const c = list.companies.flatMap((x: any) => x.contracts).find((x: any) => !x.processed && x.minGrade === 'B') ?? list.companies.flatMap((x: any) => x.contracts).find((x: any) => !x.processed);
   assert.ok(c, 'có hợp đồng hàng tươi');
   await give('hd_giao', c.specialtyId, 'C', 100); await give('hd_giao', c.specialtyId, 'A', c.kg + 100);
@@ -208,4 +210,25 @@ test('siêu thị mọi tỉnh; mua đất mở siêu thị riêng, bày hàng, 
   await setLevel('khach_ky_gui', 20);
   assert.equal((await call('POST', '/api/properties/buy', { province: 'Cần Thơ', kind: 'xuong' }, guest)).status, 403);
   assert.ok(PROPERTY_KINDS.sieu_thi.roles.includes('thuong_lai'));
+});
+
+test('chức năng theo vai: nhà vườn không nhận đất thương mại/công nghiệp, không mở cửa hàng hay xưởng chi nhánh', async () => {
+  const f = await signup('vai_dat_nv', 'nong_dan');
+  await setLevel('vai_dat_nv', 30);
+  for (const use of ['thuong_mai', 'cong_nghiep']) {
+    const r = await call('POST', '/api/land/buy', { province: 'Đà Nẵng', use, count: 1 }, f);
+    assert.equal(r.status, 403, `nhà vườn bị chặn đất ${use}`);
+  }
+  for (const kind of ['cua_hang', 'sieu_thi', 'xuong']) {
+    const r = await call('POST', '/api/properties/buy', { province: 'Đà Nẵng', kind }, f);
+    assert.equal(r.status, 403, `nhà vườn bị chặn công trình ${kind}`);
+  }
+  const truck = await call('POST', '/api/vehicles/buy', { kind: 'tai_8t' }, f);
+  assert.deepEqual([truck.status, truck.body.error], [403, 'khong_dung_vai'], 'nhà vườn không mua xe tải nặng');
+  const co = (await call('GET', '/api/companies', undefined, f)).body;
+  assert.ok(co.companies.every((c: any) => c.shop.length === 0), 'nhà vườn không thấy máy công ty bán lại');
+  const t = await signup('vai_dat_tl', 'thuong_lai');
+  await setLevel('vai_dat_tl', 30);
+  assert.equal((await call('POST', '/api/land/buy', { province: 'Đà Nẵng', use: 'cong_nghiep', count: 1 }, t)).status, 403, 'thương lái không thuê đất khu công nghiệp');
+  assert.equal((await call('POST', '/api/land/buy', { province: 'Đà Nẵng', use: 'thuong_mai', count: 1 }, t)).status, 200, 'thương lái nhận đất thương mại');
 });

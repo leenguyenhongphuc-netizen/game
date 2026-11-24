@@ -695,7 +695,16 @@ Bảng duy nhất: `shared/roles.ts` (`canUse(role, feature)`). Giao diện ẩn
 | Xuất khẩu | — | ✓ chỉ thành phẩm | ✓ tươi + thành phẩm | nông dân bán qua thương lái/HTX/chợ; người xuất là doanh nghiệp thương mại và chế biến |
 | Hợp đồng công ty XNK | ✓ chỉ hàng tươi | ✓ | ✓ | liên kết sản xuất – tiêu thụ (NĐ 98/2018/NĐ-CP) |
 | Ký gửi kệ siêu thị | — | ✓ | ✓ | siêu thị nhận hàng của nhà cung cấp có hoá đơn |
+| Đất nông nghiệp (khối ruộng) | ✓ | — | — | Luật Đất đai 2024: đất trồng lúa chỉ chuyển cho người trực tiếp sản xuất (nhánh P7) |
+| Đất thương mại – dịch vụ; mở cửa hàng đặc sản, siêu thị | — | ✓ | ✓ | bán lẻ là nghề thương lái; chủ xưởng mở cửa hàng bán thành phẩm; nhà vườn bán qua chợ/HTX/thương lái (P7, bỏ ngoại lệ "nhà nông cấp 25") |
+| Đất khu công nghiệp; xưởng chi nhánh | — | ✓ | — | doanh nghiệp sản xuất thuê lại đất KCN (P7) |
+| Mua máy chế biến (kể cả máy công ty XNK bán lại) | — | ✓ | — | máy chỉ dùng trong nhà xưởng; `/api/companies` trả `shop: []` cho vai khác (P7) |
+| Xe tải nặng 8–15 tấn, đầu kéo | — | ✓ | ✓ | chở sỉ đường dài; nhà vườn có xe tới 3,5 tấn (kể cả thùng lạnh) chở nông sản nhà mình (P7) |
+| Lai giống / Hộp quà / Ghép máy trong Lò lai tạo | chỉ Lai giống | Hộp quà, Ghép máy | chỉ Hộp quà | thẻ trong Lò lai tạo lọc theo `FUSION_FEATURE` (P7) |
+| Đất ở | ✓ | ✓ | ✓ | chưa mở bán |
 | Chợ, đơn hàng, du lịch, mua sắm, trang trí, bạn bè, bằng lái, lái xe riêng | ✓ | ✓ | ✓ | chung |
+
+Kiểm bằng `node tools/ui-test/roles-audit.mjs` (3 vai, mọi bảng/thẻ, danh sách đen theo vai). Đất và công trình chặn theo loại trong thân yêu cầu: `shared/land.ts` `canBuyLand`/`canBuild` đọc vai từ `rolesOfLand`/`rolesOfBuilding` của `shared/roles.ts`.
 
 Không chặn (để người vừa đổi vai thu dọn): xem xưởng, nhận mẻ đang chạy, bán thành phẩm còn trong kho, rút hàng khỏi kệ siêu thị.
 Thay cho xuất khẩu, nhà vườn trong HTX đang hoạt động **bán qua HTX** ở giá tại vườn (85%) + 5% thay vì bán tháo 60%.

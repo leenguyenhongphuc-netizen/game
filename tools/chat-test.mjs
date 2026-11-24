@@ -53,8 +53,14 @@ for (const X of [B, C]) {
 }
 await A.page.waitForTimeout(6000);
 
+/** Mở bảng trò chuyện: nút 💬 mở thanh gõ khi đang ở cảnh có người (không có tin chưa đọc) → bấm ☰. */
+async function openPanel(X) {
+  if (!(await X.page.locator('.chat-compose').isVisible().catch(() => false))) { await X.page.locator('.chat-fab').click(); await X.page.waitForTimeout(300); }
+  if (await X.page.locator('.chat-compose').isVisible().catch(() => false)) await X.page.getByRole('button', { name: 'Mở bảng trò chuyện' }).click();
+  await X.page.locator('.chat-panel').waitFor({ timeout: 8000 });
+}
 // 1. chat chung: A nói, B thấy dòng gần nhất và bong bóng trên đầu A
-await A.page.getByRole('button', { name: 'Nói với mọi người quanh đây' }).click();
+await A.page.locator('.chat-fab').click();
 await A.page.getByLabel('Tin nhắn chat chung').fill('Chào cả xóm! Vườn mình mới thu sầu riêng nè 🍈');
 await shot(A, '1-a-go-chat');
 await A.page.getByRole('button', { name: 'Gửi', exact: true }).click();
@@ -66,14 +72,14 @@ check('bong bóng chat hiện trên đầu A trong cảnh của B', ok);
 await B.page.waitForTimeout(1500); await shot(B, '2-b-thay-bong-bong');
 // lọc
 await A.page.waitForTimeout(3200);
-await A.page.getByRole('button', { name: 'Nói với mọi người quanh đây' }).isVisible().then((v) => v && A.page.getByRole('button', { name: 'Nói với mọi người quanh đây' }).click());
+if (!(await A.page.getByLabel('Tin nhắn chat chung').isVisible())) await A.page.locator('.chat-fab').click();
 await A.page.getByLabel('Tin nhắn chat chung').fill('đm gọi 0912345678 nha');
 await A.page.getByRole('button', { name: 'Gửi', exact: true }).click();
 ok = await C.page.locator('.chat-recent').filter({ hasText: '*** gọi *** nha' }).waitFor({ timeout: 15000 }).then(() => true, () => false);
 check('tin có từ tục và số điện thoại bị che ***', ok);
 
 // 2. B mở Trò chuyện → Quanh đây → bấm C → thẻ → Kết bạn
-await B.page.locator('.chat-fab').click();
+await openPanel(B);
 await B.page.waitForTimeout(500); await shot(B, '3-b-quanh-day');
 await B.page.locator('.chat-near-item').filter({ hasText: C.display }).click();
 await B.page.locator('.chat-card').waitFor(); await shot(B, '4-b-the-nguoi-choi');
@@ -85,7 +91,7 @@ await B.page.getByRole('button', { name: 'Đóng trò chuyện' }).click();
 ok = await C.page.locator('.chat-fab .chat-dot').waitFor({ timeout: 20000 }).then(() => true, () => false);
 check('C thấy chấm đỏ lời mời trên nút 💬', ok);
 await shot(C, '5-c-cham-do');
-await C.page.locator('.chat-fab').click();
+await openPanel(C);
 await C.page.locator('.chat-req .chat-near-item').filter({ hasText: B.display }).click();
 await C.page.getByRole('button', { name: '✅ Chấp nhận kết bạn' }).click();
 ok = await C.page.getByRole('button', { name: '✉️ Nhắn tin' }).waitFor({ timeout: 8000 }).then(() => true, () => false);
@@ -96,7 +102,7 @@ await C.page.getByRole('button', { name: 'Gửi', exact: true }).click();
 await C.page.waitForTimeout(800); await shot(C, '6-c-nhan-rieng');
 ok = await B.page.locator('.chat-fab .chat-dot').waitFor({ timeout: 20000 }).then(() => true, () => false);
 check('B thấy chấm tin chưa đọc', ok);
-await B.page.locator('.chat-fab').click();
+await openPanel(B);
 await B.page.waitForTimeout(600); await shot(B, '7-b-hop-thu');
 await B.page.locator('.chat-thread').filter({ hasText: C.display }).click();
 ok = await B.page.locator('.chat-bub').filter({ hasText: 'Arabica Cầu Đất' }).waitFor({ timeout: 8000 }).then(() => true, () => false);
@@ -109,7 +115,7 @@ await B.page.getByRole('button', { name: 'Đóng trò chuyện' }).click();
 // 3. loa: A đủ cấp và tiền (đặt qua CSDL thử), phát; B, C thấy chạy chữ
 if (DB) execSync(`psql "${DB}" -qc "update users set xp = 100000, cash = cash + 20000000 where username = 'chat_a'"`);
 await A.page.reload(); await A.page.waitForFunction(() => window.__vuon, null, { timeout: 40000 });
-await A.page.locator('.chat-fab').click();
+await openPanel(A);
 await A.page.getByRole('tab', { name: 'Loa' }).click();
 await A.page.getByLabel('Nội dung loa').fill('Chợ phiên Cái Bè sáng mai 6 giờ, ghé vườn Lan mua sầu riêng nha cả nhà!');
 await shot(A, '9-a-mua-loa');
@@ -123,7 +129,7 @@ await A.page.waitForTimeout(500); await shot(A, '11-a-lich-su-loa');
 
 // 4. chặn: C chặn A → A không thấy... (C không thấy chat của A)
 await C.page.getByRole('button', { name: 'Đóng trò chuyện' }).click().catch(() => {});
-await C.page.locator('.chat-fab').click();
+await openPanel(C);
 await C.page.getByRole('tab', { name: 'Quanh đây' }).click();
 await C.page.locator('.chat-near-item').filter({ hasText: A.display }).click();
 await C.page.getByRole('button', { name: '⚑ Báo cáo' }).click();

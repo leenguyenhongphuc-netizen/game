@@ -71,3 +71,17 @@
 .ledger code { font-size: 0.78em; color: #5b6b7c; }
 .admin-ring button { width: auto; flex: 0 0 auto; }
 .admin-ring .primary { padding-inline: 18px; }
+
+/* nhánh P7: hai nút gọn thay hàng 7 biểu tượng; danh sách quầy có tên; cần điều khiển đi bộ */
+.admin-chips { flex-wrap: nowrap; gap: 6px; }
+.admin-chips .admin-chip { padding: 0 12px; font-weight: 700; font-size: 0.95rem; white-space: nowrap; }
+.admin-menu { position: absolute; z-index: 5; top: calc(max(8px, env(safe-area-inset-top)) + 104px); left: 8px; width: min(340px, calc(100% - 16px)); max-height: 60%;
+  overflow-y: auto; overscroll-behavior: contain; background: #fffbf0; border: 2px solid #e3cf9a; border-radius: 16px; box-shadow: 0 8px 20px #0004; padding: 6px; display: grid; gap: 4px; }
+.admin-menu-item { display: flex; align-items: center; gap: 10px; text-align: left; min-height: 48px; padding: 6px 10px; border-radius: 12px; background: #fff; border: 1px solid #eadfc4; }
+.admin-menu-item > span:first-child { font-size: 1.4rem; flex: none; }
+.admin-menu-item b { display: block; }
+.admin-menu-item small { display: block; color: #7a6547; overflow-wrap: anywhere; }
+.admin-stick { position: absolute; z-index: 3; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; background: rgba(255, 255, 255, 0.22);
+  border: 2px solid rgba(255, 255, 255, 0.7); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+.admin-stick.on { opacity: 1; }
+.admin-knob { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); box-shadow: 0 2px 6px #0003; transform: translate(-50%, -50%); }

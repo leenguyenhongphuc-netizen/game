@@ -16,6 +16,7 @@
 import { PROVINCES } from './catalog.ts';
 import { registrationFee, transferTax } from './realPrices.ts';
 import type { Role } from './rules.ts';
+import { rolesOfBuilding, rolesOfLand } from './roles.ts';
 
 export type LandUse = 'nong_nghiep' | 'thuong_mai' | 'cong_nghiep' | 'o';
 export interface LandUseInfo {
@@ -28,13 +29,13 @@ export interface LandUseInfo {
 }
 export const LAND_USES: Record<LandUse, LandUseInfo> = {
   nong_nghiep: { name: 'Đất nông nghiệp (trồng cây hằng năm, lâu năm)', short: 'Nông nghiệp', emoji: '🌾', code: 'NN', lotM2: 2_500, haPerLot: 200,
-    roles: ['nong_dan'], minLevel: 5, open: true, note: 'Một thửa = một khối cánh đồng 100 ô. Chỉ nhà nông được nhận chuyển nhượng đất trồng lúa (giữ đúng tinh thần luật đất đai).' },
+    roles: rolesOfLand('nong_nghiep'), minLevel: 5, open: true, note: 'Một thửa = một khối cánh đồng 100 ô. Chỉ nhà nông được nhận chuyển nhượng đất trồng lúa (giữ đúng tinh thần luật đất đai).' },
   thuong_mai: { name: 'Đất thương mại, dịch vụ', short: 'Thương mại', emoji: '🏪', code: 'TMD', lotM2: 100, haPerLot: 20,
-    roles: ['thuong_lai', 'xuong', 'nong_dan'], minLevel: 8, open: true, note: 'Dựng cửa hàng đặc sản (1 thửa) hoặc siêu thị (4 thửa liền).' },
+    roles: rolesOfLand('thuong_mai'), minLevel: 8, open: true, note: 'Dựng cửa hàng đặc sản (1 thửa) hoặc siêu thị (4 thửa liền).' },
   cong_nghiep: { name: 'Đất khu, cụm công nghiệp', short: 'Công nghiệp', emoji: '🏭', code: 'SKK', lotM2: 1_000, haPerLot: 50,
-    roles: ['xuong'], minLevel: 12, open: true, note: 'Dựng xưởng chi nhánh. Thuê lại trong khu công nghiệp nên chỉ chủ xưởng mua được.' },
+    roles: rolesOfLand('cong_nghiep'), minLevel: 12, open: true, note: 'Dựng xưởng chi nhánh. Thuê lại trong khu công nghiệp nên chỉ chủ xưởng mua được.' },
   o: { name: 'Đất ở', short: 'Đất ở', emoji: '🏠', code: 'ODT', lotM2: 100, haPerLot: 50,
-    roles: ['nong_dan', 'xuong', 'thuong_lai'], minLevel: 3, open: false, note: 'Nhà ở thứ hai, homestay: mở ở bản sau.' },
+    roles: rolesOfLand('o'), minLevel: 3, open: false, note: 'Nhà ở thứ hai, homestay: mở ở bản sau.' },
 };
 export const LAND_USE_ORDER: LandUse[] = ['nong_nghiep', 'thuong_mai', 'cong_nghiep', 'o'];
 
@@ -147,7 +148,7 @@ export function canBuyLand(use: LandUse, role: Role | null, level: number): stri
   const u = LAND_USES[use];
   if (!u.open) return `${u.short}: chưa mở bán.`;
   if (!role) return 'Hãy nhận vai trò trước.';
-  if (!u.roles.includes(role)) return use === 'nong_nghiep' ? 'Chỉ nhà nông được nhận đất nông nghiệp.' : use === 'cong_nghiep' ? 'Chỉ chủ xưởng thuê được đất khu công nghiệp.' : 'Vai này không mua được loại đất này.';
+  if (!u.roles.includes(role)) return use === 'nong_nghiep' ? 'Chỉ nhà nông được nhận đất nông nghiệp.' : use === 'cong_nghiep' ? 'Chỉ chủ xưởng thuê được đất khu công nghiệp.' : use === 'thuong_mai' ? 'Đất thương mại dành cho thương lái và chủ xưởng mở cửa hàng; nhà vườn bán qua chợ, HTX, thương lái.' : 'Vai này không mua được loại đất này.';
   if (level < u.minLevel) return `Cần đạt cấp ${u.minLevel}.`;
   return null;
 }
@@ -162,25 +163,25 @@ export interface BuildingInfo {
 /**
  * Vì sao chia như vậy (cân bằng vai):
  * - Cửa hàng đặc sản (1 thửa thương mại, cấp 8): thương lái có chỗ bán lẻ hàng mình chở về; chủ xưởng bán thành phẩm. Rẻ, hoàn vốn ~ như một khối cánh đồng.
- * - Siêu thị (4 thửa, cấp 20, nhà nông cấp 25): công trình lớn, vốn hàng tỉ ở thành phố; hoàn vốn ngang xưởng chi nhánh và cánh đồng lớn.
+ * - Siêu thị (4 thửa, cấp 20; thương lái và chủ xưởng): công trình lớn, vốn hàng tỉ ở thành phố; hoàn vốn ngang xưởng chi nhánh và cánh đồng lớn.
  * - Xưởng chi nhánh (1 thửa khu công nghiệp, cấp 12, chỉ chủ xưởng): thêm 4 chỗ đặt máy ở tỉnh rẻ, gần vùng nguyên liệu.
  * Mỗi vai có một khoản đầu tư đất riêng: nhà nông → đất nông nghiệp; chủ xưởng → đất công nghiệp; thương lái → đất thương mại.
  */
 export const BUILDINGS: Record<BuildingKind, BuildingInfo> = {
   cua_hang: { name: 'Cửa hàng đặc sản', emoji: '🏪', use: 'thuong_mai', lots: 1, build: 120_000_000, permit: 5_000_000, buildHours: 3,
-    roles: ['thuong_lai', 'xuong', 'nong_dan'], minLevel: 8, farmerLevel: 12, max: 4, sales: 0.3, shelves: 4,
+    roles: rolesOfBuilding('cua_hang'), minLevel: 8, max: 4, sales: 0.3, shelves: 4,
     note: 'Kiốt mặt tiền 100 m²: bày 4 lô hàng, khách vãng lai và khách du lịch mua lẻ.' },
   sieu_thi: { name: 'Siêu thị đặc sản', emoji: '🏬', use: 'thuong_mai', lots: 4, build: 1_000_000_000, permit: 30_000_000, buildHours: 8,
-    roles: ['thuong_lai', 'xuong', 'nong_dan'], minLevel: 20, farmerLevel: 25, max: 2, sales: 1, shelves: 12,
+    roles: rolesOfBuilding('sieu_thi'), minLevel: 20, max: 2, sales: 1, shelves: 12,
     note: 'Mặt bằng 400 m²: bán hàng của bạn và nhận ký gửi của người chơi khác (thu phí).' },
   xuong: { name: 'Xưởng chi nhánh', emoji: '🏭', use: 'cong_nghiep', lots: 1, build: 900_000_000, permit: 20_000_000, buildHours: 6,
-    roles: ['xuong'], minLevel: 12, max: 2, sales: 0, shelves: 0,
+    roles: rolesOfBuilding('xuong'), minLevel: 12, max: 2, sales: 0, shelves: 0,
     note: 'Nhà xưởng 1.000 m² trong khu công nghiệp: thêm 4 chỗ đặt máy ở tỉnh khác.' },
 };
 export function canBuild(kind: BuildingKind, role: Role | null, level: number): string | null {
   const b = BUILDINGS[kind];
   if (!role) return 'Hãy nhận vai trò trước.';
-  if (!b.roles.includes(role)) return kind === 'xuong' ? 'Chỉ chủ xưởng mới mở xưởng chi nhánh.' : 'Vai này không mở được công trình này.';
+  if (!b.roles.includes(role)) return kind === 'xuong' ? 'Chỉ chủ xưởng mới mở xưởng chi nhánh.' : 'Cửa hàng, siêu thị là việc của thương lái và chủ xưởng.';
   const need = role === 'nong_dan' && b.farmerLevel ? b.farmerLevel : b.minLevel;
   if (level < need) return `Cần đạt cấp ${need} mới mở ${b.name.toLowerCase()}.`;
   return null;

@@ -1,4 +1,5 @@
 // Xe chở hàng (mua, bán, chọn xe), giấy phép lái xe, xe điện, trạm dừng nghỉ. Đăng ký từ app.ts qua registerVehicles.
+import { canUse, denyMessage } from '../../shared/roles.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Db, Q } from './db.ts';
 import { levelOf, roadKm } from '../../shared/rules.ts';
@@ -6,7 +7,7 @@ import { ITEMS, ITEM_BAG_MAX } from '../../shared/items.ts';
 import {
   EXAM, LICENSE_MONTH_MS, LICENSE_POINTS, LICENSE_RENEW_FEE, LICENSE_TERM_YEARS, LICENSE_YEAR_MS, needsYard, renewMode,
   CHARGE, DEFAULT_VEHICLE, DRIVE_RULES, ENERGY_PRICE, LICENSES, LICENSE_ORDER, POWER_NAMES, TOLL_GROUP_NAMES, VEHICLES, VEHICLE_MAX_OWNED, VEHICLE_RESALE,
-  licenseCovers, parkPrice, rangeKm, restStopItems, roadPrice, tripPlanFor, truckOf, unitOf,
+  isBigTruck, licenseCovers, parkPrice, rangeKm, restStopItems, roadPrice, tripPlanFor, truckOf, unitOf,
 } from '../../shared/vehicles.ts';
 import type { ExamPart, LicenseClass, TruckInfo, VehicleSpec, VehicleTripPlan } from '../../shared/vehicles.ts';
 import { MOTO_RENTALS, PHUOT_BY_ID, PHUOT_ROUTES, PHUOT_CLIMATE, PHUOT_RULES, RAINCOAT, phuotFuel, phuotMinSeconds, phuotSeconds, rainEnergy, weatherPlan } from '../../shared/moto.ts';
@@ -365,8 +366,9 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
     if (!Object.hasOwn(VEHICLES, kind)) throw bad('du_lieu_sai', 'Loại xe không tồn tại.');
     const spec = VEHICLES[kind];
     return db.tx(async (q) => {
-      const u = (await q.query('select cash, xp, vehicle_id, truck_region, home_region_id from users where id = $1 for update', [userId])).rows[0];
+      const u = (await q.query('select cash, xp, vehicle_id, truck_region, home_region_id, role from users where id = $1 for update', [userId])).rows[0];
       if (!u.home_region_id) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
+      if (isBigTruck(spec) && !canUse(u.role ?? null, 'xe_tai_lon')) throw bad('khong_dung_vai', denyMessage(u.role ?? null, 'xe_tai_lon'), 403);
       await truck(q, userId);
       if (levelOf(u.xp).level < spec.minLevel) throw bad('chua_du_cap', `Cần đạt cấp ${spec.minLevel} mới mua được ${spec.name}.`, 409);
       if (!licenseCovers(await licensesOf(q, userId), spec.license)) throw bad('thieu_bang_lai', `${spec.name} cần bằng lái ${LICENSES[spec.license].name} (${LICENSES[spec.license].covers}).`, 409);
