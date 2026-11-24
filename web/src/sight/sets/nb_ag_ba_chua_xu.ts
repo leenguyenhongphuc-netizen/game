@@ -13,8 +13,8 @@ export function baChuaXu(kit: Kit, _s: Sight): SightSet & Spots {
   const r = kit.r;
   land(kit, -300, -300, 300, 300, 0x6aa04c, 0, false);
   // núi Sam phía bắc
-  const sam = new THREE.Mesh(new THREE.CylinderGeometry(40, 150, 90, 32, 3), new THREE.MeshLambertMaterial({ color: 0x4f7a42 })); sam.position.set(0, 44.9, -170); kit.add(sam);
-  for (let i = 0; i < 50; i++) { const a = r() * 3.14 + 3.14, d = 50 + r() * 100; kit.add(ball([0x3f6a36, 0x5a8a48][i % 2], Math.cos(a) * d, 90 * (150 - d) / 110 - 2, -170 + Math.sin(a) * d * -1, 6 + r() * 6, 3, 6 + r() * 6)); }
+  const sam = new THREE.Mesh(new THREE.CylinderGeometry(40, 150, 90, 32, 3), new THREE.MeshLambertMaterial({ color: 0x4f7a42 })); sam.position.set(0, 44.9, -280); kit.add(sam);
+  for (let i = 0; i < 50; i++) { const a = r() * 3.14 + 3.14, d = 50 + r() * 100; kit.add(ball([0x3f6a36, 0x5a8a48][i % 2], Math.cos(a) * d, 90 * (150 - d) / 110 - 2, -280 + Math.sin(a) * d * -1, 6 + r() * 6, 3, 6 + r() * 6)); }
   // quảng trường và đường lớn
   kit.add(box(PAVE, 0, 0.04, 40, 90, 0.08, 50), box(0x5a5e63, 0, 0.02, -40, 300, 0.04, 12));
   // miếu Bà: ba lớp mái ngói xanh, cột đỏ, hoành phi vàng, đèn lồng đỏ
@@ -44,7 +44,7 @@ export function baChuaXu(kit: Kit, _s: Sight): SightSet & Spots {
       { id: 'quang_truong', at: V(0, 0, 56), look: V(0, 8, 6), cam: V(8, 5, 70) },
       { id: 'mieu', at: V(0, 0, 30), look: V(0, 6, 16), cam: V(10, 5, 38) },
       { id: 'lang_thoai_ngoc_hau', at: V(0, LY, -62), look: V(LX, LY + 3, LZ + 6), cam: V(8, LY + 5, -54) },
-      { id: 'chan_nui', at: V(26, LY, -70), look: V(0, 40, -170), cam: V(34, LY + 9, -52) },
+      { id: 'chan_nui', at: V(26, LY, -70), look: V(0, 40, -280), cam: V(28, LY + 3, -58) },
     ],
     sky: [0x78b8e8, 0xf2ecd8], fog: [0xe8e6d6, 140, 700],
     light: { ambient: 1.6, sun: 1.8, sunColor: 0xfff0d0, sunDir: [-0.4, 0.9, 0.6] },

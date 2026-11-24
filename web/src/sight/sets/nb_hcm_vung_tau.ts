@@ -6,7 +6,7 @@ import { Kit, V, ball, bench, box, cone, cyl, grp, label, person, stairs, strip,
 import type { SightSet } from '../SightKit.ts';
 import type { Spots } from './_extra.ts';
 import { casuarina } from './_extra.ts';
-import { land } from './nb__kit.ts';
+import { land, nearPath } from './nb__kit.ts';
 
 const STONE = 0xb8b0a2, STATUE = 0xf2efe8, HILL = [0x4f8a4a, 0x5f9a52, 0x3f7a40];
 const TOP = 22;
@@ -29,7 +29,7 @@ export function vungTau(kit: Kit, _s: Sight): SightSet & Spots {
     const a = path[i], b = path[i + 1];
     if (b.y - a.y > 0.4) kit.add(stairs(STONE, a, b, 3, Math.round((b.y - a.y) / 0.25)), strip(STONE, a, b, 3.4, 0.6, -0.25)); else kit.add(box(STONE, (a.x + b.x) / 2, Math.max(a.y, b.y) - 0.05, (a.z + b.z) / 2, 3.2, 0.12, a.distanceTo(b) + 3, Math.atan2(b.x - a.x, b.z - a.z)));
   }
-  for (let i = 0; i < 110; i++) { const a = r() * 6.28, d = 14 + r() * 54, y = yAt(d); const x = Math.cos(a) * d, z = -20 + Math.sin(a) * d; if (path.some((p) => Math.hypot(p.x - x, p.z - z) < 5)) continue; const t = r() < 0.5 ? tree(r, 1 + r() * 0.6, true) : casuarina(r, 6 + r() * 3); t.position.set(x, y, z); kit.add(t); }
+  for (let i = 0; i < 110; i++) { const a = r() * 6.28, d = 14 + r() * 54, y = yAt(d); const x = Math.cos(a) * d, z = -20 + Math.sin(a) * d; if (nearPath(path, x, z, 9)) continue; const t = r() < 0.5 ? tree(r, 1 + r() * 0.6, true) : casuarina(r, 6 + r() * 3); t.position.set(x, y, z); kit.add(t); }
   // cổng chân núi
   kit.add(box(STONE, -44, 2.2, 52, 1, 4.4, 1), box(STONE, -36, 2.2, 52, 1, 4.4, 1), box(0xe8e0d0, -40, 4.7, 52, 10, 0.8, 1.2), cone(0xc8bfae, -40, 5.6, 52, 1.2, 1.2));
   kit.live(label('Tượng Chúa Kitô Vua', -40, 8, 52, '#5a6a8a', 1));

@@ -26,9 +26,9 @@ export function muiCaMau(kit: Kit, _s: Sight): SightSet & Spots {
   kit.live(label('Cột mốc GPS 0001', MX, 8.4, MZ, '#2a4a7a', 0.9));
   // biểu tượng con tàu: mũi tàu bê tông trắng hướng ra biển, cột buồm cờ đỏ
   const ship = grp(0, 0, 92, 0);
-  const hull = new THREE.Mesh(new THREE.ConeGeometry(7, 22, 4, 1).rotateX(Math.PI / 2).rotateZ(Math.PI / 4), new THREE.MeshLambertMaterial({ color: CONC })); hull.scale.set(1, 0.5, 1); hull.position.set(0, 2.4, 0); ship.add(hull);
-  ship.add(box(CONC, 0, 2.6, -8, 10, 4, 6), box(0x2a6a9a, 0, 4.8, -6, 10.4, 0.3, 14));
-  const f = flag(14); f.position.set(0, 4.8, -6); ship.add(f);
+  ship.add(box(CONC, 0, 1.8, 0, 8, 3.6, 14), box(CONC, 0, 1.8, 7, 5.66, 3.6, 5.66, Math.PI / 4), box(0x2a6a9a, 0, 0.5, 0, 8.2, 0.6, 14.2), box(0x2a6a9a, 0, 0.5, 7, 5.8, 0.6, 5.8, Math.PI / 4));
+  ship.add(box(CONC, 0, 4.4, -3, 5, 2.4, 5), box(0x9fd0e8, 0, 4.6, -0.48, 4.4, 0.8, 0.06));
+  const f = flag(14); f.position.set(0, 5.6, -3); ship.add(f);
   kit.add(ship, box(0xd8d0c0, 0, 0.05, 84, 30, 0.1, 12));
   kit.live(label('Biểu tượng con tàu – Đất Mũi', 0, 20, 92, '#2a6a9a', 1.1));
   // tháp ngắm cảnh bê tông nhiều tầng
