@@ -8,6 +8,7 @@ import { REGIONS } from '../../../shared/catalog.ts';
 import type { Zone } from '../../../shared/catalog.ts';
 import { ROAD_LIMITS, speedFine } from '../../../shared/rules.ts';
 import { GEO, mat, mesh, rng } from '../scene/plants.ts';
+import { seaRouteFor } from '../../../shared/sea.ts';
 import { MORE, bird, cabin, cargoShip, chargerPosts, chargerStation, ferry, lighthouse, limitSprite, minSprite, playerVehicle, policeUnit, restStop, seaMaterial, skyDecor, wake } from './DriveExtras.ts';
 import type { VehGroup } from './DriveExtras.ts';
 import { VEHICLES } from '../../../shared/vehicles.ts';
@@ -49,6 +50,8 @@ export interface DriveOptions {
   onArrive?: (s: DriveSummary) => void;
   /** Bị CSGT dừng xe: hiện biên bản, người chơi bấm "Đã hiểu" thì gọi resume(). */
   onPolice?: (t: DriveTicket) => void;
+  /** Chặng biển chạy ở màn biển mở riêng (web/src/sea/SeaRide.tsx): cảnh này tạm dừng, xong thì gọi seaDone(). */
+  onSea?: (s: { routeId: string; toIsland: boolean }) => void;
   view?: View; cruise?: boolean; police?: boolean;
 }
 
@@ -679,7 +682,19 @@ export class DriveScene {
     for (const o of this.oncoming) o.obj.visible = false;
     for (const e of this.events) for (const o of e.objs) o.o.visible = false;
     if (!first) this.pause = 0.6;
+    // biển mở: giao chặng tàu cho màn riêng (lái tự do, tàu bè, bản đồ); cảnh này đứng chờ
+    if (boat && this.opts.onSea) { const r = seaRouteFor(this.opts.fromRegionId, this.opts.toRegionId); if (r) { this.seaWait = true; this.opts.onSea({ routeId: r.route.id, toIsland: r.toIsland }); } }
   }
+  private seaWait = false;
+  /** Màn biển mở xong: tính quãng biển, sang chặng kế tiếp hoặc tới nơi. */
+  seaDone() {
+    if (!this.seaWait) return; this.seaWait = false;
+    this.odo += this.seaKm; this.s = this.seaL; this.speed = 0;
+    if (this.legIdx < this.legs.length - 1) { this.legIdx++; this.applyLeg(); this.opts.onFlash?.('🚚 Cập bến, xe lên bờ chạy tiếp!'); }
+    else { this.arrived = true; this.opts.onArrive?.(this.summary()); }
+  }
+  /** Không dựng được màn biển mở (máy không có WebGL thứ hai…): chạy chặng biển kiểu cũ ngay trong cảnh này. */
+  seaFallback() { this.seaWait = false; }
 
   // ---------------------------------------------------------------- diễn biến
   private inAux() { return this.px > this.halfAt(this.s) + 0.3; }
@@ -701,6 +716,7 @@ export class DriveScene {
 
   private step(dt: number) {
     const boat = this.mode === 'boat', leg = this.legs[this.legIdx], tk = this.opts.truck;
+    if (this.seaWait) return;
     if (this.switching > 0) { this.switching -= dt; if (this.switching <= 0) { this.legIdx++; this.applyLeg(); } return; }
     this.elapsed += dt; this.legT += dt;
     const assist = this.legT > leg.seconds * 4;

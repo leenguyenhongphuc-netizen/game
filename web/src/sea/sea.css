@@ -1,0 +1,79 @@
+/* Màn biển mở: lái tàu ra đảo, mô tô nước. Phủ toàn màn hình, chừa vùng an toàn của tai thỏ và thanh home. */
+.sea { position: fixed; inset: 0; z-index: 60; background: #cdeefa; font-family: 'Be Vietnam Pro', system-ui, sans-serif; color: #3d2a14; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+.sea * { box-sizing: border-box; }
+.sea-scene { position: absolute; inset: 0; }
+.sea-fail { position: absolute; inset: 40% 16px auto; text-align: center; background: #fffbe6; padding: 16px; border-radius: 14px; }
+.sea-top { position: absolute; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top)); display: flex; gap: 8px; align-items: flex-start; pointer-events: none; }
+.sea-top > * { pointer-events: auto; }
+.sea-card { flex: 1 1 auto; min-width: 0; max-width: 420px; background: rgba(255, 251, 230, 0.94); border: 2px solid #7a4a22; border-radius: 16px; padding: 8px 12px; box-shadow: 0 3px 0 #7a4a22; }
+.sea-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 16px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sea-row { display: flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0; }
+.sea-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sea-row.small { font-size: 12.5px; gap: 12px; margin-top: 2px; flex-wrap: wrap; }
+.sea-row .bad, .sea-row b.bad { color: #c0392b; }
+.sea-arrow { display: inline-flex; width: 26px; height: 26px; flex: 0 0 26px; align-items: center; justify-content: center; border-radius: 50%; background: #a855f7; color: #fff; font-size: 14px; transition: transform 0.12s linear; }
+.sea-arrow { transform-origin: 50% 50%; }
+.sea-wind { display: inline-block; font-style: normal; transition: transform 0.3s; }
+.sea-btn { min-height: 44px; padding: 0 14px; border-radius: 14px; border: 2px solid #7a4a22; background: #fffbe6; font-weight: 700; font-size: 14px; color: #3d2a14; box-shadow: 0 3px 0 #7a4a22; white-space: nowrap; }
+.sea-btn:disabled { opacity: 0.5; }
+.sea-mini { position: absolute; right: max(10px, env(safe-area-inset-right)); top: calc(max(10px, env(safe-area-inset-top)) + 96px); width: 128px; height: 128px; padding: 0; border-radius: 50%; overflow: hidden; border: 3px solid #7a4a22; background: #7cc7e6; box-shadow: 0 3px 0 #7a4a22; }
+.sea-mini svg { width: 100%; height: 100%; display: block; }
+.sea-north { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); font: 800 11px 'Baloo 2', sans-serif; color: #fff; background: #c0392b; border-radius: 8px; padding: 0 5px; }
+.sea-side { position: absolute; right: max(10px, env(safe-area-inset-right)); top: calc(max(10px, env(safe-area-inset-top)) + 236px); display: flex; flex-direction: column; gap: 8px; }
+.sea-round { width: 48px; height: 48px; border-radius: 50%; border: 2px solid #7a4a22; background: #fffbe6; font-size: 22px; box-shadow: 0 3px 0 #7a4a22; }
+.sea-round.on { background: #ffd23f; }
+.sea-hint { position: absolute; left: 50%; top: 56%; z-index: 2; transform: translate(-50%, -50%); width: min(92vw, 420px); background: rgba(31, 59, 99, 0.88); color: #fff; padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.45; text-align: center; pointer-events: none; }
+.sea-warn { position: absolute; left: 50%; top: calc(max(10px, env(safe-area-inset-top)) + 100px); transform: translateX(-50%); background: #c0392b; color: #fff; font-weight: 700; padding: 8px 14px; border-radius: 12px; white-space: nowrap; }
+.sea-toast { position: absolute; left: 50%; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 170px); transform: translateX(-50%); max-width: 90vw; background: #fffbe6; border: 2px solid #7a4a22; color: #3d2a14; font-weight: 700; padding: 8px 14px; border-radius: 14px; text-align: center; animation: sea-pop 0.25s ease-out; }
+.sea-toast.bad { background: #c0392b; color: #fff; border-color: #7a1f16; }
+.sea-toast.good { background: #2e9e6a; color: #fff; border-color: #1d6a46; }
+@keyframes sea-pop { from { transform: translateX(-50%) scale(0.85); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+.sea-bottom { position: absolute; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; pointer-events: none; }
+.sea-bottom > * { pointer-events: auto; }
+.sea-steer, .sea-throttle { display: flex; gap: 10px; align-items: flex-end; }
+.sea-throttle.lever { flex-direction: column; align-items: stretch; gap: 6px; }
+.sea-pad { min-width: 64px; min-height: 64px; border-radius: 50%; border: 3px solid #7a4a22; background: #fffbe6; font-size: 24px; font-weight: 800; color: #7a4a22; box-shadow: 0 4px 0 #7a4a22; touch-action: none; }
+.sea-throttle .sea-pad { border-radius: 16px; font-size: 16px; min-width: 76px; min-height: 52px; }
+.sea-pad.gas { background: #4caf50; color: #fff; border-color: #2e7d32; box-shadow: 0 4px 0 #2e7d32; }
+.sea-pad.brake { background: #e0533f; color: #fff; border-color: #a12f20; box-shadow: 0 4px 0 #a12f20; }
+.sea-pad:active { transform: translateY(2px); box-shadow: none; }
+.sea-lever { text-align: center; font-weight: 800; font-size: 13px; background: rgba(255, 251, 230, 0.94); border: 2px solid #7a4a22; border-radius: 10px; padding: 3px 6px; white-space: nowrap; }
+.sea-dial { width: 104px; height: 104px; flex: 0 0 104px; border-radius: 50%; background: rgba(31, 41, 55, 0.88); border: 4px solid #4caf50; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; }
+.sea-dial b { font: 800 30px 'Baloo 2', sans-serif; }
+.sea-dial small { font-size: 10.5px; opacity: 0.85; }
+.sea-dial i { font-style: normal; font-size: 12px; margin-top: 2px; opacity: 0.9; }
+.sea-map { position: absolute; inset: 0; z-index: 5; background: rgba(20, 32, 48, 0.55); display: flex; flex-direction: column; padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); gap: 8px; }
+.sea-map-head, .sea-map-foot { display: flex; align-items: center; gap: 8px; background: #fffbe6; border: 2px solid #7a4a22; border-radius: 14px; padding: 6px 10px; flex-wrap: wrap; }
+.sea-map-head b { font: 800 17px 'Baloo 2', sans-serif; }
+.sea-map-head span { flex: 1 1 auto; font-size: 13px; color: #6b5134; min-width: 0; }
+.sea-map-head button, .sea-map-foot button { min-width: 44px; min-height: 44px; border-radius: 12px; border: 2px solid #7a4a22; background: #fff; font-weight: 700; font-size: 15px; padding: 0 10px; }
+.sea-map-foot .warn { background: #fde2dd; }
+.sea-map-foot .muted { font-size: 13px; color: #6b5134; }
+.sea-map-box { flex: 1 1 auto; min-height: 0; border-radius: 16px; overflow: hidden; border: 3px solid #7a4a22; background: #7cc7e6; touch-action: none; }
+.sea-map-box svg { width: 100%; height: 100%; display: block; }
+.sea-done { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); background: #fffbe6; border: 3px solid #7a4a22; border-radius: 18px; padding: 16px 22px; display: flex; flex-direction: column; gap: 6px; text-align: center; box-shadow: 0 5px 0 #7a4a22; }
+.sea-done b { font: 800 20px 'Baloo 2', sans-serif; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .sea-mini { top: calc(max(10px, env(safe-area-inset-top)) + 4px); right: calc(max(10px, env(safe-area-inset-right)) + 0px); width: 104px; height: 104px; }
+  .sea-top { right: calc(max(10px, env(safe-area-inset-right)) + 116px); }
+  .sea-side { top: calc(max(10px, env(safe-area-inset-top)) + 116px); flex-direction: row; right: max(10px, env(safe-area-inset-right)); }
+  .sea-pad { min-width: 56px; min-height: 56px; }
+  .sea-dial { width: 88px; height: 88px; flex-basis: 88px; }
+  .sea-toast { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 100px); }
+}
+.sea-ask { display: flex; gap: 8px; justify-content: center; margin-top: 4px; }
+.sea-btn.warn { background: #e0533f; color: #fff; border-color: #a12f20; box-shadow: 0 3px 0 #a12f20; }
+@media (orientation: portrait) {
+  .sea-bottom { gap: 6px; }
+  .sea-steer { gap: 6px; }
+  .sea-pad { min-width: 58px; min-height: 58px; font-size: 22px; }
+  .sea-throttle { gap: 6px; }
+  .sea-throttle .sea-pad { min-width: 60px; min-height: 52px; font-size: 14px; padding: 0 6px; }
+  .sea-dial { width: 92px; height: 92px; flex-basis: 92px; }
+  .sea-dial b { font-size: 26px; }
+}
+@media (orientation: portrait) and (max-width: 360px) {
+  .sea-pad { min-width: 52px; min-height: 52px; }
+  .sea-throttle .sea-pad { min-width: 54px; }
+  .sea-dial { width: 80px; height: 80px; flex-basis: 80px; }
+}

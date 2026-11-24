@@ -167,6 +167,8 @@ export function registerSocial(app: FastifyInstance, d: SocialDeps) {
       }
       return out;
     }
+    // Biển mở: tàu bè do trình duyệt tự chạy theo đồng hồ (web/src/sea/seaWorld.ts), máy chủ không thêm cư dân
+    if (scene === 'sea') return out;
     // Cao tốc: mỗi tuyến luôn có vài xe của cư dân ảo chạy hai chiều, vị trí là hàm của thời gian theo trục chuẩn của tuyến.
     const total = Math.max(1, me.total), slot = 10 * 60_000, bucket = Math.floor(now / slot), seed0 = hash32(`hw:${key}:${bucket}`);
     const ends = key.split('|'), n = key.startsWith('phuot:') ? 3 + (seed0 % 3) : Math.max(4, Math.min(16, Math.round(total / 45) + (seed0 % 3))), tripSec = key.startsWith('phuot:') ? Math.max(40, total / 0.6) : Math.max(20, Math.min(90, 20 + total / 12)), used = new Set<number>(); // phượt xe máy: chạy chậm như người chơi (~0,6 km/giây trong game)

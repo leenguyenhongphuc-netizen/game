@@ -9,6 +9,7 @@ import { DriveScene } from './DriveScene.ts';
 import type { DriveHud, DriveRest, DriveSummary, DriveTicket, View } from './DriveScene.ts';
 import type { VehGroup } from './DriveExtras.ts';
 import { StopAreaView } from './StopAreaView.tsx';
+import { SeaRide } from '../sea/SeaRide.tsx';
 
 export interface DrivePlan { km: number; needsBoat: boolean; seconds: number; tolls: number; tollFee: number; fuelNeededL: number; junctions: { atKm: number; dir: 'L' | 'R'; name: string }[]; stationsAtKm: number[];
   /** Theo xe đang lái (máy chủ trả kèm trong plan của /api/trips/start). */
@@ -183,6 +184,8 @@ function TruckDriveGame(props: DriveGameProps): JSX.Element {
   const [fillMsg, setFillMsg] = useState<string | null>(null);
   /** Khu trạm 3D không dựng được (máy không có WebGL thứ hai…): quay về bảng trạm cũ. */
   const [stopFail, setStopFail] = useState(false);
+  /** Chặng biển đang chạy ở màn biển mở (lái tự do, tàu bè, bản đồ). */
+  const [sea, setSea] = useState<{ routeId: string; toIsland: boolean } | null>(null);
   const logRef = useRef<DriveRestLog[]>([]); logRef.current = restLog;
   const auto = (window as unknown as { __driveAuto?: boolean }).__driveAuto === true;
   const from = REGIONS[props.fromRegionId]?.name ?? 'Nơi đi', to = REGIONS[props.toRegionId]?.name ?? 'Nơi đến';
@@ -199,6 +202,7 @@ function TruckDriveGame(props: DriveGameProps): JSX.Element {
         onBump: (text, kind) => setBump({ id: ++id, text, kind }),
         onFlash: (text) => setFlash({ id: ++id, text }),
         onArrive: (s) => setSum(s),
+        onSea: (x) => setSea(x),
       });
       (window as unknown as { __drive?: DriveScene }).__drive = scene.current;
     } catch { setFailed(true); }
@@ -279,6 +283,11 @@ function TruckDriveGame(props: DriveGameProps): JSX.Element {
     <div className="dg" role="application" aria-label={`Lái ${boat ? 'phà' : 'xe'} từ ${from} tới ${to}`}>
       <style>{CSS}</style>
       <div className="dg-scene" ref={host} />
+      {sea && <SeaRide mode="ferry" routeId={sea.routeId} toIsland={sea.toIsland}
+        cargo={{ group: (VEHICLES[props.truck.kind ?? '']?.group ?? 'tai_nhe') as VehGroup, color: parseInt((props.truckColor || '#f08a6c').replace('#', ''), 16) || 0xf08a6c, electric: (props.truck.power ?? VEHICLES[props.truck.kind ?? '']?.power) === 'dien' }}
+        onDone={() => { setSea(null); scene.current?.seaDone(); }}
+        onFail={() => { setSea(null); scene.current?.seaFallback(); }}
+        onCancel={() => { if (!finished.current) { finished.current = true; props.onCancel(); } }} />}
       {failed && <p className="dg-fail">Thiết bị này chưa bật đồ hoạ 3D nên không lái được. <button className="dg-cancel" onClick={() => props.onCancel()}>Quay lại</button></p>}
       <div className="dg-top">
         <div className="dg-bar">
