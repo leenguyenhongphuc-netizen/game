@@ -9,6 +9,9 @@ import {
   licenseCovers, parkPrice, rangeKm, restStopItems, roadPrice, tripPlanFor, truckOf, unitOf,
 } from '../../shared/vehicles.ts';
 import type { ExamPart, LicenseClass, TruckInfo, VehicleSpec, VehicleTripPlan } from '../../shared/vehicles.ts';
+import { MOTO_RENTALS, PHUOT_BY_ID, PHUOT_ROUTES, PHUOT_RULES, phuotFuel, phuotMinSeconds, phuotSeconds } from '../../shared/moto.ts';
+import { xpFor } from '../../shared/progress.ts';
+import type { XpSource } from '../../shared/progress.ts';
 
 type EnergyState = { cur: number; max: number; baseMs: number; now: number };
 export interface VehicleDeps {
@@ -23,7 +26,40 @@ export interface VehicleDeps {
   licenseTimeScale?: number;
   /** Kiểm thử: chia thời gian làm bài tối thiểu. */
   examHurry?: number;
+  /** Cộng EXP (đi phượt: điểm dừng chụp ảnh, trọn tuyến). Không truyền thì không cộng. */
+  addXp?: (q: Q, userId: number, n: number, source: XpSource) => Promise<unknown>;
+  /** Kiểm thử: chia thời gian chạy tối thiểu của chuyến phượt. */
+  phuotHurry?: number;
 }
+/** Bảng chuyến phượt và tem các điểm dừng. Tạo lần đầu khi cần (không phụ thuộc thứ tự migrate trong db.ts). */
+const MOTO_SCHEMA = `
+create table if not exists moto_trips (
+  id bigserial primary key,
+  user_id bigint not null references users(id) on delete cascade,
+  route_id text not null,
+  vehicle_kind text not null,
+  vehicle_id bigint,
+  rented boolean not null default false,
+  fuel_start real not null default 0,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  result jsonb
+);
+create index if not exists moto_trips_user on moto_trips (user_id, finished_at);
+create table if not exists moto_stamps (
+  user_id bigint not null references users(id) on delete cascade,
+  route_id text not null,
+  cp_id text not null,
+  at timestamptz not null default now(),
+  primary key (user_id, route_id, cp_id)
+);
+create table if not exists moto_done (
+  user_id bigint not null references users(id) on delete cascade,
+  route_id text not null,
+  first_at timestamptz not null default now(),
+  times int not null default 1,
+  primary key (user_id, route_id)
+);`;
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
@@ -409,6 +445,147 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       const v = (await q.query('insert into vehicles (user_id, kind, energy, price_paid) values ($1,$2,$3,0) returning id', [userId, kind, spec.tank])).rows[0];
       await q.query('update users set vehicle_id = $2, fuel_l = $3, cargo_used = 0, truck_region = home_region_id where id = $1', [userId, v.id, spec.tank]);
       return { ok: true, vehicleId: Number(v.id), kind, energy: spec.tank, unit: unitOf(spec.power) };
+    });
+  });
+
+  // ---------------------------------------------------------------- đi phượt bằng xe máy
+  let motoReady: Promise<unknown> | null = null;
+  const motoSchema = () => (motoReady ??= db.query(MOTO_SCHEMA).catch((e) => { motoReady = null; throw e; }));
+  const motoOut = (v: VehicleSpec) => ({ kind: v.kind, name: v.name, emoji: v.emoji, moto: v.moto ?? 'so', cc: v.cc ?? null, kw: v.kw ?? null, power: v.power, unit: unitOf(v.power), tank: v.tank, per100: v.per100, maxKmh: v.maxKmh, cargoKg: v.cargoKg, license: v.license, licenseName: LICENSES[v.license].name, price: v.price });
+  /** Bằng còn hiệu lực đang có (để biết thuê được xe nào). */
+  const okLicenses = async (q: Q, userId: number) => (await licenseRows(q, userId)).filter((l) => !l.expired && !l.suspended).map((l) => l.cls as string);
+
+  app.get('/api/phuot', async (req) => {
+    const userId = await d.requireUser(req);
+    await motoSchema();
+    const [u, owned, stamps, done, open] = await Promise.all([
+      db.query('select vehicle_id, fuel_l from users where id = $1', [userId]),
+      db.query('select id, kind, energy, odo_km from vehicles where user_id = $1 order by id', [userId]),
+      db.query('select route_id, cp_id, at from moto_stamps where user_id = $1', [userId]),
+      db.query('select route_id, first_at, times from moto_done where user_id = $1', [userId]),
+      db.query(`select id, route_id from moto_trips where user_id = $1 and finished_at is null and started_at > now() - interval '3 hours' order by id desc limit 1`, [userId]),
+    ]);
+    const lic = await okLicenses(db, userId), e = await d.energyState(db, userId);
+    const me = u.rows[0];
+    const bikes = owned.rows.filter((v) => VEHICLES[v.kind]?.group === 'xe_may').map((v) => {
+      const spec = VEHICLES[v.kind], active = Number(v.id) === Number(me.vehicle_id), energy = round1(Number(active ? me.fuel_l : v.energy));
+      return { id: Number(v.id), ...motoOut(spec), energy, odoKm: round1(Number(v.odo_km)), active, canRide: licenseCovers(lic, spec.license) };
+    });
+    return {
+      energy: e.cur, energyMax: e.max, rules: PHUOT_RULES, licenses: lic.filter((c) => c === 'A1' || c === 'A'),
+      bikes,
+      rentals: MOTO_RENTALS.map((r) => ({ ...motoOut(VEHICLES[r.kind]), perDay: r.perDay, canRide: licenseCovers(lic, VEHICLES[r.kind].license) })),
+      open: open.rows[0] ? { tripId: Number(open.rows[0].id), routeId: open.rows[0].route_id } : null,
+      routes: PHUOT_ROUTES.map((r) => {
+        const mine = stamps.rows.filter((s) => s.route_id === r.id), dn = done.rows.find((x) => x.route_id === r.id);
+        return { ...r, seconds: phuotSeconds(r), stamps: mine.map((s) => ({ cpId: s.cp_id as string, at: new Date(s.at).getTime() })), done: dn ? { firstAt: new Date(dn.first_at).getTime(), times: Number(dn.times) } : null,
+          photos: r.checkpoints.filter((c) => c.kind === 'photo').length };
+      }),
+    };
+  });
+
+  /** Xuất phát: xe của mình (trong bãi xe) hoặc thuê xe tại chỗ. Phải có bằng đúng hạng còn hiệu lực và đủ thể lực. */
+  app.post('/api/phuot/start', async (req) => {
+    const userId = await d.requireUser(req);
+    await motoSchema();
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const route = PHUOT_BY_ID[String(b.routeId ?? '')];
+    if (!route) throw bad('du_lieu_sai', 'Không có cung đường này.');
+    return db.tx(async (q) => {
+      const u = (await q.query('select cash, vehicle_id, fuel_l, home_region_id from users where id = $1 for update', [userId])).rows[0];
+      if (!u.home_region_id) throw bad('chua_co_dat', 'Hãy nhận lô đất đầu tiên trước.', 409);
+      if ((await q.query('select 1 from trips where user_id = $1 and finished_at is null', [userId])).rows[0]) throw bad('dang_chay', 'Bạn đang trên một chuyến xe chở hàng. Hãy đi xong chuyến đó trước.', 409);
+      // chuyến phượt bỏ dở trước đó thì đóng lại, không tính gì
+      await q.query(`update moto_trips set finished_at = now(), result = '{"abandoned":true}' where user_id = $1 and finished_at is null`, [userId]);
+      let spec: VehicleSpec, vehicleId: number | null = null, fuel: number, rentCost = 0;
+      const rented = b.rent !== undefined && b.rent !== null && b.rent !== false && b.rent !== '';
+      if (rented) {
+        const r = MOTO_RENTALS.find((x) => x.kind === String(b.rent));
+        if (!r) throw bad('du_lieu_sai', 'Ở đây không cho thuê loại xe này.');
+        spec = VEHICLES[r.kind]; rentCost = r.perDay; fuel = spec.tank;
+      } else {
+        const v = (await q.query('select id, kind, energy from vehicles where id = $1 and user_id = $2', [Number(b.vehicleId) || 0, userId])).rows[0];
+        if (!v || VEHICLES[v.kind]?.group !== 'xe_may') throw bad('khong_tim_thay', 'Hãy chọn một chiếc xe máy trong bãi xe của bạn, hoặc thuê xe tại chỗ.', 404);
+        spec = VEHICLES[v.kind]; vehicleId = Number(v.id);
+        fuel = round1(Number(Number(v.id) === Number(u.vehicle_id) ? u.fuel_l : v.energy));
+        if (fuel <= 0.05) throw bad('het_xang', `${spec.name} đã hết ${spec.power === 'dien' ? 'pin' : 'xăng'}. Hãy ${spec.power === 'dien' ? 'sạc' : 'đổ xăng'} trước khi đi.`, 409);
+      }
+      await requireValidLicense(q, userId, spec);
+      const e = await d.energyState(q, userId, true);
+      if (e.cur < route.minEnergy) throw bad('met', `Cung đường này cần ít nhất ${route.minEnergy} thể lực. Hãy ăn uống, nghỉ ngơi rồi đi.`, 409);
+      if (rentCost > 0) {
+        if (Number(u.cash) < rentCost) throw bad('khong_du_tien', `Thuê ${spec.name} hết ${rentCost.toLocaleString('vi-VN')}đ một ngày.`, 409);
+        await d.addCash(q, userId, -rentCost, `thue_xe_may:${spec.kind}`);
+      }
+      const row = (await q.query('insert into moto_trips (user_id, route_id, vehicle_kind, vehicle_id, rented, fuel_start) values ($1,$2,$3,$4,$5,$6) returning id',
+        [userId, route.id, spec.kind, vehicleId, rented, fuel])).rows[0];
+      const f = phuotFuel(spec, route.km);
+      return { ok: true, tripId: Number(row.id), route: { ...route, seconds: phuotSeconds(route) }, bike: motoOut(spec), rented, rentCost, fuel, fuelNeed: f.need, fuelPrice: f.price, cash: Number(u.cash) - rentCost, energy: e.cur };
+    });
+  });
+
+  /** Kết thúc chuyến phượt: xăng đã chạy, tiền đổ xăng, quán nghỉ, thể lực, tem các điểm chụp ảnh, thưởng lần đầu đi trọn. */
+  app.post('/api/phuot/:id/finish', async (req) => {
+    const userId = await d.requireUser(req);
+    await motoSchema();
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    return db.tx(async (q) => {
+      const t = (await q.query('select * from moto_trips where id = $1 and user_id = $2 and finished_at is null for update', [Number((req.params as any).id) || 0, userId])).rows[0];
+      if (!t) throw bad('khong_tim_thay', 'Không tìm thấy chuyến phượt đang đi.', 404);
+      const route = PHUOT_BY_ID[t.route_id], spec = VEHICLES[t.vehicle_kind];
+      if (!route || !spec) throw bad('khong_tim_thay', 'Chuyến phượt không hợp lệ.', 404);
+      const took = (Date.now() - new Date(t.started_at).getTime()) / 1000;
+      const aborted = b.aborted === true;
+      const kmDone = aborted ? Math.max(0, Math.min(route.km, Number(b.km) || 0)) : route.km;
+      // chạy nhanh hơn mức có thể thì không nhận (chống nộp kết quả giả)
+      const minSec = (phuotMinSeconds(route) * kmDone) / route.km / Math.max(1, d.phuotHurry ?? 1);
+      if (took + 0.5 < minSec) throw bad('qua_nhanh', 'Chuyến đi kết thúc quá nhanh, không hợp lệ.', 409);
+      const ids = (v: unknown) => (Array.isArray(v) ? [...new Set(v.slice(0, 20).map(String))] : []);
+      const reached = (k: string) => route.checkpoints.filter((c) => c.kind === k && c.atKm <= kmDone + 0.01);
+      const photos = ids(b.photos).filter((id) => reached('photo').some((c) => c.id === id));
+      const cafes = ids(b.cafes).filter((id) => reached('cafe').some((c) => c.id === id));
+      const u = (await q.query('select cash, vehicle_id from users where id = $1 for update', [userId])).rows[0];
+      let cash = Number(u.cash);
+      // xăng: chỉ đổ ở cây xăng đã qua (xe điện sạc được cả ở quán), không quá dung tích bình
+      const fuelAt = new Set([...reached('fuel'), ...(spec.power === 'dien' ? reached('cafe') : [])].map((c) => c.id));
+      let refuel = 0;
+      for (const r of Array.isArray(b.refuels) ? b.refuels.slice(0, 6) : []) {
+        const at = String((r as any)?.at ?? ''), n = Number((r as any)?.amount);
+        if (fuelAt.has(at) && Number.isFinite(n) && n > 0) refuel += Math.min(spec.tank, n);
+      }
+      const f = phuotFuel(spec, kmDone), used = f.need;
+      refuel = Math.min(refuel, Math.max(0, spec.tank + used - Number(t.fuel_start)));
+      let left = Number(t.fuel_start) + refuel - used, rescue = 0;
+      // hết xăng giữa đèo: nhờ người chở xăng lên, đắt gấp mấy lần giá cây xăng
+      if (left < 0) { rescue = Math.round((-left * f.price * 2.5) / 1000) * 1000; left = 0; }
+      const fuelCost = Math.min(cash, Math.round((refuel * f.price) / 1000) * 1000);
+      if (fuelCost > 0) { await d.addCash(q, userId, -fuelCost, `phuot_xang:${route.id}`); cash -= fuelCost; }
+      if (rescue > 0) { const c = Math.min(cash, rescue); if (c > 0) { await d.addCash(q, userId, -c, `phuot_cuu_ho:${route.id}`); cash -= c; } }
+      const cafeCost = Math.min(cash, cafes.length * PHUOT_RULES.cafeCost);
+      if (cafeCost > 0) { await d.addCash(q, userId, -cafeCost, `phuot_quan:${route.id}`); cash -= cafeCost; }
+      // thể lực: mất theo quãng đèo, quán nghỉ hồi lại
+      const e = await d.energyState(q, userId, true);
+      const energyLost = Math.round((kmDone / 10) * PHUOT_RULES.energyPer10Km), energyBack = cafes.length * PHUOT_RULES.cafeEnergy;
+      const energy = await d.setEnergy(q, userId, e, e.cur - energyLost + energyBack);
+      // xe của mình: cộng công-tơ-mét, cập nhật xăng còn lại
+      if (t.vehicle_id) {
+        await q.query('update vehicles set odo_km = odo_km + $2, energy = $3 where id = $1 and user_id = $4', [t.vehicle_id, kmDone, round1(left), userId]);
+        if (Number(u.vehicle_id) === Number(t.vehicle_id)) await q.query('update users set fuel_l = $2 where id = $1', [userId, round1(left)]);
+      }
+      // tem điểm dừng: lần đầu chụp mới cộng EXP
+      const fresh: string[] = [];
+      for (const id of photos) if ((await q.query('insert into moto_stamps (user_id, route_id, cp_id) values ($1,$2,$3) on conflict do nothing', [userId, route.id, id])).rowCount) fresh.push(id);
+      let xp: unknown = null, reward = 0, firstFinish = false;
+      const gain = async (n: number, src: XpSource) => { if (d.addXp && n > 0) xp = await d.addXp(q, userId, n, src); };
+      if (fresh.length) await gain(xpFor('diem_dung') * fresh.length, 'diem_dung');
+      if (!aborted) {
+        firstFinish = !!(await q.query('insert into moto_done (user_id, route_id) values ($1,$2) on conflict (user_id, route_id) do update set times = moto_done.times + 1 returning (xmax = 0) as fresh', [userId, route.id])).rows[0]?.fresh;
+        if (firstFinish) { reward = PHUOT_RULES.firstFinishReward; await d.addCash(q, userId, reward, `phuot_tron_tuyen:${route.id}`); cash += reward; }
+        await gain(xpFor('chuyen_xe', route.km * 6), 'chuyen_xe');
+      }
+      const result = { kmDone, aborted, fuelUsed: used, refuel: round1(refuel), fuelCost, rescue, fuelLeft: round1(left), cafes: cafes.length, cafeCost, energyLost, energyBack, photos, freshStamps: fresh, firstFinish, reward };
+      await q.query('update moto_trips set finished_at = now(), result = $2 where id = $1', [t.id, JSON.stringify(result)]);
+      return { ok: true, routeId: route.id, ...result, unit: f.unit, cash, ...energy, ...(xp && typeof xp === 'object' ? xp : {}) };
     });
   });
 

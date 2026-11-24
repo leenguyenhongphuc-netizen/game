@@ -69,3 +69,16 @@
 .lic-acts .go { display: grid; min-height: 44px; }
 .lic-acts .go small { color: #eaffdf; font-weight: 400; }
 .lic-practice { min-height: 44px; padding: 4px 12px; border-radius: 12px; border: 2px solid #b88600; background: #ffe9a6; font-weight: 700; }
+
+/* ---------------------------------------------------------------- đi phượt bằng xe máy (phuot.tsx) */
+.phuot { display: grid; gap: 10px; min-width: 0; }
+.phuot-ico { font-size: 2.2rem; width: 64px; height: 64px; display: grid; place-items: center; border-radius: 16px; background: #e9f3d8; border: 2px solid #cdb67c; flex: none; }
+.phuot-cps { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 4px; }
+.phuot-cps li { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; padding: 4px 8px; border-radius: 10px; background: #fff6dc; border: 1.5px solid #e2cfa0; min-width: 0; overflow-wrap: anywhere; }
+.phuot-cps li.done { background: #e4f5d9; border-color: #9ccf86; }
+.phuot-bikes { border: 2px solid #e2cfa0; border-radius: 12px; padding: 6px 10px 10px; margin: 0; display: grid; gap: 6px; min-width: 0; }
+.phuot-bikes legend { font-weight: 800; padding: 0 4px; }
+.phuot-bikes label { display: flex; gap: 8px; align-items: center; min-height: 44px; cursor: pointer; min-width: 0; }
+.phuot-bikes label span { min-width: 0; overflow-wrap: anywhere; }
+.phuot-bikes label.off { opacity: 0.55; cursor: not-allowed; }
+.phuot-bikes input[type='radio'] { width: 22px; height: 22px; flex: none; }
