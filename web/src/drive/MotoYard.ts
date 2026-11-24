@@ -29,7 +29,7 @@ export class MotoYard {
   private bike: MotoModel; private t = 0; private done = false; private disposed = false;
   private log: YardPenalty[] = []; private out: string | null = null; private lastTouch = -9; private lastFoot = -9; private lowT = 0;
   private wobble = 0; private acc = 0; private camP = new THREE.Vector3(); private camL = new THREE.Vector3(); private camInit = false;
-  private bumps: number[] = []; private wheelSpin = 0;
+  private bumps: number[] = []; private wheelSpin = 0; private lastT = 0;
   auto = false;
 
   constructor(private host: HTMLElement, private opts: MotoYardOpts) {
@@ -37,7 +37,7 @@ export class MotoYard {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     host.appendChild(this.renderer.domElement); this.renderer.domElement.style.width = '100%'; this.renderer.domElement.style.height = '100%';
     this.quality = new Quality(this.renderer, { name: 'Sân sát hạch xe máy' });
-    this.scene.background = new THREE.Color(0xbfe3f5); this.scene.fog = new THREE.Fog(0xbfe3f5, 80, 220);
+    this.scene.background = new THREE.Color(0xa9dcf3); this.scene.fog = new THREE.Fog(0xc9e9f6, 70, 200);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6f8f3e, 1.5));
     const sun = new THREE.DirectionalLight(0xfff1d6, 1.6); sun.position.set(-20, 40, 10); this.scene.add(sun);
     this.buildPath(); this.buildYard();
@@ -95,29 +95,64 @@ export class MotoYard {
 
   // ---------------------------------------------------------------- sân
   private buildYard() {
-    const g = new THREE.Group(), white = mat(0xf7f7f2), yellow = mat(0xf2c94c);
-    const pad = mesh(GEO.box, mat(0x8c939b), 0, -0.05, -40, 26, 0.1, 100); pad.receiveShadow = false; g.add(pad);
-    g.add(mesh(GEO.box, mat(0x86b04a), 0, -0.12, -40, 200, 0.1, 260));
-    // vạch dọc theo hai mép đường mẫu (trừ đoạn nối)
-    for (let i = 0; i < this.pts.length; i += 2) {
-      const p = this.pts[i]; if (!p.test) continue;
-      for (const sd of [-1, 1]) {
-        const off = p.half + 0.05;
-        g.add(mesh(GEO.box, p.test === 'vach_can' ? yellow : white, p.x - p.hz * off * sd, 0.012, p.z + p.hx * off * sd, 0.08, 0.02, 0.08));
-      }
-    }
+    const g = new THREE.Group(), white = mat(0xf7f7f2), yellow = mat(0xf2c94c), r = rng(9);
+    const zEnd = this.pts[this.pts.length - 1].z, zMid = (4 + zEnd) / 2, padL = 4 - zEnd + 16;
+    // nền: cỏ cắt sọc, sân bê tông nhựa có viền vỉa đỏ trắng
+    for (let i = 0; i < 14; i++) g.add(mesh(GEO.box, mat(i % 2 ? 0x8cbd52 : 0x7fb048), -70 + i * 10 + 5, -0.13, zMid, 10, 0.1, padL + 120));
+    g.add(mesh(GEO.box, mat(0x6f767f), 0, -0.05, zMid, 30, 0.1, padL));
+    for (let i = 0; i < 26; i++) g.add(mesh(GEO.box, mat(r() < 0.5 ? 0x737a83 : 0x6a7179), (r() - 0.5) * 26, -0.045, zMid + (r() - 0.5) * (padL - 6), 2 + r() * 4, 0.1, 2 + r() * 5));
+    for (const sx of [-1, 1]) for (let z = 4 + 7; z > zEnd - 8; z -= 1.2) g.add(mesh(GEO.box, mat(Math.round(z / 1.2) % 2 ? 0xd6453a : 0xf4f1ea), sx * 15.1, 0.06, z, 0.3, 0.22, 1.18));
+    // vùng bài thi sơn nền xanh đậm cho nổi vạch
+    g.add(mesh(GEO.box, mat(0x5b6b78), 0, -0.04, -11, 14.5, 0.1, 9));
+    // vạch xuất phát, vạch kết thúc (sọc caro)
+    for (let i = 0; i < 8; i++) for (let j = 0; j < 2; j++) g.add(mesh(GEO.box, (i + j) % 2 ? white : mat(0x2b2f38), -1.3 + i * 0.37 + 0.18, 0.013, 2 - j * 0.2, 0.37, 0.02, 0.2));
+    for (let i = 0; i < 8; i++) for (let j = 0; j < 2; j++) g.add(mesh(GEO.box, (i + j) % 2 ? white : mat(0x2b2f38), -1.3 + i * 0.37 + 0.18, 0.013, zEnd + 2 - j * 0.2, 0.37, 0.02, 0.2));
     // vạch cản xen kẽ hai bên (bài 3)
     for (let i = 0; i < 8; i++) { const z = -20 - motoStraightLen(this.opts.cls) - 3 - 1 - i * 2, x = (i % 2 ? -1 : 1) * 1.0; g.add(mesh(GEO.box, yellow, x, 0.03, z, 0.9, 0.04, 0.12)); }
     // gờ gồ ghề (bài 4): sọc vàng đen
     for (const [k, z] of this.bumps.entries()) g.add(mesh(GEO.box, k % 2 ? yellow : mat(0x2b2f38), 0, 0.03, z, 1.4, 0.06, 0.2));
-    // vạch xuất phát, vạch kết thúc
-    g.add(mesh(GEO.box, white, 0, 0.012, 2, 2.6, 0.02, 0.15), mesh(GEO.box, white, 0, 0.012, this.pts[this.pts.length - 1].z + 2, 2.6, 0.02, 0.15));
-    // nhà điều hành, cây, cọc tiêu
-    g.add(mesh(GEO.box, mat(0xf3e5c6), 9, 1.6, -8, 5, 3.2, 4), mesh(GEO.box, mat(0xc0563a), 9, 3.4, -8, 5.6, 0.4, 4.6), mesh(GEO.box, mat(0x9fd8f0), 6.48, 1.8, -8, 0.05, 1.2, 2.4));
-    const r = rng(9);
-    for (let i = 0; i < 40; i++) { const x = (r() < 0.5 ? -1 : 1) * (15 + r() * 10), z = 6 - r() * 100; g.add(mesh(GEO.cyl, mat(0x6a4a2a), x, 1, z, 0.15, 2, 0.15), mesh(GEO.ball, mat(0x4f8f45), x, 2.6, z, 1.4, 1.2, 1.4)); }
+    // nhà điều hành hai tầng, mái ngói, ban công, biển tên; khán đài có mái che và người ngồi chờ
+    const hx = 10.5, hz = -6;
+    g.add(mesh(GEO.box, mat(0xf3e5c6), hx, 1.7, hz, 6, 3.4, 4.6), mesh(GEO.box, mat(0xf6ecd6), hx, 4.6, hz, 5.4, 2.4, 4.2));
+    g.add(mesh(GEO.box, mat(0xc0563a), hx, 3.5, hz, 6.6, 0.25, 5.2), mesh(GEO.cone, mat(0xb04a32), hx, 6.6, hz, 4.6, 1.8, 3.8));
+    for (const y of [1.6, 4.6]) for (const dz of [-1.4, 0, 1.4]) g.add(mesh(GEO.box, mat(0x8fd0ee), hx - 3.02, y, hz + dz, 0.05, 1.1, 1.0));
+    g.add(mesh(GEO.box, mat(0x7a5232), hx - 3.04, 1.1, hz + 2.6, 0.06, 2.2, 1.1));
+    g.add(mesh(GEO.box, mat(0xf2efe6), hx - 3.4, 3.55, hz, 0.8, 0.12, 4.4)); for (let k = 0; k < 6; k++) g.add(mesh(GEO.box, mat(0xd9d2c0), hx - 3.75, 3.9, hz - 2 + k * 0.8, 0.06, 0.6, 0.06));
+    // khán đài
+    const sz = -16, sxx = 9.5;
+    for (let row = 0; row < 3; row++) g.add(mesh(GEO.box, mat(0xd8d2c2), sxx + row * 0.8, 0.25 + row * 0.35, sz, 0.8, 0.5 + row * 0.7, 8));
+    g.add(mesh(GEO.box, mat(0x2f7fd8), sxx + 1, 3.2, sz, 3.4, 0.12, 8.6)); for (const dz of [-4, 4]) g.add(mesh(GEO.cyl, mat(0xdedede), sxx + 2.4, 1.6, sz + dz, 0.08, 3.2, 0.08));
+    for (let k = 0; k < 9; k++) { const row = k % 3, z = sz - 3.4 + Math.floor(k / 3) * 2.6 + r() * 0.6, x = sxx + row * 0.8, c = [0x2f7fd8, 0xe8457f, 0x4caf3f, 0xf2c94c, 0xffffff][k % 5];
+      g.add(mesh(GEO.box, mat(c), x, 0.95 + row * 0.7, z, 0.34, 0.5, 0.3), mesh(GEO.ball, mat(0xe6b48a), x, 1.36 + row * 0.7, z, 0.15)); }
+    // cột cờ
+    g.add(mesh(GEO.cyl, mat(0xdcdcdc), 6.5, 4, 1, 0.06, 8, 0.06), mesh(GEO.box, mat(0xda251d), 7.15, 7.4, 1, 1.2, 0.8, 0.03), mesh(GEO.box, mat(0xffd500), 7.15, 7.4, 1.02, 0.28, 0.28, 0.01));
+    // bãi xe máy chờ thi
+    for (let k = 0; k < 6; k++) { const z = 3 - k * 1.1, c = [0xc0392b, 0x2f2f33, 0x2f7fd8, 0xe8e8e8][k % 4]; g.add(mesh(GEO.box, mat(c), -10, 0.55, z, 0.35, 0.4, 1.4), mesh(GEO.cyl, mat(0x222222), -10, 0.3, z - 0.55, 0.3, 0.1, 0.3).rotateZ(Math.PI / 2), mesh(GEO.cyl, mat(0x222222), -10, 0.3, z + 0.55, 0.3, 0.1, 0.3).rotateZ(Math.PI / 2)); }
+    // hàng rào lưới quanh sân, đèn chiếu sáng
+    for (const sx of [-1, 1]) for (let z = 10; z > zEnd - 10; z -= 3) g.add(mesh(GEO.cyl, mat(0x9aa3ab), sx * 18, 0.9, z, 0.05, 1.8, 0.05), mesh(GEO.box, mat(0xb9c2c9), sx * 18, 1.2, z - 1.5, 0.02, 1.2, 3));
+    for (const [x, z] of [[-16, -4], [16, -26], [-16, -48], [16, -70]] as [number, number][]) g.add(mesh(GEO.cyl, mat(0x8f97a3), x, 4, z, 0.1, 8, 0.1), mesh(GEO.box, mat(0xfff3c4), x - Math.sign(x) * 0.5, 8, z, 1.2, 0.25, 0.6));
+    // cây xanh, bụi hoa quanh sân
+    for (let i = 0; i < 46; i++) { const x = (r() < 0.5 ? -1 : 1) * (20 + r() * 16), z = 12 - r() * (padL + 10), s2 = 0.8 + r() * 0.7;
+      g.add(mesh(GEO.cyl, mat(0x6a4a2a), x, 1.1 * s2, z, 0.16 * s2, 2.2 * s2, 0.16 * s2), mesh(GEO.ball, mat([0x4f8f45, 0x5fa04e, 0x3f7d3a][i % 3]), x, 2.9 * s2, z, 1.5 * s2, 1.3 * s2, 1.5 * s2)); }
+    for (let i = 0; i < 18; i++) { const x = (r() < 0.5 ? -1 : 1) * (16.2 + r() * 1.4), z = 8 - r() * (padL - 4); g.add(mesh(GEO.ball, mat([0xe8457f, 0xf2c94c, 0xffffff][i % 3]), x, 0.3, z, 0.45, 0.35, 0.45)); }
+    // cọc tiêu dẫn vào bài
     for (const [x, z] of [[-1.6, -8], [1.6, -8], [-1.4, -20], [1.4, -20]]) g.add(mesh(GEO.cone, mat(0xf08a24), x, 0.3, z, 0.22, 0.6, 0.22));
     this.scene.add(bakeColored(g));
+    // vạch mép đường bài thi: dải sơn liền (không còn chấm rời), trắng; bài vạch cản sơn vàng
+    for (const yel of [false, true]) {
+      const pos: number[] = [];
+      for (let i = 1; i < this.pts.length; i++) {
+        const a0 = this.pts[i - 1], a1 = this.pts[i]; if (!a1.test || !a0.test || (a1.test === 'vach_can') !== yel || a1.test === 'so_8') continue;
+        for (const sd of [-1, 1]) {
+          const q = (p: Pt, w: number) => { const off = p.half + 0.05 + w; return [p.x - p.hz * off * sd, 0.014, p.z + p.hx * off * sd]; };
+          const p0 = q(a0, -0.05), p1 = q(a0, 0.05), p2 = q(a1, -0.05), p3 = q(a1, 0.05);
+          pos.push(...p0, ...p2, ...p1, ...p1, ...p2, ...p3);
+        }
+      }
+      if (!pos.length) continue;
+      const geo2 = new THREE.BufferGeometry(); geo2.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      const m2 = new THREE.Mesh(geo2, new THREE.MeshBasicMaterial({ color: yel ? 0xf2c94c : 0xf7f7f2, side: THREE.DoubleSide })); m2.userData.own = true; this.scene.add(m2);
+    }
     // vòng tròn hình số 8 (vạch trong, vạch ngoài)
     const ringM = new THREE.MeshBasicMaterial({ color: 0xf7f7f2 });
     for (const cx of [-3, 3]) for (const rr of [2.4, 3.6]) { const ring = new THREE.Mesh(new THREE.RingGeometry(rr - 0.05, rr + 0.05, 64).rotateX(-Math.PI / 2), ringM); ring.position.set(cx, 0.015, -11); ring.userData.own = true; this.scene.add(ring); }
@@ -128,14 +163,16 @@ export class MotoYard {
     }
     // biển tên bài
     const tests: [MotoTest, number][] = [['so_8', -7], ['duong_thang', -19], ['vach_can', -20 - motoStraightLen(this.opts.cls) - 2], ['go_ghe', -20 - motoStraightLen(this.opts.cls) - 3 - 16 - 2]];
-    tests.forEach(([t, z], i) => { const sp = makeSign(`Bài ${i + 1}: ${MOTO_TESTS[t].name}`, '#1f6fb8'); sp.scale.set(5.6, 1.4, 1); sp.position.set(-4.2, 2.4, z); this.scene.add(sp); });
+    tests.forEach(([t, z], i) => { const sp = makeSign(`Bài ${i + 1}: ${MOTO_TESTS[t].name}`, '#1f6fb8'); sp.scale.set(4.6, 1.15, 1); sp.position.set(-3.4, 2.6, z - 1.5); this.scene.add(sp); });
   }
 
   private resize() { const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1; this.quality.resize(w, h); this.camera.aspect = w / h; this.camera.fov = w < h ? 66 : 52; this.camera.updateProjectionMatrix(); }
   private frame() {
     if (this.disposed || !this.quality.tick()) return;
     const fast = (window as unknown as { __rideStep?: number }).__rideStep ?? 1;
-    const dt = Math.min(0.05, stepDt(1 / 60)) * fast; this.update(dt); this.renderer.render(this.scene, this.camera);
+    // bước thời gian theo đồng hồ thật (máy 120 Hz không chạy nhanh gấp đôi, máy chậm không chậm theo)
+    const now = performance.now(), real = this.lastT ? (now - this.lastT) / 1000 : 1 / 60; this.lastT = now;
+    const dt = Math.min(0.05, stepDt(real)) * fast; this.update(dt); this.renderer.render(this.scene, this.camera);
   }
   private penalty(test: MotoTest | null, points: number, text: string) { const p = { test, points, text }; this.log.push(p); this.opts.onPenalty?.(p); }
 
@@ -171,7 +208,7 @@ export class MotoYard {
     this.bike.lean.rotation.z = Math.max(-0.5, Math.min(0.5, -Math.atan((this.v * this.v * p.k) / 9.8))) + this.wobble * 0.3;
     this.wheelSpin -= (this.v * dt) / 0.3; for (const w of this.bike.wheels) w.rotation.x = this.wheelSpin;
     // máy quay chéo trên cao sau lưng để thấy vạch
-    const cp = new THREE.Vector3(x + p.hx * -5.5, 5.2, z + p.hz * -5.5), cl = new THREE.Vector3(x + p.hx * 3, 0, z + p.hz * 3);
+    const cp = new THREE.Vector3(x + p.hx * -5.2, 3.1, z + p.hz * -5.2), cl = new THREE.Vector3(x + p.hx * 6, 0.7, z + p.hz * 6);
     if (!this.camInit) { this.camP.copy(cp); this.camL.copy(cl); this.camInit = true; }
     const k = 1 - Math.pow(0.002, dt); this.camP.lerp(cp, k); this.camL.lerp(cl, k); this.camera.position.copy(this.camP); this.camera.lookAt(this.camL);
     if (this.s >= this.L - 0.05) { this.finish(); return; }

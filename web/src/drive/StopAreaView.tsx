@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { StopArea } from './StopArea.ts';
 import type { StopAreaInfo, StopHud, StopResult } from './StopArea.ts';
+import { CAMERA_FEEL } from '../cameraFeel.ts';
 
 export interface StopMenuItem { id: string; name: string; emoji: string; price: number; energy: number; kind?: string; regional?: string }
 
 const CSS = `
-.sa { position: absolute; inset: 0; z-index: 30; background: #bfe4f5; }
+.sa { position: absolute; inset: 0; z-index: 30; background: #bfe4f5; pointer-events: auto; } /* DriveGame đặt khu trạm trong .dg-center (pointer-events: none) — phải bật lại, nếu không nút trong quầy bị chạm xuyên xuống cảnh */
+.sa-shop, .sa-shop * { pointer-events: auto; }
 .sa-scene { position: absolute; inset: 0; }
 .sa-top { position: absolute; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); display: grid; gap: 6px; pointer-events: none; }
 .sa-bar { background: #fff6dcf2; border: 3px solid #7a4a22; border-radius: 16px; box-shadow: 0 3px 0 #56310f; padding: 5px 10px; display: grid; gap: 3px; }
@@ -20,6 +22,10 @@ const CSS = `
 .sa-tip { justify-self: center; max-width: 100%; background: #1f8a4c; color: #fff; border: 3px solid #fff; border-radius: 14px; padding: 4px 12px; font-weight: 700; font-size: 0.84rem; text-align: center; box-shadow: 0 3px 0 #0f5a30; }
 .sa-msg { justify-self: center; max-width: 100%; background: #3b2a17e8; color: #fff; border-radius: 12px; padding: 4px 12px; font-weight: 700; font-size: 0.84rem; text-align: center; }
 .sa-bottom { position: absolute; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; pointer-events: none; }
+.sa-touch { position: absolute; inset: 0; touch-action: none; }
+.sa-stick { position: absolute; width: 132px; height: 132px; margin: -66px 0 0 -66px; border-radius: 50%; background: #fff6dc66; border: 3px solid #7a4a22aa; pointer-events: none; }
+.sa-stick i { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: #f6e7bd; border: 3px solid #7a4a22; box-shadow: 0 3px 0 #56310f; }
+.sa-hint { position: absolute; left: max(12px, env(safe-area-inset-left)); top: 42%; max-width: 44%; font-weight: 700; font-size: 0.74rem; color: #3b2a17; background: #fff6dccc; border-radius: 10px; padding: 3px 8px; pointer-events: none; }
 .sa-joy { pointer-events: auto; touch-action: none; width: 128px; height: 128px; border-radius: 50%; background: #fff6dc99; border: 3px solid #7a4a22; box-shadow: 0 4px 0 #56310f; position: relative; flex: none; }
 .sa-joy i { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: #f6e7bd; border: 3px solid #7a4a22; box-shadow: 0 3px 0 #56310f; }
 .sa-joy small { position: absolute; left: 0; right: 0; bottom: -20px; text-align: center; font-weight: 700; font-size: 0.72rem; color: #3b2a17; text-shadow: 0 1px 0 #fff; }
@@ -43,6 +49,8 @@ const CSS = `
 .sa .dg-food button { font: inherit; font-family: 'Baloo 2', sans-serif; font-weight: 700; min-height: 44px; min-width: 52px; border-radius: 12px; border: 2px solid #7a4a22; background: #f6e7bd; box-shadow: 0 3px 0 #7a4a22; cursor: pointer; color: inherit; padding: 2px 8px; }
 .sa .dg-food button.eat { background: #ffd23f; } .sa .dg-food button:disabled { opacity: 0.5; }
 .sa-shop .tot { display: flex; justify-content: space-between; font-weight: 800; }
+/* đang mở quầy/quán ở trạm: ẩn nút chat nổi (nó nằm trên mọi lớp, z-index 2100) để không đè danh sách món */
+body:has(.sa-shop) .chat-float { display: none; }
 @keyframes sa-bob { from { transform: translateY(-3px); } to { transform: translateY(3px); } }
 @media (orientation: landscape) and (max-height: 500px) { .sa-joy { width: 112px; height: 112px; } .sa-btn { min-height: 44px; font-size: 0.86rem; } .sa-btn.main { min-height: 48px; } }
 `;
@@ -65,16 +73,34 @@ export function StopAreaView(props: {
   }, []);
   useEffect(() => { area.current?.setFuelName(fuel); }, [fuel]);
 
-  const joy = {
-    onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch { /* bỏ qua */ } move(e); },
-    onPointerMove: (e: React.PointerEvent) => { if (e.buttons || e.pointerType === 'touch') move(e); },
-    onPointerUp: () => stop(), onPointerCancel: () => stop(), onLostPointerCapture: () => stop(),
+  // Cảm ứng như ngoài làng/tham quan: chạm nửa trái phía dưới → cần điều khiển hiện ngay chỗ chạm; kéo chỗ khác → xoay máy quay (khi đi bộ).
+  const [stick, setStick] = useState<{ x: number; y: number } | null>(null);
+  const gest = useRef<{ id: number; mode: 'joy' | 'look'; x0: number; y0: number; x: number; y: number; on: boolean } | null>(null);
+  const touch = {
+    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+      if (gest.current) return;
+      const r = e.currentTarget.getBoundingClientRect(), lx = e.clientX - r.left, ly = e.clientY - r.top;
+      const joyZone = lx < r.width * 0.5 && ly > r.height * 0.35, mode: 'joy' | 'look' = joyZone || hud?.phase !== 'walk' ? 'joy' : 'look';
+      gest.current = { id: e.pointerId, mode, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, on: mode === 'joy' };
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* bỏ qua */ }
+      if (mode === 'joy') setStick({ x: lx, y: ly });
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+      const g = gest.current; if (!g || g.id !== e.pointerId) return;
+      if (g.mode === 'joy') {
+        const dx = e.clientX - g.x0, dy = e.clientY - g.y0, l = Math.hypot(dx, dy), F = CAMERA_FEEL;
+        const m = l < F.stickDeadPx ? 0 : Math.min(1, Math.pow((l - F.stickDeadPx) / (F.stickFullPx - F.stickDeadPx), F.stickCurve));
+        const x = l ? (dx / l) * m : 0, y = l ? (dy / l) * m : 0;
+        area.current?.setJoy(x, y); setKnob([x, y]);
+      } else {
+        const dx = e.clientX - g.x, dy = e.clientY - g.y;
+        if (!g.on) { if (Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < CAMERA_FEEL.deadzonePx) return; g.on = true; g.x = e.clientX; g.y = e.clientY; return; }
+        g.x = e.clientX; g.y = e.clientY; area.current?.look(dx, dy);
+      }
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => end(e.pointerId), onPointerCancel: (e: React.PointerEvent<HTMLDivElement>) => end(e.pointerId),
   };
-  function move(e: React.PointerEvent) {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect(), R = r.width / 2;
-    let x = (e.clientX - r.left - R) / (R * 0.8), y = (e.clientY - r.top - R) / (R * 0.8); const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
-    area.current?.setJoy(x, y); setKnob([x, y]);
-  }
+  function end(id: number) { const g = gest.current; if (!g || g.id !== id) return; gest.current = null; if (g.mode === 'joy') stop(); setStick(null); }
   function stop() { area.current?.setJoy(0, 0); setKnob([0, 0]); }
 
   const a = area.current, h = hud, ev = props.info.electric, unit = props.info.unit;
@@ -83,7 +109,7 @@ export function StopAreaView(props: {
   let acts: JSX.Element | null = null, tip = '';
   if (h) {
     if (h.phase === 'drive') {
-      tip = h.autoMoving ? 'Xe đang tự vào chỗ…' : h.snapHint ? 'Thả tay — xe tự căn vào ô' : 'Kéo cần lái tới một ô trống, hoặc bấm nút để xe tự vào';
+      tip = h.autoMoving ? 'Xe đang tự vào chỗ…' : h.snapHint ? 'Thả tay — xe tự căn vào ô' : 'Chạm giữ nửa trái để lái tới một ô trống, hoặc bấm nút để xe tự vào';
       acts = (
         <div className="grp">
           {!ev && <button className="sa-btn" onClick={() => a?.parkAt('pump')}>⛽ Vào trụ bơm<small>{vnd(props.info.price)}/lít</small></button>}
@@ -104,7 +130,7 @@ export function StopAreaView(props: {
       else if (n === 'car') main = <button className="sa-btn main" onClick={() => a?.act()}>🚗 Lên xe</button>;
       else if (n === 'shop' || n === 'food') main = <button className="sa-btn main" onClick={() => a?.act()}>{n === 'shop' ? '🛒 Vào cửa hàng' : '🍜 Vào quán ăn'}</button>;
       else if (n === 'wc') main = <button className="sa-btn main" disabled={h.wc} onClick={() => a?.act()}>🚻 {h.wc ? 'Đã đi vệ sinh' : 'Đi vệ sinh'}</button>;
-      if (!tip) tip = h.plugged && !ev ? 'Giữ nút Bơm (hoặc bấm Đổ đầy), xem số lít và tiền trên trụ' : h.plugged ? 'Đang sạc — chờ pin lên rồi rút súng' : h.holding ? (h.plugged ? '' : 'Đi tới nắp bình/cổng sạc của xe') : 'Kéo cần để đi bộ, hoặc chạm nút đi nhanh';
+      if (!tip) tip = h.plugged && !ev ? 'Giữ nút Bơm (hoặc bấm Đổ đầy), xem số lít và tiền trên trụ' : h.plugged ? 'Đang sạc — chờ pin lên rồi rút súng' : h.holding ? (h.plugged ? '' : 'Đi tới nắp bình/cổng sạc của xe') : 'Chạm giữ nửa trái màn hình để đi, hoặc chạm nút đi nhanh';
       const goChips: [string, Parameters<StopArea['walkTo']>[0]][] = [];
       if (h.bay === fk && !h.holding) goChips.push([ev ? '⚡ Trụ sạc' : '⛽ Trụ bơm', fk]);
       if (h.holding) goChips.push(h.plugged || h.added > 0 ? [ev ? '⚡ Về trụ' : '⛽ Về trụ', fk] : ['🚗 Nắp bình', 'car']);
@@ -129,6 +155,9 @@ export function StopAreaView(props: {
     <div className="sa" role="application" aria-label={props.info.name}>
       <style>{CSS}</style>
       <div ref={host} className="sa-scene" />
+      <div className="sa-touch" {...touch} aria-label="Chạm nửa trái để đi, kéo chỗ khác để xoay góc nhìn" />
+      {stick && <div className="sa-stick" style={{ left: stick.x, top: stick.y }}><i style={{ transform: `translate(${knob[0] * 38}px, ${knob[1] * 38}px)` }} /></div>}
+      {!stick && <div className="sa-hint">{h?.phase === 'walk' ? '👆 Chạm nửa trái để đi · kéo bên phải để xoay' : '👆 Chạm nửa trái để lái'}</div>}
       <div className="sa-top">
         <div className="sa-bar">
           <h2>{props.info.kind === 'rest' ? '☕' : ev ? '⚡' : '⛽'} {props.info.name}</h2>
@@ -144,7 +173,7 @@ export function StopAreaView(props: {
         {h?.msg && <div className="sa-msg" role="status">{h.msg}</div>}
       </div>
       <div className="sa-bottom">
-        <div className="sa-joy" {...joy} aria-label="Cần điều khiển"><i style={{ transform: `translate(${knob[0] * 36}px, ${knob[1] * 36}px)` }} /><small>{h?.phase === 'walk' ? 'Đi bộ' : 'Lái xe'}</small></div>
+        <span />
         <div className="sa-acts">{acts}</div>
       </div>
       {h?.inWc && <div className="sa-wc"><span>🚻 Đi vệ sinh, rửa mặt cho tỉnh táo…</span></div>}

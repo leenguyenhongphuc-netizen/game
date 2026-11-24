@@ -9,8 +9,11 @@ import { makeFarmer } from '../scene/World.ts';
 import { playerVehicle } from './DriveExtras.ts';
 import type { VehGroup } from './DriveExtras.ts';
 import { BUILDING, CHARGER_X, DOORS, ENTRY, EXIT, ISLANDS, LOT, buildScenery } from './StopScenery.ts';
+// cột hành lang trước nhà (cùng công thức với StopScenery): máy quay né sang bên khi một cột chắn giữa máy quay và người
+const PILLARS: [number, number][] = []; for (let x = -26.5; x <= 22.5; x += 3.5) if (!Object.values(DOORS).some(([dx]) => Math.abs(x - dx) < 2.4)) PILLARS.push([x, 11.95]);
 import type { Fade, PumpScreen } from './StopScenery.ts';
 import { attachStopOthers } from './OtherStop.ts';
+import { CAMERA_FEEL } from '../cameraFeel.ts';
 
 export type StopKind = 'rest' | 'fuel' | 'charger';
 export interface StopAreaInfo {
@@ -66,6 +69,8 @@ export class StopArea {
   private msg: string | null = null; private msgT = 0; private camX = ENTRY[0]; private camZ = ENTRY[1]; private hudT = 0;
   private auto = false; private autoStep = 0; private autoT = 0;
   /** Mái che cây xăng, mái trạm sạc: mờ đi khi xe/người ở dưới để máy quay nhìn thấy trụ bơm. */
+  // máy quay đi bộ: sau lưng người, kéo để xoay quanh (camYaw), tự về sau lưng khi đi mà không kéo
+  private camYaw = 0; private camPitch = 0.4; private camDist = 9; private lookIdle = 99; private camH = 2.1; private camHs = 5; private camSide = 0; private baseFov = 58;
   private fades: Fade[] = []; private sun: THREE.DirectionalLight | null = null; private overview = false;
 
   constructor(private host: HTMLElement, private info: StopAreaInfo, private cb: { onHud(h: StopHud): void; onDone(r: StopResult): void; onSpot?(s: 'shop' | 'food'): void }) {
@@ -89,7 +94,7 @@ export class StopArea {
     this.path = [[-28, -20]]; // xe tự lăn hết nhánh rẽ vào tới đầu bãi
     const w = window as unknown as { __stop?: unknown; __stopAuto?: boolean };
     this.auto = !!w.__stopAuto;
-    w.__stop = { state: () => this.hudNow(), park: (k: BayKind) => this.parkAt(k), getOut: () => this.getOut(), walkTo: (s: Spot) => this.walkTo(s), act: (s?: Spot) => this.act(s), pump: (on: boolean) => this.setPump(on), leave: () => this.leave(), auto: () => { this.auto = true; this.autoStep = 0; }, pos: () => ({ car: [this.cx, this.cz], person: [this.px, this.pz] }), info: () => ({ calls: this.renderer.info.render.calls, tri: this.renderer.info.render.triangles }), cam: (on: boolean) => { this.overview = on; } };
+    w.__stop = { state: () => this.hudNow(), park: (k: BayKind) => this.parkAt(k), getOut: () => this.getOut(), walkTo: (s: Spot) => this.walkTo(s), act: (s?: Spot) => this.act(s), pump: (on: boolean) => this.setPump(on), leave: () => this.leave(), auto: () => { this.auto = true; this.autoStep = 0; }, pos: () => ({ car: [this.cx, this.cz], person: [this.px, this.pz] }), info: () => ({ calls: this.renderer.info.render.calls, tri: this.renderer.info.render.triangles }), cam: (on: boolean) => { this.overview = on; }, camInfo: () => ({ pos: this.camera.position.toArray().map((v) => Math.round(v * 10) / 10), yaw: Math.round(this.camYaw * 100) / 100, dist: Math.round(this.camDist * 10) / 10, p: [this.px, this.pz].map((v) => Math.round(v * 10) / 10), pyaw: Math.round(this.pyaw * 100) / 100 }) };
     // [nhánh D3] người chơi khác, cư dân ảo cùng trạm (móc duy nhất; dựng ở OtherStop.ts)
     this.others = attachStopOthers(this.scene, info.name, () => (this.disposed ? null : { x: this.phase === 'walk' ? this.px : this.cx, z: this.phase === 'walk' ? this.pz : this.cz, walk: this.phase === 'walk', car: { x: this.cx, z: this.cz, yaw: this.yaw } }));
     this.raf = requestAnimationFrame(this.frame);
@@ -118,6 +123,8 @@ export class StopArea {
 
   // ---------------------------------------------------------------- điều khiển từ giao diện
   setJoy(x: number, y: number) { this.joy.x = Math.max(-1, Math.min(1, x)); this.joy.y = Math.max(-1, Math.min(1, y)); if (Math.hypot(x, y) > 0.2) { if (this.phase === 'drive') { this.path = []; this.target = null; } this.walkPath = []; } }
+  /** Kéo màn hình để xoay máy quay quanh người đang đi bộ (dx, dy: điểm ảnh, đã qua vùng chết). */
+  look(dx: number, dy: number) { if (this.phase !== 'walk') return; this.camYaw -= dx * CAMERA_FEEL.yawPerPx; this.camPitch = Math.max(0.12, Math.min(0.75, this.camPitch + dy * CAMERA_FEEL.pitchPerPx)); this.lookIdle = 0; }
   /** Tự lái tới ô trống gần nhất của loại `k` (nút trợ lái "Vào trụ bơm", "Vào ô đỗ"…). */
   parkAt(k: BayKind): boolean {
     if (this.phase !== 'drive' || (k === 'pump' && (this.info.electric))) return false;
@@ -130,7 +137,7 @@ export class StopArea {
     const s = this.side(), f = this.fwd(this.yaw), d = this.carHalfW + 0.9, e = this.carLen / 2 + 1;
     const cands: [number, number][] = [[this.cx + s[0] * d, this.cz + s[1] * d], [this.cx - s[0] * d, this.cz - s[1] * d], [this.cx - f[0] * e, this.cz - f[1] * e], [this.cx + f[0] * e, this.cz + f[1] * e]];
     const p = cands.find(([x, z]) => this.walkable(x, z)) ?? cands[0];
-    this.px = p[0]; this.pz = p[1]; this.pyaw = this.yaw; this.person.root.visible = true; this.person.root.position.set(this.px, 0, this.pz); this.phase = 'walk'; return true;
+    this.px = p[0]; this.pz = p[1]; this.pyaw = this.yaw; this.person.root.visible = true; this.person.root.position.set(this.px, 0, this.pz); this.phase = 'walk'; this.camYaw = 0; this.lookIdle = 99; this.camX = this.px; this.camZ = this.pz; return true;
   }
   private getIn(): boolean {
     if (this.phase !== 'walk' || this.near() !== 'car') return false;
@@ -260,14 +267,16 @@ export class StopArea {
     const walk = this.phase === 'walk', tx = walk ? this.px : this.cx, tz = walk ? this.pz : this.cz, a = ease(0.1, real);
     this.camX += (tx - this.camX) * a; this.camZ += (tz - this.camZ) * a;
     // máy quay đứng phía bắc (phía cao tốc) nhìn xuống phía nam: thấy mặt tiền nhà, mái che, trụ bơm
-    const portrait = this.camera.aspect < 0.9, h = walk ? (portrait ? 17 : 12) : portrait ? 30 : 21, back = walk ? (portrait ? 12 : 10) : portrait ? 20 : 15;
+    const portrait = this.camera.aspect < 0.9, h = portrait ? 30 : 21, back = portrait ? 20 : 15;
     if (this.overview) { this.camera.position.set(2, portrait ? 95 : 62, -62); this.camera.lookAt(2, 0, -2); }
+    else if (walk) this.placeWalkCam(real, portrait);
     else { this.camera.position.set(this.camX, h, this.camZ - back); this.camera.lookAt(this.camX, 0, this.camZ + 1); }
+    { const fv = this.baseFov + (walk && !this.overview ? 10 : 0); if (Math.abs(this.camera.fov - fv) > 0.05) { this.camera.fov += (fv - this.camera.fov) * ease(0.1, real); this.camera.updateProjectionMatrix(); } }
     this.quality.busy = Math.abs(this.v) > 0.1 || walk;
     // mái che mờ đi khi xe/người ở dưới hoặc ngay sau mái (tia nhìn từ máy quay xuyên qua mái)
     for (const f of this.fades) {
       const b = f.box, k = this.overview ? 0 : back / h, m = 1.2, hide = (x: number, z: number) => x > b.x0 - m && x < b.x1 + m && z > b.z0 - m && z < b.z1 + f.h * k + m;
-      const want = hide(tx, tz) && !this.overview ? 0.22 : 1; f.a += (want - f.a) * ease(0.15, real);
+      const want = this.overview ? 1 : walk ? (this.blocks(b, f.h) ? 0.18 : 1) : hide(tx, tz) ? 0.22 : 1; f.a += (want - f.a) * ease(0.15, real);
       for (const mt of f.mats) { mt.opacity = f.a; mt.depthWrite = f.a > 0.9; }
       f.group.visible = f.a > 0.03;
     }
@@ -284,7 +293,8 @@ export class StopArea {
     if (this.keys.has('ArrowDown') || this.keys.has('KeyS')) sy += 1;
     const jx = -sx, jy = -sy;
     if (this.phase === 'drive' || this.phase === 'leave') this.driveStep(dt, jx, jy);
-    if (this.phase === 'walk') this.walkStep(dt, jx, jy);
+    // đi bộ: cần điều khiển theo hướng máy quay (đẩy lên = đi về phía máy quay đang nhìn), như ngoài làng và khi tham quan
+    if (this.phase === 'walk') { const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw); this.walkStep(dt, fx * -sy - fz * sx, fz * -sy + fx * sx); }
     if (this.wcT > 0) { this.wcT -= dt; if (this.wcT <= 0) { this.wc = true; this.person.root.visible = true; this.say('🚻 Đi vệ sinh, rửa mặt xong — tỉnh táo hơn'); } }
     // bơm xăng (giữ nút) / sạc (tự chạy khi đã cắm)
     if (this.plugged && this.pumping && this.energy < this.info.tank) {
@@ -330,6 +340,45 @@ export class StopArea {
     this.car.position.set(this.cx, 0, this.cz); this.car.rotation.y = this.yaw;
     this.say(b.kind === 'pump' ? `🅿️ Đã dừng ở trụ bơm số ${b.pump}` : b.kind === 'charger' ? '🅿️ Đã dừng ở ô sạc' : '🅿️ Đã đỗ ngay ngắn trong ô');
   }
+  /** Máy quay sau lưng người đi bộ: cao ~1,6 m nhìn tới trước; kéo để xoay; tự về sau lưng sau 2,5 s đi mà không kéo;
+   *  co lại khi vướng nhà (tường không làm mờ được), mái/cột chắn tầm nhìn thì làm mờ (xem blocks()). */
+  private placeWalkCam(dt: number, portrait: boolean) {
+    this.lookIdle += dt;
+    const moving = this.joyMag() > 0.15 || this.walkPath.length > 0;
+    if (moving && this.lookIdle > 2.5) { const d = wrap(this.pyaw - this.camYaw), mx = 0.05; this.camYaw += Math.max(-mx, Math.min(mx, d * (1 - Math.exp(-dt * 1.6)))); }
+    const a = ease(0.18, dt); this.camX += (this.px - this.camX) * a; this.camZ += (this.pz - this.camZ) * a;
+    const fx = Math.sin(this.camYaw), fz = Math.cos(this.camYaw), want = (portrait ? 9.5 : 8) * (0.8 + this.camPitch * 0.5);
+    let dist = want;
+    for (let t = 0.3; t <= 1.001; t += 0.1) { const x = this.camX - fx * want * t, z = this.camZ - fz * want * t; if (this.inBuilding(x, z) || (this.camHs < 4 && this.carHit(x, z, 0.3))) { dist = Math.max(4.5, want * (t - 0.1)); break; } }
+    this.camDist += (dist - this.camDist) * ease(dist < this.camDist ? 0.35 : 0.06, dt);
+    // dưới/sát hành lang mái che trước nhà (mái ở cao ~3,3 m, z 11,7–14,2): hạ máy quay xuống dưới mái để nhìn vào cửa, không nhìn lên mặt mái
+    const under = Math.max(0, Math.min(1, (this.camZ - 9.5) / 2)), capH = 9 - under * 6.2;
+    let ch = Math.min(capH, this.camH + Math.sin(this.camPitch) * this.camDist); const hd = Math.sqrt(Math.max(1, this.camDist * this.camDist - (ch - this.camH) ** 2));
+    this.camHs += (ch - this.camHs) * ease(0.12, dt); ch = this.camHs;
+    let cx = this.camX - fx * hd, cz = this.camZ - fz * hd;
+    // cột chắn tầm nhìn: dịch máy quay ngang (không xoay hướng nhìn) cho tới khi tia tới người hở cột
+    let side = 0; const ux = this.camX - cx, uz = this.camZ - cz, ul = Math.hypot(ux, uz) || 1;
+    for (const [qx, qz] of PILLARS) {
+      const t = ((qx - cx) * ux + (qz - cz) * uz) / (ul * ul); if (t < 0.05 || t > 0.95) continue;
+      const lat = ((qx - cx) * uz - (qz - cz) * ux) / ul, need = 0.75 - Math.abs(lat);
+      if (need > 0) side += (lat > 0 ? 1 : -1) * need / Math.max(0.3, 1 - t);
+    }
+    side = Math.max(-1.6, Math.min(1.6, side)); this.camSide += (side - this.camSide) * ease(0.15, dt);
+    cx += (uz / ul) * this.camSide; cz += (-ux / ul) * this.camSide;
+    this.camera.position.set(cx, ch, cz);
+    this.camera.lookAt(this.camX + fx * 3, 1.5, this.camZ + fz * 3);
+  }
+  private joyMag() { return Math.hypot(this.joy.x, this.joy.y); }
+  private inBuilding(x: number, z: number) { return x > BUILDING.x0 && x < BUILDING.x1 && z > BUILDING.z0 + 0.2 && z < BUILDING.z1; }
+  /** Mái/khối có đáy cao `h` chen giữa máy quay và đầu người (hoặc người đang đứng dưới mái): làm mờ. */
+  private blocks(b: { x0: number; x1: number; z0: number; z1: number }, h: number) {
+    const c = this.camera.position, m = 0.4;
+    for (let t = 0; t <= 1.0001; t += 0.125) {
+      const x = c.x + (this.px - c.x) * t, z = c.z + (this.pz - c.z) * t, y = c.y + (1.7 - c.y) * t;
+      if (x > b.x0 - m && x < b.x1 + m && z > b.z0 - m && z < b.z1 + m && y > h * 0.35) return true;
+    }
+    return false;
+  }
   private walkStep(dt: number, jx: number, jy: number) {
     let mx = jx, mz = jy;
     if (Math.hypot(jx, jy) < 0.15 && this.walkPath.length) { const [gx, gz] = this.walkPath[0], dx = gx - this.px, dz = gz - this.pz, d = Math.hypot(dx, dz); if (d < 0.25) this.walkPath.shift(); else { mx = dx / d; mz = dz / d; } }
@@ -374,7 +423,7 @@ export class StopArea {
     ];
     if (this.autoStep < steps.length) { if (steps[this.autoStep]()) { this.autoStep++; this.autoT = 0.3; } else this.autoT = 0.15; }
   }
-  private resize = () => { const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1; this.quality.resize(w, h); this.camera.aspect = w / h; this.camera.fov = w < h ? 58 : 46; this.camera.updateProjectionMatrix(); };
+  private resize = () => { const w = this.host.clientWidth || 1, h = this.host.clientHeight || 1; this.quality.resize(w, h); this.camera.aspect = w / h; this.camera.fov = w < h ? 58 : 46; this.baseFov = this.camera.fov; this.camera.updateProjectionMatrix(); };
   dispose() {
     this.disposed = true; cancelAnimationFrame(this.raf); this.quality.dispose(); this.others?.dispose();
     window.removeEventListener('resize', this.resize); window.removeEventListener('keydown', this.onKey); window.removeEventListener('keyup', this.onKey);

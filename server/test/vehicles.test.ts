@@ -12,7 +12,7 @@ import { SIGHTS } from '../../shared/sights.ts';
 import {
   EXAM, LICENSE_POINTS, LICENSE_RENEW_FEE, LICENSE_YEAR_DAYS,
   DEFAULT_VEHICLE, DRIVE_RULES, ENERGY_PRICE, LICENSES, PERSONAL_RIDES, TOLL_GROUP_MULT, VEHICLES, VEHICLE_RESALE, licenseCovers, personalLegFare, rangeKm,
-  restStopItems, restStopKms, restsNeeded, tripPlanFor, truckOf,
+  restStopItems, restStopKms, restsNeeded, tripPlanFor, truckOf, theoryPass, LUCK_CHARM,
 } from '../../shared/vehicles.ts';
 import { GOODS, GOODS_BY_ID, GOOD_CATEGORIES, RIDE_GOODS } from '../../shared/shop.ts';
 
@@ -343,7 +343,7 @@ test('bằng lái có hạn, có điểm; hết hạn phải đổi hoặc thi l
   assert.deepEqual([fail.body.passed, fail.body.exam.theory.passed], [false, false]);
   assert.equal((await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'ly_thuyet', score: 90 }, u)).body.error, 'chua_bat_dau');
   await call('POST', '/api/licenses/exam/start', { cls: 'C1', part: 'ly_thuyet' }, u);
-  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'ly_thuyet', score: 90 }, u)).body.passed, true);
+  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'ly_thuyet', score: 95 }, u)).body.passed, true, 'hạng C1 đạt từ 32/35 câu (92 điểm)');
   assert.equal((await call('POST', '/api/licenses/buy', { cls: 'C1' }, u)).body.error, 'chua_thi_sa_hinh');
   await call('POST', '/api/licenses/exam/start', { cls: 'C1', part: 'sa_hinh' }, u);
   assert.equal((await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'sa_hinh', score: 85 }, u)).body.exam.yard.passed, true);
@@ -390,4 +390,29 @@ test('bằng lái có hạn, có điểm; hết hạn phải đổi hoặc thi l
   await call('POST', '/api/licenses/exam', { cls: 'C1', part: 'sa_hinh', score: 80 }, u);
   assert.equal((await call('POST', '/api/licenses/renew', { cls: 'C1' }, u)).status, 200);
   assert.equal((await call('POST', '/api/licenses/renew', { cls: 'A1' }, u)).body.error, 'chua_co');
+});
+
+test('lý thuyết theo bố cục đề từng hạng; bùa may mắn cho vui chỉ dùng một lần cho một lượt sa hình', async () => {
+  const u = await signup('bua_vui', 'nong_dan');
+  await setLevel('bua_vui', 5);
+  const lic = (await call('GET', '/api/vehicles', undefined, u)).body;
+  const a1 = lic.licenses.find((l: any) => l.cls === 'A1');
+  assert.deepEqual([a1.exam.theory.spec.questions, a1.exam.theory.spec.pass, a1.exam.theory.pass], [25, 21, theoryPass('A1')], 'A1: 25 câu, đạt 21 (84 điểm)');
+  assert.equal(lic.charms, 0);
+  // 20/25 câu = 80 điểm: chưa đạt A1
+  let th = await call('POST', '/api/licenses/exam/start', { cls: 'A1', part: 'ly_thuyet' }, u);
+  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'A1', part: 'ly_thuyet', score: 80, examId: th.body.examId }, u)).body.passed, false);
+  th = await call('POST', '/api/licenses/exam/start', { cls: 'A1', part: 'ly_thuyet' }, u);
+  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'A1', part: 'ly_thuyet', score: 84, examId: th.body.examId }, u)).body.passed, true);
+  const cashOf = async () => Number((await db.query("select cash from users where username = 'bua_vui'")).rows[0].cash);
+  const cash0 = await cashOf();
+  const buy = await call('POST', '/api/licenses/charm', {}, u);
+  assert.deepEqual([buy.status, buy.body.charms], [200, 1]);
+  assert.equal(cash0 - (await cashOf()), LUCK_CHARM.price);
+  const y1 = await call('POST', '/api/licenses/exam/start', { cls: 'A1', part: 'sa_hinh', charm: true }, u);
+  assert.equal(y1.body.charm, true, 'lượt này có bùa');
+  const y2 = await call('POST', '/api/licenses/exam/start', { cls: 'A1', part: 'sa_hinh', charm: true }, u);
+  assert.equal(y2.body.charm, false, 'hết bùa thì lượt sau không có');
+  // bùa không đổi cách chấm: 70 điểm vẫn trượt
+  assert.equal((await call('POST', '/api/licenses/exam', { cls: 'A1', part: 'sa_hinh', score: 70, examId: y2.body.examId }, u)).body.passed, false);
 });

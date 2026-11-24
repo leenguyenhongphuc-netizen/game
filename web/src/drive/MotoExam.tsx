@@ -11,7 +11,7 @@ import { MotoYard } from './MotoYard.ts';
 import type { YardHud, YardPenalty } from './MotoYard.ts';
 
 export interface MotoExamResult { passed: boolean; score: number; seconds: number; out: string | null; recorded: boolean }
-export interface MotoExamProps { cls: 'A1' | 'A'; title: string; fee?: number; practiceOnly?: boolean; color?: number; shirt?: number; onClose: (r: MotoExamResult | null) => void }
+export interface MotoExamProps { cls: 'A1' | 'A'; title: string; fee?: number; practiceOnly?: boolean; /** Số bùa may mắn đang có (vật phẩm vui). */ charms?: number; color?: number; shirt?: number; onClose: (r: MotoExamResult | null) => void }
 
 const CSS = `
 .mx { position: fixed; inset: 0; z-index: 1200; background: #dff0f7; font-family: 'Be Vietnam Pro', system-ui, sans-serif; color: #3b2a17; touch-action: none; user-select: none; -webkit-user-select: none; font-size: 14px; }
@@ -42,6 +42,9 @@ const CSS = `
 .mx-btn.brake { background: #c0392b; color: #fff; }
 .mx-quit { pointer-events: auto; justify-self: end; font: inherit; font-weight: 700; min-height: 44px; min-width: 44px; border: 2px solid #7a4a22; border-radius: 12px; background: #f6e7bd; padding: 4px 10px; cursor: pointer; }
 .mx-err { color: #c0281e; font-weight: 700; }
+.mx-charm { display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: 0.86rem; background: #eaf7e2; border: 2px solid #7cc36b; border-radius: 12px; padding: 6px 10px; }
+.mx-charm input { width: 22px; height: 22px; flex: none; }
+.mx-luck { justify-self: start; background: #2f8f4c; color: #fff; border: 3px solid #fff; border-radius: 12px; padding: 2px 10px; font-weight: 800; font-size: 0.8rem; }
 `;
 
 export function MotoExam(p: MotoExamProps): JSX.Element {
@@ -53,21 +56,23 @@ export function MotoExam(p: MotoExamProps): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [held, setHeld] = useState<string | null>(null);
+  const [useCharm, setUseCharm] = useState(false), [charmed, setCharmed] = useState(false);
   const host = useRef<HTMLDivElement>(null), yard = useRef<MotoYard | null>(null), examId = useRef<number | string | null>(null), minUntil = useRef(0);
 
   useEffect(() => () => { yard.current?.dispose(); yard.current = null; }, []);
   const begin = async (asPractice: boolean) => {
-    setError(null); setBusy(true);
+    setError(null); setBusy(true); let luck = false;
     if (!asPractice) {
-      try { const r = await api<{ examId?: number | string; minSeconds?: number }>('POST', '/api/licenses/exam/start', { cls: p.cls, part: 'sa_hinh' }); examId.current = r?.examId ?? null; minUntil.current = Date.now() + (r?.minSeconds ?? 0) * 1000; }
+      try { const r = await api<{ examId?: number | string; minSeconds?: number; charm?: boolean }>('POST', '/api/licenses/exam/start', { cls: p.cls, part: 'sa_hinh', charm: useCharm }); examId.current = r?.examId ?? null; minUntil.current = Date.now() + (r?.minSeconds ?? 0) * 1000; luck = !!r?.charm; }
       catch (e) { setError(e instanceof Error ? e.message : 'Chưa vào thi được.'); setBusy(false); return; }
     }
+    setCharmed(luck);
     setBusy(false); setPractice(asPractice); setResult(null); setHud(null); setPhase('run');
     window.setTimeout(() => {
       yard.current?.dispose();
       try {
         yard.current = new MotoYard(host.current!, {
-          cls: p.cls, style: p.cls === 'A' ? 'con_tay' : 'so', color: p.color ?? 0xc0392b, shirt: p.shirt ?? 0x2f7fd8, guide: asPractice,
+          cls: p.cls, style: p.cls === 'A' ? 'con_tay' : 'so', color: p.color ?? 0xc0392b, shirt: p.shirt ?? 0x2f7fd8, guide: asPractice || luck,
           onTick: setHud,
           onPenalty: (x) => { const id = Date.now(); setFeed({ id, text: x.points ? `−${x.points} điểm: ${x.text}` : `Truất quyền: ${x.text}` }); window.setTimeout(() => setFeed((f) => (f?.id === id ? null : f)), 2200); },
           onDone: (r) => void end(r, asPractice),
@@ -105,8 +110,9 @@ export function MotoExam(p: MotoExamProps): JSX.Element {
           {error && <p className="mx-err" role="alert">{error}</p>}
           <div className="mx-row">
             <button onClick={() => void begin(true)} disabled={busy}>🎓 Tập thử<small>miễn phí, có vệt dẫn</small></button>
-            {!p.practiceOnly && <button className="go" onClick={() => void begin(false)} disabled={busy}>🏁 Vào thi{p.fee ? <small>lệ phí {fmtMoney(p.fee)}</small> : null}</button>}
+            {!p.practiceOnly && <button className="go" onClick={() => void begin(false)} disabled={busy}>🏁 Thi sát hạch thật{p.fee ? <small>lệ phí {fmtMoney(p.fee)}</small> : null}</button>}
           </div>
+          {!p.practiceOnly && (p.charms ?? 0) > 0 && <label className="mx-charm"><input type="checkbox" checked={useCharm} onChange={(e) => setUseCharm(e.target.checked)} /> 🍀 Dùng bùa may mắn (còn {p.charms}) — vệt dẫn mờ và lời nhắc ở chỗ khó, không đổi cách chấm</label>}
           <div className="mx-row"><button onClick={() => p.onClose(null)}>Đóng</button></div>
         </div>
       )}
@@ -115,6 +121,7 @@ export function MotoExam(p: MotoExamProps): JSX.Element {
           <div className="mx-top">
             <div className="mx-bar"><span>{practice ? 'Tập' : 'Thi'} · <b>{hud?.testName ?? 'Xuất phát'}</b></span><span>Điểm <b>{hud?.score ?? 100}</b> · {hud?.seconds ?? 0}s</span></div>
             {hud && <div className="mx-hint">{hud.hint}</div>}
+            {charmed && !practice && <div className="mx-luck">🍀 Bùa may mắn: có vệt dẫn đường</div>}
             {hud && <div className={`mx-speed ${hud.speedOk}`}>{hud.kmh} km/h · {hud.speedOk === 'cham' ? 'quá chậm' : hud.speedOk === 'nhanh' ? 'quá nhanh' : 'vừa'}</div>}
             <button className="mx-quit" onClick={() => { if (practice || confirm('Bỏ bài thi? Lệ phí không được hoàn lại.')) { yard.current?.dispose(); yard.current = null; setPhase('intro'); } }}>Thoát</button>
           </div>

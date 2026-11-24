@@ -31,6 +31,17 @@ export const EXAM: Record<ExamPart, { name: string; pass: number; fee: number; m
   ly_thuyet: { name: 'Lý thuyết', pass: 80, fee: 100_000, minSeconds: 5 },
   sa_hinh: { name: 'Sa hình', pass: 80, fee: 300_000, minSeconds: 20 },
 };
+/** Bố cục đề lý thuyết từng hạng: số câu, số câu đúng để đạt, phút làm bài. Mỗi đề có câu "điểm liệt": trả lời sai là trượt dù đủ điểm.
+ * A1: 25 câu, đạt 21, 19 phút (Công văn 2262/CSGT-P5 năm 2025 hướng dẫn Thông tư 12/2025/TT-BCA); B1: 25 câu, đạt 23 (Phụ lục XIV Thông tư 35/2024).
+ * A (23/25) và ô tô B, C1, C, CE theo bố cục đề phổ biến báo chí đăng — CHƯA đối chiếu từng dòng với phụ lục văn bản gốc. */
+export const THEORY_SPEC: Record<LicenseClass, { questions: number; pass: number; minutes: number }> = {
+  A1: { questions: 25, pass: 21, minutes: 19 }, A: { questions: 25, pass: 23, minutes: 19 }, B1: { questions: 25, pass: 23, minutes: 19 },
+  B: { questions: 30, pass: 27, minutes: 20 }, C1: { questions: 35, pass: 32, minutes: 22 }, C: { questions: 40, pass: 36, minutes: 24 }, CE: { questions: 45, pass: 41, minutes: 26 },
+};
+/** Điểm đạt lý thuyết theo thang 100 của từng hạng (làm tròn lên). */
+export const theoryPass = (cls: LicenseClass): number => Math.ceil((THEORY_SPEC[cls].pass / THEORY_SPEC[cls].questions) * 100);
+/** Bùa may mắn cho vui (KHÔNG phải hối lộ, không đổi cách chấm): dùng cho một lượt thi sa hình thật — hiện vệt dẫn đường mờ và nhắc nhẹ ở điểm khó. */
+export const LUCK_CHARM = { id: 'bua_may_man', name: 'Bùa may mắn', price: 30_000, note: 'Vật phẩm vui: một lượt thi sa hình có vệt dẫn đường mờ và lời nhắc ở chỗ khó (ghép xe, dốc, số 8). Không thay đổi cách chấm điểm. Trò chơi không cổ suý hối lộ hay "chạy" bằng lái.' } as const;
 /** Mọi hạng phải đạt sa hình, trừ B1 (xe ba gác) chỉ thi lý thuyết trong game. A1, A thi sa hình xe máy 4 bài
  * (hình số 8, vạch đường thẳng, đường có vạch cản, đường gồ ghề — Phụ lục XIII Thông tư 35/2024/TT-BGTVT); ô tô thi sân 11 bài. */
 export const needsYard = (cls: LicenseClass): boolean => cls !== 'B1';

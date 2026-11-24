@@ -44,6 +44,14 @@
 .quiz-opts button.bad { background: #ffe3d6; border-color: var(--danger); box-shadow: 0 4px 0 var(--danger); opacity: 1; }
 .quiz-why { font-size: 0.86rem; line-height: 1.35; border-radius: 12px; padding: 6px 10px; }
 .quiz-why.ok { background: #eef8df; } .quiz-why.bad { background: #fff0e8; }
+.quiz-opts button.sel { background: #fff3c4; border-color: #c98a12; box-shadow: 0 4px 0 #c98a12; }
+.quiz-nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.quiz-nav button { min-width: 34px; min-height: 34px; padding: 0 4px; border-radius: 9px; font-size: 0.78rem; font-weight: 700; box-shadow: none; }
+.quiz-nav button[aria-current="true"] { outline: 3px solid var(--wood); }
+.quiz-nav button.on { background: #fff3c4; } .quiz-nav button.ok { background: #dff2c8; } .quiz-nav button.bad { background: #ffe3d6; }
+.quiz-lie { display: inline-block; background: #c0281e; color: #fff; border-radius: 8px; padding: 0 6px; font-size: 0.72rem; vertical-align: middle; }
+.quiz-row { display: flex; gap: 8px; } .quiz-row button { flex: 1; min-height: 46px; }
+.quiz-review { font-size: 0.84rem; } .quiz-review p { margin: 6px 0 0; }
 /* mua sắm */
 .shop-worn { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .shop-worn div { background: #fffdf4; border: 2px solid var(--line); border-radius: 12px; padding: 4px; text-align: center; font-size: 0.7rem; color: var(--muted); display: grid; justify-items: center; gap: 1px; min-width: 0; }

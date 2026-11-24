@@ -7,7 +7,7 @@ import { ITEMS, ITEM_BAG_MAX } from '../../shared/items.ts';
 import {
   EXAM, LICENSE_MONTH_MS, LICENSE_POINTS, LICENSE_RENEW_FEE, LICENSE_TERM_YEARS, LICENSE_YEAR_MS, needsYard, renewMode,
   CHARGE, DEFAULT_VEHICLE, DRIVE_RULES, ENERGY_PRICE, LICENSES, LICENSE_ORDER, POWER_NAMES, TOLL_GROUP_NAMES, VEHICLES, VEHICLE_MAX_OWNED, VEHICLE_RESALE,
-  isBigTruck, licenseCovers, parkPrice, rangeKm, restStopItems, roadPrice, tripPlanFor, truckOf, unitOf,
+  isBigTruck, licenseCovers, parkPrice, rangeKm, restStopItems, roadPrice, tripPlanFor, truckOf, unitOf, THEORY_SPEC, theoryPass, LUCK_CHARM,
 } from '../../shared/vehicles.ts';
 import type { ExamPart, LicenseClass, TruckInfo, VehicleSpec, VehicleTripPlan } from '../../shared/vehicles.ts';
 import { MOTO_RENTALS, PHUOT_BY_ID, PHUOT_ROUTES, PHUOT_CLIMATE, PHUOT_RULES, RAINCOAT, phuotFuel, phuotMinSeconds, phuotSeconds, rainEnergy, weatherPlan } from '../../shared/moto.ts';
@@ -120,7 +120,7 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
     const since = new Date(Date.now() - YEAR);
     const { rows } = await q.query(`select part, max(score) filter (where passed) as best, max(finished_at) filter (where passed) as at, max(score) as top
       from license_exams where user_id = $1 and cls = $2 and finished_at >= $3 group by part`, [userId, cls, since]);
-    const of = (part: ExamPart) => { const r = rows.find((x) => x.part === part); return { passed: !!r?.at, at: r?.at ? new Date(r.at).getTime() : null, best: r?.top ?? null, pass: EXAM[part].pass, fee: EXAM[part].fee }; };
+    const of = (part: ExamPart) => { const r = rows.find((x) => x.part === part); return { passed: !!r?.at, at: r?.at ? new Date(r.at).getTime() : null, best: r?.top ?? null, pass: part === 'ly_thuyet' ? theoryPass(cls) : EXAM[part].pass, fee: EXAM[part].fee, ...(part === 'ly_thuyet' ? { spec: THEORY_SPEC[cls] } : {}) }; };
     return { theory: of('ly_thuyet'), yard: { ...of('sa_hinh'), required: needsYard(cls) } };
   }
 
@@ -256,7 +256,8 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
           points: row?.points ?? null, maxPoints: LICENSE_POINTS, suspended: row?.suspended ?? false, exam,
           renew: row && (row.expiresAt !== null || row.suspended) ? { mode, fee: LICENSE_RENEW_FEE, needTheory: mode !== 'doi', needYard: mode === 'thi_lai' && needsYard(cls) } : null };
       })),
-      licenseRules: { yearDays: licYearDays, points: LICENSE_POINTS, exam: EXAM, renewFee: LICENSE_RENEW_FEE },
+      licenseRules: { yearDays: licYearDays, points: LICENSE_POINTS, exam: EXAM, renewFee: LICENSE_RENEW_FEE, theory: THEORY_SPEC },
+      charms: await charmSchema().then(async () => Number((await db.query('select count from license_charms where user_id = $1', [userId])).rows[0]?.count ?? 0)), charm: LUCK_CHARM,
       energyPrice: ENERGY_PRICE, charge: CHARGE, rules: DRIVE_RULES,
     };
   });
@@ -271,7 +272,7 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       if ((await licensesOf(q, userId)).includes(cls)) throw bad('da_co', `Bạn đã có bằng ${info.name}.`, 409);
       if (levelOf(u.xp).level < info.minLevel) throw bad('chua_du_cap', `Cần đạt cấp ${info.minLevel} mới được thi bằng ${info.name}.`, 409);
       const exam = await examState(q, userId, cls);
-      if (!exam.theory.passed) throw bad('chua_thi_ly_thuyet', `Bạn cần đạt bài thi lý thuyết hạng ${info.name} trước (từ ${EXAM.ly_thuyet.pass}/100 điểm).`, 409);
+      if (!exam.theory.passed) throw bad('chua_thi_ly_thuyet', `Bạn cần đạt bài thi lý thuyết hạng ${info.name} trước (đúng từ ${THEORY_SPEC[cls].pass}/${THEORY_SPEC[cls].questions} câu, không sai câu điểm liệt).`, 409);
       if (exam.yard.required && !exam.yard.passed) throw bad('chua_thi_sa_hinh', `Bạn cần đạt bài thi sa hình hạng ${info.name} (từ ${EXAM.sa_hinh.pass}/100 điểm) rồi mới được cấp bằng.`, 409);
       if (Number(u.cash) < info.price) throw bad('khong_du_tien', `Lệ phí học và cấp bằng ${info.name} là ${info.price.toLocaleString('vi-VN')}đ.`, 409);
       await d.addCash(q, userId, -info.price, `bang_lai:${cls}`);
@@ -296,7 +297,24 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       await d.addCash(q, userId, -ex.fee, `le_phi_thi:${cls}:${part}`);
       await q.query('delete from license_exams where user_id = $1 and finished_at is null', [userId]);
       const row = (await q.query('insert into license_exams (user_id, cls, part) values ($1,$2,$3) returning id', [userId, cls, part])).rows[0];
-      return { ok: true, examId: Number(row.id), cls, part, fee: ex.fee, pass: ex.pass, minSeconds: ex.minSeconds, cash: Number(u.cash) - ex.fee };
+      // bùa may mắn (vật phẩm vui): dùng một cái cho lượt thi sa hình này — chỉ hiện vệt dẫn đường, không đổi cách chấm
+      const charm = part === 'sa_hinh' && b.charm === true && (await charmSchema(), true) && !!(await q.query('update license_charms set count = count - 1 where user_id = $1 and count > 0', [userId])).rowCount;
+      return { ok: true, examId: Number(row.id), cls, part, fee: ex.fee, pass: part === 'ly_thuyet' ? theoryPass(cls) : ex.pass, minSeconds: ex.minSeconds, cash: Number(u.cash) - ex.fee, charm };
+    });
+  });
+  let charmReady: Promise<unknown> | null = null;
+  const charmSchema = () => (charmReady ??= db.query('create table if not exists license_charms (user_id bigint primary key references users(id) on delete cascade, count int not null default 0)').catch((e) => { charmReady = null; throw e; }));
+  /** Mua bùa may mắn ở quầy cạnh sân thi (vật phẩm vui, tối đa giữ 5 cái). Không phải hối lộ: không đổi điểm, không bỏ qua bài thi. */
+  app.post('/api/licenses/charm', async (req) => {
+    const userId = await d.requireUser(req); await charmSchema();
+    return db.tx(async (q) => {
+      const u = (await q.query('select cash from users where id = $1 for update', [userId])).rows[0];
+      const have = Number((await q.query('select count from license_charms where user_id = $1', [userId])).rows[0]?.count ?? 0);
+      if (have >= 5) throw bad('du_bua', 'Bạn đang giữ 5 bùa rồi — dùng bớt đã.', 409);
+      if (Number(u.cash) < LUCK_CHARM.price) throw bad('khong_du_tien', `Bùa may mắn giá ${LUCK_CHARM.price.toLocaleString('vi-VN')}đ.`, 409);
+      await d.addCash(q, userId, -LUCK_CHARM.price, 'bua_may_man');
+      await q.query('insert into license_charms (user_id, count) values ($1, 1) on conflict (user_id) do update set count = license_charms.count + 1', [userId]);
+      return { ok: true, charms: have + 1, cash: Number(u.cash) - LUCK_CHARM.price };
     });
   });
   /** Nộp kết quả một phần thi. Lý thuyết đạt mà bằng đang bị khoá vì hết điểm thì được phục hồi điểm. */
@@ -311,11 +329,11 @@ export function registerVehicles(app: FastifyInstance, d: VehicleDeps) {
       if (!ex) throw bad('chua_bat_dau', 'Bạn chưa đăng ký lượt thi này. Hãy bấm bắt đầu thi trước.', 409);
       const took = (Date.now() - new Date(ex.started_at).getTime()) / 1000;
       if (took < EXAM[part].minSeconds / Math.max(1, d.examHurry ?? 1)) throw bad('qua_nhanh', 'Bài thi nộp quá nhanh, không hợp lệ. Hãy thi lại.', 409);
-      const s = Math.round(score), passed = s >= EXAM[part].pass;
+      const s = Math.round(score), need = part === 'ly_thuyet' ? theoryPass(cls) : EXAM[part].pass, passed = s >= need;
       await q.query('update license_exams set finished_at = now(), score = $2, passed = $3 where id = $1', [ex.id, s, passed]);
       let restored = false;
       if (passed && part === 'ly_thuyet') restored = !!(await q.query('update user_licenses set points = $3, points_at = null, suspended = false where user_id = $1 and cls = $2 and suspended', [userId, cls, LICENSE_POINTS])).rowCount;
-      return { ok: true, cls, part, score: s, pass: EXAM[part].pass, passed, restoredPoints: restored, exam: await examState(q, userId, cls) };
+      return { ok: true, cls, part, score: s, pass: need, passed, restoredPoints: restored, exam: await examState(q, userId, cls) };
     });
   });
   /** Đổi bằng: còn hạn hoặc quá hạn ngắn thì đổi thẳng; quá hạn lâu phải có kết quả thi lại còn hiệu lực. */

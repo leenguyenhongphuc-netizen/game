@@ -1,5 +1,6 @@
 // Cho xe tự làm hết một lượt ở trạm dừng / cây xăng / trạm sạc, báo kết quả: node tools/ui-test/stop-auto.mjs [base]
-import { chromium } from 'playwright';
+import { createRequire } from 'node:module';
+const { chromium } = createRequire(import.meta.url)('playwright');
 const base = process.argv[2] ?? 'http://127.0.0.1:5291';
 const b = await chromium.launch({ args: ['--use-gl=swiftshader', '--ignore-gpu-blocklist'] });
 let bad = 0;
