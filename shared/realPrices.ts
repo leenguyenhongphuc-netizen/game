@@ -11,7 +11,10 @@ export type RefPriceKey =
   | 'sac_cong_cong' | 'sac_dc_nhanh'
   | 'phi_cao_toc_nhom1' | 'phi_cao_toc_bot'
   | 'luong_vung1' | 'luong_vung2' | 'luong_vung3' | 'luong_vung4'
-  | 'le_phi_truoc_ba' | 'thue_tncn_chuyen_nhuong';
+  | 'le_phi_truoc_ba' | 'thue_tncn_chuyen_nhuong'
+  | 'taxi_mo_cua' | 'taxi_km_2_25' | 'taxi_km_26' | 'xe_trung_chuyen_km'
+  | 'xe_khach_mo_ve' | 'xe_khach_km_ngan' | 'xe_khach_km_dai'
+  | 'tau_mo_ve' | 'tau_ghe_mem_km' | 'may_bay_co_ban' | 'may_bay_km' | 'tau_cao_toc_mo_ve' | 'tau_cao_toc_km';
 
 export interface RefPrice { key: RefPriceKey; name: string; value: number; unit: string; since: string; source: string; note?: string }
 
@@ -42,6 +45,20 @@ export const REF_PRICES: Record<RefPriceKey, RefPrice> = {
   // Thuế, phí đất đai khi sang tên.
   le_phi_truoc_ba: { key: 'le_phi_truoc_ba', name: 'Lệ phí trước bạ nhà đất', value: 0.005, unit: 'tỉ lệ', since: '2022-03-01', source: 'NĐ 10/2022/NĐ-CP: 0,5%, tối đa 500 triệu/tài sản/lần' },
   thue_tncn_chuyen_nhuong: { key: 'thue_tncn_chuyen_nhuong', name: 'Thuế TNCN chuyển nhượng bất động sản', value: 0.02, unit: 'tỉ lệ', since: '2026-01-01', source: '2% giá chuyển nhượng (thuvienphapluat.vn, dnse.com.vn)' },
+  // Giao thông công cộng (tra ngày 24/11/2026). Giá vé thay đổi theo ngày và hãng; lấy mức phổ biến hạng thường.
+  taxi_mo_cua: { key: 'taxi_mo_cua', name: 'Taxi xe 4 chỗ: giá mở cửa (km đầu)', value: 20_000, unit: 'đ', since: '2025-01-01', source: 'Bảng giá taxi điện 4–5 chỗ (greensm.com, viettelstore.vn 2025): mở cửa 20.000đ km đầu' },
+  taxi_km_2_25: { key: 'taxi_km_2_25', name: 'Taxi xe 4 chỗ: km 2–25', value: 15_500, unit: 'đ/km', since: '2025-01-01', source: 'greensm.com, viettelstore.vn: 14.000–16.000 đ/km' },
+  taxi_km_26: { key: 'taxi_km_26', name: 'Taxi xe 4 chỗ: từ km 26', value: 13_500, unit: 'đ/km', since: '2025-01-01', source: 'greensm.com, viettelstore.vn: 12.000–15.500 đ/km' },
+  xe_trung_chuyen_km: { key: 'xe_trung_chuyen_km', name: 'Xe buýt/xe trung chuyển ra ga, sân bay', value: 1_200, unit: 'đ/km', since: '2026-01-01', source: 'Ước tính theo giá xe khách chặng ngắn (vé 20.000đ + ~1.200 đ/km)', note: 'Ước tính, chưa có bảng giá chung.' },
+  xe_khach_mo_ve: { key: 'xe_khach_mo_ve', name: 'Xe khách giường nằm: phần cố định mỗi vé', value: 100_000, unit: 'đ', since: '2026-10-24', source: 'Hiệu chỉnh theo vé Sài Gòn – Đà Lạt từ 375.000–400.000đ (vietnamtourism.com 24/10/2026, mia.vn)' },
+  xe_khach_km_ngan: { key: 'xe_khach_km_ngan', name: 'Xe khách giường nằm: 500 km đầu', value: 800, unit: 'đ/km', since: '2026-10-24', source: 'Sài Gòn – Đà Lạt ~300 km đường bộ ≈ 340.000đ (vietnamtourism.com)' },
+  xe_khach_km_dai: { key: 'xe_khach_km_dai', name: 'Xe khách giường nằm: từ km 501', value: 500, unit: 'đ/km', since: '2026-10-24', source: 'Đà Nẵng – Hà Nội 18–57 USD (12go.asia); Hà Nội – Sài Gòn ~1,0–1,1 triệu' },
+  tau_mo_ve: { key: 'tau_mo_ve', name: 'Tàu khách: phần cố định mỗi vé', value: 30_000, unit: 'đ', since: '2026-10-21', source: 'Ước tính để vé chặng ngắn không quá rẻ' },
+  tau_ghe_mem_km: { key: 'tau_ghe_mem_km', name: 'Tàu SE ghế ngồi mềm điều hoà', value: 590, unit: 'đ/km', since: '2026-10-21', source: 'Hà Nội – Sài Gòn (1.726 km) ghế mềm từ 1.030.000–1.075.000đ (vietnamtourism.com 21/10/2026, mia.vn); nằm khoang 6 1,26–1,64 triệu' },
+  may_bay_co_ban: { key: 'may_bay_co_ban', name: 'Vé máy bay phổ thông nội địa: phần cố định (gồm thuế, phí sân bay)', value: 600_000, unit: 'đ', since: '2026-11-01', source: 'Hiệu chỉnh theo vé Hà Nội – Đà Nẵng ~68 USD (12go.asia), Hà Nội – Sài Gòn 1,5–2,5 triệu' },
+  tau_cao_toc_mo_ve: { key: 'tau_cao_toc_mo_ve', name: 'Tàu cao tốc ra đảo: phần cố định mỗi vé', value: 100_000, unit: 'đ', since: '2025-10-01', source: 'Hiệu chỉnh theo Rạch Giá – Phú Quốc 330.000–350.000đ, 2 giờ 45 phút (sunparadiseland.com 10/2025)' },
+  tau_cao_toc_km: { key: 'tau_cao_toc_km', name: 'Tàu cao tốc ra đảo: theo km đường biển', value: 2_200, unit: 'đ/km', since: '2025-10-01', source: 'như trên', note: 'Tuyến Côn Đảo thực tế đắt hơn công thức (tàu lớn, tuyến dài).' },
+  may_bay_km: { key: 'may_bay_km', name: 'Vé máy bay phổ thông nội địa: theo km bay', value: 1_100, unit: 'đ/km', since: '2026-11-01', source: 'như trên' },
 };
 
 /** Giá đang dùng (máy chủ có thể nạp bản ghi mới hơn từ bảng ref_prices). */

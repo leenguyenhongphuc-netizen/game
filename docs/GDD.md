@@ -742,3 +742,21 @@ Kiểm: `npm test` (parks.test.ts), `node tools/park-test.mjs` (hai tài khoản
 - **Thuế hộ kinh doanh** (bỏ thuế khoán từ 2026, kê khai theo quý): doanh thu = các khoản bán hàng trong sổ tiền (`SALE_REASONS`); ngưỡng 1 tỷ/năm tính cộng dồn trong năm (NĐ 141/2026 theo báo chí, chưa thấy văn bản gốc); thương lái (phân phối) 1% + 0,5%, chủ xưởng (sản xuất, chế biến) 3% + 1,5% trên phần vượt ngưỡng; nhà nông bán sản phẩm tự trồng không chịu thuế. Hạn nộp ≈ 30 ngày sau hết quý; chậm nộp 0,03%/ngày; còn nợ quá hạn thì không xin được giấy phép xây dựng. Chỉ tính từ 23/11/2026.
 - **Giấy phép xây dựng**: cửa hàng/siêu thị/xưởng chi nhánh phải đứng tên đủ số thửa trống đúng loại đất ở tỉnh đó, nộp hồ sơ ở Quầy 4 (lệ phí 150.000đ, thẩm định 20 ngày), có phép mới khởi công (`/api/properties/buy` dùng một giấy phép). Khoản "giấy phép" cũ trong `BUILDINGS` nay hiểu là chi phí thiết kế, thẩm định.
 - **Thuê đất nông nghiệp trả tiền hằng năm** (song song mua đứt): tiền thuê/năm = 1% giá đất bảng giá tỉnh (tỉ lệ UBND tỉnh quy định theo NĐ 103/2024 Điều 26, sửa NĐ 291/2025: Hà Tĩnh 1,0%, Tây Ninh 1%, Thái Bình 0,8%, Điện Biên 0,8–0,9%). Hạn mức thuê theo cấp `fieldLeaseMax` = 1 + ⌊(cấp − 5)/3⌋ (cấp 5: 1, cấp 10: 2, cấp 20: 6), vẫn trong tổng hạn mức giữ ruộng. Thửa thuê có mã thửa nhưng chỉ có **hợp đồng thuê** (`HĐT-<mã thửa>-<số>`), không có sổ, không rao bán được; trả lại sớm không hoàn tiền; hết hạn không gia hạn thì ruộng trống trả về quỹ, ruộng đang có cây để thu hoạch xong nhưng không gieo vụ mới. Mô phỏng `node tools/econ-sim.mjs` (thêm `--khong-thue` để so): lệch thu nhập 3 vai cấp 10 từ ×2,31 xuống ×1,22; cấp 20 ×1,41 → ×1,05; cấp 30 giữ ×1,37; **cấp 1 vẫn ×1,85** (chưa có cánh đồng ở cấp 1 — vườn 30 ô của nhà nông lời hơn hai vai kia, không thuộc phần đất).
+
+## Giao thông công cộng (nhánh I5, 24/11)
+
+Bốn phương tiện công cộng khi đi du lịch giữa các vùng, mỗi loại chỉ hiện khi ngoài đời thật sự đi được. Mã ở `shared/rules.ts` (`travelOptions`, `trainPlan`, `flightPlan`, `ferryPlan`), giá ở `shared/realPrices.ts`.
+
+| Phương tiện | Khi nào có | Giá (tra 24/11/2026) | Thời gian |
+|---|---|---|---|
+| Xe khách | mọi cặp vùng trên đất liền | phần cố định tăng dần tới 100.000đ ở chặng 150 km + 800 đ/km cho 500 km đầu + 500 đ/km sau đó (Sài Gòn – Đà Lạt ~340.000đ; Hà Nội – Sài Gòn ~1,0 triệu). Trên 1.000 km ghi "giường nằm tuyến dài, có thể đổi xe" | 0,5 giờ + km/50 |
+| Taxi | đường bộ ≤ 200 km | mở cửa 20.000đ km đầu, 15.500 đ/km km 2–25, 13.500 đ/km từ km 26 | km/50 |
+| Tàu hoả | hai đầu đều cách một ga khách ≤ 80 km đường bộ, chặng ray ≥ 80 km | vé ghế mềm 30.000đ + 590 đ/km ray + chặng ra/vào ga | 0,5 giờ + km ray/52 + đường ra ga/40 |
+| Máy bay | hai đầu gần sân bay có đường bay thẳng (một đầu là Nội Bài, Tân Sơn Nhất hoặc Đà Nẵng), bay ≥ 200 km, và **nhanh hơn xe khách** | vé 600.000đ + 1.100 đ/km bay + chặng ra/vào sân bay | 2 giờ thủ tục + km bay/650 + đường ra sân bay/40 |
+| Tàu thuỷ (ra đảo) | vùng trên đảo có tuyến tàu thường lệ | xe tới cảng + vé tàu cao tốc 100.000đ + 2.200 đ/km biển (Rạch Giá – Phú Quốc ~350.000đ) | theo tuyến |
+
+- **Đường bộ** = đường chim bay × 1,35 (`ROAD_FACTOR`). **Đường ray** theo lý trình thật (`RAIL_STATIONS`: 30 ga trên Thống Nhất, Hà Nội – Lào Cai, Hải Phòng, Đồng Đăng, Quán Triều; khác tuyến thì đi qua ga Hà Nội). Đà Lạt chỉ có tàu du lịch Đà Lạt – Trại Mát, không nối mạng quốc gia nên không có tàu. Đồng bằng sông Cửu Long, Tây Nguyên, Mộc Châu, Điện Biên không có ga.
+- **Chặng ra/vào ga, sân bay:** ≤ 15 km đi taxi, xa hơn đi xe buýt/xe trung chuyển (20.000đ + 1.200 đ/km — ước tính).
+- **Tuyến tàu ra đảo** (`ISLAND_FERRIES`): Rạch Giá → Phú Quốc 115 km, Trần Đề → Côn Đảo 85 km, Sa Kỳ → Lý Sơn 30 km, bến Bính (Hải Phòng) → Cát Bà 40 km. Từ đảo này sang đảo kia: về cảng đất liền rồi ra đảo kia.
+- **Rà soát:** `node tools/transport-audit.ts` (thêm `--bang` in bảng đủ 2.756 cặp, `--tu <vùng>` chỉ một vùng). Luật cũ: 4.232 bất thường (2.352 cặp xe khách rẻ dưới 60% giá thật, 1.368 cặp có tàu ở nơi không có ga, 512 cặp taxi rẻ dưới 60%). Luật mới: 0. Hiện có: xe khách 2.352 cặp, máy bay 1.416, tàu hoả 728, tàu thuỷ 404, taxi 352. 28/53 vùng gần ga, 50/53 gần sân bay.
+- **Hệ quả:** taxi theo giá thật đắt hơn trước ~4 lần (10 km: 40.000đ → 160.000đ), áp cả cho taxi đi tham quan địa danh (`sightRoute`). Thưởng tham quan `SIGHT_REWARD` 30.000đ chưa chỉnh theo.

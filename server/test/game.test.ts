@@ -10,7 +10,7 @@ import {
   COOP_ORDER_BONUS, COOP_ORDER_KG_PER_MEMBER, FLOATING_BONUS, IN_SEASON_YIELD, ORDERS_PER_DAY, ORDER_PREMIUM, PROCESS_SLOTS_XUONG,
   ROLE_INFO, inSeason, marketEventsAt, seasonAt, supplyKg,
   DUMP_RATIO, FUEL_PER_KM, ROLES, ROLE_TARGETS, SEASON_DAYS, SMALL_TILES, allowedTiles, spinWeights, tripInfo, TRUCK, landPrice, roadKm, tripPlan,
-  HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_MODES, glutFactor, paceFactor, stepWaitMs, travelOptions, flightPlan, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
+  HARVEST_HELP_SHARE, REGION_SET_REWARD, ROOFTOP_TILES, SOUVENIR_RATIO, START_CASH, TRAVEL_MODES, glutFactor, paceFactor, stepWaitMs, travelOptions, flightPlan, trainPlan, trainTicket, busFare, marketDayAt, nearestRegion, npcPrice, qualityFromLate,
   seedCost, snapCell, stepCount, urbanCoreAt, weatherAt, weatherInfo,
   speedFine, SPEED_FINES, wholesalePrice, wholesaleSupplyKg, WHOLESALE_RATIO, WHOLESALE_SUPPLY_KG, EXPORT_MODES, EXPORT_MARKETS, EXPORT_MAX_ACTIVE, exportModesFor, exportQuote, coopOrderRoute,
   LIMIT_REASONS, TRAVEL_VS_TRUCK, QUALITY_MULT, taxiFare, TAXI_MAX_KM, haversineKm,
@@ -625,6 +625,8 @@ test('chức năng theo vai: máy chủ chặn đúng bảng shared/roles.ts', a
 test('du lịch, quà đặc sản và sổ sưu tập', async () => {
   const cookie = await signup('du_khach');
   await call('POST', '/api/onboard', { regionId: 'hn_phudien' }, cookie);
+  // vé xe khách theo giá thật vài trăm nghìn mỗi chuyến: nạp thêm tiền, ghi cả sổ cái để số dư vẫn khớp
+  await db.query(`with u as (update users set cash = cash + 4000000 where username = 'du_khach' returning id) insert into ledger (user_id, delta, reason) select id, 4000000, 'test:nap' from u`);
   const start = (await meOf(cookie)).user.cash;
   assert.deepEqual((await call('GET', '/api/travel', undefined, cookie)).body.visited, ['hn_phudien']);
   assert.deepEqual((await call('GET', '/api/collection', undefined, cookie)).body, { specialties: [], regionsRewarded: [] });
@@ -932,6 +934,7 @@ test('phụ thu hoạch: khách du lịch đã tới vùng được chia phần,
   const ob = await call('POST', '/api/onboard', { regionId: 'cb_trungkhanh' }, owner);
   const tourist = await signup('khach_du_lich');
   await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, tourist);
+  await db.query('update users set cash = 5000000 where username = $1', ['khach_du_lich']);
   const pid = await ripePlanting(ob.body.plotId, 2, 'le_cao_bang');
   const no = await call('POST', `/api/plantings/${pid}/help`, {}, tourist);
   assert.deepEqual([no.status, no.body.error], [403, 'khong_phai_ban']);
@@ -1455,20 +1458,33 @@ test('nhịp chơi: người mới chờ ngắn hơn, càng thu hoạch nhiều 
 test('vé du lịch theo phương tiện', async () => {
   const modes = (a: string, b: string) => travelOptions(a, b).map((o) => o.mode);
   assert.deepEqual(modes('dt_caibe', 'vl_cholach'), ['xe_khach', 'taxi'], 'đất liền gần có xe khách và taxi');
-  assert.deepEqual(modes('dt_caibe', 'ld_dalat'), ['xe_khach', 'tau_hoa', 'may_bay'], 'từ 150 km có tàu hoả; hai đầu gần sân bay có đường bay thì có máy bay');
+  assert.deepEqual(modes('dt_caibe', 'ld_dalat'), ['xe_khach', 'may_bay'], 'Cái Bè, Đà Lạt không gần ga nên không có tàu; hai đầu gần sân bay có đường bay thì có máy bay');
+  assert.deepEqual(modes('hn_phudien', 'qng_trabong'), ['xe_khach', 'tau_hoa', 'may_bay'], 'hai đầu gần ga Thống Nhất có tàu hoả');
+  assert.equal(travelOptions('hn_phudien', 'hcm_laithieu').find((o) => o.mode === 'tau_hoa')?.via, 'ga Hà Nội → ga Sài Gòn');
+  assert.equal(travelOptions('hn_phudien', 'hcm_laithieu').find((o) => o.mode === 'tau_hoa')?.km, 1726, 'km tàu theo lý trình đường sắt');
+  assert.ok(travelOptions('hn_phudien', 'hp_thanhha').some((o) => o.mode === 'tau_hoa'), 'Hà Nội – Hải Phòng có tàu (khác tuyến thì đi qua ga Hà Nội)');
   assert.equal(travelOptions('ld_dalat', 'dn_tienphuoc').find((o) => o.mode === 'may_bay')?.via, 'Liên Khương → Đà Nẵng', 'Đà Lạt đi Đà Nẵng bay qua sân bay trung chuyển');
   assert.ok(!travelOptions('dt_caibe', 'vl_cholach').some((o) => o.mode === 'may_bay'), 'chặng ngắn không có máy bay');
-  assert.deepEqual(modes('dt_caibe', 'hn_phudien'), ['xe_khach', 'tau_hoa', 'may_bay'], 'từ 400 km có máy bay');
+  assert.deepEqual(modes('dt_caibe', 'hn_phudien'), ['xe_khach', 'may_bay'], 'xa có máy bay');
   assert.deepEqual(modes('gl_hoainhon', 'qng_lyson'), ['tau_thuy'], 'ra đảo gần chỉ có tàu thuỷ');
   assert.deepEqual(modes('hn_phudien', 'ag_phuquoc'), ['tau_thuy', 'may_bay'], 'ra đảo xa có thêm máy bay');
   assert.deepEqual(modes('dt_caibe', 'dt_caibe'), []);
   assert.deepEqual(modes('dt_caibe', 'khong_co'), []);
-  for (const o of travelOptions('dt_caibe', 'hn_phudien')) {
+  for (const o of travelOptions('hn_phudien', 'qng_trabong')) {
     const m = TRAVEL_MODES[o.mode];
-    if (o.mode === 'may_bay') assert.equal(o.fare, flightPlan('dt_caibe', 'hn_phudien')!.fare, 'vé bay gồm taxi ra/vào sân bay');
-    else assert.equal(o.fare, Math.round((m.base + m.perKm * o.km) / 1000) * 1000);
-    assert.ok(m.seconds > 0 && m.name && m.icon);
+    if (o.mode === 'may_bay') assert.equal(o.fare, flightPlan('hn_phudien', 'qng_trabong')!.fare, 'vé bay gồm chặng ra/vào sân bay');
+    if (o.mode === 'tau_hoa') assert.equal(o.fare, trainPlan('hn_phudien', 'qng_trabong')!.fare, 'vé tàu gồm chặng ra/vào ga');
+    if (o.mode === 'xe_khach') assert.equal(o.fare, busFare(o.km));
+    assert.ok(m.seconds > 0 && m.name && m.icon && o.hours > 0);
   }
+  // giá thật: xe khách Sài Gòn – Đà Lạt ~300 km đường bộ khoảng 300–450 nghìn; tàu Hà Nội – Sài Gòn ghế mềm ~1,0–1,1 triệu
+  assert.ok(busFare(300) >= 300_000 && busFare(300) <= 450_000, `xe khách 300 km: ${busFare(300)}`);
+  assert.ok(trainTicket(1726) >= 950_000 && trainTicket(1726) <= 1_150_000, `tàu Hà Nội – Sài Gòn: ${trainTicket(1726)}`);
+  const hanSgn = travelOptions('hn_phudien', 'hcm_laithieu');
+  const fast = hanSgn.find((o) => o.mode === 'may_bay')!, slow = hanSgn.find((o) => o.mode === 'xe_khach')!;
+  assert.ok(fast.hours < slow.hours / 4 && fast.fare > slow.fare, 'máy bay nhanh hơn nhiều, đắt hơn xe khách');
+  assert.ok(!travelOptions('dt_caibe', 'dt_caolanh').some((o) => o.mode === 'may_bay'), 'máy bay chậm hơn đường bộ thì không hiện');
+  assert.match(travelOptions('gl_hoainhon', 'qng_lyson')[0].via ?? '', /cảng Sa Kỳ/, 'ra đảo đi xe tới cảng rồi tàu cao tốc');
 
   const cookie = await signup('mua_ve');
   assert.equal((await call('POST', '/api/travel', { regionId: 'hn_phudien' }, cookie)).body.error, 'chua_co_dat');
@@ -1476,15 +1492,16 @@ test('vé du lịch theo phương tiện', async () => {
   const me0 = await meOf(cookie);
   await db.query('update users set cash = 5000000 where id = $1', [me0.user.id]);
   const opts = travelOptions('dt_caibe', 'hn_phudien');
-  const plane = opts.find((o) => o.mode === 'may_bay')!, train = opts.find((o) => o.mode === 'tau_hoa')!;
+  const plane = opts.find((o) => o.mode === 'may_bay')!, train = opts.find((o) => o.mode === 'xe_khach')!;
   const bad1 = await call('POST', '/api/travel', { regionId: 'vl_cholach', mode: 'may_bay' }, cookie);
   assert.deepEqual([bad1.status, bad1.body.error], [400, 'phuong_tien_sai']);
   assert.equal((await call('POST', '/api/travel', { regionId: 'hn_phudien', mode: 'xe_dap' }, cookie)).body.error, 'phuong_tien_sai');
   assert.deepEqual(core((await call('POST', '/api/travel', { regionId: 'hn_phudien', mode: 'may_bay' }, cookie)).body), { cost: plane.fare, isNew: true, mode: 'may_bay' });
-  assert.deepEqual(core((await call('POST', '/api/travel', { regionId: 'hn_phudien', mode: 'tau_hoa' }, cookie)).body), { cost: train.fare, isNew: false, mode: 'tau_hoa' });
+  assert.deepEqual(core((await call('POST', '/api/travel', { regionId: 'hn_phudien', mode: 'tau_hoa' }, cookie)).body).error, 'phuong_tien_sai', 'Cái Bè không gần ga');
+  assert.deepEqual(core((await call('POST', '/api/travel', { regionId: 'hn_phudien', mode: 'xe_khach' }, cookie)).body), { cost: train.fare, isNew: false, mode: 'xe_khach' });
   assert.equal((await meOf(cookie)).user.cash, 5000000 - plane.fare - train.fare);
   const reasons = await db.query(`select reason from ledger where user_id = $1 and reason like 've:%' order by id`, [me0.user.id]);
-  assert.deepEqual(reasons.rows.map((r: any) => r.reason), ['ve:may_bay:hn_phudien', 've:tau_hoa:hn_phudien']);
+  assert.deepEqual(reasons.rows.map((r: any) => r.reason), ['ve:may_bay:hn_phudien', 've:xe_khach:hn_phudien']);
   await db.query('update users set cash = 1000 where id = $1', [me0.user.id]);
   const poor = await call('POST', '/api/travel', { regionId: 'vl_cholach' }, cookie);
   assert.deepEqual([poor.status, poor.body.error], [409, 'khong_du_tien']);
@@ -1735,7 +1752,8 @@ test('taxi: chỉ chặng ngắn trên đất liền, cước theo km', async ()
   const taxi = near.find((o) => o.mode === 'taxi')!, bus = near.find((o) => o.mode === 'xe_khach')!;
   assert.equal(taxi.fare, taxiFare(taxi.km));
   assert.ok(taxi.fare > bus.fare * 2, 'taxi đắt hơn xe khách rõ rệt');
-  assert.equal(taxiFare(10), 40000);
+  assert.equal(taxiFare(10), 160000, 'taxi 10 km: mở cửa 20.000đ + 9 km × 15.500đ');
+  assert.equal(taxiFare(30), Math.round((20000 + 24 * 15500 + 5 * 13500) / 1000) * 1000, 'từ km 26 rẻ hơn');
   const cookie = await signup('di_taxi');
   await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, cookie);
   const me0 = await meOf(cookie);

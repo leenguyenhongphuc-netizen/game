@@ -1,6 +1,6 @@
 // Luật chơi thuần tuý, dùng chung cho máy chủ và giao diện.
 import { CROPS, REGIONS, SPECIALTIES, processOf, recipeOf } from './catalog.ts';
-import { fuelPriceNow, tollPerKmGroup1 } from './realPrices.ts';
+import { fuelPriceNow, refPrice, tollPerKmGroup1 } from './realPrices.ts';
 import type { Region, Specialty } from './catalog.ts';
 
 export const PLOT_COLS = 6;
@@ -340,21 +340,44 @@ export function glutFactor(kg24h: number): number {
 }
 /** Quà đặc sản bán đắt hơn mọi mức thương lái trả (kể cả cộng dồn thưởng) và giới hạn số lần mua mỗi ngày, để không mua đi bán lại kiếm lời. */
 export const TRAVEL_COST = 20_000, SOUVENIR_RATIO = 1.8, SOUVENIR_MAX_KG = 5, SOUVENIR_DAILY_BUYS = 3;
-/** Phương tiện đi du lịch: giá vé = base + perKm × quãng đường; seconds là thời lượng hoạt cảnh trên đường. */
+/** Phương tiện đi du lịch. Giá vé tính bằng các hàm bên dưới theo giá thật (shared/realPrices.ts); seconds là thời lượng hoạt cảnh. */
 export type TravelMode = 'xe_khach' | 'tau_hoa' | 'may_bay' | 'tau_thuy' | 'taxi';
 export const TRAVEL_MODES: Record<TravelMode, { name: string; icon: string; base: number; perKm: number; seconds: number }> = {
-  xe_khach: { name: 'Xe khách', icon: '🚌', base: 10_000, perKm: 150, seconds: 10 },
-  tau_hoa: { name: 'Tàu hoả', icon: '🚆', base: 20_000, perKm: 250, seconds: 10 },
-  may_bay: { name: 'Máy bay', icon: '✈️', base: 450_000, perKm: 1300, seconds: 8 },
-  tau_thuy: { name: 'Tàu thuỷ', icon: '⛴️', base: 50_000, perKm: 600, seconds: 10 },
-  taxi: { name: 'Taxi', icon: '🚕', base: 15_000, perKm: 2_500, seconds: 12 },
+  xe_khach: { name: 'Xe khách', icon: '🚌', base: 100_000, perKm: 800, seconds: 10 },
+  tau_hoa: { name: 'Tàu hoả', icon: '🚆', base: 30_000, perKm: 590, seconds: 10 },
+  may_bay: { name: 'Máy bay', icon: '✈️', base: 600_000, perKm: 1_100, seconds: 8 },
+  tau_thuy: { name: 'Tàu thuỷ', icon: '⛴️', base: 100_000, perKm: 2_200, seconds: 10 },
+  taxi: { name: 'Taxi', icon: '🚕', base: 20_000, perKm: 15_500, seconds: 12 },
 };
-/** Taxi chỉ chạy chặng ngắn trên đất liền. */
+/** Đường bộ thực tế dài hơn đường chim bay (đèo, vòng qua sông, núi); hệ số bình quân các tuyến quốc lộ VN
+ *  (Hà Nội – Sài Gòn: 1.140 km chim bay, ~1.650 km QL1). */
+export const ROAD_FACTOR = 1.35;
+export const roadKmOf = (straightKm: number): number => Math.max(1, Math.round(straightKm * ROAD_FACTOR));
+/** Taxi chỉ chạy chặng ngắn trên đất liền (km đường bộ). Xa hơn thì xe khách, tàu rẻ hơn nhiều lần. */
 export const TAXI_MAX_KM = 200;
-/** Cước taxi cho một quãng đường (làm tròn nghìn đồng). */
+/** Cước taxi 4 chỗ theo bậc: mở cửa km đầu, km 2–25, từ km 26 (làm tròn nghìn đồng). */
 export function taxiFare(km: number): number {
-  return Math.round((TRAVEL_MODES.taxi.base + TRAVEL_MODES.taxi.perKm * Math.max(0, km)) / 1000) * 1000;
+  const k = Math.max(1, km);
+  const v = refPrice('taxi_mo_cua') + Math.min(24, Math.max(0, k - 1)) * refPrice('taxi_km_2_25') + Math.max(0, k - 25) * refPrice('taxi_km_26');
+  return Math.round(v / 1000) * 1000;
 }
+/** Chặng ra/vào ga, sân bay: gần (≤ 15 km) thì taxi, xa hơn thì xe buýt/xe trung chuyển. */
+export function transferFare(km: number): number {
+  return km <= 15 ? taxiFare(km) : Math.round((20_000 + refPrice('xe_trung_chuyen_km') * km) / 1000) * 1000;
+}
+/** Vé xe khách theo km đường bộ: phần cố định tăng dần tới đủ mức ở chặng 150 km (chặng ngắn là xe ghế ngồi, rẻ),
+ *  500 km đầu giá cao hơn, tuyến dài rẻ dần. */
+export function busFare(roadKm: number): number {
+  const fixed = Math.min(refPrice('xe_khach_mo_ve'), 20_000 + (roadKm * (refPrice('xe_khach_mo_ve') - 20_000)) / 150);
+  const v = fixed + Math.min(500, roadKm) * refPrice('xe_khach_km_ngan') + Math.max(0, roadKm - 500) * refPrice('xe_khach_km_dai');
+  return Math.round(v / 1000) * 1000;
+}
+/** Tốc độ bình quân thực tế (km/h): xe khách kể cả dừng nghỉ, taxi, tàu SE (Hà Nội – Sài Gòn ~33 giờ), máy bay, xe trung chuyển. */
+export const SPEED_KMH = { bus: 50, taxi: 50, train: 52, plane: 650, transfer: 40 };
+/** Thời gian thủ tục ở sân bay (đến sớm, an ninh, chờ lên máy bay, nhận hành lý) và ở ga. */
+export const AIRPORT_HOURS = 2, STATION_HOURS = 0.5;
+const roundH = (h: number): number => Math.max(0.5, Math.round(h * 2) / 2);
+
 /** Cảng hàng không dân dụng có chuyến bay nội địa thường lệ (toạ độ nhà ga). */
 export const AIRPORTS: { code: string; name: string; lat: number; lng: number }[] = [
   { code: 'HAN', name: 'Nội Bài', lat: 21.221, lng: 105.807 }, { code: 'HPH', name: 'Cát Bi', lat: 20.819, lng: 106.725 },
@@ -371,44 +394,159 @@ export const AIRPORTS: { code: string; name: string; lat: number; lng: number }[
 ];
 /** Vùng cách sân bay quá mức này thì coi như không có sân bay gần; chặng bay ngắn hơn mức dưới thì không có đường bay thường lệ. */
 export const AIRPORT_MAX_KM = 150, FLIGHT_MIN_KM = 200, ISLAND_AIRPORT_KM = 30;
-/** Giá vé máy bay hạng phổ thông (đã gồm thuế, phí sân bay), tham chiếu giá vé nội địa phổ biến 2025–2026. */
-export const FLIGHT_FARE = { base: 450_000, perKm: 1_300 };
 /** Ba sân bay trung chuyển; sân bay địa phương thường chỉ có đường bay thẳng tới các sân bay này. */
 export const AIRPORT_HUBS = ['HAN', 'SGN', 'DAD'];
-/** Các sân bay trong tầm AIRPORT_MAX_KM của một vùng, kèm quãng đường bộ ước tính (gấp 1,3 đường chim bay). */
+/** Các sân bay trong tầm AIRPORT_MAX_KM của một vùng, kèm quãng đường bộ ước tính. Vùng trên đảo chỉ dùng sân bay ngay trên đảo. */
 export function airportsNear(regionId: string): { code: string; name: string; lat: number; lng: number; km: number }[] {
   const r = region(regionId);
   if (!r) return [];
   return AIRPORTS.map((a) => ({ ...a, km: haversineKm(r.lat, r.lng, a.lat, a.lng) }))
-    // vùng trên đảo chỉ dùng sân bay ngay trên đảo (đường bộ không ra được sân bay đất liền)
     .filter((a) => a.km <= (r.island ? ISLAND_AIRPORT_KM : AIRPORT_MAX_KM))
-    .map((a) => ({ ...a, km: Math.max(3, Math.round(a.km * 1.3)) }))
+    .map((a) => ({ ...a, km: Math.max(3, roadKmOf(a.km)) }))
     .sort((x, y) => x.km - y.km);
 }
-/** Chuyến bay giữa hai vùng: taxi ra sân bay đi + vé bay + taxi từ sân bay đến. Chọn cặp sân bay có đường bay thẳng
+/** Vé máy bay phổ thông (đã gồm thuế, phí sân bay) theo km bay. */
+export function flightTicket(airKm: number): number {
+  return Math.round((refPrice('may_bay_co_ban') + refPrice('may_bay_km') * airKm) / 1000) * 1000;
+}
+export interface FlightPlan { from: string; to: string; airKm: number; fare: number; ticket: number; groundKm: number; hours: number }
+/** Chuyến bay giữa hai vùng: ra sân bay + vé bay + từ sân bay về. Chọn cặp sân bay có đường bay thẳng
  *  (ít nhất một đầu là sân bay trung chuyển) và tổng đường bộ ngắn nhất. null nếu không có đường bay hợp lý. */
-export function flightPlan(fromRegionId: string, toRegionId: string): { from: string; to: string; airKm: number; fare: number; ticket: number; groundKm: number } | null {
-  let best: { from: string; to: string; airKm: number; fare: number; ticket: number; groundKm: number } | null = null;
+export function flightPlan(fromRegionId: string, toRegionId: string): FlightPlan | null {
+  let best: FlightPlan | null = null;
   for (const a of airportsNear(fromRegionId)) for (const b of airportsNear(toRegionId)) {
     if (a.code === b.code || !(AIRPORT_HUBS.includes(a.code) || AIRPORT_HUBS.includes(b.code))) continue;
     const airKm = Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng));
     if (airKm < FLIGHT_MIN_KM || (best && a.km + b.km >= best.groundKm)) continue;
-    const ticket = Math.round((FLIGHT_FARE.base + FLIGHT_FARE.perKm * airKm) / 1000) * 1000;
-    best = { from: a.name, to: b.name, airKm, ticket, groundKm: a.km + b.km, fare: ticket + taxiFare(a.km) + taxiFare(b.km) };
+    const ticket = flightTicket(airKm);
+    best = { from: a.name, to: b.name, airKm, ticket, groundKm: a.km + b.km, fare: ticket + transferFare(a.km) + transferFare(b.km),
+      hours: roundH(AIRPORT_HOURS + airKm / SPEED_KMH.plane + 0.3 + (a.km + b.km) / SPEED_KMH.transfer) };
   }
   return best;
 }
-/** Các phương tiện đi được giữa hai vùng, kèm giá vé. Ra vào đảo phải đi tàu thuỷ hoặc máy bay; máy bay chỉ khi hai đầu đều gần sân bay. */
-export function travelOptions(fromRegionId: string, toRegionId: string): { mode: TravelMode; fare: number; km: number; via?: string }[] {
+
+/** Ga khách đang có tàu chạy thường lệ. `line` là tuyến, `km` là lý trình tính từ ga Hà Nội (các tuyến nối nhau ở Hà Nội).
+ *  Nguồn: lý trình đường sắt Thống Nhất và các tuyến phía Bắc (Hà Nội – Lào Cai, Hải Phòng, Đồng Đăng, Quán Triều) của
+ *  Đường sắt Việt Nam; toạ độ nhà ga. Tuyến Đà Lạt – Trại Mát (7 km) chỉ là tàu du lịch, không nối mạng quốc gia nên không có ở đây. */
+export type RailLine = 'thong_nhat' | 'lao_cai' | 'hai_phong' | 'dong_dang' | 'quan_trieu';
+export const RAIL_STATIONS: { id: string; name: string; line: RailLine; km: number; lat: number; lng: number }[] = [
+  { id: 'ha_noi', name: 'Hà Nội', line: 'thong_nhat', km: 0, lat: 21.0245, lng: 105.8412 },
+  { id: 'phu_ly', name: 'Phủ Lý', line: 'thong_nhat', km: 56, lat: 20.5436, lng: 105.9136 },
+  { id: 'nam_dinh', name: 'Nam Định', line: 'thong_nhat', km: 87, lat: 20.4334, lng: 106.1707 },
+  { id: 'ninh_binh', name: 'Ninh Bình', line: 'thong_nhat', km: 115, lat: 20.2539, lng: 105.9732 },
+  { id: 'bim_son', name: 'Bỉm Sơn', line: 'thong_nhat', km: 141, lat: 20.077, lng: 105.8615 },
+  { id: 'thanh_hoa', name: 'Thanh Hoá', line: 'thong_nhat', km: 175, lat: 19.8075, lng: 105.7712 },
+  { id: 'cho_sy', name: 'Chợ Sy', line: 'thong_nhat', km: 279, lat: 19.0225, lng: 105.6047 },
+  { id: 'vinh', name: 'Vinh', line: 'thong_nhat', km: 319, lat: 18.6835, lng: 105.6719 },
+  { id: 'huong_pho', name: 'Hương Phố', line: 'thong_nhat', km: 387, lat: 18.2156, lng: 105.6995 },
+  { id: 'dong_le', name: 'Đồng Lê', line: 'thong_nhat', km: 436, lat: 17.8853, lng: 106.0247 },
+  { id: 'dong_hoi', name: 'Đồng Hới', line: 'thong_nhat', km: 522, lat: 17.4625, lng: 106.6052 },
+  { id: 'dong_ha', name: 'Đông Hà', line: 'thong_nhat', km: 622, lat: 16.816, lng: 107.096 },
+  { id: 'hue', name: 'Huế', line: 'thong_nhat', km: 688, lat: 16.4567, lng: 107.5786 },
+  { id: 'da_nang', name: 'Đà Nẵng', line: 'thong_nhat', km: 791, lat: 16.0715, lng: 108.2095 },
+  { id: 'tam_ky', name: 'Tam Kỳ', line: 'thong_nhat', km: 865, lat: 15.5715, lng: 108.4706 },
+  { id: 'quang_ngai', name: 'Quảng Ngãi', line: 'thong_nhat', km: 928, lat: 15.1203, lng: 108.7871 },
+  { id: 'bong_son', name: 'Bồng Sơn', line: 'thong_nhat', km: 1017, lat: 14.4267, lng: 109.0127 },
+  { id: 'dieu_tri', name: 'Diêu Trì', line: 'thong_nhat', km: 1096, lat: 13.8015, lng: 109.1436 },
+  { id: 'tuy_hoa', name: 'Tuy Hoà', line: 'thong_nhat', km: 1198, lat: 13.087, lng: 109.2995 },
+  { id: 'nha_trang', name: 'Nha Trang', line: 'thong_nhat', km: 1315, lat: 12.2486, lng: 109.1817 },
+  { id: 'ninh_hoa', name: 'Ninh Hoà', line: 'thong_nhat', km: 1281, lat: 12.4925, lng: 109.1336 },
+  { id: 'thap_cham', name: 'Tháp Chàm', line: 'thong_nhat', km: 1408, lat: 11.5952, lng: 108.9469 },
+  { id: 'binh_thuan', name: 'Bình Thuận', line: 'thong_nhat', km: 1551, lat: 10.9853, lng: 108.0391 },
+  { id: 'long_khanh', name: 'Long Khánh', line: 'thong_nhat', km: 1649, lat: 10.9392, lng: 107.2425 },
+  { id: 'bien_hoa', name: 'Biên Hoà', line: 'thong_nhat', km: 1697, lat: 10.9462, lng: 106.8216 },
+  { id: 'sai_gon', name: 'Sài Gòn', line: 'thong_nhat', km: 1726, lat: 10.7823, lng: 106.6772 },
+  { id: 'yen_bai', name: 'Yên Bái', line: 'lao_cai', km: 155, lat: 21.7228, lng: 104.9113 },
+  { id: 'lao_cai', name: 'Lào Cai', line: 'lao_cai', km: 294, lat: 22.5013, lng: 103.965 },
+  { id: 'hai_duong', name: 'Hải Dương', line: 'hai_phong', km: 57, lat: 20.9437, lng: 106.3304 },
+  { id: 'hai_phong', name: 'Hải Phòng', line: 'hai_phong', km: 102, lat: 20.859, lng: 106.687 },
+  { id: 'bac_giang', name: 'Bắc Giang', line: 'dong_dang', km: 50, lat: 21.272, lng: 106.1946 },
+  { id: 'lang_son', name: 'Lạng Sơn', line: 'dong_dang', km: 148, lat: 21.8467, lng: 106.7616 },
+  { id: 'dong_dang', name: 'Đồng Đăng', line: 'dong_dang', km: 162, lat: 21.942, lng: 106.7015 },
+  { id: 'thai_nguyen', name: 'Thái Nguyên', line: 'quan_trieu', km: 75, lat: 21.606, lng: 105.823 },
+];
+/** Vùng cách ga quá mức này (km đường bộ) thì coi như không đi tàu được; chặng tàu ngắn hơn mức dưới thì không đáng đi tàu. */
+export const STATION_MAX_KM = 80, RAIL_MIN_KM = 80;
+/** Km đường sắt giữa hai ga: cùng tuyến lấy hiệu lý trình, khác tuyến đi qua Hà Nội. */
+export function railKmBetween(a: { line: RailLine; km: number }, b: { line: RailLine; km: number }): number {
+  return a.line === b.line ? Math.abs(a.km - b.km) : a.km + b.km;
+}
+/** Các ga trong tầm STATION_MAX_KM đường bộ của một vùng (vùng trên đảo không có ga). */
+export function stationsNear(regionId: string): { id: string; name: string; line: RailLine; km: number; groundKm: number }[] {
+  const r = region(regionId);
+  if (!r || r.island) return [];
+  return RAIL_STATIONS.map((s) => ({ ...s, groundKm: Math.max(2, roadKmOf(haversineKm(r.lat, r.lng, s.lat, s.lng))) }))
+    .filter((s) => s.groundKm <= STATION_MAX_KM).sort((x, y) => x.groundKm - y.groundKm);
+}
+/** Vé tàu SE ghế ngồi mềm điều hoà theo km đường sắt. */
+export function trainTicket(railKm: number): number {
+  return Math.round((refPrice('tau_mo_ve') + refPrice('tau_ghe_mem_km') * railKm) / 1000) * 1000;
+}
+export interface TrainPlan { from: string; to: string; railKm: number; fare: number; ticket: number; groundKm: number; hours: number }
+/** Chuyến tàu giữa hai vùng: ra ga + vé tàu + từ ga về. Chọn cặp ga có tổng đường bộ ngắn nhất. */
+export function trainPlan(fromRegionId: string, toRegionId: string): TrainPlan | null {
+  let best: TrainPlan | null = null;
+  for (const a of stationsNear(fromRegionId)) for (const b of stationsNear(toRegionId)) {
+    if (a.id === b.id) continue;
+    const railKm = railKmBetween(a, b);
+    if (railKm < RAIL_MIN_KM || (best && a.groundKm + b.groundKm >= best.groundKm)) continue;
+    const ticket = trainTicket(railKm);
+    best = { from: a.name, to: b.name, railKm, ticket, groundKm: a.groundKm + b.groundKm, fare: ticket + transferFare(a.groundKm) + transferFare(b.groundKm),
+      hours: roundH(STATION_HOURS + railKm / SPEED_KMH.train + (a.groundKm + b.groundKm) / SPEED_KMH.transfer) };
+  }
+  return best;
+}
+/** Một lựa chọn đi lại. km là quãng đường bộ (taxi, xe khách), đường ray (tàu), đường bay (máy bay), đường biển (tàu thuỷ); hours là tổng thời gian. */
+export interface TravelOption { mode: TravelMode; fare: number; km: number; hours: number; via?: string }
+/** Xe khách tuyến dài hơn mức này (km đường bộ): giường nằm chạy xuyên đêm, có thể phải đổi xe ở bến lớn. */
+export const BUS_LONG_KM = 1000;
+/** Vé tàu cao tốc ra đảo theo km đường biển (Rạch Giá – Phú Quốc ~115 km: 330.000–350.000đ). */
+export function boatTripFare(km: number): number {
+  return Math.round((refPrice('tau_cao_toc_mo_ve') + refPrice('tau_cao_toc_km') * Math.max(0, km)) / 1000) * 1000;
+}
+/** Tuyến tàu thường lệ từ cảng đất liền ra các vùng trên đảo (km đường biển, giờ chạy tàu). */
+export const ISLAND_FERRIES: Record<string, { port: string; lat: number; lng: number; seaKm: number; hours: number; boat: string }> = {
+  ag_phuquoc: { port: 'bến tàu Rạch Giá', lat: 10.012, lng: 105.08, seaKm: 115, hours: 2.75, boat: 'tàu cao tốc' },
+  hcm_condao: { port: 'cảng Trần Đề', lat: 9.49, lng: 106.21, seaKm: 85, hours: 2.5, boat: 'tàu cao tốc' },
+  qng_lyson: { port: 'cảng Sa Kỳ', lat: 15.21, lng: 108.92, seaKm: 30, hours: 1, boat: 'tàu cao tốc' },
+  hp_catba: { port: 'bến Bính (Hải Phòng)', lat: 20.87, lng: 106.68, seaKm: 40, hours: 1, boat: 'tàu cao tốc' },
+};
+/** Chuyến tàu ra/vào đảo: đi đường bộ (xe khách hoặc trung chuyển) tới cảng đất liền + vé tàu. Hai đảo khác nhau thì về đất liền rồi ra đảo kia. */
+export function ferryPlan(fromRegionId: string, toRegionId: string): { fare: number; km: number; hours: number; via: string } | null {
+  const a = region(fromRegionId), b = region(toRegionId);
+  if (!a || !b) return null;
+  let fare = 0, km = 0, hours = 0, cur: { lat: number; lng: number } = a;
+  const names: string[] = [];
+  const ground = (to: { lat: number; lng: number }) => {
+    const road = roadKmOf(haversineKm(cur.lat, cur.lng, to.lat, to.lng));
+    if (road > 2) { fare += road <= 60 ? transferFare(road) : busFare(road); km += road; hours += 0.5 + road / SPEED_KMH.bus; }
+  };
+  const fa = a.island ? ISLAND_FERRIES[a.id] : undefined, fb = b.island ? ISLAND_FERRIES[b.id] : undefined;
+  if ((a.island && !fa) || (b.island && !fb)) return null;
+  if (fa) { fare += boatTripFare(fa.seaKm); km += fa.seaKm; hours += fa.hours + 0.5; cur = fa; names.push(`${fa.boat} vào ${fa.port}`); }
+  if (fb) { ground(fb); fare += boatTripFare(fb.seaKm); km += fb.seaKm; hours += fb.hours + 0.5; names.push(`xe tới ${fb.port}, ${fb.boat} ra đảo`); }
+  else ground(b);
+  return { fare: Math.round(fare / 1000) * 1000, km, hours: roundH(hours), via: names.join(', ') };
+}
+/** Các phương tiện đi được giữa hai vùng, kèm giá vé và thời gian. Ra vào đảo phải đi tàu thuỷ hoặc máy bay; máy bay chỉ khi
+ *  hai đầu đều gần sân bay có đường bay; tàu hoả chỉ khi hai đầu đều gần ga trên mạng đường sắt. */
+export function travelOptions(fromRegionId: string, toRegionId: string): TravelOption[] {
   const a = region(fromRegionId), b = region(toRegionId);
   if (!a || !b || a.id === b.id) return [];
-  const km = Math.round(haversineKm(a.lat, a.lng, b.lat, b.lng));
-  const fly = flightPlan(a.id, b.id);
-  const modes: TravelMode[] = a.island || b.island
-    ? ['tau_thuy']
-    : ['xe_khach', ...(km <= TAXI_MAX_KM ? ['taxi' as const] : []), ...(km >= 150 ? ['tau_hoa' as const] : [])];
-  const out: { mode: TravelMode; fare: number; km: number; via?: string }[] = modes.map((mode) => ({ mode, fare: Math.round((TRAVEL_MODES[mode].base + TRAVEL_MODES[mode].perKm * km) / 1000) * 1000, km }));
-  if (fly) out.push({ mode: 'may_bay', fare: fly.fare, km, via: `${fly.from} → ${fly.to}` });
+  const straight = haversineKm(a.lat, a.lng, b.lat, b.lng), road = roadKmOf(straight);
+  const out: TravelOption[] = [];
+  if (a.island || b.island) {
+    const ferry = ferryPlan(a.id, b.id);
+    if (ferry) out.push({ mode: 'tau_thuy', ...ferry });
+  } else {
+    out.push({ mode: 'xe_khach', fare: busFare(road), km: road, hours: roundH(0.5 + road / SPEED_KMH.bus), ...(road > BUS_LONG_KM ? { via: 'giường nằm tuyến dài, có thể đổi xe' } : {}) });
+    if (road <= TAXI_MAX_KM) out.push({ mode: 'taxi', fare: taxiFare(road), km: road, hours: roundH(road / SPEED_KMH.taxi) });
+    const train = trainPlan(a.id, b.id);
+    if (train) out.push({ mode: 'tau_hoa', fare: train.fare, km: train.railKm, hours: train.hours, via: `ga ${train.from} → ga ${train.to}` });
+  }
+  // Máy bay chỉ hiện khi thật sự nhanh hơn đi đường bộ (tính cả thủ tục sân bay và đường ra/vào sân bay).
+  const fly = flightPlan(a.id, b.id), busH = out.find((o) => o.mode === 'xe_khach')?.hours ?? Infinity, boatH = out.find((o) => o.mode === 'tau_thuy')?.hours ?? Infinity;
+  if (fly && fly.hours < Math.min(busH, boatH === Infinity ? Infinity : boatH * 2)) out.push({ mode: 'may_bay', fare: fly.fare, km: fly.airKm, hours: fly.hours, via: `${fly.from} → ${fly.to}` });
   return out;
 }
 export const GIFT_DAILY_LIMIT = 5, GIFT_MAX_KG = 20, REGION_SET_REWARD = 50_000;
