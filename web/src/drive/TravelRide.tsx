@@ -8,6 +8,7 @@ import type { TravelLeg } from '../../../shared/rules.ts';
 import { RideScene } from './RideScene.ts';
 import type { RideMode } from './RideScene.ts';
 import { RIDE_CSS, RideHud } from './RideHud.tsx';
+import { windowView } from './RideJourney.ts';
 import type { RideStep } from './RideHud.tsx';
 
 export type { RideMode };
@@ -36,9 +37,9 @@ const INFO: Record<RideMode, { icon: string; name: string }> = {
 /** Các bước của từng loại hành trình, theo đúng thứ tự cảnh; xe khách không có bước trung chuyển. */
 const STEPS: Record<RideMode, RideStep[]> = {
   xe_khach: [{ icon: '🚶', label: 'Ra bến xe' }, { icon: '🚌', label: 'Lên xe' }, { icon: '🛣️', label: 'Trên đường' }, { icon: '📍', label: 'Tới nơi' }],
-  tau_hoa: [{ icon: '🚶', label: 'Ra bến xe' }, { icon: '🚐', label: 'Xe ra ga' }, { icon: '🚉', label: 'Lên tàu' }, { icon: '🚆', label: 'Trên đường' }, { icon: '📍', label: 'Tới ga' }],
-  may_bay: [{ icon: '🚶', label: 'Ra bến xe' }, { icon: '🚕', label: 'Xe ra sân bay' }, { icon: '🛫', label: 'Lên máy bay' }, { icon: '✈️', label: 'Đang bay' }, { icon: '🛬', label: 'Hạ cánh' }],
-  tau_thuy: [{ icon: '🚶', label: 'Ra bến xe' }, { icon: '🚐', label: 'Xe ra cảng' }, { icon: '⚓', label: 'Lên tàu' }, { icon: '⛴️', label: 'Ra khơi' }, { icon: '📍', label: 'Cập bến' }],
+  tau_hoa: [{ icon: '🚶', label: 'Ra đón xe' }, { icon: '🚐', label: 'Xe ra ga' }, { icon: '🚉', label: 'Lên tàu' }, { icon: '🚆', label: 'Trên đường' }, { icon: '📍', label: 'Tới ga' }],
+  may_bay: [{ icon: '🚶', label: 'Ra đón xe' }, { icon: '🚕', label: 'Xe ra sân bay' }, { icon: '🛫', label: 'Lên máy bay' }, { icon: '✈️', label: 'Đang bay' }, { icon: '🛬', label: 'Hạ cánh' }],
+  tau_thuy: [{ icon: '🚶', label: 'Ra đón xe' }, { icon: '🚐', label: 'Xe ra cảng' }, { icon: '⚓', label: 'Lên tàu' }, { icon: '⛴️', label: 'Ra khơi' }, { icon: '📍', label: 'Cập bến' }],
   taxi: [{ icon: '📱', label: 'Gọi xe' }, { icon: '🚕', label: 'Lên xe' }, { icon: '🛣️', label: 'Trên đường' }, { icon: '📍', label: 'Tới nơi' }],
 };
 
@@ -68,6 +69,16 @@ function mainLegs(legs: TravelLeg[]): (TravelLeg & { mode: RideMode })[] {
 
 /** Hoạt cảnh chuyến đi giữa hai vùng. Lộ trình nhiều chặng (ví dụ tàu cao tốc vào bờ rồi bay) chiếu lần lượt từng chặng chính,
  *  dựa trên đúng phương án máy chủ đã tính tiền (travelOptions cùng nơi đi, nơi đến, phương tiện chính). */
+/** Khung ô cửa sổ khi nhìn ra ngoài giữa hành trình: phần ngoài ô là vách khoang (màu kem), ô có viền và bóng trong. */
+const WINDOW_CSS = `
+.tr-window{position:absolute;inset:0;pointer-events:none;overflow:hidden;animation:trw .45s ease-out}
+.tr-window i{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);box-shadow:0 0 0 200vmax #e8e1d3,inset 0 0 0 10px #cfc6b4,inset 0 0 28px 10px rgba(0,0,0,.28)}
+.tr-window.oval i{width:min(64vw,52vh);height:min(84vw,70vh);border-radius:46%/40%}
+.tr-window.rect i{width:min(86vw,120vh);height:min(58vw,46vh);border-radius:22px}
+.tr-window.rect::after{content:'';position:absolute;left:50%;top:46%;width:6px;height:min(58vw,46vh);transform:translate(-50%,-50%);background:#cfc6b4}
+@keyframes trw{from{opacity:0}to{opacity:1}}
+`;
+
 export function TravelRide(props: RideProps): JSX.Element {
   const legs = useMemo(() => {
     if (props.toName || props.fare !== undefined || props.fromRegionId === props.toRegionId) return [];
@@ -123,10 +134,12 @@ function RideLeg(props: RideProps): JSX.Element {
   const status = arrived ? `${info.name} · đã tới nơi${fareText}` : stage.n === 4 ? `${info.name} · còn ${left.toLocaleString('vi-VN')} km${fareText}` : `${info.name} · bước ${stage.index + 1}/${STEPS[props.mode].length}`;
   const cabin = props.mode === 'taxi' && stage.n === 4 && !arrived && !failed;
   const look = (d: number) => sceneRef.current?.look(d);
+  const win = stage.n === 4 && !arrived && !failed && windowView(props.mode, progress);
   return (
     <div className={cabin ? 'tr taxi-cabin' : 'tr'} role="dialog" aria-label={`Hành trình ${info.name} từ ${from} tới ${to}`} data-stage={stage.n}>
-      <style>{RIDE_CSS}{props.mode === 'taxi' ? TAXI_CSS : ''}</style>
+      <style>{RIDE_CSS}{WINDOW_CSS}{props.mode === 'taxi' ? TAXI_CSS : ''}</style>
       <div ref={host} className="tr-scene" />
+      {win && <div className={`tr-window ${props.mode === 'may_bay' ? 'oval' : 'rect'}`} aria-hidden="true"><i /></div>}
       <RideHud icon={info.icon} from={from} to={to} note={`${Math.round(props.km).toLocaleString('vi-VN')} km${props.legNote ? ` · ${props.legNote}` : ''}`}
         steps={STEPS[props.mode]} current={stage.index} frac={frac} finished={arrived} status={status} caption={failed ? '' : stage.caption}>
         {cabin && (

@@ -138,7 +138,7 @@ export class Village {
   first(): Act {
     const D = 4.6;
     return {
-      stage: 1, caption: this.mode === 'taxi' ? `Ra đầu ngõ ${this.from} gọi taxi` : `Ra bến xe ${this.from}`, duration: D, root: this.root, fog: [90, 300],
+      stage: 1, caption: this.mode === 'taxi' ? `Ra đầu ngõ ${this.from} gọi taxi` : this.mode === 'xe_khach' ? `Ra bến xe ${this.from}` : `Ra đầu ngõ ${this.from} đón xe ra ${this.mode === 'tau_hoa' ? 'ga' : this.mode === 'may_bay' ? 'sân bay' : 'bến tàu'}`, duration: D, root: this.root, fog: [90, 300],
       update: (t, _dt, c) => {
         const u = seg(t, 0.25, D - 0.55);
         this.w.walk(this.path, u, c.time);

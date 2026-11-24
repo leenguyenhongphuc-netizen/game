@@ -235,8 +235,8 @@ export class SeaScene {
     if (jet) { this.boat = bakeColored(jetSki(this.o.jetColor ?? 0xe63946)); const wk = wake(); wk.scale.set(0.28, 1, 0.42); wk.position.set(0, 0.05, 7.6); this.wakeM = wk; this.boat.add(wk); }
     else {
       const extra: THREE.Object3D[] = [];
-      if (this.o.cargo) { const v = playerVehicle(this.o.cargo.group, this.o.cargo.color, { electric: this.o.cargo.electric }); v.root.scale.setScalar(0.9); v.root.position.set(-1.05, 1.02, -1.0); extra.push(v.root); }
-      const f = carFerry(); for (const e of extra) f.add(e);
+      if (this.o.cargo) { const v = playerVehicle(this.o.cargo.group, this.o.cargo.color, { electric: this.o.cargo.electric }); v.root.scale.setScalar(0.9); v.root.position.set(-0.7, 1.27, -0.6); extra.push(v.root); }
+      const f = carFerry(this.o.cargo ? 0 : 4); for (const e of extra) f.add(e);
       this.boat = bakeColored(f); const wk = wake(); this.wakeM = wk; this.boat.add(wk);
     }
     this.scene.add(this.boat);

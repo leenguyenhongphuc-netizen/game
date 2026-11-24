@@ -10,7 +10,7 @@ function make(key: string, w: number, h: number, draw: (g: CanvasRenderingContex
   draw(c.getContext('2d')!, rng(key.length * 977 + w));
   t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
-  t.anisotropy = 4;
+  t.anisotropy = 8;
   cache.set(key, t);
   return t;
 }
