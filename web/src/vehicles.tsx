@@ -9,6 +9,8 @@ import type { Me } from './api.ts';
 import { useAction } from './ui.ts';
 import './vehicles.css';
 import { ExamGame } from './drive/ExamGame.tsx';
+import { MotoExam } from './drive/MotoExam.tsx';
+import { PhuotPanel } from './phuot.tsx';
 
 type Group = VehicleSpec['group'];
 interface CatalogRow extends VehicleSpec { unit: string; powerName: string; rangeKm: number; roadPrice: number; parkPrice: number; tollGroupName: string; licenseName: string; owned: number; canBuy: boolean; why: string | null }
@@ -26,13 +28,31 @@ const num = (n: number, d = 0) => n.toLocaleString('vi-VN', { maximumFractionDig
 const perKm = (v: { per100: number; roadPrice: number }) => Math.round((v.per100 * v.roadPrice) / 100);
 
 /** Hình xe nhìn ngang, tự vẽ theo nhóm xe; xe điện có tia sét và dải xanh, thùng lạnh màu trắng có máy lạnh. */
-export function VehicleArt({ group, color = '#f08a6c', electric, cold, size = 150 }: { group: Group; color?: string; electric?: boolean; cold?: boolean; size?: number }): JSX.Element {
+export function VehicleArt({ group, color = '#f08a6c', electric, cold, size = 150, moto }: { group: Group; color?: string; electric?: boolean; cold?: boolean; size?: number; moto?: VehicleSpec['moto'] }): JSX.Element {
   const O = '#56310f', boxC = cold ? '#f4f7fa' : '#e9d2a6', S = { stroke: O, strokeWidth: 2.2, strokeLinejoin: 'round' as const, strokeLinecap: 'round' as const };
   const wheel = (x: number, r = 9) => <g key={x}><circle cx={x} cy={66} r={r} fill="#3b2a17" {...S} /><circle cx={x} cy={66} r={r * 0.36} fill="#d8d2c4" /></g>;
   const glass = '#bfe9ff';
   const fruits = (x0: number, n: number, y: number) => Array.from({ length: n }, (_, i) => <circle key={i} cx={x0 + i * 11} cy={y - (i % 2) * 3} r={6} fill={['#ff8a3d', '#ffd23f', '#7ccf4f', '#e8457f', '#6a3d9a'][i % 5]} {...S} strokeWidth={1.6} />);
   let body: JSX.Element;
-  if (group === 'ba_gac') body = (
+  if (group === 'xe_may') {
+    // xe máy nhìn ngang: bánh lớn hai đầu, dáng theo loại (xe số, tay ga, côn tay, adventure)
+    const adv = moto === 'adventure', ga = moto === 'ga' || moto === 'dien', r = adv ? 15 : ga ? 11 : 13, y = 76 - r - 2;
+    const bw = (x: number) => <g key={x}><circle cx={x} cy={y} r={r} fill="#3b2a17" {...S} /><circle cx={x} cy={y} r={r * 0.45} fill="#d8d2c4" /></g>;
+    body = (
+      <>
+        {ga ? <path d={`M50 ${y - 4}h46l14-22h12l-4 24H58z`} fill={color} {...S} />
+          : adv ? <path d={`M48 ${y - 10}l16-22h36l14 10-6 14H62z`} fill={color} {...S} />
+          : moto === 'con_tay' ? <path d={`M52 ${y - 8}l14-18h30l16 8-8 12H64z`} fill={color} {...S} />
+          : <path d={`M54 ${y - 6}l18-14h22l14 6-4 10H66z`} fill={color} {...S} />}
+        <path d={`M${ga ? 62 : 66} ${y - (ga ? 14 : adv ? 30 : 22)}h34`} stroke="#2b2f36" strokeWidth="7" strokeLinecap="round" />
+        <path d={`M112 ${y}l-6 -${adv ? 40 : 30}h10`} fill="none" {...S} strokeWidth={3.2} />
+        {adv && <><rect x="40" y={y - 30} width="18" height="20" rx="3" fill="#a7adb5" {...S} /><path d={`M110 ${y - 48}l8 -10`} stroke="#bfe9ff" strokeWidth="5" /></>}
+        {moto === 'so' && <rect x="40" y={y - 22} width="20" height="4" fill="#8d939c" />}
+        {bw(52)}{bw(114)}
+        <circle cx="120" cy={y - (adv ? 36 : 26)} r="4" fill="#ffe27a" stroke={O} strokeWidth="1.5" />
+      </>);
+  }
+  else if (group === 'ba_gac') body = (
     <>
       <path d="M96 40h34l6 12v10H96z" fill={color} {...S} /><path d="M118 28l10 12" fill="none" {...S} strokeWidth={3} /><rect x="100" y="36" width="16" height="6" rx="3" fill="#2b2f36" {...S} />
       <rect x="22" y="38" width="70" height="22" rx="3" fill={boxC} {...S} /><path d="M22 46h70" stroke="#b8956a" strokeWidth="1.6" />{fruits(34, 5, 34)}
@@ -136,18 +156,20 @@ function Quiz({ title, onPass, onClose }: { title: string; onPass: (right: numbe
 }
 
 // ---------------------------------------------------------------- bảng bãi xe
-const GROUP_NAMES: Record<Group, string> = { ba_gac: 'Xe ba gác', ban_tai: 'Bán tải', tai_nhe: 'Tải nhẹ', tai_trung: 'Tải trung', tai_nang: 'Tải nặng', dau_keo: 'Đầu kéo container' };
+const GROUP_NAMES: Record<Group, string> = { xe_may: 'Xe máy, mô tô', ba_gac: 'Xe ba gác', ban_tai: 'Bán tải', tai_nhe: 'Tải nhẹ', tai_trung: 'Tải trung', tai_nang: 'Tải nặng', dau_keo: 'Đầu kéo container' };
 
 function Specs({ v }: { v: CatalogRow }) {
   return (
     <dl className="veh-specs">
+      {v.group === 'xe_may' && <div><dt>Động cơ</dt><dd>{v.cc ? `${v.cc} cm³` : `${v.kw ?? '?'} kW điện`}</dd></div>}
       <div><dt>Tải trọng</dt><dd>{kg(v.cargoKg)}</dd></div>
       <div><dt>{v.power === 'dien' ? 'Pin' : 'Bình'}</dt><dd>{num(v.tank)} {v.unit}</dd></div>
       <div><dt>Tiêu hao</dt><dd>{num(v.per100, 1)} {v.unit}/100 km</dd></div>
       <div><dt>Tầm hoạt động</dt><dd>~{num(v.rangeKm)} km</dd></div>
       <div><dt>Tiền {v.power === 'dien' ? 'điện' : v.power === 'dau' ? 'dầu' : 'xăng'}</dt><dd>{fmtMoney(perKm(v))}/km</dd></div>
-      <div><dt>Cao tốc</dt><dd>{v.noHighway ? 'không được vào' : `tối đa ${v.maxKmh} km/h`}</dd></div>
-      <div><dt>Phí đường</dt><dd>nhóm {v.tollGroup}</dd></div>
+      {v.group === 'xe_may' ? <div><dt>Đường đi</dt><dd>quốc lộ, ≤ {v.maxKmh} km/h</dd></div>
+        : <div><dt>Cao tốc</dt><dd>{v.noHighway ? 'không được vào' : `tối đa ${v.maxKmh} km/h`}</dd></div>}
+      {v.group !== 'xe_may' && <div><dt>Phí đường</dt><dd>nhóm {v.tollGroup}</dd></div>}
       <div><dt>Bằng lái</dt><dd>{v.licenseName}</dd></div>
     </dl>);
 }
@@ -155,8 +177,8 @@ function Specs({ v }: { v: CatalogRow }) {
 export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): JSX.Element {
   const [data, setData] = useState<GarageData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'daily' | 'bang'>('daily');
-  const [filter, setFilter] = useState<'tat_ca' | 'xang_dau' | 'dien' | 'lanh'>('tat_ca');
+  const [tab, setTab] = useState<'daily' | 'bang' | 'phuot'>(() => { try { const t = sessionStorage.getItem('vv-garage-tab'); sessionStorage.removeItem('vv-garage-tab'); return t === 'phuot' || t === 'bang' ? t : 'daily'; } catch { return 'daily'; } });
+  const [filter, setFilter] = useState<'tat_ca' | 'xe_may' | 'xang_dau' | 'dien' | 'lanh'>('tat_ca');
   const [open, setOpen] = useState<string | null>(null);
   const [quiz, setQuiz] = useState<LicenseRow | null>(null);
   const [yard, setYard] = useState<{ l: LicenseRow; practice: boolean } | null>(null);
@@ -166,7 +188,7 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
   useEffect(() => { void load(); }, [load]);
   const act = useAction(() => { void load(); refresh(); });
   const color = me.user.avatar?.truck ?? '#f08a6c';
-  const YARD_CLASSES = ['B', 'C1', 'C', 'CE'];
+  const YARD_CLASSES = ['A1', 'A', 'B', 'C1', 'C', 'CE'];
   /** Còn phải thi phần nào để nhận bằng (hoặc đổi bằng). */
   const needs = (l: LicenseRow) => {
     const hasYard = l.exam?.yard?.required ?? YARD_CLASSES.includes(l.cls);
@@ -188,7 +210,7 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
   if (!data) return <div className="garage"><p className="hint">{loadError ?? 'Đang mở bãi xe…'}</p></div>;
   const byKind = Object.fromEntries(data.catalog.map((c) => [c.kind, c])) as Record<string, CatalogRow>;
   const active = data.owned.find((o) => o.active) ?? null, cur = active ? byKind[active.kind] : null;
-  const list = data.catalog.filter((c) => (filter === 'tat_ca' ? true : filter === 'dien' ? c.power === 'dien' : filter === 'lanh' ? !!c.cold : c.power !== 'dien' && !c.cold));
+  const list = data.catalog.filter((c) => (filter === 'tat_ca' ? true : filter === 'xe_may' ? c.group === 'xe_may' : filter === 'dien' ? c.power === 'dien' : filter === 'lanh' ? !!c.cold : c.power !== 'dien' && !c.cold && c.group !== 'xe_may'));
   const cmp = (v: CatalogRow) => {
     if (!cur || cur.kind === v.kind) return null;
     const dc = v.cargoKg - cur.cargoKg, dk = perKm(v) - perKm(cur);
@@ -196,14 +218,14 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
   };
   return (
     <div className="garage">
-      <p className="muted">Mua xe đúng với lượng hàng bạn chở: xe to chở nhiều nhưng tốn nhiên liệu, phí đường cao hơn và cần bằng lái hạng cao hơn. Ai cũng mua được xe để chở hàng của mình đi bán; thu mua sỉ vẫn là việc của thương lái.</p>
+      <p className="muted">Mua xe đúng với lượng hàng bạn chở: xe to chở nhiều nhưng tốn nhiên liệu, phí đường cao hơn và cần bằng lái hạng cao hơn. Xe máy rẻ, cực ít hao xăng, chở được một bao hàng nhỏ đi chợ phiên và đi phượt, nhưng không được vào cao tốc. Ai cũng mua được xe để chở hàng của mình đi bán; thu mua sỉ vẫn là việc của thương lái.</p>
       {act.error && <p className="error" role="alert">{act.error}</p>}
       {note && <p className="veh-note" role="status">{note}</p>}
       <section className="veh-now">
         <h3>Xe đang dùng</h3>
         {active && cur ? (
           <div className="veh-card on">
-            <div className="veh-head"><VehicleArt group={cur.group} color={color} electric={cur.power === 'dien'} cold={cur.cold} /><div><strong>{cur.name}</strong><small>{cur.powerName} · đang có {num(active.energy, 1)}/{num(active.tank)} {active.unit} · đã chạy {num(active.odoKm)} km</small><small>Đang đỗ ở {REGIONS[active.regionId ?? '']?.name ?? 'nhà'}</small></div></div>
+            <div className="veh-head"><VehicleArt group={cur.group} color={color} electric={cur.power === 'dien'} cold={cur.cold} moto={cur.moto} /><div><strong>{cur.name}</strong><small>{cur.powerName} · đang có {num(active.energy, 1)}/{num(active.tank)} {active.unit} · đã chạy {num(active.odoKm)} km</small><small>Đang đỗ ở {REGIONS[active.regionId ?? '']?.name ?? 'nhà'}</small></div></div>
             <Specs v={cur} />
             <p className="veh-tip">{cur.note}</p>
           </div>
@@ -215,7 +237,7 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
           {!data.atHome && <p className="hint">Xe đang ở xa nhà nên chưa đổi hoặc bán xe được.</p>}
           {data.owned.filter((o) => !o.active).map((o) => { const v = byKind[o.kind]; return (
             <div className="veh-row" key={o.id}>
-              {v && <VehicleArt group={v.group} color={color} electric={v.power === 'dien'} cold={v.cold} size={96} />}
+              {v && <VehicleArt group={v.group} color={color} electric={v.power === 'dien'} cold={v.cold} size={96} moto={v.moto} />}
               <div className="grow"><strong>{o.name}</strong><small>{kg(o.cargoKg)} · {num(o.energy, 1)}/{num(o.tank)} {o.unit}</small></div>
               <div className="veh-acts">
                 <button type="button" className="go" disabled={act.busy || !data.atHome} onClick={() => act.run(async () => { await api('POST', `/api/vehicles/${o.id}/activate`); setNote(`Đã chuyển sang lái ${o.name}.`); })}>Lái xe này</button>
@@ -227,17 +249,19 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
       <div className="tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === 'daily'} onClick={() => setTab('daily')}>Đại lý xe</button>
         <button type="button" role="tab" aria-selected={tab === 'bang'} onClick={() => setTab('bang')}>Bằng lái ({data.licenses.filter((l) => l.owned).length})</button>
+        <button type="button" role="tab" aria-selected={tab === 'phuot'} onClick={() => setTab('phuot')}>🏍️ Đi phượt</button>
       </div>
+      {tab === 'phuot' && <PhuotPanel me={me} refresh={() => { void load(); refresh(); }} openGarage={() => setTab('bang')} />}
       {tab === 'daily' && (
         <section className="veh-shop">
           <div className="veh-filter" role="group" aria-label="Lọc loại xe">
-            {([['tat_ca', 'Tất cả'], ['xang_dau', 'Xăng, dầu'], ['dien', '⚡ Điện'], ['lanh', '❄ Thùng lạnh']] as const).map(([k, t]) => <button type="button" key={k} aria-pressed={filter === k} onClick={() => setFilter(k)}>{t}</button>)}
+            {([['tat_ca', 'Tất cả'], ['xe_may', '🏍️ Xe máy'], ['xang_dau', 'Ô tô xăng, dầu'], ['dien', '⚡ Điện'], ['lanh', '❄ Thùng lạnh']] as const).map(([k, t]) => <button type="button" key={k} aria-pressed={filter === k} onClick={() => setFilter(k)}>{t}</button>)}
           </div>
           {filter === 'dien' && <p className="veh-tip">Xe điện: tiền điện mỗi km rẻ hơn hẳn xăng dầu và phí bảo dưỡng thấp hơn, nhưng xe đắt hơn, tầm ngắn hơn và phải dừng sạc nhanh khoảng 35 phút ở trạm sạc hoặc trạm dừng nghỉ. Sạc ở nhà qua đêm rẻ nhất.</p>}
           {list.map((v) => { const isOpen = open === v.kind, c = cmp(v); return (
             <div className={`veh-card${v.owned ? ' owned' : ''}`} key={v.kind}>
               <button type="button" className="veh-head toggle" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : v.kind)}>
-                <VehicleArt group={v.group} color={color} electric={v.power === 'dien'} cold={v.cold} size={108} />
+                <VehicleArt group={v.group} color={color} electric={v.power === 'dien'} cold={v.cold} size={108} moto={v.moto} />
                 <div><strong>{v.name}</strong><small>{GROUP_NAMES[v.group]} · {v.powerName} · chở {kg(v.cargoKg)}</small><small><b>{fmtMoney(v.price)}</b> · {v.licenseName}{v.minLevel > 1 ? ` · cấp ${v.minLevel}` : ''}{v.owned ? ` · đang có ${v.owned}` : ''}</small></div>
               </button>
               {isOpen && (
@@ -254,7 +278,7 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
       )}
       {tab === 'bang' && (
         <section className="veh-lic">
-          <p className="veh-tip">Muốn có bằng phải qua <b>thi lý thuyết</b> ({ASK} câu, đúng từ {PASS}) và, với các hạng ô tô, <b>thi sa hình</b> 11 bài trong sân sát hạch (đạt từ 80/100 điểm). Bằng ô tô có thời hạn; hết hạn phải đổi hoặc thi lại. Bị phạt khi lái xe sẽ trừ điểm bằng lái.</p>
+          <p className="veh-tip">Muốn có bằng phải qua <b>thi lý thuyết</b> ({ASK} câu, đúng từ {PASS}) và <b>thi sa hình</b> (đạt từ 80/100 điểm): xe máy A1, A thi 4 bài (hình số 8, vạch đường thẳng, vạch cản, đường gồ ghề); ô tô thi 11 bài trong sân sát hạch. Bằng ô tô có thời hạn; hết hạn phải đổi hoặc thi lại. Bị phạt khi lái xe sẽ trừ điểm bằng lái.</p>
           {data.licenses.map((l) => {
             const need = needs(l), holding = l.owned, bad = l.expired || l.suspended;
             return (
@@ -298,6 +322,7 @@ export function GaragePanel({ me, refresh }: { me: Me; refresh: () => void }): J
         await api('POST', '/api/licenses/exam', { cls: l.cls, part: 'ly_thuyet', score: right * 20, examId: theoryExam.current.id });
         const n = needs(l); if (n.hasYard && n.yard) setNote(`Đã đạt lý thuyết ${l.name}. Bước tiếp: vào sân thi sa hình.`); else await conclude({ ...l, exam: { ...l.exam, theory: { ...l.exam?.theory, passed: true } } }, true);
       }); }} />}
-      {yard && <ExamGame cls={yard.l.cls} title={yard.l.name} fee={yard.l.exam?.yard?.fee} practiceOnly={yard.practice} onClose={(r) => { const l = yard.l; setYard(null); void load(); if (r?.passed) void act.run(async () => { await conclude({ ...l, exam: { ...l.exam, yard: { ...l.exam?.yard, passed: true } } }, true); }); else if (r) setNote(`Chưa đạt phần sa hình ${l.name}${r.out ? ` (truất quyền: ${r.out})` : ` (${r.score}/100 điểm)`}. Hãy tập thêm rồi thi lại.`); }} />}
+      {yard && (yard.l.cls === 'A1' || yard.l.cls === 'A') && <MotoExam cls={yard.l.cls} title={yard.l.name} fee={yard.l.exam?.yard?.fee} practiceOnly={yard.practice} onClose={(r) => { const l = yard.l; setYard(null); void load(); if (r?.passed) void act.run(async () => { await conclude({ ...l, exam: { ...l.exam, yard: { ...l.exam?.yard, passed: true } } }, true); }); else if (r) setNote(`Chưa đạt phần sa hình ${l.name}${r.out ? ` (truất quyền: ${r.out})` : ` (${r.score}/100 điểm)`}. Hãy tập thêm rồi thi lại.`); }} />}
+      {yard && yard.l.cls !== 'A1' && yard.l.cls !== 'A' && <ExamGame cls={yard.l.cls} title={yard.l.name} fee={yard.l.exam?.yard?.fee} practiceOnly={yard.practice} onClose={(r) => { const l = yard.l; setYard(null); void load(); if (r?.passed) void act.run(async () => { await conclude({ ...l, exam: { ...l.exam, yard: { ...l.exam?.yard, passed: true } } }, true); }); else if (r) setNote(`Chưa đạt phần sa hình ${l.name}${r.out ? ` (truất quyền: ${r.out})` : ` (${r.score}/100 điểm)`}. Hãy tập thêm rồi thi lại.`); }} />}
     </div>);
 }

@@ -7,9 +7,10 @@ import type { TripPlan } from './rules.ts';
 import { ITEMS, regionalItems } from './items.ts';
 
 /** Hạng giấy phép lái xe theo Luật Trật tự, an toàn giao thông đường bộ 2024 (Điều 57), chỉ lấy các hạng game dùng. */
-export type LicenseClass = 'A1' | 'B1' | 'B' | 'C1' | 'C' | 'CE';
+export type LicenseClass = 'A1' | 'A' | 'B1' | 'B' | 'C1' | 'C' | 'CE';
 export const LICENSES: Record<LicenseClass, { name: string; covers: string; price: number; minLevel: number; includes: LicenseClass[] }> = {
   A1: { name: 'Hạng A1', covers: 'Xe mô tô hai bánh đến 125 cm³ hoặc động cơ điện đến 11 kW', price: 200_000, minLevel: 1, includes: [] },
+  A: { name: 'Hạng A', covers: 'Xe mô tô hai bánh trên 125 cm³ hoặc động cơ điện trên 11 kW; lái được cả xe hạng A1', price: 600_000, minLevel: 2, includes: ['A1'] },
   B1: { name: 'Hạng B1', covers: 'Xe mô tô ba bánh (xe ba gác máy)', price: 300_000, minLevel: 1, includes: ['A1'] },
   B: { name: 'Hạng B', covers: 'Ô tô chở người đến 8 chỗ; ô tô tải có khối lượng toàn bộ theo thiết kế đến 3.500 kg', price: 1_500_000, minLevel: 1, includes: [] },
   C1: { name: 'Hạng C1', covers: 'Ô tô tải có khối lượng toàn bộ theo thiết kế trên 3.500 kg đến 7.500 kg', price: 3_000_000, minLevel: 3, includes: ['B'] },
@@ -18,7 +19,7 @@ export const LICENSES: Record<LicenseClass, { name: string; covers: string; pric
 };
 export const LICENSE_ORDER = Object.keys(LICENSES) as LicenseClass[];
 /** Thời hạn giấy phép lái xe theo hạng (năm); null là không thời hạn. Viết theo hiểu biết về Luật Trật tự, an toàn giao thông đường bộ 2024, chưa đối chiếu văn bản. */
-export const LICENSE_TERM_YEARS: Record<LicenseClass, number | null> = { A1: null, B1: null, B: 10, C1: 10, C: 5, CE: 5 };
+export const LICENSE_TERM_YEARS: Record<LicenseClass, number | null> = { A1: null, A: null, B1: null, B: 10, C1: 10, C: 5, CE: 5 };
 /** Một "năm bằng lái" trong game dài chừng này ngày thật (B, C1 hết hạn sau 30 ngày thật; C, CE sau 15 ngày). */
 export const LICENSE_YEAR_DAYS = 3;
 export const LICENSE_YEAR_MS = LICENSE_YEAR_DAYS * 86400_000, LICENSE_MONTH_MS = LICENSE_YEAR_MS / 12;
@@ -30,8 +31,11 @@ export const EXAM: Record<ExamPart, { name: string; pass: number; fee: number; m
   ly_thuyet: { name: 'Lý thuyết', pass: 80, fee: 100_000, minSeconds: 5 },
   sa_hinh: { name: 'Sa hình', pass: 80, fee: 300_000, minSeconds: 20 },
 };
-/** Hạng mô tô chỉ thi lý thuyết trong game; các hạng ô tô phải đạt cả sa hình. */
-export const needsYard = (cls: LicenseClass): boolean => cls !== 'A1' && cls !== 'B1';
+/** Mọi hạng phải đạt sa hình, trừ B1 (xe ba gác) chỉ thi lý thuyết trong game. A1, A thi sa hình xe máy 4 bài
+ * (hình số 8, vạch đường thẳng, đường có vạch cản, đường gồ ghề — Phụ lục XIII Thông tư 35/2024/TT-BGTVT); ô tô thi sân 11 bài. */
+export const needsYard = (cls: LicenseClass): boolean => cls !== 'B1';
+/** Hạng mô tô hai bánh (sân sa hình xe máy). */
+export const isMotoClass = (cls: string): boolean => cls === 'A1' || cls === 'A';
 /** Lệ phí đổi bằng (không phải thi lại). */
 export const LICENSE_RENEW_FEE = 135_000;
 export type RenewMode = 'doi' | 'thi_ly_thuyet' | 'thi_lai';
@@ -60,7 +64,7 @@ export const TOLL_GROUP_NAMES: Record<1 | 2 | 3 | 4 | 5, string> = {
 
 export interface VehicleSpec {
   kind: string; name: string; emoji: string;
-  group: 'ba_gac' | 'ban_tai' | 'tai_nhe' | 'tai_trung' | 'tai_nang' | 'dau_keo';
+  group: 'xe_may' | 'ba_gac' | 'ban_tai' | 'tai_nhe' | 'tai_trung' | 'tai_nang' | 'dau_keo';
   /** Tải trọng chở hàng (kg) và khối lượng toàn bộ theo thiết kế (kg, để xếp hạng bằng lái). */
   cargoKg: number; gvwKg: number;
   power: Power;
@@ -78,10 +82,37 @@ export interface VehicleSpec {
   /** Phí đăng kiểm, bảo hiểm, bảo dưỡng quy ra mỗi 100 km. */
   upkeepPer100: number;
   minLevel: number; note: string;
+  /** Xe máy: dung tích xi-lanh (cm³) hoặc công suất động cơ điện (kW), để xếp hạng A1/A. */
+  cc?: number; kw?: number;
+  /** Xe máy: dáng xe (vẽ hình, đổi cách nghiêng khi vào cua). */
+  moto?: 'so' | 'ga' | 'con_tay' | 'adventure' | 'dien';
 }
 const V = (v: VehicleSpec) => v;
 /** Xe mặc định cấp cho thương lái (và người chơi cũ): thông số lấy từ TRUCK để hai nơi luôn khớp. */
 export const DEFAULT_VEHICLE = 'tai_990';
+/**
+ * Xe máy, mô tô (mẫu chung, không theo hãng). Bình xăng và mức tiêu hao lấy theo mẫu phổ biến cùng phân khúc ở Việt Nam:
+ * xe số 110 cm³ bình 3,7 lít, ~1,7 lít/100 km (Wave Alpha, RSX theo công bố của hãng); xe ga 125 ~2,1 lít; côn tay 155 ~2,1 lít;
+ * xe ga/adventure phượt ~300 cm³ bình 17 lít, ~3,5 lít/100 km (Honda 368E, báo Lâm Đồng 2025); adventure 650 bình ~20 lít, ~5 lít/100 km;
+ * xe máy điện pin ~3,5 kWh đi ~200 km. Giá là giá đề xuất ước tính theo phân khúc, chưa đối chiếu bảng giá từng hãng.
+ * Hạng bằng: đến 125 cm³ hoặc 11 kW là A1, lớn hơn là A (Luật Trật tự, an toàn giao thông đường bộ 2024, Điều 57).
+ * Xe máy không được vào cao tốc; tốc độ tối đa ngoài khu dân cư của mô tô là 70 km/h (Thông tư 38/2024/TT-BGTVT).
+ */
+export const MOTO_KMH = 70;
+const MOTOS: VehicleSpec[] = [
+  { kind: 'moto_so110', name: 'Xe số 110', emoji: '🏍️', group: 'xe_may', moto: 'so', cc: 110, cargoKg: 60, gvwKg: 250, power: 'xang', tank: 3.7, per100: 1.7, price: 18_000_000, license: 'A1', tollGroup: 1, maxKmh: MOTO_KMH, noHighway: true, upkeepPer100: 300, minLevel: 1,
+    note: 'Xe "quốc dân": bền, rẻ, cực ít hao xăng. Dân phượt Hà Giang hay thuê đúng loại này. Chở được một bao hàng nhỏ sau yên.' },
+  { kind: 'moto_ga125', name: 'Xe tay ga 125', emoji: '🛵', group: 'xe_may', moto: 'ga', cc: 125, cargoKg: 40, gvwKg: 260, power: 'xang', tank: 5.5, per100: 2.1, price: 40_000_000, license: 'A1', tollGroup: 1, maxKmh: MOTO_KMH, noHighway: true, upkeepPer100: 400, minLevel: 1,
+    note: 'Đi phố êm, có cốp. Lên đèo dài thì phanh nóng, bánh nhỏ, không hợp đường đá.' },
+  { kind: 'moto_con155', name: 'Xe côn tay 155', emoji: '🏍️', group: 'xe_may', moto: 'con_tay', cc: 155, cargoKg: 50, gvwKg: 280, power: 'xang', tank: 5.4, per100: 2.1, price: 50_000_000, license: 'A', tollGroup: 1, maxKmh: MOTO_KMH, noHighway: true, upkeepPer100: 500, minLevel: 2,
+    note: 'Côn tay, máy khoẻ, đổ đèo chủ động số. Trên 125 cm³ nên cần bằng hạng A.' },
+  { kind: 'moto_adv300', name: 'Adventure 300', emoji: '🏍️', group: 'xe_may', moto: 'adventure', cc: 300, cargoKg: 80, gvwKg: 380, power: 'xang', tank: 17, per100: 3.5, price: 150_000_000, license: 'A', tollGroup: 1, maxKmh: MOTO_KMH, noHighway: true, upkeepPer100: 1_200, minLevel: 4,
+    note: 'Xe đường trường: bình 17 lít đi gần 500 km mới phải đổ, có thùng nhôm hai bên chở đồ. Hợp đi phượt dài ngày.' },
+  { kind: 'moto_adv650', name: 'Mô tô Adventure 650', emoji: '🏍️', group: 'xe_may', moto: 'adventure', cc: 650, cargoKg: 100, gvwKg: 450, power: 'xang', tank: 20, per100: 5, price: 250_000_000, license: 'A', tollGroup: 1, maxKmh: MOTO_KMH, noHighway: true, upkeepPer100: 2_500, minLevel: 6,
+    note: 'Phân khối lớn, giảm xóc hành trình dài, leo đèo dốc đá thoải mái. Tốn xăng hơn hẳn xe nhỏ.' },
+  { kind: 'moto_dien', name: 'Xe máy điện', emoji: '🛵', group: 'xe_may', moto: 'dien', kw: 2.5, cargoKg: 40, gvwKg: 230, power: 'dien', tank: 3.5, per100: 1.75, price: 22_000_000, license: 'A1', tollGroup: 1, maxKmh: 60, noHighway: true, upkeepPer100: 150, minLevel: 1,
+    note: 'Pin 3,5 kWh đi khoảng 200 km. Tiền điện chỉ vài nghìn đồng mỗi 100 km; đi đèo dài nhớ sạc ở quán.' },
+];
 const BASE: VehicleSpec[] = [
   V({ kind: 'ba_gac', name: 'Xe ba gác máy 300 kg', emoji: '🛺', group: 'ba_gac', cargoKg: 300, gvwKg: 650, power: 'xang', tank: 12, per100: 4, price: 6_000_000, license: 'B1', tollGroup: 1, maxKmh: 50, noHighway: true, upkeepPer100: 2_000, minLevel: 1,
     note: 'Rẻ, chở ít, không được vào cao tốc nên đi chậm. Hợp đi chợ gần.' }),
@@ -114,11 +145,14 @@ const electric = (b: VehicleSpec, kwh: number, per100: number): VehicleSpec => (
 });
 const by = (k: string) => BASE.find((b) => b.kind === k)!;
 export const VEHICLES: Record<string, VehicleSpec> = Object.fromEntries([
+  ...MOTOS,
   ...BASE,
   cold(by('tai_990')), cold(by('tai_1t9')), cold(by('tai_3t5')), cold(by('tai_8t')), cold(by('tai_15t')), cold(by('dau_keo')),
   electric(by('ban_tai'), 70, 24), electric(by('tai_990'), 42, 20), electric(by('tai_3t5'), 100, 45),
 ].map((v) => [v.kind, v]));
 export const VEHICLE_KINDS = Object.keys(VEHICLES);
+export const MOTO_KINDS = MOTOS.map((m) => m.kind);
+export const isMoto = (kind: string | null | undefined): boolean => !!kind && VEHICLES[kind]?.group === 'xe_may';
 /** Bán lại xe được chừng này phần giá mua. */
 export const VEHICLE_RESALE = 0.6;
 export const VEHICLE_MAX_OWNED = 6;

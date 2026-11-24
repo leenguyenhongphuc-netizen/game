@@ -159,7 +159,7 @@ export function registerSocial(app: FastifyInstance, d: SocialDeps) {
     }
     // Cao tốc: mỗi tuyến luôn có vài xe của cư dân ảo chạy hai chiều, vị trí là hàm của thời gian theo trục chuẩn của tuyến.
     const total = Math.max(1, me.total), slot = 10 * 60_000, bucket = Math.floor(now / slot), seed0 = hash32(`hw:${key}:${bucket}`);
-    const ends = key.split('|'), n = Math.max(4, Math.min(16, Math.round(total / 45) + (seed0 % 3))), tripSec = Math.max(20, Math.min(90, 20 + total / 12)), used = new Set<number>();
+    const ends = key.split('|'), n = key.startsWith('phuot:') ? 3 + (seed0 % 3) : Math.max(4, Math.min(16, Math.round(total / 45) + (seed0 % 3))), tripSec = key.startsWith('phuot:') ? Math.max(40, total / 0.6) : Math.max(20, Math.min(90, 20 + total / 12)), used = new Set<number>(); // phượt xe máy: chạy chậm như người chơi (~0,6 km/giây trong game)
     for (let i = 0; i < n; i++) {
       const seed = hash32(`${seed0}:${i}`), b = pick(seed, ends); if (!b || used.has(b.id)) continue; used.add(b.id);
       // rải đều hai chiều (chẵn cùng chiều, lẻ ngược chiều) để đi đâu cũng có xe trước sau

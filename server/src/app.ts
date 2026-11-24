@@ -1725,7 +1725,7 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   // xe cộ, giấy phép lái xe, trạm dừng nghỉ và mua sắm nằm ở vehicles.ts, shopping.ts
-  const veh = registerVehicles(app, { db, requireUser, requireTester: (r) => requireTester(r), bad, addCash, energyState, setEnergy, bagOf: (q, u) => bagOf(q, u), licenseTimeScale: opts.licenseTimeScale ?? 1, examHurry: opts.examHurry });
+  const veh = registerVehicles(app, { db, requireUser, requireTester: (r) => requireTester(r), bad, addCash, addXp, energyState, setEnergy, bagOf: (q, u) => bagOf(q, u), licenseTimeScale: opts.licenseTimeScale ?? 1, examHurry: opts.examHurry, phuotHurry: opts.examHurry });
   const shopping = registerShopping(app, { db, requireUser, bad, addCash, provincesOf: async (q, u) => (await whereabouts(q, u)).provinces, licensesOf: veh.licensesOf });
   // lô xuất khẩu nhiều mặt hàng, công ty xuất nhập khẩu, siêu thị riêng và xưởng chi nhánh nằm ở economy.ts
   // trung tâm hành chính công: bốc số, thuế hộ kinh doanh, giấy phép xây dựng (công trình phải có phép trước khi khởi công)

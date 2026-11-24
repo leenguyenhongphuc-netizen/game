@@ -212,7 +212,8 @@ export function TravelPanel({ me, startRide, startTrip, touring, openGarage }: {
                       const cargoTxt = cargo >= 1000 ? `${(cargo / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })} tấn` : `${cargo} kg`;
                       return (
                         <div className="trip-card">
-                          <strong>{ev ? '⚡' : '🚚'} Tự lái {veh ? veh.name.replace(/^Xe /, 'xe ') : 'xe tải'} đi buôn</strong>
+                          <strong>{vspec?.group === 'xe_may' ? '🏍️' : ev ? '⚡' : '🚚'} Tự lái {veh ? veh.name.replace(/^Xe /, 'xe ') : 'xe tải'} đi buôn</strong>
+                          {vspec?.group === 'xe_may' && <small>Xe máy không được vào cao tốc: chạy quốc lộ, chậm hơn nhưng không mất phí đường. Chở được ít hàng, hợp đi chợ phiên gần.</small>}
                           <small>Chở hàng trong kho tới bán giá ở đó{me.user.role === 'thuong_lai' ? `, rồi thu mua sỉ tới ${cargoTxt} đặc sản chở về` : ` (xe chở được ${cargoTxt})`}. Tiền {ev ? 'điện' : 'xăng dầu'} và phí đường là tiền vốn của chuyến buôn.{rests > 0 ? ` Chuyến dài ${(plan as ReturnType<typeof tripPlanFor>).driveHours} giờ lái: phải ghé trạm dừng nghỉ ${rests} lần.` : ''}</small>
                           <div className="facts">
                             <div><span aria-hidden="true">🛣️</span><b>{plan.km} km</b><small>{plan.needsBoat ? 'có chặng tàu' : `${plan.junctions.length} nút giao`}</small></div>
@@ -221,6 +222,7 @@ export function TravelPanel({ me, startRide, startTrip, touring, openGarage }: {
                           </div>
                           <button className="primary" disabled={act.busy || fuel <= 0} onClick={() => act.run(() => startTrip(r.id))}>{fuel <= 0 ? `Hết ${ev ? 'pin' : 'xăng'}: lên xe ${ev ? 'sạc' : 'đổ'} trước` : 'Lên đường'}</button>
                           {openGarage && <button type="button" className="link" onClick={openGarage}>Đổi xe, mua xe ở Bãi xe</button>}
+                          {openGarage && <button type="button" className="link" onClick={() => { try { sessionStorage.setItem('vv-garage-tab', 'phuot'); } catch { /* bỏ qua */ } openGarage(); }}>🏍️ Đi phượt các cung đường nổi tiếng</button>}
                         </div>
                       );
                     })()}

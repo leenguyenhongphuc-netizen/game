@@ -65,6 +65,7 @@ test('danh mục xe: tải trọng thực tế, bằng lái theo khối lượng
   assert.equal(TRUCK.cargoKg, 990, 'xe mặc định không còn là 500 kg');
   // Bằng lái xếp theo khối lượng toàn bộ theo thiết kế: tới 3.500 kg là B, tới 7.500 kg là C1, trên nữa là C, kéo rơ moóc là CE.
   for (const s of Object.values(v)) {
+    if (s.group === 'xe_may') { assert.ok(s.license === 'A1' || s.license === 'A', s.kind); continue; } // xe máy: xem moto.test.ts
     if (s.group === 'dau_keo') assert.equal(s.license, 'CE');
     else if (s.group === 'ba_gac') assert.equal(s.license, 'B1');
     else assert.equal(s.license, s.gvwKg <= 3_500 ? 'B' : s.gvwKg <= 7_500 ? 'C1' : 'C', s.kind);

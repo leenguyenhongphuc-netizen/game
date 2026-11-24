@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { REGIONS } from '../../../shared/catalog.ts';
 import { ITEMS } from '../../../shared/items.ts';
-import { DRIVE_RULES, VEHICLES, restStopItems } from '../../../shared/vehicles.ts';
+import { DRIVE_RULES, VEHICLES, isMoto, restStopItems } from '../../../shared/vehicles.ts';
+import { MotoTrip } from './MotoTrip.tsx';
 import { DriveScene } from './DriveScene.ts';
 import type { DriveHud, DriveRest, DriveSummary, DriveTicket, View } from './DriveScene.ts';
 import type { VehGroup } from './DriveExtras.ts';
@@ -143,7 +144,7 @@ const compass = (deg: number) => ['Bắc', 'Đông Bắc', 'Đông', 'Đông Nam
 function readView(): View { try { return localStorage.getItem('vv-drive-view') === 'pov' ? 'pov' : 'chase'; } catch { return 'chase'; } }
 const num = (n: number, d = 0) => n.toLocaleString('vi-VN', { maximumFractionDigits: d, minimumFractionDigits: 0 });
 
-export function DriveGame(props: {
+type DriveGameProps = {
   fromRegionId: string; toRegionId: string;
   plan: DrivePlan;
   fuelL: number;
@@ -155,7 +156,12 @@ export function DriveGame(props: {
   truckColor: string;
   onFinish: (r: DriveResult) => void;
   onCancel: () => void;
-}): JSX.Element {
+};
+/** Xe máy không vào cao tốc: chuyến buôn bằng xe máy chạy quốc lộ ở màn riêng (MotoTrip), xe khác vào màn cao tốc. */
+export function DriveGame(props: DriveGameProps): JSX.Element {
+  return isMoto(props.truck.kind) ? <MotoTrip {...props} /> : <TruckDriveGame {...props} />;
+}
+function TruckDriveGame(props: DriveGameProps): JSX.Element {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
   const scene = useRef<DriveScene | null>(null);
