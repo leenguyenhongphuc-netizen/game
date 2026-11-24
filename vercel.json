@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build && npm run build:api",
+  "outputDirectory": "web/dist",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "server/dist/**",
+      "maxDuration": 15
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    }
+  ],
+  "regions": [
+    "sin1"
+  ]
+}

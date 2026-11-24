@@ -1,0 +1,69 @@
+/* Nông trại quy mô lớn (dùng chung lớp .veh-* của vehicles.css) */
+.fields { display: grid; gap: 10px; }
+.fields section { display: grid; gap: 8px; }
+.fields-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.fields-head > div { display: grid; }
+.fields-head strong { font-family: var(--display); font-size: 1.2rem; }
+.fields-head small { color: var(--muted); font-size: 0.8rem; }
+.fields button.heli { min-height: 46px; font-size: 0.88rem; background: linear-gradient(#8fd3ff, #4ea8e8); border-color: #2c74b3; box-shadow: 0 4px 0 #2c74b3; color: #fff; }
+.fields button.go { background: linear-gradient(#6fd45c, #4caf3f); border-color: var(--green-dark); box-shadow: 0 4px 0 var(--green-dark); color: #fff; }
+.fields button:disabled { opacity: 0.6; }
+.fields .wide { width: 100%; min-height: 46px; }
+.fields .big { font-size: 1.8rem; line-height: 1; }
+.fields .tag { font-weight: 700; color: var(--green-dark); font-size: 0.85rem; }
+.fields .err { background: #ffe1d6; color: #8c2b12; }
+.field-map { width: 100%; max-height: 46vh; aspect-ratio: 1; background: #6f8f3e; border: 2px solid var(--line); border-radius: 14px; }
+.field-map g { cursor: pointer; }
+.field-map g.sel rect { stroke: #fff; stroke-width: 2.5; }
+.field-map g.busy rect { animation: field-busy 1.2s ease-in-out infinite; }
+@keyframes field-busy { 50% { opacity: 0.6; } }
+.field-list { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.field-chip { flex: 0 0 auto; min-height: 40px; font-size: 0.82rem; padding: 3px 10px; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.field-chip.on { background: var(--gold); border-color: var(--gold-dark); }
+.field-chip i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.field-bar { height: 8px; background: var(--paper-2); border-radius: 6px; overflow: hidden; }
+.field-bar i { display: block; height: 100%; }
+.field-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; }
+.field-methods button { min-height: 56px; display: grid; gap: 1px; text-align: left; padding: 6px 10px; }
+.field-methods button small { font-size: 0.74rem; font-weight: 400; opacity: 0.92; }
+.field-label { display: grid; gap: 4px; font-size: 0.86rem; }
+.field-label select, .fields select { min-height: 44px; border-radius: 10px; border: 2px solid var(--line); padding: 0 8px; font: inherit; background: #fffdf4; }
+.field-where { font-size: 0.8rem; }
+.field-top { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+.veh-head { flex-wrap: wrap; }
+.field-go { min-height: 44px; padding: 4px 12px; font-size: 0.86rem; white-space: nowrap; margin-left: auto; }
+.field-certs { font-size: 0.8rem; color: var(--muted); }
+.field-certs summary { cursor: pointer; min-height: 32px; display: flex; align-items: center; overflow-wrap: anywhere; }
+.field-certs ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+
+/* Lớp điều khiển ngoài đồng (fieldHud.tsx): nằm trên cảnh, dưới các bảng. Chỉ các nút nhận chạm, phần còn lại để cần điều khiển. */
+.fhud { position: absolute; inset: 0; pointer-events: none; z-index: 6; font-size: 0.86rem; color: var(--ink); }
+.fhud > * { pointer-events: auto; }
+.fhud-scene { position: absolute; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 84px); width: min(92vw, 440px); box-sizing: border-box;
+  background: rgba(255, 246, 220, 0.95); border: 2px solid var(--wood); border-radius: 14px; padding: 8px 12px; display: grid; gap: 4px; box-shadow: 0 4px 0 var(--wood-dark); }
+.fhud-scene strong { font-family: var(--display); font-size: 1rem; line-height: 1.2; overflow-wrap: anywhere; }
+.fhud-scene small { color: var(--muted); font-size: 0.76rem; }
+.fhud-scene button { justify-self: end; min-height: 40px; padding: 2px 14px; }
+.fhud-bar { height: 8px; background: var(--paper-2); border-radius: 6px; overflow: hidden; flex: 1 1 80px; min-width: 60px; }
+.fhud-bar i { display: block; height: 100%; background: linear-gradient(90deg, #6fd45c, #4caf3f); }
+.fhud-info { position: absolute; left: 10px; top: calc(env(safe-area-inset-top, 0px) + 84px); max-width: min(70vw, 320px); display: grid; gap: 4px; pointer-events: none; }
+.fhud-cert, .fhud-job { background: rgba(255, 246, 220, 0.92); border: 2px solid var(--line); border-radius: 10px; padding: 3px 8px; font-size: 0.76rem; font-weight: 600; overflow-wrap: anywhere; }
+.fhud-job { display: grid; gap: 2px; }
+.fhud-job i { display: block; height: 6px; background: var(--paper-2); border-radius: 4px; overflow: hidden; }
+.fhud-job i b { display: block; height: 100%; background: #4ea8e8; }
+.fhud-job small { color: var(--muted); font-weight: 400; }
+.fhud-chip { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 128px); min-height: 44px; padding: 4px 14px; border-radius: 22px; }
+.fhud-main { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 128px); min-height: 52px; padding: 6px 20px; font-size: 1rem;
+  background: linear-gradient(#ffd96a, #ffcf3a); border: 2px solid var(--gold-dark); box-shadow: 0 4px 0 var(--gold-dark); border-radius: 16px; font-weight: 700; white-space: nowrap; }
+.fhud-drive { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 118px); width: min(92vw, 400px); box-sizing: border-box;
+  background: rgba(255, 246, 220, 0.95); border: 2px solid var(--wood); border-radius: 14px; padding: 8px 10px; display: grid; gap: 6px; box-shadow: 0 4px 0 var(--wood-dark); }
+.fhud-drive-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+.fhud-drive-row strong { font-family: var(--display); }
+.fhud-drive-row button { flex: 1 1 120px; min-height: 48px; font-weight: 700; }
+.fhud-drive-row button.on { background: linear-gradient(#6fd45c, #4caf3f); color: #fff; border-color: var(--green-dark); }
+.fhud-warn { color: var(--danger); font-weight: 600; }
+@media (orientation: landscape) and (max-height: 500px) {
+  .fhud-scene, .fhud-info { top: calc(env(safe-area-inset-top, 0px) + 62px); }
+  .fhud-drive { left: auto; right: calc(env(safe-area-inset-right, 0px) + 10px); transform: none; bottom: 10px; width: min(46vw, 360px); }
+  .fhud-main, .fhud-chip { bottom: 14px; left: auto; right: calc(env(safe-area-inset-right, 0px) + 14px); transform: none; }
+}

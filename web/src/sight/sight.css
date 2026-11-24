@@ -1,0 +1,145 @@
+/* Giao diện phủ trên cảnh đi bộ tham quan. Tự chứa, không phụ thuộc styles.css. */
+.sw { position: fixed; left: var(--vx, 0px); top: var(--vy, 0px); width: var(--vw, 100%); height: var(--vh, 100%); z-index: 1000; background: #1c2433; overflow: hidden; font-family: 'Be Vietnam Pro', system-ui, sans-serif; color: #3b2a17; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.sw-scene { position: absolute; inset: 0; touch-action: none; }
+.sw button { font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 700; font-size: 1rem; min-height: 46px; padding: 6px 14px; background: #f6e7bd; color: #3b2a17; border: 2.5px solid #7a4a22; border-radius: 14px; box-shadow: 0 4px 0 #56310f; cursor: pointer; }
+.sw button:active { transform: translateY(3px); box-shadow: 0 1px 0 #56310f; }
+.sw button:disabled { opacity: 0.75; }
+.sw button.sw-go, .sw button.sw-next, .sw button.sw-walk { background: #4caf3f; border-color: #2f7d26; color: #fff; box-shadow: 0 4px 0 #1f5a19; }
+
+/* ---- thanh trên: một hàng gọn */
+.sw-top { position: absolute; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); display: flex; gap: 6px; align-items: center; pointer-events: none; }
+.sw-top > * { pointer-events: auto; }
+.sw-bar { flex: 1 1 auto; min-width: 0; max-width: 560px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; height: 46px; background: #fff8e4f2; border: 2.5px solid #7a4a22; border-radius: 16px; box-shadow: 0 3px 0 #56310f, 0 8px 18px #0003; padding: 0 8px; }
+.sw-title { display: flex; align-items: center; gap: 4px; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 800; font-size: 0.95rem; line-height: 1.2; min-width: 0; flex: 0 1 auto; }
+.sw-title span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sw-dots { list-style: none; margin: 0 0 0 auto; padding: 0; display: flex; gap: 2px; flex: 0 0 auto; }
+.sw-dots li { width: 17px; height: 17px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 0.6rem; background: #f3e6c2; border: 1.5px solid #cdb67c; color: #8a744f; box-sizing: border-box; }
+.sw-dots li.done { background: #4caf3f; border-color: #2f7d26; color: #fff; }
+.sw-dots li.next { background: #ff9a3d; border-color: #7a4a22; color: #3b2a17; box-shadow: 0 0 0 3px #ffb85e66; }
+.sw-energy { flex: 0 0 auto; display: flex; align-items: center; gap: 3px; font-size: 0.8rem; }
+.sw-energy div { width: 26px; height: 8px; border-radius: 6px; background: #f3e6c2; border: 1.5px solid #cdb67c; overflow: hidden; }
+.sw-energy i { display: block; height: 100%; background: linear-gradient(90deg, #ffb347, #ffd95e); }
+.sw-energy.low i { background: #e2573c; }
+.sw button.sw-leave { flex: 0 0 auto; min-height: 46px; padding: 4px 12px; font-size: 0.92rem; }
+
+/* ---- chỉ đường tới điểm kế */
+.sw-guide { position: absolute; top: calc(max(8px, env(safe-area-inset-top)) + 54px); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 16px); box-sizing: border-box; display: flex; align-items: center; gap: 8px; background: #56310fe6; color: #fff7d6; border-radius: 26px; padding: 4px 5px 4px 6px; font-size: 0.92rem; font-weight: 600; box-shadow: 0 6px 16px #0004; }
+.sw-guide span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sw-guide b { color: #ffd95e; }
+.sw-guide i { flex: 0 0 30px; height: 30px; display: grid; place-items: center; font-style: normal; background: #ffd95e; color: #56310f; border-radius: 50%; font-size: 0.95rem; rotate: -90deg; }
+.sw-guide small { flex-shrink: 0; font-weight: 800; font-size: 0.86rem; font-variant-numeric: tabular-nums; padding-right: 6px; }
+.sw button.sw-walk { flex: 0 0 auto; min-height: 44px; border-radius: 22px; padding: 4px 16px; white-space: nowrap; }
+
+/* ---- bộ sưu tập ảnh đã chụp */
+.sw-album { position: absolute; left: max(8px, env(safe-area-inset-left)); top: calc(max(8px, env(safe-area-inset-top)) + 212px); display: grid; gap: 6px; justify-items: start; max-width: calc(100% - 16px); }
+.sw button.sw-album-btn { min-height: 44px; min-width: 58px; padding: 2px 10px; border-radius: 22px; display: flex; align-items: center; gap: 4px; background: #fff8e4; }
+.sw-album ul { list-style: none; margin: 0; padding: 6px; display: flex; gap: 6px; overflow-x: auto; max-width: 100%; background: #fff8e4f2; border: 2.5px solid #7a4a22; border-radius: 14px; box-shadow: 0 6px 16px #0004; }
+.sw-album li { flex: 0 0 92px; background: #fffdf4; padding: 4px 4px 3px; border-radius: 3px; box-shadow: 0 2px 6px #0004; display: grid; gap: 2px; }
+.sw-album li:nth-child(odd) { rotate: -2deg; } .sw-album li:nth-child(even) { rotate: 2deg; }
+.sw-album img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #e9d9b0; }
+.sw-album li span { font-size: 0.68rem; font-weight: 700; line-height: 1.15; text-align: center; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+.sw-hint { position: absolute; left: 50%; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 70px); transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; text-align: center; background: #fff8e4ee; border: 2.5px solid #7a4a22; border-radius: 14px; padding: 8px 14px; font-size: 0.9rem; font-weight: 600; pointer-events: none; }
+.sw-stick { position: absolute; width: 104px; height: 104px; margin: -52px 0 0 -52px; border-radius: 50%; background: #fff8e455; border: 3px solid #fff8e4aa; pointer-events: none; }
+.sw-stick i { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: #fff8e4; border: 3px solid #7a4a22; box-shadow: 0 3px 0 #56310f; }
+.sw-flash { position: absolute; inset: 0; background: #fff; pointer-events: none; animation: sw-flash 0.5s ease-out forwards; }
+@keyframes sw-flash { from { opacity: 0.9; } to { opacity: 0; } }
+
+/* ---- thẻ thuyết minh kiểu bưu thiếp, trượt lên từ đáy */
+.sw-card, .sw-ex { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(10px, env(safe-area-inset-bottom)); width: min(480px, calc(100% - 16px)); box-sizing: border-box; max-height: 44%; overflow-y: auto; background: #fff6dc; border: 3px solid #7a4a22; border-radius: 20px; box-shadow: 0 5px 0 #56310f, 0 14px 30px #0006; padding: 10px 12px 12px; animation: sw-rise 0.28s cubic-bezier(.2,.9,.3,1.1); }
+@keyframes sw-rise { from { transform: translate(-50%, 60%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+.sw-card-body { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sw-thumb { position: relative; flex: 0 0 92px; aspect-ratio: 4 / 3; border-radius: 6px; overflow: hidden; background: #fffdf4; padding: 4px; box-sizing: border-box; box-shadow: 0 2px 8px #0005; rotate: -3deg; }
+.sw-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 2px; }
+.sw-thumb em { position: absolute; inset: auto 3px 3px 3px; text-align: center; font-style: normal; font-weight: 800; font-size: 0.6rem; color: #fff; background: #2f7d26e6; border-radius: 4px; padding: 1px 0; }
+.sw-card-text { flex: 1 1 auto; min-width: 0; display: grid; gap: 1px; }
+.sw-card-text small { font-size: 0.78rem; font-weight: 700; color: #8a5a22; }
+.sw-card-text b { font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 800; font-size: 1.22rem; line-height: 1.15; }
+.sw-fact { margin: 8px 2px 10px; font-size: 0.9rem; line-height: 1.5; }
+.sw-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sw-actions button { flex: 1 1 120px; }
+.sw button.sw-snap { flex: 2 1 190px; background: #e2573c; border-color: #8f2a1a; color: #fff; box-shadow: 0 4px 0 #6b1d10; animation: sw-pulse 1.6s ease-in-out infinite; }
+@keyframes sw-pulse { 0%, 100% { box-shadow: 0 4px 0 #6b1d10, 0 0 0 0 #ffd95e99; } 50% { box-shadow: 0 4px 0 #6b1d10, 0 0 0 7px #ffd95e22; } }
+.sw button.sw-later { flex: 0 1 auto; }
+
+/* ---- con dấu hộ chiếu, ảnh lưu niệm */
+.sw-seal { position: absolute; left: 0; right: 0; top: 18%; display: grid; justify-items: center; pointer-events: none; animation: sw-seal-out 2.3s ease-in forwards; }
+.sw-seal-ink { box-sizing: border-box; border-radius: 50%; border: 5px double #c0281e; outline: 2px solid #c0281e; outline-offset: 4px; color: #c0281e; background: #fff6dcb8; display: grid; align-content: center; justify-items: center; text-align: center; gap: 1px; rotate: -9deg; animation: sw-seal-in 0.3s ease-out 0.28s both; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; width: 132px; height: 132px; padding: 12px; margin-top: -38px; margin-left: 124px; }
+.sw-seal-ink small { font-size: 0.46rem; font-weight: 800; letter-spacing: 0.08em; }
+.sw-seal-ink b { font-size: 0.8rem; line-height: 1.1; font-weight: 800; max-width: 104px; }
+.sw-seal-ink span { font-size: 0.56rem; font-weight: 700; max-width: 96px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw-seal-ink em { font-style: normal; font-weight: 800; font-size: 0.64rem; border-top: 2px solid #c0281e; padding-top: 2px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+@keyframes sw-seal-in { from { scale: 2.6; opacity: 0; } to { scale: 1; opacity: 1; } }
+@keyframes sw-seal-out { 0%, 72% { opacity: 1; } 100% { opacity: 0; translate: 0 -14px; } }
+.sw-xp, .sw-bonus { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 1.5rem; color: #ffe066; text-shadow: 0 2px 0 #56310f, 0 0 12px #0008; animation: sw-xp 1.5s ease-out 0.3s both; }
+.sw-xp { margin-top: 10px; }
+.sw-bonus { position: absolute; left: 0; right: 0; top: 38%; text-align: center; pointer-events: none; animation: sw-xp 1.6s ease-out both, sw-seal-out 1.9s ease-in forwards; }
+@keyframes sw-xp { from { translate: 0 18px; opacity: 0; } 30% { opacity: 1; } to { translate: 0 -34px; opacity: 1; } }
+.sw-polaroid { width: 210px; box-sizing: border-box; background: #fffdf4; padding: 8px 8px 6px; border-radius: 4px; box-shadow: 0 10px 26px #0007; rotate: 4deg; display: grid; gap: 4px; justify-items: center; animation: sw-seal-in 0.3s ease-out both; }
+.sw-polaroid img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.sw-polaroid span { font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 700; font-size: 0.82rem; color: #3b2a17; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- quầy hàng và điểm tương tác phụ */
+.sw button.sw-shop, .sw button.sw-extra { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 8px); max-width: calc(100% - 32px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #ffd95e; border-color: #7a4a22; font-size: 1.02rem; min-height: 52px; padding: 6px 20px; border-radius: 26px; animation: sw-pop 0.25s ease-out; }
+.sw button.sw-shop:active, .sw button.sw-extra:active { transform: translate(-50%, 3px); }
+.sw button.sw-extra { background: #bfe6ff; border-color: #1f5f8a; box-shadow: 0 4px 0 #154463; }
+.sw button.sw-extra.done { background: #e6efe0; opacity: 0.9; }
+@keyframes sw-pop { from { scale: 0.7; opacity: 0; } to { scale: 1; opacity: 1; } }
+.sw-pan { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(14px, env(safe-area-inset-bottom)); width: min(460px, calc(100% - 24px)); box-sizing: border-box; background: #1a2a3acc; color: #fff7d6; border-radius: 18px; padding: 10px 14px 12px; text-align: center; display: grid; gap: 6px; justify-items: center; }
+.sw-pan b { font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-size: 1.1rem; }
+.sw-pan p { margin: 0; font-size: 0.9rem; line-height: 1.45; }
+.sw-ex-head { display: flex; align-items: center; gap: 8px; }
+.sw-ex-head span { font-size: 1.5rem; }
+.sw-ex-head b { flex: 1 1 auto; min-width: 0; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 800; font-size: 1.15rem; line-height: 1.2; }
+.sw button.sw-x { flex: 0 0 44px; min-height: 44px; padding: 0; border-radius: 50%; }
+.sw-q { margin: 8px 2px; font-size: 0.95rem; line-height: 1.45; font-weight: 600; }
+.sw-opts { display: grid; gap: 7px; }
+.sw-opts button { text-align: left; }
+.sw-opts button.right { background: #4caf3f; border-color: #2f7d26; color: #fff; opacity: 1; }
+.sw-opts button.wrong { background: #f0b5a8; border-color: #8f2a1a; opacity: 1; }
+
+/* ---- màn chào khi vào địa danh */
+.sw-splash { position: absolute; inset: 0; z-index: 5; background: #1c2433; pointer-events: none; display: grid; opacity: 1; transition: opacity 0.75s ease-in; }
+.sw-splash.fade { opacity: 0; }
+.sw-splash img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: sw-zoom 2.6s ease-out forwards; }
+.sw-splash div { position: relative; align-self: end; padding: 28px 22px max(46px, env(safe-area-inset-bottom)); background: linear-gradient(transparent, #1a120acc 45%); color: #fff7d6; text-align: center; }
+.sw-splash b { font-size: 2rem; display: block; }
+.sw-splash h1 { margin: 2px 0 6px; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 800; font-size: clamp(1.7rem, 7vw, 2.6rem); line-height: 1.1; text-shadow: 0 3px 0 #0006; }
+.sw-splash p { margin: 0 auto; max-width: 420px; font-size: 0.95rem; line-height: 1.45; font-weight: 500; }
+@keyframes sw-zoom { from { scale: 1; } to { scale: 1.08; } }
+
+/* ---- điện thoại ngang: thẻ nằm bên phải, mọi thứ thấp lại */
+@media (max-height: 430px) {
+  .sw-bar { height: 44px; max-width: 420px; }
+  .sw-guide { top: calc(max(8px, env(safe-area-inset-top)) + 50px); left: max(8px, env(safe-area-inset-left)); transform: none; max-width: 420px; }
+  .sw-album { top: calc(max(8px, env(safe-area-inset-top)) + 146px); max-width: 52%; }
+  .sw-card, .sw-ex { left: auto; right: max(8px, env(safe-area-inset-right)); transform: none; bottom: max(8px, env(safe-area-inset-bottom)); width: min(350px, 44%); max-height: calc(100% - 68px); animation: none; padding: 8px 10px 10px; }
+  .sw-thumb { flex-basis: 72px; }
+  .sw-card-text b { font-size: 1.08rem; }
+  .sw-fact { font-size: 0.875rem; margin: 6px 2px 8px; }
+  .sw-hint { bottom: max(10px, env(safe-area-inset-bottom)); }
+  .sw button.sw-shop, .sw button.sw-extra { left: max(10px, env(safe-area-inset-left)); transform: none; bottom: max(10px, env(safe-area-inset-bottom)); animation: none; }
+  .sw button.sw-shop:active, .sw button.sw-extra:active { transform: translateY(3px); }
+  .sw-pan { left: max(10px, env(safe-area-inset-left)); transform: none; width: min(380px, 48%); }
+  .sw-splash div { padding: 14px 20px 20px; } .sw-splash b { display: none; }
+  .sw-seal { top: 14%; right: 46%; }
+  .sw-polaroid { width: 170px; }
+}
+
+/* ---- người chơi khác cùng tham quan: số người, biểu cảm, ảnh chung (cột bên phải, giữa màn) */
+.sw-crowd { position: absolute; right: max(8px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 104px); background: #56310fe6; color: #fff7d6; border-radius: 16px; padding: 4px 10px; font-weight: 700; font-size: 0.9rem; box-shadow: 0 4px 12px #0004; }
+.sw-emotes { position: absolute; right: max(8px, env(safe-area-inset-right)); top: calc(max(8px, env(safe-area-inset-top)) + 140px); display: flex; flex-direction: column; gap: 6px; }
+.sw .sw-emotes button { width: 44px; min-width: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 1.3rem; line-height: 1; background: #fff6dccc; border-color: #7a4a22; box-shadow: 0 3px 0 #56310f; }
+.sw .sw-emotes button.sw-group { width: 56px; min-width: 56px; border-radius: 16px; font-size: 1.2rem; display: grid; place-items: center; gap: 0; padding: 4px 0; background: #ffd95e; }
+.sw-emotes .sw-group span { font-size: 0.62rem; font-weight: 800; }
+.sw-my-emote { position: absolute; left: 50%; top: 52%; translate: -50% 0; font-size: 2.6rem; pointer-events: none; animation: sw-emo 2.2s ease-out forwards; filter: drop-shadow(0 4px 6px #0005); }
+@keyframes sw-emo { 0% { opacity: 0; scale: 0.5; } 15% { opacity: 1; scale: 1.15; } 70% { opacity: 1; scale: 1; transform: translateY(-30px); } 100% { opacity: 0; transform: translateY(-60px); } }
+.sw-photo { position: absolute; inset: 0; margin: auto; width: min(440px, calc(100% - 24px)); height: max-content; max-height: calc(100% - 24px); overflow-y: auto; box-sizing: border-box; background: #fffdf6; border-radius: 6px; padding: 12px 12px 14px; box-shadow: 0 18px 40px #0008; rotate: -1.5deg; display: grid; gap: 8px; }
+.sw-photo img { width: 100%; max-height: 52vh; object-fit: cover; border-radius: 2px; display: block; }
+.sw-photo p { margin: 0; font-family: 'Baloo 2', 'Be Vietnam Pro', sans-serif; font-weight: 700; font-size: 1rem; overflow-wrap: anywhere; }
+.sw-photo a.sw-next { display: grid; place-items: center; flex: 1 1 120px; min-height: 44px; border-radius: 14px; background: #ffd95e; border: 3px solid #7a4a22; color: #3b2a17; font-weight: 800; text-decoration: none; box-shadow: 0 4px 0 #56310f; }
+@media (max-height: 430px) {
+  .sw-crowd { top: calc(max(8px, env(safe-area-inset-top)) + 52px); }
+  .sw-emotes { top: calc(max(8px, env(safe-area-inset-top)) + 86px); flex-direction: row; flex-wrap: wrap; max-width: 160px; justify-content: flex-end; }
+  .sw-photo img { max-height: 58vh; }
+}

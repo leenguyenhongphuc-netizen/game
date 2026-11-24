@@ -1,0 +1,24 @@
+{
+  "name": "vuon-viet",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "build": "npm run build -w web",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "test": "npm test -w server",
+    "build:api": "esbuild server/src/vercel.ts --bundle --platform=node --format=cjs --target=node22 --log-level=error --outfile=server/dist/handler.cjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

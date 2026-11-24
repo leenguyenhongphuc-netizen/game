@@ -1,0 +1,61 @@
+/* Chế độ xây dựng và nút "Xem thử" của bảng Trang trí */
+.build { position: absolute; inset: 0; z-index: 6; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+.build > * { pointer-events: auto; }
+/* khi đang xây dựng thì các thanh khác của màn vườn nhường chỗ */
+.game:has(.build) .dock, .game:has(.build) .hud, .game:has(.build) .chips, .game:has(.build) .quest, .game:has(.build) .ctx-bar, .game:has(.build) .ctx-detail,
+.game:has(.build) .plot-switch, .game:has(.build) .act-card, .game:has(.build) .hud-top { display: none; }
+
+.build-top { display: flex; align-items: center; gap: 8px; align-self: center; width: min(560px, 100%); background: var(--paper); border: 3px solid var(--wood); border-radius: 18px; box-shadow: 0 4px 0 var(--wood-dark), 0 10px 20px #0003; padding: 6px 8px 6px 12px; }
+.build-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.build-title b { font-size: 1.5rem; }
+.build-title strong { display: block; font-family: var(--display); font-size: 1.05rem; line-height: 1.1; }
+.build-title small { display: block; color: var(--muted); font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.build-done { min-height: 44px; min-width: 76px; padding: 6px 16px; font-family: var(--display); font-size: 1rem; color: #fff; background: #49b04a; border-color: #2f7d26; box-shadow: 0 3px 0 #2f7d26; }
+
+.build-mid { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; pointer-events: none; padding-bottom: 8px; }
+.build-mid > * { pointer-events: auto; }
+.build-hint, .build-msg { margin: 0; flex: 1; min-width: 0; align-self: flex-end; background: #fffaf0ee; border: 2px solid var(--wood); border-radius: 14px; padding: 7px 10px; font-size: 0.86rem; line-height: 1.3; box-shadow: 0 3px 8px #0002; pointer-events: none; }
+.build-msg { background: #fff0e8; border-color: #c9573d; color: #8a2a17; font-weight: 600; }
+.build-tools { display: flex; flex-direction: column; gap: 8px; }
+.build-tools button { width: 56px; height: 56px; min-height: 0; padding: 0; border-radius: 50%; display: grid; place-content: center; justify-items: center; gap: 0; background: var(--paper); border: 3px solid var(--wood); box-shadow: 0 3px 0 var(--wood-dark), 0 6px 12px #0003; }
+.build-tools button b { font-size: 1.25rem; line-height: 1; }
+.build-tools button small { font-size: 0.6rem; line-height: 1.1; }
+.build-tools button.warn { background: #ffe9e0; border-color: #c9573d; box-shadow: 0 3px 0 #9a3a26, 0 6px 12px #0003; }
+.build-tools button:disabled { opacity: 0.45; }
+
+.build-tray { display: flex; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; background: var(--wood); border: 3px solid var(--wood-dark); border-radius: 20px; padding: 8px; box-shadow: 0 6px 0 #2e1905, 0 12px 24px #0006; align-self: center; max-width: 100%; }
+.build-tray::-webkit-scrollbar { display: none; }
+.build-item { position: relative; flex: 0 0 auto; width: 84px; min-height: 84px; padding: 6px 4px; display: grid; justify-items: center; align-content: center; gap: 1px; background: var(--paper-2); border-color: var(--wood-dark); box-shadow: 0 3px 0 var(--wood-dark); }
+.build-item .emoji { font-size: 1.7rem; line-height: 1.1; }
+.build-item strong { font-size: 0.72rem; line-height: 1.15; text-align: center; }
+.build-item small { font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+.build-item[aria-selected='true'] { background: var(--gold); border-color: var(--gold-dark); box-shadow: 0 3px 0 var(--gold-dark); transform: translateY(-3px); }
+.build-item.off { opacity: 0.6; }
+.build-have { position: absolute; top: -6px; right: -4px; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; background: #49b04a; color: #fff; font-style: normal; font-size: 0.72rem; font-weight: 800; display: grid; place-items: center; border: 2px solid #fff; }
+
+@media (max-height: 430px) {
+  .build-top { width: min(460px, 60%); align-self: flex-start; padding: 3px 6px 3px 10px; }
+  .build-title b { font-size: 1.2rem; }
+  .build-item { width: 76px; min-height: 62px; padding: 3px; }
+  .build-item .emoji { font-size: 1.25rem; }
+  .build-tools { flex-direction: row; }
+  .build-tools button { width: 48px; height: 48px; }
+  .build-tray { padding: 5px; }
+  .build-mid { padding-bottom: 5px; }
+}
+
+/* nút vào chế độ xây dựng trong bảng Trang trí */
+.build-enter { width: 100%; min-height: 56px; margin: 4px 0 10px; font-family: var(--display); font-size: 1.05rem; color: #fff; background: #49b04a; border-color: #2f7d26; box-shadow: 0 4px 0 #2f7d26; display: grid; gap: 0; justify-items: center; }
+.build-enter small { font-family: 'Be Vietnam Pro', sans-serif; font-weight: 400; font-size: 0.74rem; opacity: 0.92; }
+.build-enter:disabled { opacity: 0.55; }
+
+/* "Xem thử": thu bảng Trang trí thành một thanh nhỏ để nhìn nhà và nhân vật */
+.peek-btn { min-height: 44px; margin: 0 0 8px auto; display: flex; align-items: center; gap: 6px; }
+.peek-row { display: flex; justify-content: flex-end; }
+.peek-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; }
+.peek-bar span { flex: 1 1 auto; min-width: 0; font-size: 0.86rem; }
+.peek-bar button.primary, .peek-bar button { min-height: 44px; white-space: nowrap; flex: 0 0 auto; width: auto; padding-inline: 14px; }
+body.vv-peek .game .modal { top: auto; bottom: calc(max(10px, env(safe-area-inset-bottom)) + 8px); height: auto; width: min(460px, calc(100% - 16px)); }
+body.vv-peek .game .modal .modal-head { display: none; }
+body.vv-peek .game .modal .modal-body { padding: 0; overflow: visible; }
+body.vv-peek .game .dock { display: none; }

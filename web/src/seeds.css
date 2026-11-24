@@ -1,0 +1,33 @@
+/* Bộ chọn giống (seeds.tsx). Chỉ cuộn dọc; không có thanh cuộn ngang. */
+.seed-more { flex: 0 0 auto; display: grid; place-items: center; min-height: 48px; min-width: 64px; padding: 3px 10px; border-radius: 12px; background: var(--paper); font-size: 0.78rem; line-height: 1.1; text-align: center; }
+.seed-more small { color: var(--muted); font-size: 0.7rem; }
+
+.seed-picker {
+  position: fixed; z-index: 30; left: 8px; right: 8px; margin-inline: auto; width: min(620px, calc(100% - 16px));
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 84px); max-height: min(72dvh, 640px);
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  background: var(--paper); border: 3px solid var(--wood); border-radius: 20px; box-shadow: 0 6px 0 var(--wood-dark), 0 14px 30px #0005;
+}
+.seed-picker .sheet-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px 4px 14px; }
+.seed-picker .sheet-head h3 { flex: 1; min-width: 0; margin: 0; font-size: 1rem; }
+.sp-tools { display: grid; gap: 6px; padding: 0 10px 8px; min-width: 0; }
+.sp-tools input { width: 100%; min-width: 0; min-height: 44px; box-sizing: border-box; border: 2px solid var(--wood); border-radius: 12px; padding: 6px 12px; font: inherit; background: #fff; }
+.sp-filters { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.sp-filters button { min-height: 44px; padding: 4px 12px; border-radius: 999px; font-size: 0.82rem; box-shadow: 0 3px 0 var(--wood); }
+.sp-filters button[aria-pressed='true'] { background: var(--gold); border-color: var(--gold-dark); box-shadow: 0 3px 0 var(--gold-dark); }
+.sp-body { overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 10px 12px; min-width: 0; }
+.sp-body h4 { margin: 8px 0 6px; font-size: 0.85rem; color: var(--muted); }
+.sp-body h4 small { font-weight: 400; }
+.sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 136px), 1fr)); gap: 8px; }
+.sp-card { position: relative; min-width: 0; display: flex; }
+.sp-pick { flex: 1; min-width: 0; display: grid; justify-items: start; gap: 1px; text-align: left; padding: 8px 48px 8px 10px; min-height: 84px; border-radius: 14px; background: var(--paper-2); line-height: 1.15; }
+.sp-pick .emoji { font-size: 1.6rem; }
+.sp-pick strong { font-size: 0.85rem; max-width: 100%; overflow-wrap: anywhere; }
+.sp-pick small { font-size: 0.72rem; color: var(--muted); }
+.sp-pick .sp-profit { color: #2f6b1f; font-weight: 600; }
+.sp-card.on .sp-pick { background: var(--gold); border-color: var(--gold-dark); box-shadow: 0 3px 0 var(--gold-dark); }
+.sp-acts { position: absolute; top: 4px; right: 4px; display: grid; gap: 2px; }
+.sp-acts button { width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%; background: #fff; box-shadow: none; font-size: 0.9rem; font-style: italic; font-weight: 800; }
+@media (max-height: 430px) {
+  .seed-picker { top: max(8px, env(safe-area-inset-top)); bottom: max(8px, env(safe-area-inset-bottom)); max-height: none; right: max(8px, env(safe-area-inset-right)); left: auto; width: min(520px, 62vw); margin: 0; }
+}

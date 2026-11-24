@@ -1,0 +1,87 @@
+/* Trung tâm hành chính công (web/src/admin/**). Lớp phủ trên canvas 3D; mọi khối tự xuống dòng, không cuộn ngang. */
+.admin-center { position: fixed; inset: 0; z-index: 60; background: #dfeaf3; overflow: hidden; font-size: 15px; }
+.admin-3d { position: absolute; inset: 0; }
+.admin-top { position: absolute; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right));
+  display: flex; gap: 8px; align-items: center; pointer-events: none; }
+.admin-top > * { pointer-events: auto; }
+.admin-back { min-width: 44px; min-height: 44px; font-size: 1.3em; background: rgba(255, 251, 240, 0.95); border-radius: 999px; }
+.admin-title { display: grid; background: rgba(255, 251, 240, 0.95); border-radius: 14px; padding: 6px 12px; min-width: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+.admin-title strong, .admin-title small { overflow-wrap: anywhere; }
+.admin-chips { position: absolute; top: calc(max(8px, env(safe-area-inset-top)) + 54px); left: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 4px; pointer-events: none; }
+.admin-chips .chip { pointer-events: auto; min-height: 44px; min-width: 44px; padding: 2px 3px; border-radius: 14px; border: 2px solid rgba(36, 87, 166, 0.25); background: rgba(255, 255, 255, 0.92);
+  font: inherit; font-size: 1.05em; font-weight: 800; color: #1d3f78; display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
+.admin-chips .chip small { font-size: 0.75em; }
+.admin-ring { position: absolute; left: 50%; transform: translateX(-50%); top: calc(max(8px, env(safe-area-inset-top)) + 112px); width: min(92vw, 440px);
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; background: #fff3c4; border: 2px solid #e2a33c; border-radius: 16px; padding: 10px 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); animation: admin-pop 0.35s ease-out; }
+.admin-ring span { flex: 1 1 200px; min-width: 0; }
+.admin-ring button { min-height: 44px; min-width: 44px; }
+@keyframes admin-pop { from { transform: translateX(-50%) scale(0.85); opacity: 0; } to { transform: translateX(-50%) scale(1); opacity: 1; } }
+.admin-bottom { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); width: min(94vw, 520px); display: grid; gap: 6px; justify-items: center; }
+.admin-act { min-height: 52px; width: 100%; font-size: 1.05em; }
+.admin-wait, .admin-hint { margin: 0; background: rgba(255, 251, 240, 0.95); border-radius: 14px; padding: 8px 12px; text-align: center; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; }
+.admin-wait button { min-height: 44px; }
+.admin-sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: min(78dvh, 640px); background: #fffbf0; border-radius: 20px 20px 0 0; box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.2);
+  display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); margin: 0 auto; max-width: 720px; }
+.admin-sheet-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px 16px; border-bottom: 1px solid rgba(110, 72, 40, 0.12); }
+.admin-sheet-head strong { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.admin-sheet-head button { min-width: 44px; min-height: 44px; }
+.admin-sheet-body { overflow-y: auto; overflow-x: hidden; padding: 8px 16px 16px; display: grid; gap: 8px; align-content: start; overscroll-behavior: contain; }
+.admin-sheet-body h4 { margin: 6px 0 0; }
+.admin-staff { margin: 0; background: #eef4fb; border-radius: 12px; padding: 8px 10px; }
+.admin-desk { display: grid; gap: 6px; min-width: 0; }
+.kiosk-grid, .permit-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr)); gap: 8px; }
+.kiosk-btn { display: grid; justify-items: start; text-align: left; gap: 2px; padding: 10px; min-height: 64px; border-radius: 14px; border: 2px solid rgba(36, 87, 166, 0.25);
+  background: #fff; font: inherit; color: inherit; min-width: 0; }
+.kiosk-btn span { font-size: 1.4em; }
+.kiosk-btn small, .kiosk-btn strong { overflow-wrap: anywhere; }
+.ticket { justify-self: center; display: grid; justify-items: center; padding: 10px 26px; border: 2px dashed #2457a6; border-radius: 12px; background: #fff; }
+.ticket b { font-size: 2.4em; letter-spacing: 0.08em; color: #b3261e; line-height: 1.1; }
+.tax-row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 0; border-top: 1px solid rgba(110, 72, 40, 0.12); }
+.tax-row .grow { display: grid; flex: 1 1 200px; min-width: 0; }
+.tax-row button { min-height: 44px; }
+.tax-row.qua_han strong { color: #b3261e; }
+.fee-list { margin: 4px 0; padding-left: 1.2em; }
+/* hồ sơ chuyển nhượng */
+.deal-card { border: 2px solid rgba(110, 72, 40, 0.16); border-radius: 14px; padding: 10px; display: grid; gap: 6px; background: rgba(255, 255, 255, 0.7); min-width: 0; }
+.deal-card.todo { border-color: #e2a33c; background: #fff8e6; }
+.deal-card.done { border-color: #6fb24a; }
+.deal-card.dead { opacity: 0.6; }
+.deal-head { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.deal-title { display: grid; flex: 1 1 200px; min-width: 0; }
+.deal-title strong, .deal-title small { overflow-wrap: anywhere; }
+.deal-state { font-size: 0.8em; font-weight: 700; background: #eef4fb; color: #1d3f78; border-radius: 999px; padding: 2px 8px; max-width: 100%; overflow-wrap: anywhere; }
+.deal-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.deal-steps li { height: 8px; border-radius: 4px; background: rgba(110, 72, 40, 0.14); position: relative; }
+.deal-steps li span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.deal-steps li.ok { background: #6fb24a; }
+.deal-steps li.now { background: #e2a33c; }
+.deal-todo { margin: 0; font-weight: 700; color: #8a4b0f; }
+.deal-ok { color: #2f7d26; }
+.deal-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.deal-acts button { min-height: 44px; }
+.lookup { display: grid; gap: 6px; min-width: 0; }
+.lookup-form { display: flex; flex-wrap: wrap; gap: 6px; }
+.lookup-form input { flex: 1 1 220px; min-width: 0; min-height: 44px; }
+.lookup-form button, .lookup > button { min-height: 44px; }
+.lookup-out p { margin: 0; overflow-wrap: anywhere; }
+.ledger { margin: 0; padding-left: 1.3em; display: grid; gap: 6px; }
+.ledger li { overflow-wrap: anywhere; }
+.ledger li.bad { color: #b3261e; }
+.ledger code { font-size: 0.78em; color: #5b6b7c; }
+.admin-ring button { width: auto; flex: 0 0 auto; }
+.admin-ring .primary { padding-inline: 18px; }
+
+/* nhánh P7: hai nút gọn thay hàng 7 biểu tượng; danh sách quầy có tên; cần điều khiển đi bộ */
+.admin-chips { flex-wrap: nowrap; gap: 6px; }
+.admin-chips .admin-chip { padding: 0 12px; font-weight: 700; font-size: 0.95rem; white-space: nowrap; }
+.admin-menu { position: absolute; z-index: 5; top: calc(max(8px, env(safe-area-inset-top)) + 104px); left: 8px; width: min(340px, calc(100% - 16px)); max-height: 60%;
+  overflow-y: auto; overscroll-behavior: contain; background: #fffbf0; border: 2px solid #e3cf9a; border-radius: 16px; box-shadow: 0 8px 20px #0004; padding: 6px; display: grid; gap: 4px; }
+.admin-menu-item { display: flex; align-items: center; gap: 10px; text-align: left; min-height: 48px; padding: 6px 10px; border-radius: 12px; background: #fff; border: 1px solid #eadfc4; }
+.admin-menu-item > span:first-child { font-size: 1.4rem; flex: none; }
+.admin-menu-item b { display: block; }
+.admin-menu-item small { display: block; color: #7a6547; overflow-wrap: anywhere; }
+.admin-stick { position: absolute; z-index: 3; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; background: rgba(255, 255, 255, 0.22);
+  border: 2px solid rgba(255, 255, 255, 0.7); pointer-events: none; opacity: 0; transition: opacity 0.15s; }
+.admin-stick.on { opacity: 1; }
+.admin-knob { position: absolute; left: 50%; top: 50%; width: 48px; height: 48px; border-radius: 50%; background: rgba(255, 255, 255, 0.85); box-shadow: 0 2px 6px #0003; transform: translate(-50%, -50%); }

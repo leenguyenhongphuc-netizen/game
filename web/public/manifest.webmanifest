@@ -1,0 +1,16 @@
+{
+  "name": "Vườn Việt",
+  "short_name": "Vườn Việt",
+  "description": "Xóm vườn đặc sản Việt: trồng, chế biến, buôn bán và du lịch khắp các vùng trồng.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#bfe9ff",
+  "theme_color": "#6fb84c",
+  "lang": "vi",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,32 @@
+/* Sổ địa chính và công trình (web/src/properties.tsx). Mọi khối tự xuống dòng, không tràn ngang. */
+.land { display: grid; gap: 8px; min-width: 0; }
+.land-prov { display: grid; gap: 4px; }
+.land-prov select { max-width: 100%; }
+.land-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 8px; }
+.land-card { border: 2px solid rgba(110, 72, 40, 0.18); border-radius: 14px; padding: 10px; background: rgba(255, 255, 255, 0.6); display: grid; gap: 6px; min-width: 0; }
+.land-card.closed { opacity: 0.6; }
+.land-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.land-head strong { flex: 1 1 auto; }
+.land-left { font-size: 0.85em; color: #5b7c3a; font-weight: 700; }
+.land-bar { height: 6px; border-radius: 3px; background: rgba(110, 72, 40, 0.12); overflow: hidden; }
+.land-bar i { display: block; height: 100%; background: #6fb24a; }
+.land-card dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; font-size: 0.86em; }
+.land-card dl div { min-width: 0; }
+.land-card dt { color: rgba(60, 40, 20, 0.6); }
+.land-card dd { margin: 0; font-weight: 700; overflow-wrap: anywhere; }
+.land-buy { display: grid; justify-items: center; min-height: 44px; }
+.land-buy small { font-weight: 400; font-size: 0.8em; }
+.land-lot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; border-top: 1px solid rgba(110, 72, 40, 0.12); }
+.land-cert { display: flex; gap: 8px; align-items: flex-start; flex: 1 1 220px; min-width: 0; }
+.land-cert div { display: grid; min-width: 0; }
+.land-cert strong { overflow-wrap: anywhere; }
+.land-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.land-act input { width: 9.5em; min-height: 44px; }
+.land-act button, .land-lot > button { min-height: 44px; min-width: 44px; }
+.prop-buy small { overflow-wrap: anywhere; }
+.cert-serial { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; background: #fde7e4; color: #9b241c; font-size: 0.82em; font-weight: 800; letter-spacing: 0.03em; }
+.land-use { flex: 1 1 100%; color: rgba(60, 40, 20, 0.7); }
+.land-lot > .lookup { flex: 1 1 100%; }
+.land-law ol { margin: 4px 0; padding-left: 1.3em; }
+
+.land-howto { display: block; margin: 4px 0 6px; color: #5a4a33; line-height: 1.35; }

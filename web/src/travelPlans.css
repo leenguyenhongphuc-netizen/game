@@ -1,0 +1,30 @@
+/* Thẻ phương án lộ trình nhiều chặng (web/src/travelPlans.tsx). */
+.tp-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 10px; }
+.tp-card { background: #fffdf5; border: 2px solid #e5d3a8; border-radius: 16px; padding: 10px 12px; display: grid; gap: 6px; min-width: 0; }
+.tp-card.tagged { border-color: #e8b93c; }
+.tp-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tp-ic { font-size: 1.6rem; line-height: 1; flex: none; }
+.tp-name { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.tp-name strong { font-size: 1.02rem; }
+.tp-tag { font-style: normal; font-size: 0.72rem; font-weight: 800; padding: 1px 8px; border-radius: 999px; background: #fff0c2; color: #7a4a00; white-space: nowrap; }
+.tp-tag.re { background: #dcf3d2; color: #24601b; }
+.tp-sum { flex: none; text-align: right; display: grid; }
+.tp-sum b { font-size: 1rem; }
+.tp-sum small { color: #7a6a55; font-size: 0.8rem; }
+.tp-chain { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 0.82rem; color: #4a3a26; min-width: 0; }
+.tp-chip { display: inline-flex; align-items: center; gap: 3px; background: #f3ead3; border-radius: 999px; padding: 2px 8px; max-width: 100%; overflow-wrap: anywhere; }
+.tp-chip i { font-style: normal; color: #a08766; margin-right: 2px; }
+.tp-via { color: #7a6a55; font-size: 0.78rem; overflow-wrap: anywhere; }
+.tp-legs { margin: 2px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; border-top: 1px dashed #e0cfa4; padding-top: 8px; }
+.tp-leg { display: flex; gap: 8px; align-items: flex-start; font-size: 0.85rem; min-width: 0; }
+.tp-leg-ic { font-size: 1.15rem; flex: none; }
+.tp-leg-txt { min-width: 0; overflow-wrap: anywhere; }
+.tp-leg-txt small { display: block; color: #7a6a55; font-size: 0.78rem; }
+.tp-act { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.tp-act button { min-height: 44px; }
+.tp-act .go { flex: 1 1 160px; }
+.tp-planner { margin-top: 8px; padding: 10px; border-radius: 14px; background: #fff6dc; border: 2px dashed #e8b93c; min-width: 0; }
+.tp-head { margin: 0 0 4px; font-weight: 800; overflow-wrap: anywhere; }
+.sight-plan-btn { min-height: 44px; }
+.vm-sight-label { font-weight: 800; fill: #7a2a10; paint-order: stroke; stroke: #fffdf4; stroke-width: 3px; }
+.vm-here-label { font-weight: 800; fill: #fff; }
