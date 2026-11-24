@@ -342,7 +342,7 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
     setVillage(v); setOffset(v.now - Date.now());
   }, [plotId]);
   useEffect(() => { void load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, [load]);
-  useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, []);
+
   useEffect(() => { if (me.walkin && me.walkin.kg > 0) setToast(`🛍️ Khách vãng lai mua ${me.walkin.kg} kg ở sạp: +${fmtMoney(me.walkin.total)}`); }, [me.walkin]);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); }, [toast]);
   const reload = useCallback(() => { void load(); void refresh(); }, [load, refresh]);
@@ -388,6 +388,10 @@ function Game({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   useEffect(() => { if (paid?.length) setToast(`📦 Lô xuất khẩu đã tới nơi: +${fmtMoney(paid.reduce((a, b) => a + b.payout, 0))}`); }, [paid]);
   const [tourTab, setTourTab] = useState<'buon' | 'qua'>('qua');
   const [exportRide, setExportRide] = useState<ExportSent | null>(null);
+  // Đồng hồ đếm ngược 1 giây chỉ chạy khi đang ở màn vườn/bảng. Trong cảnh toàn màn hình (tham quan, lái xe, hoạt cảnh)
+  // vẽ lại cả App mỗi giây làm khung hình hụt đều đặn mỗi giây (giật lặp lại) mà không ai nhìn thấy đồng hồ.
+  const fullScene = !!(sightWalk || trip || ride || heli || importRide || exportRide || sightTrip || adminAt);
+  useEffect(() => { if (fullScene) return; const t = setInterval(() => tick((n) => n + 1), 1000); return () => clearInterval(t); }, [fullScene]);
   const [acted, setActed] = useState<{ sp: Specialty; stepIndex: number; kg?: number; at: number } | null>(null);
   useEffect(() => { if (!acted) return; const t = setTimeout(() => setActed(null), 2500); return () => clearTimeout(t); }, [acted]);
   const visit = (id: number) => { setTour(null); setPlotId(id); setTab('vuon'); worldRef.current?.goHome(); };

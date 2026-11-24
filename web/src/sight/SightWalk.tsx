@@ -115,11 +115,12 @@ export function SightWalk(props: SightWalkProps): JSX.Element {
     }, 300);
     return () => window.clearInterval(t);
   }, [props.sightId]);
-  // ngắm toàn cảnh: máy quay tự lia trọn một vòng trong 4 giây
+  // ngắm toàn cảnh: máy quay tự lia trọn một vòng trong 6 giây, quay theo từng khung hình trong vòng lặp vẽ
+  // (trước đây setInterval 40 ms đẩy góc theo nấc 25 lần/giây nên cảnh giật cục khi lia)
   useEffect(() => {
-    if (!ex?.pan) return; let n = 0; const steps = 100;
-    const t = window.setInterval(() => { scene.current?.look(Math.PI * 2 / steps, 0); if (++n >= steps) { window.clearInterval(t); setEx((e) => (e ? { ...e, pan: false } : e)); } }, 40);
-    return () => window.clearInterval(t);
+    if (!ex?.pan) return;
+    scene.current?.spin(6, () => setEx((e) => (e ? { ...e, pan: false } : e)));
+    return () => scene.current?.spin(0);
   }, [ex?.pan]);
   // chế độ tự đi: tới điểm nào tự chụp rồi đi tiếp
   useEffect(() => {

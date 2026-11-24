@@ -279,6 +279,9 @@ export class SightScene {
   triggers() { return this.trig.slice(); }
 
   setMove(x: number, y: number) { this.move.set(x, y); if (x * x + y * y > 0.01) this.goal = null; }
+  private spinLeft = 0; private spinRate = 0; private spinDone: (() => void) | null = null;
+  /** Lia máy quay trọn một vòng trong `seconds` giây, mượt theo khung hình; 0 = dừng. */
+  spin(seconds: number, done?: () => void) { this.spinLeft = seconds > 0 ? Math.PI * 2 : 0; this.spinRate = seconds > 0 ? (Math.PI * 2) / seconds : 0; this.spinDone = done ?? null; this.lookAt = null; this.postcard = null; }
   look(dx: number, dy: number) { this.yaw += dx; this.pitch = Math.min(0.75, Math.max(-0.45, this.pitch + dy)); this.lookAt = null; this.postcard = null; }
   private onKey = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (e.type === 'keydown') this.keys.add(k); else this.keys.delete(k); };
   private keyMove(): THREE.Vector2 {
@@ -413,7 +416,8 @@ export class SightScene {
     if (this.paused) { this.last = now; return; }
     if (!this.quality.tick(now)) { if (!this.quality.throttled) this.last = now; return; }
     const dt = stepDt((now - this.last) / 1000); this.last = now; this.time += dt; this.dtNow = dt;
-    this.step(dt); this.quality.busy = this.vmag > 0.05;
+    if (this.spinLeft > 0) { const a = Math.min(this.spinLeft, this.spinRate * dt * (0.5 - 0.5 * Math.cos(Math.min(1, (Math.PI * 2 - this.spinLeft + 0.05) / 0.6) * Math.PI)) + 1e-4); this.yaw += a; this.spinLeft -= a; if (this.spinLeft <= 1e-4) { this.spinLeft = 0; const d = this.spinDone; this.spinDone = null; d?.(); } }
+    this.step(dt); this.quality.busy = this.vmag > 0.05 || this.spinLeft > 0;
     const st = this.state, sw = Math.sin(this.time * 9) * 0.7 * this.moving;
     this.player.position.copy(st.pos); this.player.position.y += Math.abs(Math.sin(this.time * 9)) * 0.05 * this.moving; this.player.rotation.y = -this.heading;
     this.legs[0].rotation.x = sw; this.legs[1].rotation.x = -sw; this.arms[0].rotation.x = -sw * 0.8; this.arms[1].rotation.x = sw * 0.8;
