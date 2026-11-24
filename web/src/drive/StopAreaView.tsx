@@ -8,7 +8,8 @@ import type { StopAreaInfo, StopHud, StopResult } from './StopArea.ts';
 export interface StopMenuItem { id: string; name: string; emoji: string; price: number; energy: number; kind?: string; regional?: string }
 
 const CSS = `
-.sa { position: absolute; inset: 0; z-index: 30; background: #bfe4f5; }
+.sa { position: absolute; inset: 0; z-index: 30; background: #bfe4f5; pointer-events: auto; } /* DriveGame đặt khu trạm trong .dg-center (pointer-events: none) — phải bật lại, nếu không nút trong quầy bị chạm xuyên xuống cảnh */
+.sa-shop, .sa-shop * { pointer-events: auto; }
 .sa-scene { position: absolute; inset: 0; }
 .sa-top { position: absolute; top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); display: grid; gap: 6px; pointer-events: none; }
 .sa-bar { background: #fff6dcf2; border: 3px solid #7a4a22; border-radius: 16px; box-shadow: 0 3px 0 #56310f; padding: 5px 10px; display: grid; gap: 3px; }
