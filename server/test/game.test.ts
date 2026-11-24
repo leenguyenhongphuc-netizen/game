@@ -1792,9 +1792,9 @@ test('điểm tham quan: phải ở trong tỉnh, trả taxi và vé cổng, đi
   await call('POST', '/api/onboard', { regionId: 'dt_caibe' }, cookie);
   const me0 = await meOf(cookie);
   await db.query('update users set cash = 5000000 where id = $1', [me0.user.id]);
-  // Ở Đồng Tháp: chưa có điểm tham quan, xem trước Đà Nẵng được nhưng không đi được.
+  // Ở Đồng Tháp: thấy điểm tham quan của tỉnh mình; xem trước Đà Nẵng được nhưng không đi được.
   const away = await call('GET', '/api/sights', undefined, cookie);
-  assert.deepEqual([away.body.province, away.body.sights.length, away.body.others], ['Đồng Tháp', 0, SIGHT_PROVINCES.map((p) => ({ province: p, count: sightsOfProvince(p).length }))]);
+  assert.deepEqual([away.body.province, away.body.sights.length, away.body.others], ['Đồng Tháp', sightsOfProvince('Đồng Tháp').length, SIGHT_PROVINCES.filter((p) => p !== 'Đồng Tháp').map((p) => ({ province: p, count: sightsOfProvince(p).length }))]);
   const preview = await call('GET', `/api/sights?province=${encodeURIComponent('Đà Nẵng')}`, undefined, cookie);
   assert.deepEqual([preview.body.here, preview.body.sights.length], [false, sightsOfProvince('Đà Nẵng').length]);
   const no = await call('POST', '/api/sights/dn_hoi_an/visit', {}, cookie);
