@@ -2,6 +2,7 @@ import pg from 'pg';
 import { SPECIALTIES } from '../../shared/catalog.ts';
 import { SCHEMA } from './schema.ts';
 import { SOCIAL_SCHEMA } from './socialSchema.ts';
+import { CHAT_SCHEMA } from './chat.ts';
 
 pg.types.setTypeParser(20, (v) => Number(v)); // bigint → number (tiền và mã đều nằm trong giới hạn an toàn)
 
@@ -41,6 +42,7 @@ export async function openDb(connectionString: string, options: DbOptions = {}):
   };
   await db.query(SCHEMA);
   await db.query(SOCIAL_SCHEMA);
+  await db.query(CHAT_SCHEMA);
   // Nạp giá mẫu cho đặc sản chưa có giá nào.
   const ids = Object.keys(SPECIALTIES);
   await db.query(

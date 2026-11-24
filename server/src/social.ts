@@ -32,6 +32,8 @@ export interface SocialDeps {
   addInventory: (q: Q, userId: number, specialtyId: string, ql: Quality, kg: number) => Promise<void>;
   takeInventory: (q: Q, userId: number, specialtyId: string, ql: Quality, kg: number) => Promise<void>;
   currentPrice: (q: Q, specialtyId: string) => Promise<number>;
+  /** Chat công cộng đi kèm nhịp hiện diện (server/src/chat.ts). */
+  chatFeed?: (me: number, scene: string, key: string, after: number | null) => Promise<{ msgs: import('../../shared/chat.ts').PublicMsg[]; say: Map<number, { id: number; text: string }> }>;
 }
 
 
@@ -119,7 +121,15 @@ export function registerSocial(app: FastifyInstance, d: SocialDeps) {
       if (extraBots.length) { botsShown = true; others = others.concat(extraBots.slice(0, Math.max(0, PRESENCE_MAX - others.length))); }
       await maybeTick(); // chờ xong: trên Vercel việc chạy sau khi trả lời có thể bị đóng băng giữa chừng
     }
+    let chatMsgs: PresenceOut['chat'];
+    if (d.chatFeed) {
+      const since = typeof b.chatSince === 'number' && Number.isFinite(b.chatSince) ? Math.max(0, Math.floor(b.chatSince)) : null;
+      const f = await d.chatFeed(userId, scene, key, since);
+      for (const o of others) { const s = f.say.get(o.id); if (s) o.say = s; }
+      if (since !== null) chatMsgs = f.msgs;
+    }
     const out: PresenceOut = { at: Date.now(), interval: hw ? PRESENCE_INTERVAL.highway : realCount > 0 ? PRESENCE_INTERVAL.busy : PRESENCE_INTERVAL.alone, others, bots: botsShown };
+    if (chatMsgs) out.chat = chatMsgs;
     if (b.count === true) out.online = (await db.query(`select count(*)::int as n from presence where updated_at > now() - interval '30 seconds'`)).rows[0].n;
     return out;
   });

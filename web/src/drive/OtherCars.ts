@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import type { PresenceIn, PresenceOther } from '../../../shared/social.ts';
 import { hash32 } from '../../../shared/social.ts';
-import { PresenceLink, disposeTag, hexOf, nameTag } from '../presence.ts';
+import { PresenceLink, disposeTag, dropSay, hexOf, nameTag, syncSay } from '../presence.ts';
 import { playerVehicle } from './DriveExtras.ts';
 import type { VehGroup } from './DriveExtras.ts';
 import { bakeColored } from '../scene/batch.ts';
@@ -47,11 +47,12 @@ export class OtherCars {
       }
       // vị trí tuyệt đối trên trục của mình lúc nhận (bù tuổi số liệu), vận tốc dọc trục
       const age = (o.ageMs ?? 0) / 1000, v = (o.sameDir ? 1 : -1) * (o.kmps ?? 0);
+      syncSay(it.obj, o, 5.3, 1, 1.7); // bong bóng chat (web/src/chat)
       it.o = o; it.pos0 = this.myKm + o.aheadKm + v * age; it.v = v; it.t0 = local;
     }
     for (const [id, it] of this.items) if (!keep.has(id)) { this.drop(it); this.items.delete(id); }
   }
-  private drop(it: Item) { it.obj.removeFromParent(); disposeTag(it.tag); it.obj.traverse((m) => { const g = (m as THREE.Mesh).geometry; if ((m as THREE.Mesh).isMesh && g) g.dispose(); }); }
+  private drop(it: Item) { it.obj.removeFromParent(); disposeTag(it.tag); dropSay(it.obj); it.obj.traverse((m) => { const g = (m as THREE.Mesh).geometry; if ((m as THREE.Mesh).isMesh && g) g.dispose(); }); }
 
   /** Gọi mỗi khung từ DriveScene. kmU = số km ứng với một đơn vị cảnh (đường trong cảnh được nén lại). */
   frame(dt: number, myKm: number | null, kmU: number, myLane: number, place: PlaceFn) {

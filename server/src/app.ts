@@ -43,6 +43,7 @@ import { registerLand } from './land.ts';
 import { registerParks } from './parks.ts';
 import { registerAdmin } from './admin.ts';
 import { registerSocial } from './social.ts';
+import { registerChat } from './chat.ts';
 import { canUse, denyMessage, ROUTE_FEATURES } from '../../shared/roles.ts';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
@@ -2608,11 +2609,13 @@ export async function buildApp(opts: AppOptions): Promise<FastifyInstance> {
   });
 
   registerProgress(app, { db, timeScale, bad, requireUser, addCash, addXp, addInventory, takeInventory, addProduct, takeProduct, currentPrice, ensureStarter, requireTester: (r) => requireTester(r) });
+  const requireAdmin = (req: FastifyRequest) => {
+    const given = String(req.headers.authorization ?? '').replace(/^Bearer /, ''), want = opts.adminToken ?? '';
+    if (!(want.length >= 16 && given.length === want.length && timingSafeEqual(Buffer.from(given), Buffer.from(want)))) throw bad('khong_co_quyen', 'Không có quyền.', 401);
+  };
+  const chat = registerChat(app, { db, requireUser, requireAdmin, bad, addCash });
   const social = registerSocial(app, { db, timeScale, bots: !!opts.bots, requireUser, requireTester: (r) => requireTester(r), bad, addCash, addXp, addInventory, takeInventory, currentPrice,
-    requireAdmin: (req) => {
-      const given = String(req.headers.authorization ?? '').replace(/^Bearer /, ''), want = opts.adminToken ?? '';
-      if (!(want.length >= 16 && given.length === want.length && timingSafeEqual(Buffer.from(given), Buffer.from(want)))) throw bad('khong_co_quyen', 'Không có quyền.', 401);
-    } });
+    requireAdmin, chatFeed: chat.feed });
   marketHook = () => social.maybeTick();
   registerFarm(app, { db, timeScale, lateGraceMs, requireUser, requireTester: (r) => requireTester(r), bad, addCash, addXp, addInventory, spendEnergy, weatherGrowth: (r, t) => weatherOf(r, t).growth, inSeason: inSeasonOf });
 

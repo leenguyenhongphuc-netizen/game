@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import type { PresenceOther } from '../../../shared/social.ts';
 import { rand01 } from '../../../shared/social.ts';
-import { disposeTag, hexOf, nameTag, turnTo } from '../presence.ts';
+import { disposeTag, dropSay, hexOf, nameTag, syncSay, turnTo } from '../presence.ts';
 
 interface Body { root: THREE.Group; legL: THREE.Mesh; legR: THREE.Mesh; armL: THREE.Group; armR: THREE.Group }
 export type BodyFactory = (shirt: number, hat?: string, outfit?: { ao?: string | null; non?: string | null; phu_kien?: string | null } | null) => Body;
@@ -50,6 +50,7 @@ export class OthersLayer {
         this.group.add(body.root); this.items.set(o.id, it);
       }
       it.o = o; it.seen = now;
+      syncSay(it.body.root, o, 3.15, 1.18); // bong bóng chat (web/src/chat)
       if (!o.script) {
         // vận tốc ước theo hai lần nhận liên tiếp, để vẽ mượt giữa các nhịp
         const nx = o.x ?? 0, nz = o.z ?? 0, dtS = Math.max(0.5, (now - it.at) / 1000);
@@ -61,7 +62,7 @@ export class OthersLayer {
     }
     for (const [id, it] of this.items) if (!keep.has(id)) { this.drop(it); this.items.delete(id); }
   }
-  private drop(it: Item) { this.group.remove(it.body.root); disposeTag(it.tag); }
+  private drop(it: Item) { this.group.remove(it.body.root); disposeTag(it.tag); dropSay(it.body.root); }
 
   update(dt: number, t: number) {
     const now = performance.now(), serverNow = Date.now() + this.serverSkew;
@@ -86,6 +87,6 @@ export class OthersLayer {
     }
   }
   count() { return this.items.size; }
-  list() { return [...this.items.values()].map((it) => ({ name: it.o.name, bot: it.o.bot, x: Math.round(it.x * 10) / 10, z: Math.round(it.z * 10) / 10 })); }
+  list() { return [...this.items.values()].map((it) => ({ name: it.o.name, bot: it.o.bot, x: Math.round(it.x * 10) / 10, z: Math.round(it.z * 10) / 10, say: !!it.body.root.userData.saySp })); }
   dispose() { for (const it of this.items.values()) this.drop(it); this.items.clear(); this.group.removeFromParent(); }
 }
