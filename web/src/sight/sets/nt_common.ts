@@ -73,7 +73,7 @@ export function basaltField(kit: Kit, cx: number, cz: number, rx: number, rz: nu
     const x = cx - rx + i * cell + (j % 2) * cell * 0.5, z = cz - rz + j * dz;
     if (((x - cx) / rx) ** 2 + ((z - cz) / rz) ** 2 > 1) continue;
     const hh = h(x, z); if (hh <= 0.05) continue;
-    kit.add(hexColumn(tones[(i * 7 + j * 3) % tones.length], x, z, cell * 0.55, hh + r() * 0.15, (r() - 0.5) * 0.12));
+    kit.add(hexColumn(tones[(i * 7 + j * 3) % tones.length], x, z, cell * 0.55, hh + r() * 0.03, (r() - 0.5) * 0.08));
   }
 }
 

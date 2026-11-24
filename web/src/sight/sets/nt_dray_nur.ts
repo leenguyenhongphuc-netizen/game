@@ -23,11 +23,11 @@ export function drayNur(kit: Kit, _s: Sight): SightSet {
   kit.add(box(0x2f3f3a, 0, -3.4, 80, 50, 1, 120)); kit.water(0x5a8a78, 0, 80, 50, 120, -0.45, 0.92);
   waterfall(kit, 0, 0, -35, 116, 16);
   // hang dơi sau màn nước: khoảng tối dưới chân vách phía tây
-  kit.add(box(0x141210, -52, 3, -36.5, 10, 6, 1)); kit.add(box(BASALT[2], -60, 0.2, -28, 16, 0.4, 12));
+  kit.add(box(0x141210, -52, 3, -36.5, 10, 6, 1)); kit.add(box(BASALT[2], -60, 0.15, -28, 16, 0.3, 12));
   // bãi đá đen chân thác, lối rừng dốc xuống từ phía tây nam
-  for (let i = 0; i < 60; i++) { const x = -80 + r() * 30, z = -30 + r() * 60; kit.add(rock(BASALT[i % 4], x, 0.2, z, 1 + r() * 2, 0.6 + r(), 1 + r() * 2, r() * 3)); }
-  kit.add(stairs(0x7a6a52, V(-110, 16, -50), V(-96, 0, -20), 2.6, 40));
-  kit.add(box(BASALT[1], -72, 0.25, -18, 14, 0.5, 26)); // bãi đá phẳng để đứng ngắm
+  for (let i = 0; i < 40; i++) { const x = -64 + r() * 16, z = -30 + r() * 50; kit.add(rock(BASALT[i % 4], x, 0.2, z, 1 + r() * 2, 0.6 + r(), 1 + r() * 2, r() * 3)); }
+  kit.add(stairs(0x7a6a52, V(-110, 16, -40), V(-100, 0, -6), 2.6));
+  kit.add(box(BASALT[1], -72, 0.15, -18, 14, 0.3, 26)); // bãi đá phẳng để đứng ngắm
   // cầu treo qua sông phía nam
   suspensionBridge(kit, V(-30, 0.6, 60), V(30, 0.6, 60), 2.4, 8, 0x8a6a48, 0x7a5a3c);
   kit.live(label('Thác Dray Nur', 0, 26, -38, '#2d6f73', 1.2), label('Cầu treo', 0, 11, 60, '#7a4a22', 0.8));
@@ -46,13 +46,13 @@ export function drayNur(kit: Kit, _s: Sight): SightSet {
   for (let i = 0; i < 10; i++) kit.add(forestMountain(i % 2 ? FOREST : 0x3d8253, -400 + i * 90, -400 - r() * 40, 90, 50 + r() * 40, r, 16));
   void box;
 
-  const path = [V(-110, 16, -64), V(-110, 16, -50), V(-96, 0, -20), V(-78, 0.5, -14), V(-56, 0.4, -30), V(-78, 0.5, -10), V(-80, 0, 10), V(-50, 0, 40), V(-40, 0.6, 60), V(-30, 0.6, 60), V(30, 0.6, 60), V(40, 0, 66), V(52, 0, 80)];
+  const path = [V(-110, 16, -64), V(-110, 16, -40), V(-100, 0, -6), V(-78, 0.3, -14), V(-56, 0.3, -30), V(-78, 0.3, -10), V(-80, 0, 10), V(-50, 0, 40), V(-40, 0.6, 60), V(-30, 0.6, 60), V(30, 0.6, 60), V(40, 0, 66), V(52, 0, 80)];
   return {
     path, half: 1.8, npcs: 8, startYaw: 0.8,
     stops: [
       { id: 'loi_rung', at: V(-110, 16, -58), look: V(0, 14, -36) },
-      { id: 'chan_thac', at: V(-74, 0.5, -12), look: V(0, 8, -36) },
-      { id: 'hang_doi', at: V(-56, 0.4, -28), look: V(-52, 3, -37) },
+      { id: 'chan_thac', at: V(-74, 0.3, -12), look: V(0, 8, -36) },
+      { id: 'hang_doi', at: V(-56, 0.3, -28), look: V(-52, 3, -37) },
       { id: 'cau_treo', at: V(0, 0.6, 60), look: V(0, 6, -36) },
       { id: 'nha_dai', at: V(52, 0, 80), look: V(60, 3, 88), cam: V(42, 6, 68) },
     ],

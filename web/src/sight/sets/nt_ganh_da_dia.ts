@@ -14,7 +14,7 @@ export function ganhDaDia(kit: Kit, _s: Sight): SightSet {
   kit.add(box(SAND, -40, -0.5, 0, 120, 1, 800), box(WET, 22, -0.48, 0, 8, 1, 800), box(0x9ab865, -220, -0.5, 0, 240, 1, 800));
   kit.add(hill(-120, -140, 80, 60, 30, r, SCRUB), hill(-140, 120, 90, 60, 26, r, SCRUB));
   // gành chính: bãi cột lục giác cao từ 0,3 m (sát bãi cát) tới ~3 m (mép biển), mặt gợn bậc để bước lên được
-  const step = (x: number) => Math.max(0, Math.round(((x - 18) / 34) * 6) * 0.42 + 0.3);
+  const step = (x: number) => Math.max(0, Math.round(((x - 18) / 34) * 8) * 0.33 + 0.25);
   basaltField(kit, 40, 0, 26, 30, (x, z) => (Math.abs(z) > 26 - Math.max(0, x - 40) * 0.3 ? 0 : step(x) + Math.sin(z * 0.3) * 0.08), 1.5);
   // các khối cột cao đứng sát biển, nghiêng như chồng đĩa
   for (let i = 0; i < 40; i++) { const x = 62 + r() * 10, z = -26 + r() * 52, h = 3 + r() * 3; kit.add(hexColumn([0x3d3a3a, 0x4a4644, 0x34302f][i % 3], x, z, 0.5 + r() * 0.2, h, 0.15 + r() * 0.2)); }
@@ -38,14 +38,14 @@ export function ganhDaDia(kit: Kit, _s: Sight): SightSet {
   for (let i = 0; i < 30; i++) { const p = palm(r, 6 + r() * 3); const z = -160 + r() * 330, x = -30 - r() * 60; if (Math.abs(z) < 16) continue; p.position.set(x, 0, z); kit.add(p); }
   for (let i = 0; i < 10; i++) { const p = person(i, i % 2 ? 2 : 1, [0xe2573c, 0x4aa3d8, 0xffd23f, 0x7ccf4f][i % 4]); p.position.set(30 + r() * 26, 1.5, -18 + r() * 36); kit.add(p); }
 
-  const path = [V(-80, 0, 5), V(-60, 0, 5), V(-20, 0, 4), V(10, 0, 2), V(18, 0.3, 0), V(30, 1.1, 0), V(44, 2, 2), V(56, 2.8, 4), V(44, 2, 2), V(30, 1.1, -10), V(18, 0.3, -20), V(12, 0, 40), V(10, 0, 80), V(8, 0, 90)];
+  const path = [V(-80, 0, 5), V(-60, 0, 5), V(-20, 0, 4), V(10, 0, 2), V(18, 0.25, 0), V(30, 1.2, 0), V(44, 2.2, 2), V(56, 3.2, 4), V(44, 2.2, 2), V(30, 1.2, -10), V(18, 0.25, -20), V(12, 0, 40), V(10, 0, 80), V(8, 0, 90)];
   return {
     path, half: 1.6, npcs: 8, startYaw: Math.PI / 2,
     stops: [
       { id: 'cong', at: V(-58, 0, 5), look: V(-64, 4, 5), cam: V(-44, 5, 16) },
-      { id: 'cot_da', at: V(30, 1.1, 0), look: V(48, 1, 6) },
-      { id: 'mat_da', at: V(44, 2, 2), look: V(56, 0, 10), cam: V(36, 9, -8) },
-      { id: 'mep_song', at: V(56, 2.8, 4), look: V(74, 1, 4) },
+      { id: 'cot_da', at: V(30, 1.2, 0), look: V(48, 1, 6) },
+      { id: 'mat_da', at: V(44, 2.2, 2), look: V(56, 0, 10), cam: V(36, 9, -8) },
+      { id: 'mep_song', at: V(56, 3.2, 4), look: V(74, 1, 4) },
       { id: 'lang_chai', at: V(8, 0, 90), look: V(14, 0.5, 98), cam: V(0, 7, 78) },
     ],
     sky: [0x3a9eea, 0xe4f3fb], fog: [0xd8ecf6, 140, 760],

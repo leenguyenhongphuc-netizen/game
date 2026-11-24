@@ -3,7 +3,7 @@
 // Sau nhà ga (phía nam) là sân ga, đường ray, đầu máy hơi nước trưng bày và đoàn tàu du lịch đi Trại Mát chạy về phía đông.
 import * as THREE from 'three';
 import type { Sight } from '../../../../shared/sights.ts';
-import { Kit, V, box, cyl, gable, glow, grp, label, lampPost, person, signPost, strip } from '../SightKit.ts';
+import { Kit, V, box, cyl, gable, glow, grp, label, lampPost, person, signPost, stairs, strip } from '../SightKit.ts';
 import type { SightSet } from '../SightKit.ts';
 import { forestMountain } from '../SightKit.ts';
 import { baked } from './_extra.ts';
@@ -33,6 +33,7 @@ export function gaDaLat(kit: Kit, _s: Sight): SightSet {
   kit.live(label('Ga Đà Lạt', 0, 22, -4, '#b8452e', 1.1));
   // sân ga và đường ray phía nam
   kit.add(box(0xcfc8b8, 0, 0.4, 12, 60, 0.8, 8)); // thềm sân ga
+  kit.add(stairs(0xcfc8b8, V(30, 0, 5.4), V(30, 0.8, 8.1), 3, 3), stairs(0xcfc8b8, V(-28, 0, 5.4), V(-28, 0.8, 8.1), 3, 3));
   for (const zr of [22, 30]) { kit.add(box(0x8a7a66, 0, 0.1, zr, 400, 0.2, 3.2)); for (const s of [-0.75, 0.75]) kit.add(box(0x6a6a6a, 0, 0.32, zr + s, 400, 0.14, 0.12)); for (let x = -200; x < 200; x += 1.4) kit.add(box(0x5a3d26, x, 0.2, zr, 0.3, 0.1, 2.6)); }
   const loco = steam(); loco.rotation.y = Math.PI / 2; loco.position.set(-34, 0.3, 22); kit.add(loco);
   kit.live(label('Đầu máy hơi nước', -34, 8, 22, '#3a3a3a', 0.8));
@@ -48,7 +49,7 @@ export function gaDaLat(kit: Kit, _s: Sight): SightSet {
   for (let i = 0; i < 8; i++) kit.add(forestMountain(0x3d6e4a, -380 + i * 110, -380, 110, 70 + r() * 60, r));
   kit.add(strip(0x5a5d62, V(0, 0, -200), V(0, 0, -42), 8, 0.06), signPost('Ga Đà Lạt · Di tích quốc gia', 6, 0, -52, '#b8452e', 0.9));
 
-  const path = [V(0, 0, -70), V(0, 0, -42), V(0, 0, -30), V(-18, 0, -20), V(-18, 0, -12), V(30, 0, -12), V(30, 0, 8), V(28, 0.8, 12), V(-20, 0.8, 12), V(-28, 0.8, 12), V(-28, 0.8, 16)];
+  const path = [V(0, 0, -70), V(0, 0, -42), V(0, 0, -30), V(-18, 0, -20), V(-18, 0, -12), V(30, 0, -12), V(30, 0, 5), V(30, 0.8, 9), V(28, 0.8, 12), V(-20, 0.8, 12), V(-28, 0.8, 12), V(-28, 0.8, 16)];
   return {
     path, half: 2, npcs: 10, startYaw: 0,
     stops: [

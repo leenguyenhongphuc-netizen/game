@@ -22,7 +22,7 @@ export function vinhHy(kit: Kit, _s: Sight): SightSet {
   kit.add(signPost('Vịnh Vĩnh Hy', 106, 10, -84, '#2d6f73', 1));
   // làng chài: nhà mái tôn, cầu cảng gỗ chìa ra vịnh
   for (let i = 0; i < 12; i++) { const x = -40 - (i % 6) * 13, z = -74 + Math.floor(i / 6) * 13, c = [0xf1e3b8, 0xd9e6ee, 0xe9d2c0][i % 3]; kit.add(box(c, x, 2.2, z, 9, 4.4, 9), box([0x2a6fbf, 0xd2301e, 0x18a558][i % 3], x, 4.6, z, 10, 0.3, 10)); }
-  kit.add(strip(0x8a6a48, V(-10, 0.6, -36), V(-10, 0.6, 0), 4, 0.4)); for (let i = 0; i < 8; i++) kit.add(cyl(0x5a3d26, -12 + (i % 2) * 4, -1, -34 + Math.floor(i / 2) * 10, 0.2, 3));
+  kit.add(strip(0x8a6a48, V(-10, 0.3, -38), V(-10, 0.3, 0), 4, 0.4)); for (let i = 0; i < 8; i++) kit.add(cyl(0x5a3d26, -12 + (i % 2) * 4, -1, -34 + Math.floor(i / 2) * 10, 0.2, 3));
   for (let i = 0; i < 6; i++) { const f = fishingBoat([0x2a6f9a, 0x18a558, 0xd2301e][i % 3], 0xf4f1ea, 9); f.position.set(-40 + i * 14, -0.3, -20 + (i % 2) * 12); f.rotation.y = 1.2 + i * 0.3; kit.add(f); }
   for (let i = 0; i < 8; i++) { const c = coracle(1.1); c.position.set(-30 + i * 4, -0.3, -30); kit.add(c); }
   kit.live(label('Bến Vĩnh Hy', -10, 7, -20, '#2d6f73', 0.9));
@@ -40,14 +40,14 @@ export function vinhHy(kit: Kit, _s: Sight): SightSet {
   kit.add(strip(SAND, V(-100, 0, -40), V(-90, 0, 70), 4, 0.05));
   for (let i = 0; i < 6; i++) { const p = person(i, 1, [0x4aa3d8, 0xe2573c, 0xffd23f][i % 3]); p.position.set(-30 + i * 5, 0, -50); kit.add(p); }
 
-  const path = [V(120, 10, -80), V(70, 8, -76), V(30, 4, -70), V(0, 0.2, -62), V(-10, 0, -46), V(-10, 0.6, -36), V(-10, 0.6, -4), V(-10, 0.6, -36), V(-30, 0, -44), V(-90, 0, -40), V(-96, 0, 20), V(-90, 0, 70), V(-76, 0, 84)];
+  const path = [V(120, 10, -80), V(70, 8, -76), V(30, 4, -70), V(0, 0.2, -62), V(-10, 0, -46), V(-10, 0.3, -36), V(-10, 0.3, -4), V(-10, 0.3, -36), V(-30, 0, -44), V(-90, 0, -40), V(-96, 0, 20), V(-90, 0, 70), V(-76, 0, 84)];
   return {
     path, half: 2.2, npcs: 8, startYaw: -Math.PI / 2,
     stops: [
       { id: 'deo', at: V(90, 9, -78), look: V(20, 0, 30) },
       { id: 'ben_vinh_hy', at: V(-10, 0, -46), look: V(-30, 2, -66) },
-      { id: 'tau_day_kinh', at: V(-10, 0.6, -6), look: V(40, 0, 40) },
-      { id: 'be_nuoi', at: V(-10, 0.6, -16), look: V(91, 2, 0) },
+      { id: 'tau_day_kinh', at: V(-10, 0.3, -6), look: V(40, 0, 40) },
+      { id: 'be_nuoi', at: V(-10, 0.3, -16), look: V(91, 2, 0) },
       { id: 'bai_da', at: V(-76, 0, 84), look: V(-70, 3, 110) },
     ],
     sky: [0x2f94ee, 0xe2f2fb], fog: [0xd6ecf6, 160, 900],
