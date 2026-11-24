@@ -33,7 +33,7 @@ export class SightScene {
   private cum: number[] = []; private total = 0;
   private markers: { ring: THREE.Mesh; beam: THREE.Mesh; num: THREE.Sprite; s: number }[] = [];
   private npcs: { g: THREE.Group; legs: THREE.Object3D[]; arms: THREE.Object3D[]; s: number; dir: number; off: number; want: number; a: number; b: number; sp: number; ph: number }[] = [];
-  private grid!: WalkGrid; private rig!: CamRig; private camY = 0; private armLen = 8; private camDist = 8; private shopAt: THREE.Vector3[] = []; private shopIdx: number | null = null;
+  private grid!: WalkGrid; private rig!: CamRig; private camY = 0; private armLen = 8; private camDist = 8; private shopAt: THREE.Vector3[] = []; private shopSolid: THREE.Vector3[] = []; private shopIdx: number | null = null;
   private postcard: { pos: THREE.Vector3; look: THREE.Vector3 } | null = null; private userLook = 0; private skyTicks: ((t: number, dt: number) => void)[] = [];
   private nearIdx: number | null = null; private dismissed: number | null = null; private lookAt: THREE.Vector3 | null = null;
   private seen: Set<string>; private autoWait = 0; private hudT = 0; private disposed = false;
@@ -201,7 +201,7 @@ export class SightScene {
       const sp = spots[i]; if (!sp) return;
       const g = bake(shopModel(sh.kind, this.kit.r)); g.position.copy(sp.at); g.rotation.y = sp.ry ?? 0; this.scene.add(g);
       const lb = label(`${sh.name}`, sp.at.x, sp.at.y + 3.3, sp.at.z, '#2f7d26', 0.42); this.scene.add(lb);
-      this.shopAt.push(sp.at.clone());
+      this.shopAt.push(sp.at.clone()); this.shopSolid.push(sp.at.clone());
     });
     if (!(this.shops && this.shops.length)) this.shopAt = [];
   }
@@ -354,11 +354,13 @@ export class SightScene {
     if (this.vmag > 0.02 && !blocked) {
       // đi tự do: chia bước nhỏ, mỗi bước thử thẳng rồi trượt theo trục x hoặc z khi vướng (men theo tường, bờ nước)
       const ang = this.moveAng, v = SPEED * this.vmag * this.speedMul * dt, n = Math.max(1, Math.ceil(v / 0.2)), dx = Math.sin(ang) * v / n, dz = -Math.cos(ang) * v / n;
+      // quầy hàng dựng sau lưới đi bộ: chặn riêng bằng vòng tròn quanh quầy (không đi xuyên quầy)
+      const canStep = (x: number, z: number, y: number) => { for (const q of this.shopSolid) if ((x - q.x) ** 2 + (z - q.z) ** 2 < 1.35 * 1.35 && Math.abs(q.y - y) < 2.5) return null; return this.grid.canStep(x, z, y); };
       for (let i = 0; i < n; i++) {
-        let h = this.grid.canStep(st.pos.x + dx, st.pos.z + dz, this.gy);
+        let h = canStep(st.pos.x + dx, st.pos.z + dz, this.gy);
         if (h !== null) { st.pos.x += dx; st.pos.z += dz; this.gy = h; continue; }
-        h = Math.abs(dx) > 1e-5 ? this.grid.canStep(st.pos.x + dx, st.pos.z, this.gy) : null; if (h !== null) { st.pos.x += dx; this.gy = h; continue; }
-        h = Math.abs(dz) > 1e-5 ? this.grid.canStep(st.pos.x, st.pos.z + dz, this.gy) : null; if (h !== null) { st.pos.z += dz; this.gy = h; continue; }
+        h = Math.abs(dx) > 1e-5 ? canStep(st.pos.x + dx, st.pos.z, this.gy) : null; if (h !== null) { st.pos.x += dx; this.gy = h; continue; }
+        h = Math.abs(dz) > 1e-5 ? canStep(st.pos.x, st.pos.z + dz, this.gy) : null; if (h !== null) { st.pos.z += dz; this.gy = h; continue; }
         break;
       }
       const pr = this.project(st.pos, st.seg); st.s = pr.s; st.seg = pr.seg;
